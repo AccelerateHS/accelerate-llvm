@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, eltType )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
@@ -37,6 +37,24 @@ varNames base t
   | n <- length (llvmOfTupleType (eltType t))
   = [ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
 
+
+arrayData :: forall sh e. Elt e => Array sh e -> Name -> [Operand]
+arrayData _ base = [ local (Name (s ++ ".ad" ++ show i)) | i <- [n-1,n-2..0] ]
+  where
+    t = llvmOfTupleType (eltType (undefined::e))
+    n = length t
+    s = case base of
+          UnName v -> (show v)
+          Name v   -> v
+
+arrayShape :: forall sh e. Shape sh => Array sh e -> Name -> [Operand]
+arrayShape _ base = [ local (Name (s ++ ".sh" ++ show i)) | i <- [n-1,n-2..0] ]
+  where
+    t = llvmOfTupleType (eltType (undefined::sh))
+    n = length t
+    s = case base of
+          UnName v -> (show v)
+          Name v   -> v
 
 -- References
 --

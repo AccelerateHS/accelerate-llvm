@@ -21,6 +21,7 @@ import Data.Array.Accelerate.AST                hiding ( Val(..), prj )
 
 -- standard library
 import Data.IntMap                              ( IntMap )
+import qualified  Data.IntMap                   as Map
 
 #include "accelerate.h"
 
@@ -37,6 +38,17 @@ import Data.IntMap                              ( IntMap )
 -- intermediate (unused) free array variables.
 --
 type Aval aenv = IntMap Name
+
+-- Projection of a value from the array environment using a de Bruijn index.
+-- This returns a pair of operands to access the shape and array data
+-- respectively.
+--
+aprj :: Idx aenv t -> Aval aenv -> Name
+aprj ix aenv =
+  case Map.lookup (idxToInt ix) aenv of
+    Just n  -> n
+    Nothing -> INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
+
 
 -- | An environment for local scalar expression bindings, encoded at the value
 -- level as a heterogenous snoc list, and on the type level as nested tuples.

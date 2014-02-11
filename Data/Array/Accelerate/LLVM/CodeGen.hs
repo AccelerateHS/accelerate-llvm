@@ -25,13 +25,14 @@ import LLVM.General.AST                                         hiding ( nuw, ns
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Type                      ( preExpType, delayedAccType )
-import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Array.Sugar                        ( eltType, Elt, EltRepr, (:.) )
+import Data.Array.Accelerate.Array.Representation               hiding ( Shape )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, (:.), eltType )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Type
 
 -- import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -39,7 +40,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 -- standard library
-import Data.IntMap                                              ( IntMap )
 import Control.Applicative                                      ( (<$>), (<*>) )
 import Control.Monad.State
 
@@ -48,6 +48,32 @@ import Control.Monad.State
 
 -- Code Generation
 -- ===============
+
+-- Array computations
+-- ------------------
+
+{--
+llvmOfAcc :: forall aenv arrs.
+          {- Target -}
+             DelayedOpenAcc aenv arrs
+          -> Gamma aenv
+          -> Module
+llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
+llvmOfAcc (Manifest pacc) aenv = codegen $
+  case pacc of
+    -- Producers
+    Map f a             -> mkMap aenv (travF1 f)
+
+    _                   -> error "silence!"
+  where
+    codegen :: CodeGen (IR env aenv t) -> Module
+    codegen = undefined
+
+    -- scalar code generation
+    travF1 :: DelayedFun aenv (a -> b) -> CUDA (CUFun1 aenv (a -> b))
+    travF1 = codegenFun1 aenv
+--}
+
 
 -- Scalar expressions
 -- ------------------
@@ -123,11 +149,11 @@ llvmOfOpenExp exp env aenv = cvtE exp env
         FromIndex sh ix         -> fromIndex sh ix env
 
         -- Arrays and indexing
---        Index acc ix            -> index acc ix env
---        LinearIndex acc ix      -> linearIndex acc ix env
---        Shape acc               -> shape acc env
---        ShapeSize sh            -> shapeSize sh env
---        Intersect sh1 sh2       -> intersect sh1 sh2 env
+        Index acc ix            -> index acc ix env
+        LinearIndex acc ix      -> linearIndex acc ix env
+        Shape acc               -> shape acc
+        ShapeSize sh            -> shapeSize sh env
+        Intersect sh1 sh2       -> intersect sh1 sh2 env
 
         --Foreign function
 --        Foreign ff _ e          -> foreignE ff e env
@@ -320,46 +346,125 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     single _   [x] = x
     single loc _   = INTERNAL_ERROR(error) loc "expected single expression"
 
-    -- Convert between linear and multidimensional indices
+    -- Generate the linear index of a multidimensional index and array shape
     --
-    toIndex :: DelayedOpenExp env aenv sh
-            -> DelayedOpenExp env aenv sh
+    toIndex :: DelayedOpenExp env aenv sh       -- array extent
+            -> DelayedOpenExp env aenv sh       -- index
             -> Val env
             -> CodeGen (IR env aenv Int)
     toIndex sh ix env = do
       sh' <- cvtE sh env
       ix' <- cvtE ix env
       return `fmap` toIndex' (reverse sh') (reverse ix')
-      where
-        int = numType :: NumType Int
 
-        toIndex' []      []     = return (constOp $ num int 0)
-        toIndex' [_]     [i]    = return i
-        toIndex' (sz:sh) (i:ix) = do
-          a <- toIndex' sh ix
-          b <- A.mul int a sz
-          c <- A.add int b i
-          return c
-        toIndex' _       _      =
-          INTERNAL_ERROR(error) "toIndex" "argument mismatch"
+    toIndex' :: [Operand] -> [Operand] -> CodeGen Operand
+    toIndex' []      []     = return (constOp $ num (numType :: NumType Int) 0)
+    toIndex' [_]     [i]    = return i
+    toIndex' (sz:sh) (i:ix) = do
+      a <- toIndex' sh ix
+      b <- A.mul (numType :: NumType Int) a sz
+      c <- A.add (numType :: NumType Int) b i
+      return c
+    toIndex' _       _      =
+      INTERNAL_ERROR(error) "toIndex" "argument mismatch"
 
-    fromIndex :: DelayedOpenExp env aenv sh
-              -> DelayedOpenExp env aenv Int
+    -- Generate a multidimensional index from a linear index and array shape
+    --
+    fromIndex :: DelayedOpenExp env aenv sh     -- array extent
+              -> DelayedOpenExp env aenv Int    -- index
               -> Val env
               -> CodeGen (IR env aenv sh)
     fromIndex sh ix env = do
       sh' <-                           cvtE sh env
       ix' <- single "fromIndex" `fmap` cvtE ix env
       reverse `fmap` fromIndex' sh' ix'
-      where
-        int = integralType :: IntegralType Int
 
-        fromIndex' [_]     i = return [i]       -- assert( i >= 0 && i < sh )
-        fromIndex' (sz:sh) i = do
-          r  <- A.rem  int i sz
-          i' <- A.quot int i sz
-          rs <- fromIndex' sh i'
-          return (r:rs)
+    fromIndex' :: [Operand] -> Operand -> CodeGen [Operand]
+    fromIndex' [_]     i = return [i]       -- assert( i >= 0 && i < sh )
+    fromIndex' (sz:sh) i = do
+      r  <- A.rem  (integralType :: IntegralType Int) i sz
+      i' <- A.quot (integralType :: IntegralType Int) i sz
+      rs <- fromIndex' sh i'
+      return (r:rs)
+    fromIndex' _       _ =
+      INTERNAL_ERROR(error) "fromIndex" "argument mismatch"
+
+    -- Project out a single scalar element from an array. The array expression
+    -- does not contain any free scalar variables (strictly flat data
+    -- parallelism) and has been floated out by sharing recovery/array fusion to
+    -- be replaced by an array index.
+    --
+    index :: forall sh e env. (Shape sh, Elt e)
+          => DelayedOpenAcc     aenv (Array sh e)
+          -> DelayedOpenExp env aenv sh
+          -> Val env
+          -> CodeGen (IR env aenv e)
+    index (Manifest (Avar v)) ix env = do
+      let name  = aprj v aenv
+          ad    = arrayData  (undefined::Array sh e) name
+          sh    = arrayShape (undefined::Array sh e) name
+      --
+      ix' <- cvtE ix env
+      i   <- toIndex' sh ix'
+      indexArray ad i
+    index _ _ _ =
+      INTERNAL_ERROR(error) "index" "expected array variable"
+
+    linearIndex :: forall sh e env. Elt e
+                => DelayedOpenAcc     aenv (Array sh e)
+                -> DelayedOpenExp env aenv Int
+                -> Val env
+                -> CodeGen (IR env aenv e)
+    linearIndex (Manifest (Avar v)) ix env = do
+      let name  = aprj v aenv
+          ad    = arrayData  (undefined::Array sh e) name
+      --
+      i   <- single "linearIndex" `fmap` cvtE ix env
+      indexArray ad i
+    linearIndex _ _ _ =
+      INTERNAL_ERROR(error) "linearIndex" "expected array variable"
+
+    indexArray :: [Operand] -> Operand -> CodeGen [Operand]
+    indexArray arr i =
+      forM arr $ \a -> do
+        p <- instr $ GetElementPtr False a [i] []
+        v <- instr $ Load False p Nothing 0 []  -- use ABI alignment, no metadata (should attach !invariant.load?)
+        return v
+
+    -- Array shapes created in this method refer to the shape of a free array
+    -- variable, and are always passed as arguments to the function.
+    --
+    shape :: forall env sh e. Shape sh
+          => DelayedOpenAcc aenv (Array sh e)
+          -> CodeGen (IR env aenv sh)
+    shape (Manifest (Avar v)) =
+      let name  = aprj v aenv
+          sh    = arrayShape (undefined::Array sh e) name
+      in
+      return sh
+    shape _ =
+      INTERNAL_ERROR(error) "shape" "expected array variable"
+
+    shapeSize :: DelayedOpenExp env aenv sh
+              -> Val env
+              -> CodeGen (IR env aenv sh)
+    shapeSize sh env = do
+      let int = numType :: NumType Int
+      sh' <- cvtE sh env
+      sz  <- foldM (A.mul int) (constOp $ num int 1) sh'
+      return [sz]
+
+    -- Intersection of two shapes, taken as the minimum in each dimension.
+    --
+    intersect :: DelayedOpenExp env aenv sh
+              -> DelayedOpenExp env aenv sh
+              -> Val env
+              -> CodeGen (IR env aenv sh)
+    intersect sh1 sh2 env = do
+      sh1' <- cvtE sh1 env
+      sh2' <- cvtE sh2 env
+      zipWithM (A.min (scalarType :: ScalarType Int)) sh1' sh2'
+
 
 -- | Generate llvm operations for primitive scalar functions
 --
