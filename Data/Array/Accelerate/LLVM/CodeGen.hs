@@ -41,8 +41,6 @@ import Data.IntMap                                              ( IntMap )
 import Control.Applicative                                      ( (<$>), (<*>) )
 import Control.Monad.State
 
-import Debug.Trace
-
 #include "accelerate.h"
 
 
@@ -221,23 +219,67 @@ llvmOfOpenExp exp env aenv = cvtE exp env
          -> Val env
          -> CodeGen (IR env aenv t)
     cond test t e env = do
-      ifThen <- addSubBlock "if.then"
-      ifElse <- addSubBlock "if.else"
-      ifExit <- addSubBlock "if.exit"
-      --
+      ifThen <- newBlock "if.then"
+      ifElse <- newBlock "if.else"
+      ifExit <- newBlock "if.exit"
+
+      -- Compute the conditional
       p  <- single "cond" `fmap` cvtE test env
       _  <- cbr p ifThen ifElse
-      --
+
+      -- Compute the true and false branches, then jump to the bottom
       setBlock ifThen
-      tv <- cvtE t env
-      te <- br ifExit
-      --
+      tv   <- cvtE t env
+      true <- br ifExit
+
       setBlock ifElse
-      ev <- cvtE e env
-      ee <- br ifExit
-      --
+      fv    <- cvtE e env
+      false <- br ifExit
+
+      -- Select the right value using the phi node
       setBlock ifExit
-      zipWithM phi (llvmOfTupleType (eltType (undefined::t))) [ [(t,te), (f,ee)] | t <- tv | f <- ev ]
+      zipWithM phi (llvmOfTupleType (eltType (undefined::t)))
+                   [ [(t,true), (f,false)] | t <- tv | f <- fv ]
+
+    -- Value recursion iterates a function while a conditional on that variable
+    -- remains true.
+    while :: forall env a.
+             OpenFun env aenv (a -> Bool)
+          -> OpenFun env aenv (a -> a)
+          -> OpenExp env aenv a
+          -> Val env
+          -> CodeGen (IR env aenv a)
+    while (Lam (Body p)) (Lam (Body f)) x env = do
+      let ty = llvmOfTupleType (eltType (undefined::a))
+      loop <- newBlock "loop.top"
+      exit <- newBlock "loop.exit"
+
+      -- Generate the seed value
+      seed <-                       cvtE x env
+      c    <- single "while" `fmap` cvtE p (env `Push` seed)
+      top  <- cbr c loop exit
+
+      -- Create some temporary names. These will be used to store the operands
+      -- resulting from the phi node we will add to the top of the loop. We
+      -- can't use recursive do because the monadic effects are recursive.
+      ns   <- mapM (const $ lift freshName) ty
+      let prev = map LocalReference ns
+
+      -- Now generate the loop body. Afterwards, we insert a phi node at the
+      -- head of the instruction stream, which selects the input value depending
+      -- on which edge we entered the loop from (top or bottom).
+      setBlock loop
+      next <-                       cvtE f (env `Push` prev)
+      c    <- single "while" `fmap` cvtE p (env `Push` next)
+      bot  <- cbr c loop exit
+      _    <- sequence $ zipWith3 phi' ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+
+      -- Now the loop exit
+      setBlock exit
+      zipWithM phi ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+
+    while _ _ _ _
+      = error "impossible"
 
     -- Get the innermost index of a shape/index
     indexHead :: IR env aenv (sh :. sz) -> IR env anv sz

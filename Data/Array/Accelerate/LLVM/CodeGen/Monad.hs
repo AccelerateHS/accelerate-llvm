@@ -135,7 +135,7 @@ type CodeGen a = CodeGenT LLVM a
 runCodeGen :: String -> CodeGen a -> LLVM (a, [BasicBlock])
 runCodeGen nm cg = do
   let st  = CodeGenState undefined Map.empty
-      cg' = addBlock nm >>= setBlock >> cg
+      cg' = newBlock nm >>= setBlock >> cg
   --
   (r, s) <- runStateT (unCodeGen cg') st
   return (r, createBlocks s)
@@ -210,13 +210,25 @@ br target = terminate $ Do (Br target [])
 cbr :: Operand -> Name -> Name -> CodeGen Name
 cbr cond t f = terminate $ Do (CondBr cond t f [])
 
--- | Phi nodes. There must be no non-phi nodes between this and the start of the
--- basic block.
+-- | Phi nodes. These are always inserted at the start of the instruction
+-- stream, at the top of the basic block.
 --
 phi :: Type                 -- ^ type of the incoming value
     -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
     -> CodeGen Operand
-phi t incoming = instr $ Phi t incoming []
+phi t incoming = do
+  name  <- lift freshName
+  phi' name t incoming
+
+phi' :: Name -> Type -> [(Operand, Name)] -> CodeGen Operand
+phi' name t incoming = do
+  let op            = Phi t incoming []
+      --
+      push Nothing  = INTERNAL_ERROR(error) "phi" "unknown basic block"
+      push (Just b) = Just $ b { instructions = name := op Seq.<| instructions b }
+  --
+  modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
+  return (LocalReference name)
 
 
 -- Block chain
@@ -224,8 +236,8 @@ phi t incoming = instr $ Phi t incoming []
 
 -- | Add a new block to the block chain. It is not made active.
 --
-addBlock :: String -> CodeGen Name
-addBlock nm =
+newBlock :: String -> CodeGen Name
+newBlock nm =
   state $ \s@CodeGenState{..} ->
     let idx     = Map.size blockChain
         name    = Name (nm ++ show idx)
@@ -233,13 +245,13 @@ addBlock nm =
     in
     ( name, s { blockChain = Map.insert name blk blockChain } )
 
--- | Same as 'addBlock', but the given string is appended to the name of the
+-- | Same as 'newBlock', but the given string is appended to the name of the
 --   currently active block.
 --
-addSubBlock :: String -> CodeGen Name
-addSubBlock ext = do
+subBlock :: String -> CodeGen Name
+subBlock ext = do
   Name base <- gets currentBlock
-  addBlock  $  base ++ ('.':ext)
+  newBlock  $  base ++ ('.':ext)
 
 -- | Mark the specified block as being the active block. Any instructions pushed
 -- onto the stream by 'instr' will be appended to this block.

@@ -31,8 +31,11 @@ main = do
       g :: Exp Int32 -> Exp Int32
       g x = let y = f x
             in  y >* 0 ? ( x, x-1 )
+
+      l :: Exp Int32 -> Exp Int32
+      l = A.iterate (constant 10) (+1)
   --
-  putStrLn =<< llvmOfModule (testFun1 g)
+  putStrLn =<< llvmOfModule (testFun1 l)
 
 
 testFun1 :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
@@ -60,7 +63,7 @@ llvmOfModule m =
   fmap (either error id)
     $ withContext $ \ctx ->
         runErrorT $ withModuleFromAST ctx m $ \mdl ->
-          withPassManager opt $ \pm -> do
-            runPassManager pm mdl       -- returns whether any changes were made
-            moduleLLVMAssembly mdl
+--          withPassManager opt $ \pm -> do
+--            runPassManager pm mdl       -- returns whether any changes were made
+            moduleString mdl
 
