@@ -1,5 +1,15 @@
+-- |
+-- Module      : Data.Array.Accelerate.LLVM.CUDA
+-- Copyright   :
+-- License     :
+--
+-- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>
+-- Stability   : experimental
+-- Portability : non-portable (GHC extensions)
+--
 
-module Data.Array.Accelerate.LLVM.CodeGen.CUDA
+
+module Data.Array.Accelerate.LLVM.CUDA
   where
 
 -- llvm-general
@@ -8,11 +18,23 @@ import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Constant
 import LLVM.General.AST.DataLayout
 
+-- accelerate
+import Data.Array.Accelerate.LLVM.Target
+
 -- standard library
 import Data.Bits
 import Data.Word
 import qualified Data.Map                       as Map
 import qualified Data.Set                       as Set
+
+
+-- | The CUDA PTX/NVVM execution target
+--
+cudaTarget :: Target
+cudaTarget = Target
+  { targetTriple     = Just nvptxTargetTriple
+  , targetDataLayout = Just dataLayout
+  }
 
 
 -- A description of the various data layout properties that may be used during
@@ -46,8 +68,8 @@ dataLayout = DataLayout
 
 -- String that describes the target host.
 --
-targetTriple :: String
-targetTriple = "nvptx-nvidia-cl.1.0"
+nvptxTargetTriple :: String
+nvptxTargetTriple = "nvptx-nvidia-cl.1.0"
 
 
 -- Kernel annotation

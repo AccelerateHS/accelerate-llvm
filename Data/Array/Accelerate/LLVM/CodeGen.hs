@@ -28,6 +28,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 
@@ -41,12 +42,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 -- ------------------
 
 llvmOfAcc :: forall aenv arrs.
-          {- Target -> -}
-             DelayedOpenAcc aenv arrs
+             Target
+          -> DelayedOpenAcc aenv arrs
           -> Aval aenv
           -> Module aenv arrs
-llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
-llvmOfAcc (Manifest pacc) aenv =
+llvmOfAcc _      Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
+llvmOfAcc target (Manifest pacc) aenv = runLLVM target $
   case pacc of
     -- Producers
     Map f a             -> mkMap aenv (travF1 f) (travD a)
