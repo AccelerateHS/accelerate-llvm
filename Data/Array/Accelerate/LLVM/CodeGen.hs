@@ -1,7 +1,6 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
@@ -18,33 +17,33 @@ module Data.Array.Accelerate.LLVM.CodeGen
   where
 
 -- llvm-general
-import LLVM.General.AST                                 hiding ( nuw, nsw )
+import LLVM.General.AST                                         hiding ( nuw, nsw )
 import LLVM.General.AST.Global
-import LLVM.General.AST.Constant                        ( Constant )
-import qualified LLVM.General.AST.Constant              as C
+import LLVM.General.AST.Constant                                ( Constant )
+import qualified LLVM.General.AST.Constant                      as C
 
 -- accelerate
-import Data.Array.Accelerate.AST                        hiding ( Val(..), prj )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Array.Sugar                ( eltType, EltRepr, Z, (:.) )
+import Data.Array.Accelerate.Array.Sugar                        ( eltType, EltRepr, Z, (:.) )
 import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Analysis.Type              ( expType, preExpType, delayedAccType )
+import Data.Array.Accelerate.Analysis.Type                      ( expType, preExpType, delayedAccType )
 
-import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+-- import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 -- standard library
-import Data.IntMap                                      ( IntMap )
-import Control.Applicative                              ( (<$>), (<*>) )
-import qualified Data.IntMap                            as IM
-import qualified Data.Sequence                          as Seq
-import qualified Data.Foldable                          as Seq
+import Data.IntMap                                              ( IntMap )
+import Control.Applicative                                      ( (<$>), (<*>) )
+import qualified Data.IntMap                                    as IM
+import qualified Data.Sequence                                  as Seq
+import qualified Data.Foldable                                  as Seq
 
 #include "accelerate.h"
 
@@ -91,7 +90,9 @@ prj _            _            = INTERNAL_ERROR(error) "prj" "inconsistent valuat
 type IR env aenv t = [Operand]
 
 
--- | Convert a closed function of one argument into the equivalent LLVM AST
+{--
+-- | Convert a closed function of one argument into a sequence of LLVM basic
+-- blocks.
 --
 llvmOfFun1
     :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> [BasicBlock] -- TLM: type synonym here?
@@ -102,6 +103,7 @@ llvmOfFun1 (Lam (Body f)) aenv xs =
                   Seq.|> BasicBlock (Name "end") (Seq.toList (cgf_instructions st)) (Do (Ret Nothing []))
   in
   Seq.toList blocks
+--}
 
 
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
@@ -247,50 +249,62 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 -- | Generate llvm operations for primitive scalar functions
 --
 llvmOfPrimFun :: PrimFun f -> [Operand] -> LLVM Operand
-llvmOfPrimFun (PrimAdd ty) [x,y] = add ty x y
-llvmOfPrimFun (PrimSub ty) [x,y] = sub ty x y
-llvmOfPrimFun (PrimMul ty) [x,y] = mul ty x y
-llvmOfPrimFun (PrimNeg ty) [x]   = neg ty x
+llvmOfPrimFun (PrimAdd t)              [a,b] = A.add t a b
+llvmOfPrimFun (PrimSub t)              [a,b] = A.sub t a b
+llvmOfPrimFun (PrimMul t)              [a,b] = A.mul t a b
+llvmOfPrimFun (PrimNeg t)              [a]   = A.negate t a
+llvmOfPrimFun (PrimAbs t)              [a]   = A.abs t a
+llvmOfPrimFun (PrimSig t)              [a]   = A.signum t a
+llvmOfPrimFun (PrimQuot t)             [a,b] = A.quot t a b
+llvmOfPrimFun (PrimRem t)              [a,b] = A.rem t a b
+llvmOfPrimFun (PrimIDiv t)             [a,b] = A.idiv t a b
+llvmOfPrimFun (PrimMod t)              [a,b] = A.mod t a b
+llvmOfPrimFun (PrimBAnd t)             [a,b] = A.band t a b
+llvmOfPrimFun (PrimBOr t)              [a,b] = A.bor t a b
+llvmOfPrimFun (PrimBXor t)             [a,b] = A.xor t a b
+llvmOfPrimFun (PrimBNot t)             [a]   = A.complement t a
+llvmOfPrimFun (PrimBShiftL t)          [a,b] = A.shiftL t a b
+llvmOfPrimFun (PrimBShiftR t)          [a,b] = A.shiftR t a b
+llvmOfPrimFun (PrimBRotateL t)         [a,b] = A.rotateL t a b
+llvmOfPrimFun (PrimBRotateR t)         [a,b] = A.rotateR t a b
+llvmOfPrimFun (PrimFDiv t)             [a,b] = A.fdiv t a b
+llvmOfPrimFun (PrimRecip t)            [a]   = A.recip t a
+llvmOfPrimFun (PrimSin t)              [a]   = A.sin t a
+llvmOfPrimFun (PrimCos t)              [a]   = A.cos t a
+llvmOfPrimFun (PrimTan t)              [a]   = A.tan t a
+llvmOfPrimFun (PrimAsin t)             [a]   = A.asin t a
+llvmOfPrimFun (PrimAcos t)             [a]   = A.acos t a
+llvmOfPrimFun (PrimAtan t)             [a]   = A.atan t a
+llvmOfPrimFun (PrimAsinh t)            [a]   = A.asinh t a
+llvmOfPrimFun (PrimAcosh t)            [a]   = A.acosh t a
+llvmOfPrimFun (PrimAtanh t)            [a]   = A.atanh t a
+llvmOfPrimFun (PrimAtan2 t)            [a,b] = A.atan2 t a b
+llvmOfPrimFun (PrimExpFloating t)      [a]   = A.exp t a
+llvmOfPrimFun (PrimFPow t)             [a,b] = A.fpow t a b
+llvmOfPrimFun (PrimSqrt t)             [a]   = A.sqrt t a
+llvmOfPrimFun (PrimLog t)              [a]   = A.log t a
+llvmOfPrimFun (PrimLogBase t)          [a,b] = A.logBase t a b
+llvmOfPrimFun (PrimTruncate ta tb)     [a]   = A.truncate ta tb a
+llvmOfPrimFun (PrimRound ta tb)        [a]   = A.round ta tb a
+llvmOfPrimFun (PrimFloor ta tb)        [a]   = A.floor ta tb a
+llvmOfPrimFun (PrimCeiling ta tb)      [a]   = A.ceiling ta tb a
+llvmOfPrimFun (PrimLt t)               [a,b] = A.lt t a b
+llvmOfPrimFun (PrimGt t)               [a,b] = A.gt t a b
+llvmOfPrimFun (PrimLtEq t)             [a,b] = A.lte t a b
+llvmOfPrimFun (PrimGtEq t)             [a,b] = A.gte t a b
+llvmOfPrimFun (PrimEq t)               [a,b] = A.eq t a b
+llvmOfPrimFun (PrimNEq t)              [a,b] = A.neq t a b
+llvmOfPrimFun (PrimMax t)              [a,b] = A.max t a b
+llvmOfPrimFun (PrimMin t)              [a,b] = A.min t a b
+llvmOfPrimFun PrimLAnd                 [a,b] = A.land a b
+llvmOfPrimFun PrimLOr                  [a,b] = A.lor a b
+llvmOfPrimFun PrimLNot                 [a]   = A.lnot a
+llvmOfPrimFun PrimOrd                  [a]   = A.ord a
+llvmOfPrimFun PrimChr                  [a]   = A.chr a
+llvmOfPrimFun PrimBoolToInt            [a]   = A.boolToInt a
+llvmOfPrimFun (PrimFromIntegral ta tb) [a]   = A.fromIntegral ta tb a
 
-
--- Constants
--- =========
-
-
-{--
--- | If all of the operands are constant expressions, extract `Just` the
--- constant values, otherwise `Nothing`.
---
-constantOperands :: [Operand] -> Maybe [Constant]
-constantOperands [] = return []
-constantOperands (x:xs)
-  | ConstantOperand c <- x = Just . (c:) =<< constantOperands xs
-  | otherwise              = Nothing
-
-
-constOp1 :: Operand -> Maybe Constant
-constOp1 (ConstantOperand c) = Just c
-constOp1 _                   = Nothing
-
-constOp2 :: Operand -> Operand -> Maybe (Constant, Constant)
-constOp2 x y
-  | Just c1 <- constOp1 x, Just c2 <- constOp1 y = Just (c1,c2)
-  | otherwise                                    = Nothing
---}
-
--- Utilities
--- =========
-
--- | Create a LLVM global function definition using the default options:
--- external C linkage, and no attributes or alignment annotations.
---
-globalFunction :: Name -> Type -> [Parameter] -> [BasicBlock] -> Definition
-globalFunction name returnType args basicBlocks
-  = GlobalDefinition
-  $ functionDefaults
-    { name        = name
-    , returnType  = returnType
-    , parameters  = (args,False)
-    , basicBlocks = basicBlocks
-    }
+-- If the argument lists are not the correct length
+llvmOfPrimFun _ _ =
+  INTERNAL_ERROR(error) "llvmOfPrimFun" "inconsistent valuation"
 

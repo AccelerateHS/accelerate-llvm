@@ -63,6 +63,8 @@ nsw = False
 --         (a) call out to the standard C name in all cases; or
 --         (b) move those functions into separate CUDA/Native arithmetic modules
 --
+-- The first option would be better if possible.
+--
 
 -- Operations from Num
 -- -------------------
@@ -180,8 +182,14 @@ acosh = error "todo: acosh"
 atanh :: FloatingType a -> Operand -> LLVM Operand
 atanh = error "todo: atanh"
 
+atan2 :: FloatingType a -> Operand -> Operand -> LLVM Operand
+atan2 = error "todo: atan2"
+
 exp :: FloatingType a -> Operand -> LLVM Operand
 exp t x = intrinsic "llvm.exp" t [x]
+
+fpow :: FloatingType a -> Operand -> Operand -> LLVM Operand
+fpow t x y = intrinsic "llvm.pow" t [x,y]
 
 sqrt :: FloatingType a -> Operand -> LLVM Operand
 sqrt t x = intrinsic "llvm.sqrt" t [x]
@@ -189,20 +197,16 @@ sqrt t x = intrinsic "llvm.sqrt" t [x]
 log :: FloatingType a -> Operand -> LLVM Operand
 log t x = intrinsic "llvm.log" t [x]
 
-fpow :: FloatingType a -> Operand -> Operand -> LLVM Operand
-fpow t x y = intrinsic "llvm.pow" t [x,y]
-
-logbase :: FloatingType a -> Operand -> Operand -> LLVM Operand
-logbase t x y = do
+logBase :: FloatingType a -> Operand -> Operand -> LLVM Operand
+logBase t x y = do
   x' <- log t x
   y' <- log t y
   fdiv t x' y'
 
-atan2 :: FloatingType a -> Operand -> Operand -> LLVM Operand
-atan2 = error "todo: atan2"
-
 truncate :: FloatingType a -> IntegralType b -> Operand -> LLVM Operand
-truncate = error "todo: truncate"
+truncate _ i x
+  | signedIntegralNum i = instr $ FPToSI x (llvmOfIntegralType i) []
+  | otherwise           = instr $ FPToUI x (llvmOfIntegralType i) []
 
 round :: FloatingType a -> IntegralType b -> Operand -> LLVM Operand
 round = error "todo: round"
@@ -337,12 +341,14 @@ ord x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> instr $ SExt x (llvmOfIntegralType (integralType :: IntegralType Int)) []
+    _  -> error "I don't know what architecture I am"
 
 chr :: Operand -> LLVM Operand
 chr x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> trunc (scalarType :: ScalarType Char) x
+    _  -> error "I don't know what architecture I am"
 
 boolToInt :: Operand -> LLVM Operand
 boolToInt x = zext (scalarType :: ScalarType Int) x
@@ -350,10 +356,13 @@ boolToInt x = zext (scalarType :: ScalarType Int) x
 fromIntegral :: forall a b. IntegralType a -> NumType b -> Operand -> LLVM Operand
 fromIntegral i1 t x =
   case t of
+    -- Integral to floating point conversions have appropriate instructions
     FloatingNumType f
       | signedIntegralNum i1 -> instr $ SIToFP x (llvmOfFloatingType f) []
       | otherwise            -> instr $ UIToFP x (llvmOfFloatingType f) []
 
+    -- Conversion between integral types requires either a truncation (if the
+    -- destination bitsize is smaller) or signed/unsigned extension.
     IntegralNumType i2       ->
       let b1 = typeBits (llvmOfIntegralType i1)
           b2 = typeBits (llvmOfIntegralType i2)

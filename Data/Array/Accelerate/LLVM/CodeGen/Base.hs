@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 -- |
@@ -27,6 +28,7 @@ import LLVM.General.AST
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.CallingConvention
 import LLVM.General.AST.Constant
+import LLVM.General.AST.Global
 
 #include "accelerate.h"
 
@@ -47,16 +49,19 @@ local = LocalReference
 global :: Name -> Operand
 global = ConstantOperand . GlobalReference
 
+
 -- Convert a list of operands into a list suitable for use as arguments to a
 -- function (
 --
 toArgs :: [Operand] -> [(Operand, [ParameterAttribute])]
 toArgs = map (,[])
 
+
 -- Call a global function. The function and arguments have no metadata attached.
 --
 call :: Name -> [Operand] -> LLVM Operand
 call fn args = instr $ Call False C [] (Right (global fn)) (toArgs args) [] []
+
 
 -- Floating point function calls are usually postfixed with 'f'.
 --
@@ -68,7 +73,8 @@ postfix (Name fn)  t = Name $
     TypeCFloat _ -> fn ++ "f"
     _            -> fn
 
--- LLVM intrinsic functions
+
+-- Call an LLVM intrinsic functions
 --
 intrinsic :: Name -> FloatingType a -> [Operand] -> LLVM Operand
 intrinsic (UnName _) _ _    = INTERNAL_ERROR(error) "intrinsic" "attempt to call unnamed function"
@@ -79,4 +85,18 @@ intrinsic (Name f)   t args = call name args
         32 -> f ++ ".f32"
         64 -> f ++ ".f64"
         _  -> INTERNAL_ERROR(error) "intrinsic" "unsupported floating point size"
+
+
+-- | Create a LLVM global function definition using the default options:
+-- external C linkage, and no attributes or alignment annotations.
+--
+globalFunction :: Name -> Type -> [Parameter] -> [BasicBlock] -> Definition
+globalFunction name returnType args basicBlocks
+  = GlobalDefinition
+  $ functionDefaults
+    { name        = name
+    , returnType  = returnType
+    , parameters  = (args,False)
+    , basicBlocks = basicBlocks
+    }
 
