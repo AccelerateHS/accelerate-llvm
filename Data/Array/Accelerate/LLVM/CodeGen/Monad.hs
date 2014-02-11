@@ -1,7 +1,9 @@
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- Copyright   :
@@ -18,61 +20,129 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 -- standard library
 import Data.Word
+import Data.Maybe
+import Data.String
+import Data.Function
 import Data.Typeable
 import Control.Applicative
 import Control.Monad.State
+import Data.List
+import Data.Map                                         ( Map )
 import Data.Sequence                                    ( Seq )
+import qualified Data.Map                               as Map
 import qualified Data.Sequence                          as Seq
+import qualified Data.Foldable                          as Seq
 
 -- llvm-general
 import LLVM.General.AST
 
+#include "accelerate.h"
 
--- | The code generation state of a scalar function.
+
+-- TODO: We might need to use LLVM for module-level code generation, for example
+--       to keep track of adding global definitions (external functions, etc.)
 --
--- As Accelerate expressions are converted into a sequence of operations, the
--- (named) instructions are added to the sequence `cgf_instructions`. The
--- instruction list is converted to a new basic block and added to `cgf_blocks`
--- whenever we need a new block (to define loops and control flow, etc.?).
+type LLVM a = CodeGen a
+
+-- This isn't correct, since we should really be returning a module, with the
+-- blocks formed, etc.
 --
--- It also includes a counter to generate fresh names. Note that we don't use
--- unnamed (`UnName`) variables, since we don't know how many preceding
--- instructions were defined in the skeleton code that this function is
--- eventually spliced into (unnamed variables must count sequentially in the
--- LLVM IR). Additionally all `Named` instructions we generate produce names
--- (i.e. no `Do` calls to functions returning void).
+runLLVM :: LLVM a -> a
+runLLVM ll = evalState (runCodeGen ll) st
+  where
+    st  = CodeGenState "entry" (Map.singleton "entry" blk) 0
+    blk = BlockState 0 Seq.empty Nothing
+
+
+-- Names
+-- =====
+
+instance IsString Name where
+  fromString = Name . fromString
+
+-- | Generate a fresh (un)name.
 --
-data CGFState = CGFState
-  { cgf_blocks          :: !(Seq BasicBlock)
-  , cgf_instructions    :: !(Seq (Named Instruction))
-  , cgf_next            :: {-# UNPACK #-} !Word
+freshName :: CodeGen Name
+freshName = state $ \s@CodeGenState{..} ->
+  ( UnName next, s { next = next + 1 })
+
+
+-- Code generation operations
+-- ==========================
+
+-- | The code generation state for scalar expressions.
+--
+-- We use two records: one to hold all the code generation state as it walks the
+-- AST, and one for each of the basic blocks that are generated during the walk.
+--
+data CodeGenState = CodeGenState
+  { currentBlock        :: Name                         -- name of the currently active block
+  , blockChain          :: Map Name BlockState          -- blocks for this function
+  , next                :: {-# UNPACK #-} !Word         -- for unique name supply
   }
-  deriving (Typeable, Show)
+  deriving Show
 
-newtype CodeGenFunction a = CGF { runCodeGen :: State CGFState a }
-  deriving (Functor, Applicative, Monad, MonadState CGFState, Typeable)
+data BlockState = BlockState
+  { blockIndex          :: {-# UNPACK #-} !Int          -- index of this block (for sorting on output)
+  , instructions        :: Seq (Named Instruction)      -- stack of instructions
+  , terminator          :: Maybe (Named Terminator)     -- block terminator
+  }
+  deriving Show
+
+newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
+  deriving (Functor, Applicative, Monad, MonadState CodeGenState, Typeable)
 
 
-generateFunctionCode :: CodeGenFunction a -> (a, CGFState)
-generateFunctionCode f = runState (runCodeGen f) (CGFState Seq.empty Seq.empty 0)
-
-
--- | Generate a fresh unnamed node.
+-- | Extract the block state and construct the basic blocks
 --
---freshName :: CodeGenFunction Name
---freshName = state $ \s@CGFState{..} ->
---  ( UnName cgf_next, s { cgf_next = cgf_next + 1 })
+createBlocks :: CodeGenState -> [BasicBlock]
+createBlocks
+  = makeBlocks
+  . sortBlocks
+  . Map.toList
+  . blockChain
+  where
+    makeBlocks = map (\(label, BlockState{..}) ->
+      let err   = INTERNAL_ERROR(error) "createBlocks" ("Block has no terminator (" ++ show label ++ ")")
+          term  = fromMaybe err terminator
+          ins   = Seq.toList instructions
+      in
+      BasicBlock label ins term)
+
+    sortBlocks =
+      sortBy (compare `on` (blockIndex . snd))
 
 
--- | Add an instruction to the state so that it is computed, and return the
--- operand (LocalReference) that can be used to later refer to it.
+-- | Add an instruction to the state of the currently active block so that it is
+-- computed, and return the operand (LocalReference) that can be used to later
+-- refer to it.
 --
-instr :: Instruction -> CodeGenFunction Operand
-instr op = state $ \s@CGFState{..} ->
-  let name = UnName cgf_next
-  in
-  ( LocalReference name
-  , s { cgf_instructions = cgf_instructions Seq.|> name := op
-      , cgf_next         = cgf_next + 1
-      })
+instr :: Instruction -> CodeGen Operand
+instr op = do
+  name  <- freshName
+  modify $ \s -> s { blockChain = Map.adjust (\b -> b { instructions = instructions b Seq.|> name := op })
+                                             (currentBlock s)
+                                             (blockChain s)}
+  return (LocalReference name)
+
+
+{--
+-- Block chain
+-- ===========
+
+-- | Replace the block state of the currently active block
+--
+modifyCurrentBlock :: BlockState -> CodeGen ()
+modifyCurrentBlock new = modify $ \s@CodeGenState{..} ->
+  s { blockChain = Map.insert currentBlock new blockChain }
+
+-- | Retrieve the state of the currently active block
+--
+getCurrentBlock :: CodeGen BlockState
+getCurrentBlock = state $ \s@CodeGenState{..} ->
+  case Map.lookup currentBlock blockChain of
+    Just b      -> (b, s)
+    Nothing     -> INTERNAL_ERROR(error) "getCurrentBlock"
+                 $ "Unknown block: " ++ show currentBlock
+--}
 
