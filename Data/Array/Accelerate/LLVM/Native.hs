@@ -24,6 +24,7 @@ import System.IO.Unsafe
 
 -- | Native machine code JIT execution target
 --
+{-# NOINLINE nativeTarget #-}
 nativeTarget :: Target
 nativeTarget = unsafePerformIO $ do
   triple <- getProcessTargetTriple
