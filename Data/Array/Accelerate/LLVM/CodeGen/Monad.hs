@@ -49,12 +49,12 @@ data CGFState = CGFState
   }
   deriving (Typeable, Show)
 
-newtype CodeGenFunction a = CGF (State CGFState a)
+newtype CodeGenFunction a = CGF { runCodeGen :: State CGFState a }
   deriving (Functor, Applicative, Monad, MonadState CGFState, Typeable)
 
 
 generateFunctionCode :: CodeGenFunction a -> (a, CGFState)
-generateFunctionCode (CGF f) = runState f (CGFState Seq.empty Seq.empty 0)
+generateFunctionCode f = runState (runCodeGen f) (CGFState Seq.empty Seq.empty 0)
 
 
 -- | Generate a fresh unnamed node.
