@@ -1,8 +1,10 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS -fno-warn-name-shadowing #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
 -- Copyright   :
@@ -19,21 +21,16 @@ module Data.Array.Accelerate.LLVM.CodeGen
 
 -- llvm-general
 import LLVM.General.AST                                         hiding ( nuw, nsw )
-import LLVM.General.AST.Global
-import LLVM.General.AST.Constant                                ( Constant )
-import qualified LLVM.General.AST.Constant                      as C
 
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Array.Sugar                        ( eltType, EltRepr, Z, (:.) )
+import Data.Array.Accelerate.Array.Sugar                        ( eltType, Elt, EltRepr, (:.) )
 import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Analysis.Type                      ( expType, preExpType, delayedAccType )
+import Data.Array.Accelerate.Analysis.Type                      ( expType ) --, preExpType, delayedAccType )
 
 -- import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
@@ -43,9 +40,8 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 import Data.IntMap                                              ( IntMap )
 import Control.Applicative                                      ( (<$>), (<*>) )
 import Control.Monad.State
-import qualified Data.IntMap                                    as IM
-import qualified Data.Sequence                                  as Seq
-import qualified Data.Foldable                                  as Seq
+
+import Debug.Trace
 
 #include "accelerate.h"
 
@@ -103,6 +99,9 @@ llvmOfFun1 (Lam (Body f)) aenv xs = do
   (retop, bb) <- runCodeGen "entry" (llvmOfOpenExp f (Empty `Push` xs) aenv)
   return bb
 
+llvmOfFun1 _ _ _
+  = error "dooo~ you knoooow~ what it's liiike?"
+
 
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
 -- Code is generated in depth first order, and uses a monad to collect the
@@ -126,8 +125,8 @@ llvmOfOpenExp exp env aenv = cvtE exp env
         PrimApp f arg           -> cvtE arg env >>= llvmOfPrimFun f >>= return . return
         Tuple t                 -> cvtT t env
         Prj i t                 -> prjT i t exp env
---        Cond p t e              -> cond p t e env
---        While p f x             -> while p f x env
+        Cond p t e              -> cond p t e env
+        While p f x             -> while p f x env
 
         -- Shapes and indices
         IndexNil                -> return []
@@ -208,6 +207,39 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     sizeTupleType (SingleTuple _) = 1
     sizeTupleType (PairTuple a b) = sizeTupleType a + sizeTupleType b
 
+    -- Evaluate scalar conditions. We create three new basic blocks: one for
+    -- each side of the branch (true/false) and a new block to jump both
+    -- branches jump to after evaluating their part.
+    --
+    -- Note that that the branch instruction 'br' returns the name of the basic
+    -- block that it terminates. This is because evaluation of the branches can
+    -- lead to new block labels being created as we walk the AST.
+    --
+    cond :: forall env t. Elt t
+         => OpenExp env aenv Bool
+         -> OpenExp env aenv t
+         -> OpenExp env aenv t
+         -> Val env
+         -> CodeGen (IR env aenv t)
+    cond test t e env = do
+      ifThen <- addSubBlock "if.then"
+      ifElse <- addSubBlock "if.else"
+      ifExit <- addSubBlock "if.exit"
+      --
+      p  <- single "cond" `fmap` cvtE test env
+      _  <- cbr p ifThen ifElse
+      --
+      setBlock ifThen
+      tv <- cvtE t env
+      te <- br ifExit
+      --
+      setBlock ifElse
+      ev <- cvtE e env
+      ee <- br ifExit
+      --
+      setBlock ifExit
+      zipWithM phi (llvmOfTupleType (eltType (undefined::t))) [ [(t,te), (f,ee)] | t <- tv | f <- ev ]
+
     -- Get the innermost index of a shape/index
     indexHead :: IR env aenv (sh :. sz) -> IR env anv sz
     indexHead = return . last
@@ -254,6 +286,11 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
       in
       replicate <$> cvtE slix env <*> cvtE sl env
+
+    -- Some terms demand we extract only simple scalar expressions
+    single :: String -> [a] -> a
+    single _   [x] = x
+    single loc _   = INTERNAL_ERROR(error) loc "expected single expression"
 
 
 -- | Generate llvm operations for primitive scalar functions

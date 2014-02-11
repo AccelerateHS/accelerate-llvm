@@ -27,8 +27,12 @@ main :: IO ()
 main = do
   let f :: Exp Int32 -> Exp Float
       f x = cos . sin . A.fromIntegral $ (x + 1) * 4 - (x*x)
+
+      g :: Exp Int32 -> Exp Int32
+      g x = let y = f x
+            in  y >* 0 ? ( x, x-1 )
   --
-  putStrLn =<< llvmOfModule (testFun1 f)
+  putStrLn =<< llvmOfModule (testFun1 g)
 
 
 testFun1 :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
@@ -46,7 +50,7 @@ testFun1 f =
 -- Perform the most common optimisations
 --
 opt :: PassSetSpec
-opt = defaultCuratedPassSetSpec { optLevel = Just 3 }
+opt = defaultCuratedPassSetSpec -- { optLevel = Just 3 }
 
 -- Lower a Haskell LLVM AST into a C++ objects, then generate LLVM assembly for
 -- the module.

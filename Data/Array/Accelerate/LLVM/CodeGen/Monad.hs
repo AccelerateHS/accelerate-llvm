@@ -2,7 +2,6 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
@@ -27,15 +26,18 @@ import Data.Function
 import Control.Applicative
 import Control.Monad.State
 import Data.List
-import Data.Map                                         ( Map )
-import Data.Sequence                                    ( Seq )
-import qualified Data.Map                               as Map
-import qualified Data.Sequence                          as Seq
-import qualified Data.Foldable                          as Seq
+import Data.Map                                                 ( Map )
+import Data.Sequence                                            ( Seq )
+import qualified Data.Map                                       as Map
+import qualified Data.Sequence                                  as Seq
+import qualified Data.Foldable                                  as Seq
 
 -- llvm-general
 import LLVM.General.AST
 import LLVM.General.AST.Global
+
+-- accelerate
+import qualified Data.Array.Accelerate.LLVM.CodeGen.CUDA        as CUDA
 
 #include "accelerate.h"
 
@@ -82,7 +84,8 @@ freshName = state $ \s@ModuleState{..} -> ( UnName next, s { next = next + 1 } )
 -- and functions directly into the skeleton body. If instead we attempt generate
 -- individual functions for each of the scalar fragments, even with inlining
 -- there is some redundant code that LLVM is unable to remove; mainly related to
--- marshalling elements into and out of `struct`s.
+-- marshalling elements into and out of `struct`s (which are required to return
+-- tuples from functions (unless we pass the result value by reference?))
 --
 data ModuleState = ModuleState
   { symbolTable         :: Map Name Global              -- global function declarations
@@ -99,8 +102,8 @@ runLLVM nm ll =
       dfs    = map GlobalDefinition (r : Map.elems (symbolTable s))
   in
   Module { moduleName         = nm
-         , moduleDataLayout   = Nothing
-         , moduleTargetTriple = Nothing
+         , moduleDataLayout   = Just CUDA.dataLayout            -- TODO: target data structure/class
+         , moduleTargetTriple = Just CUDA.targetTriple
          , moduleDefinitions  = dfs
          }
 
@@ -129,12 +132,12 @@ newtype CodeGenT m a = CodeGenT { unCodeGen :: StateT CodeGenState m a }
 
 type CodeGen a = CodeGenT LLVM a
 
-runCodeGen :: Name -> CodeGen a -> LLVM (a, [BasicBlock])
+runCodeGen :: String -> CodeGen a -> LLVM (a, [BasicBlock])
 runCodeGen nm cg = do
-  let st = CodeGenState nm bs
-      bs = Map.singleton nm (BlockState 0 Seq.empty Nothing)
+  let st  = CodeGenState undefined Map.empty
+      cg' = addBlock nm >>= setBlock >> cg
   --
-  (r, s) <- runStateT (unCodeGen cg) st
+  (r, s) <- runStateT (unCodeGen cg') st
   return (r, createBlocks s)
 
 
@@ -148,8 +151,8 @@ createBlocks
   . blockChain
   where
     makeBlocks = map (\(label, BlockState{..}) ->
-      let err   = INTERNAL_ERROR(error) "createBlocks" ("Block has no terminator (" ++ show label ++ ")")
-          term  = Do (Ret Nothing []) -- fromMaybe err terminator
+      let err   = Do (Ret Nothing []) -- TODO: INTERNAL_ERROR(error) "createBlocks" ("Block has no terminator (" ++ show label ++ ")")
+          term  = fromMaybe err terminator
           ins   = Seq.toList instructions
       in
       BasicBlock label ins term)
@@ -157,6 +160,8 @@ createBlocks
     sortBlocks =
       sortBy (compare `on` (blockIndex . snd))
 
+-- Instructions
+-- ------------
 
 -- | Add an instruction to the state of the currently active block so that it is
 -- computed, and return the operand (LocalReference) that can be used to later
@@ -165,7 +170,7 @@ createBlocks
 instr :: Instruction -> CodeGen Operand
 instr op = do
   name  <- lift freshName
-  let push Nothing  = INTERNAL_ERROR(error) "instr" "unknown block"
+  let push Nothing  = INTERNAL_ERROR(error) "instr" "unknown basic block"
       push (Just b) = Just $ b { instructions = instructions b Seq.|> name := op }
   --
   modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
@@ -176,16 +181,74 @@ instr op = do
 --
 declare :: Global -> CodeGen ()
 declare g =
-  let unique (Just _) = INTERNAL_ERROR(error) "global" "duplicate symbol"
-      unique Nothing  = Just g
+  let unique (Just q) | g /= q    = INTERNAL_ERROR(error) "global" "duplicate symbol"
+                      | otherwise = Just g
+      unique _                    = Just g
   in
   lift $ modify (\s -> s { symbolTable = Map.alter unique (name g) (symbolTable s) })
 
+-- Control flow
+-- ------------
 
-{--
+-- | Add a termination condition to the current instruction stream. Return the
+-- name of the block chain that was just terminated.
+--
+terminate :: Named Terminator -> CodeGen Name
+terminate target =
+  let end Nothing  = INTERNAL_ERROR(error) "terminate" "unknown basic block"
+      end (Just b) = Just $ b { terminator = Just target }
+  in
+  state $ \s -> ( currentBlock s, s { blockChain = Map.alter end (currentBlock s) (blockChain s) })
+
+-- | Unconditional branch
+--
+br :: Name -> CodeGen Name
+br target = terminate $ Do (Br target [])
+
+-- | Conditional branch
+--
+cbr :: Operand -> Name -> Name -> CodeGen Name
+cbr cond t f = terminate $ Do (CondBr cond t f [])
+
+-- | Phi nodes. There must be no non-phi nodes between this and the start of the
+-- basic block.
+--
+phi :: Type                 -- ^ type of the incoming value
+    -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
+    -> CodeGen Operand
+phi t incoming = instr $ Phi t incoming []
+
+
 -- Block chain
 -- ===========
 
+-- | Add a new block to the block chain. It is not made active.
+--
+addBlock :: String -> CodeGen Name
+addBlock nm =
+  state $ \s@CodeGenState{..} ->
+    let idx     = Map.size blockChain
+        name    = Name (nm ++ show idx)
+        blk     = BlockState idx Seq.empty Nothing
+    in
+    ( name, s { blockChain = Map.insert name blk blockChain } )
+
+-- | Same as 'addBlock', but the given string is appended to the name of the
+--   currently active block.
+--
+addSubBlock :: String -> CodeGen Name
+addSubBlock ext = do
+  Name base <- gets currentBlock
+  addBlock  $  base ++ ('.':ext)
+
+-- | Mark the specified block as being the active block. Any instructions pushed
+-- onto the stream by 'instr' will be appended to this block.
+--
+setBlock :: Name -> CodeGen ()
+setBlock name = modify (\s -> s { currentBlock = name })
+
+
+{--
 -- | Replace the block state of the currently active block
 --
 modifyCurrentBlock :: BlockState -> CodeGen ()
