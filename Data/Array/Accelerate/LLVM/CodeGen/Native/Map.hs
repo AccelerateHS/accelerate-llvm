@@ -22,12 +22,10 @@ import LLVM.General.AST
 import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.Global
-import LLVM.General.AST.Type
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt, eltType )
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -39,7 +37,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
 import Control.Monad.State
-import qualified Data.IntMap                                    as Map
 
 
 -- C Code
@@ -83,19 +80,18 @@ import qualified Data.IntMap                                    as Map
 
 mkMap :: forall aenv sh a b. Elt b
       => Aval aenv
-      -> IRFun1    aenv (a -> b)
-      -> IRDelayed aenv (Array sh a)
-      -> Skeleton  aenv (Array sh b)
+      -> IRFun1       aenv (a -> b)
+      -> IRDelayed    aenv (Array sh a)
+      -> LLVM [Kernel aenv (Array sh b)]
 mkMap _aenv apply IRDelayed{..}
-  = runLLVM "map"
-  $ do
-        ((), code) <- runCodeGen body
-        return $ functionDefaults
+  = do
+        code <- execCodeGen body
+        return [ Kernel $ functionDefaults
                    { returnType  = VoidType
                    , name        = "map"
                    , parameters  = (paramOut ++ paramIn, False)
                    , basicBlocks = code
-                   }
+                   }]
   where
     arrOut      = arrayData (undefined::Array sh b) "out"
     n           = local $ Name "n"

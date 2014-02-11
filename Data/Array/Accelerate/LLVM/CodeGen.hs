@@ -19,17 +19,14 @@
 module Data.Array.Accelerate.LLVM.CodeGen
   where
 
--- llvm-general
-import LLVM.General.AST
-
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Array )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
@@ -47,7 +44,7 @@ llvmOfAcc :: forall aenv arrs.
           {- Target -> -}
              DelayedOpenAcc aenv arrs
           -> Aval aenv
-          -> Skeleton aenv arrs
+          -> Module aenv arrs
 llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
 llvmOfAcc (Manifest pacc) aenv =
   case pacc of
@@ -75,14 +72,6 @@ llvmOfAcc (Manifest pacc) aenv =
 -- | Convert a closed function of one argument into a sequence of LLVM basic
 -- blocks.
 --
-{--
-llvmOfFun1 :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> LLVM [BasicBlock]
-llvmOfFun1 (Lam (Body f)) aenv xs = do
-  (retop, bb) <- runCodeGen "entry" (llvmOfOpenExp f (Empty `Push` xs) aenv)
-  return bb
-
---}
-
 llvmOfFun1 :: DelayedFun aenv (a -> b) -> Aval aenv -> IRFun1 aenv (a -> b)
 llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
 llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike?"

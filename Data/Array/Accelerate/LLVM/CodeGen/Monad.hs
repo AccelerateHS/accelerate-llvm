@@ -33,11 +33,12 @@ import qualified Data.Sequence                                  as Seq
 import qualified Data.Foldable                                  as Seq
 
 -- llvm-general
-import LLVM.General.AST
-import LLVM.General.AST.Global
+import LLVM.General.AST                                         hiding ( Module )
+import qualified LLVM.General.AST                               as AST
+import qualified LLVM.General.AST.Global                        as AST
 
 -- accelerate
-import qualified Data.Array.Accelerate.LLVM.CodeGen.CUDA        as CUDA
+import Data.Array.Accelerate.LLVM.Target
 
 #include "accelerate.h"
 
@@ -57,6 +58,19 @@ freshName = state $ \s@ModuleState{..} -> ( UnName next, s { next = next + 1 } )
 -- Code generation operations
 -- ==========================
 
+-- | A compiled module consists of a number of global functions (kernels)
+--
+data Module aenv a = Module { unModule :: AST.Module }
+
+-- | A fully-instantiated skeleton is a kernel that can be compiled by LLVM into
+-- a global function that we can execute.
+--
+-- The data type, rather than type synonym, is required to fix the phantom type
+-- parameters, which is useful during code generation.
+--
+data Kernel aenv a = Kernel { unKernel :: AST.Global }
+
+
 -- | The code generation state for a module. This keeps track of the module-wide
 -- symbol table as well as our unique name supply counter.
 --
@@ -69,7 +83,7 @@ freshName = state $ \s@ModuleState{..} -> ( UnName next, s { next = next + 1 } )
 -- tuples from functions (unless we pass the result value by reference?))
 --
 data ModuleState = ModuleState
-  { symbolTable         :: Map Name Global              -- global function declarations
+  { symbolTable         :: Map Name AST.Global          -- global function declarations
   , next                :: {-# UNPACK #-} !Word         -- a name supply
   }
   deriving Show
@@ -77,26 +91,23 @@ data ModuleState = ModuleState
 newtype LLVM a = LLVM { unLLVM :: State ModuleState a }
   deriving (Functor, Applicative, Monad, MonadState ModuleState)
 
-runLLVM :: {- Target -> -} String -> LLVM Global -> Skeleton aenv a
-runLLVM nm ll =
-  let (r, s) = runState (unLLVM ll) (ModuleState Map.empty 0)
-      dfs    = map GlobalDefinition (r : Map.elems (symbolTable s))
-  in
-  Skeleton $
-    Module { moduleName         = nm
-           , moduleDataLayout   = Just CUDA.dataLayout          -- TODO: target data structure/class
-           , moduleTargetTriple = Just CUDA.targetTriple
-           , moduleDefinitions  = dfs
-           }
+runLLVM :: Target -> LLVM [Kernel aenv a] -> Module aenv a
+runLLVM Target{..} ll =
+  let (r, st)           = runState (unLLVM ll) (ModuleState Map.empty 0)
+      kernels           = map unKernel r
+      defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
 
--- | A fully-instantiated skeleton is the result of running LLVM code
--- generation. At the moment this just stores the underlying LLVM module, but in
--- future could store more.
---
--- Moreover, the data type is useful in fixing the return type during code
--- generation.
---
-data Skeleton aenv a = Skeleton Module
+      name | x:_          <- kernels
+           , f@Function{} <- x
+           , Name s <- AST.name f = s
+           | otherwise            = "<string>"
+  in
+  Module $ AST.Module
+    { moduleName         = name
+    , moduleDataLayout   = targetDataLayout
+    , moduleTargetTriple = targetTriple
+    , moduleDefinitions  = defs
+    }
 
 
 -- | The code generation state for scalar functions and expressions.
@@ -148,6 +159,9 @@ runCodeGen cg = do
   --
   (r, s) <- runStateT (unCodeGen cg') st
   return (r, createBlocks s)
+
+execCodeGen :: CodeGen a -> LLVM [BasicBlock]
+execCodeGen = fmap snd . runCodeGen
 
 
 -- | Extract the block state and construct the basic blocks
@@ -201,7 +215,7 @@ declare g =
                       | otherwise = Just g
       unique _                    = Just g
   in
-  lift $ modify (\s -> s { symbolTable = Map.alter unique (name g) (symbolTable s) })
+  lift $ modify (\s -> s { symbolTable = Map.alter unique (AST.name g) (symbolTable s) })
 
 -- | Add a termination condition to the current instruction stream. Return the
 -- name of the block chain that was just terminated.
