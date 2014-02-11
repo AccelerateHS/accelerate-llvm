@@ -40,26 +40,7 @@ llvmOfNumType (IntegralNumType i) = llvmOfIntegralType i
 llvmOfNumType (FloatingNumType f) = llvmOfFloatingType f
 
 llvmOfIntegralType :: IntegralType a -> Type
-llvmOfIntegralType i =
-  case i of
-    TypeInt8 _    -> IntegerType 8
-    TypeInt16 _   -> IntegerType 16
-    TypeInt32 _   -> IntegerType 32
-    TypeInt64 _   -> IntegerType 64
-    TypeWord8 _   -> IntegerType 8
-    TypeWord16 _  -> IntegerType 16
-    TypeWord32 _  -> IntegerType 32
-    TypeWord64 _  -> IntegerType 64
-    TypeCShort _  -> IntegerType 16
-    TypeCUShort _ -> IntegerType 16
-    TypeCInt _    -> IntegerType 32
-    TypeCUInt _   -> IntegerType 32
-    TypeCLong _   -> IntegerType (bitSize (undefined::Int))
-    TypeCULong _  -> IntegerType (bitSize (undefined::Int))
-    TypeCLLong _  -> IntegerType 64
-    TypeCULLong _ -> IntegerType 64
-    TypeInt _     -> IntegerType (bitSize (undefined::Int))
-    TypeWord _    -> IntegerType (bitSize (undefined::Int))
+llvmOfIntegralType i | IntegralDict <- integralDict i = IntegerType (bitSize (undefined::Int))
 
 llvmOfFloatingType :: FloatingType a -> Type
 llvmOfFloatingType f =
