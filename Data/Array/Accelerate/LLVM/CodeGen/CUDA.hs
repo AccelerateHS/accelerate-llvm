@@ -3,11 +3,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.CUDA
   where
 
 -- llvm-general
+import LLVM.General.AST
 import LLVM.General.AST.AddrSpace
+import LLVM.General.AST.Constant
 import LLVM.General.AST.DataLayout
 
 -- standard library
 import Data.Bits
+import Data.Word
 import qualified Data.Map                       as Map
 import qualified Data.Set                       as Set
 
@@ -45,4 +48,15 @@ dataLayout = DataLayout
 --
 targetTriple :: String
 targetTriple = "nvptx-nvidia-cl.1.0"
+
+
+-- Kernel annotation
+--
+annotateAsKernel :: String -> Word -> Definition
+annotateAsKernel kernel metaID =
+  MetadataNodeDefinition (MetadataNodeID metaID)
+    [ Just $ ConstantOperand (GlobalReference (Name kernel))
+    , Just $ MetadataStringOperand "kernel"
+    , Just $ ConstantOperand (Int 32 1)
+    ]
 

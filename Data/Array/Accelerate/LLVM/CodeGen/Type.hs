@@ -12,13 +12,17 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Type
   where
 
-import Data.Array.Accelerate.LLVM.Util
-
 -- accelerate
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.Util
+
 -- llvm-general
+import LLVM.General.AST.Float
 import LLVM.General.AST.Type
+
+-- standard library
+import Foreign.C.Types
 
 
 llvmOfTupleType :: TupleType a -> [Type]
@@ -32,11 +36,11 @@ llvmOfScalarType (NonNumScalarType t) = llvmOfNonNumType t
 
 
 llvmOfNumType :: NumType a -> Type
-llvmOfNumType (IntegralNumType i) = llvmOfIntegralNumType i
-llvmOfNumType (FloatingNumType f) = llvmOfFloatingNumType f
+llvmOfNumType (IntegralNumType i) = llvmOfIntegralType i
+llvmOfNumType (FloatingNumType f) = llvmOfFloatingType f
 
-llvmOfIntegralNumType :: IntegralType a -> Type
-llvmOfIntegralNumType i =
+llvmOfIntegralType :: IntegralType a -> Type
+llvmOfIntegralType i =
   case i of
     TypeInt8 _    -> IntegerType 8
     TypeInt16 _   -> IntegerType 16
@@ -57,8 +61,8 @@ llvmOfIntegralNumType i =
     TypeInt _     -> IntegerType (bitSize (undefined::Int))
     TypeWord _    -> IntegerType (bitSize (undefined::Int))
 
-llvmOfFloatingNumType :: FloatingType a -> Type
-llvmOfFloatingNumType f =
+llvmOfFloatingType :: FloatingType a -> Type
+llvmOfFloatingType f =
   case f of
     TypeFloat  _  -> FloatingPointType 32 IEEE
     TypeCFloat _  -> FloatingPointType 32 IEEE
@@ -72,4 +76,30 @@ llvmOfNonNumType t =
     TypeBool _ -> IntegerType 8
     TypeChar _ -> IntegerType 32        -- Haskell char
     _          -> IntegerType 8         -- signed and unsigned C characters
+
+
+signedIntegralNum :: IntegralType a -> Bool
+signedIntegralNum t =
+  case t of
+    TypeInt _    -> True
+    TypeInt8 _   -> True
+    TypeInt16 _  -> True
+    TypeInt32 _  -> True
+    TypeInt64 _  -> True
+    TypeCShort _ -> True
+    TypeCInt _   -> True
+    TypeCLong _  -> True
+    TypeCLLong _ -> True
+    _            -> False
+
+unsignedIntegralNum :: IntegralType a -> Bool
+unsignedIntegralNum = not . signedIntegralNum
+
+float :: FloatingType a -> a -> SomeFloat
+float t f =
+  case t of
+    TypeFloat  _                    -> Single f
+    TypeDouble _                    -> Double f
+    TypeCFloat _  | CFloat f'  <- f -> Single f'
+    TypeCDouble _ | CDouble f' <- f -> Double f'
 
