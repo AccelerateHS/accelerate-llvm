@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS -fno-warn-unused-imports      #-}
+{-# OPTIONS -fno-warn-incomplete-patterns #-}
 
 -- llvm-general
 import LLVM.General
@@ -84,7 +86,7 @@ llvmOfModule m =
   fmap (either (\s -> error (s P.++ "\n\n" P.++ show m)) id)
     $ withContext $ \ctx ->
         runErrorT $ withModuleFromAST ctx m $ \mdl ->
-          withPassManager opt $ \pm -> do
-            runPassManager pm mdl       -- returns whether any changes were made
-            moduleString mdl
+--          withPassManager opt $ \pm -> do
+--            runPassManager pm mdl       -- returns whether any changes were made
+            moduleLLVMAssembly mdl
 

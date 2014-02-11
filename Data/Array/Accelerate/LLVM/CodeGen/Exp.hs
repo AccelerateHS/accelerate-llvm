@@ -189,8 +189,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 
       -- Select the right value using the phi node
       setBlock ifExit
-      zipWithM phi (llvmOfTupleType (eltType (undefined::t)))
-                   [ [(t,true), (f,false)] | t <- tv | f <- fv ]
+      zipWithM phi' (llvmOfTupleType (eltType (undefined::t))) [ [(t,true), (f,false)] | t <- tv | f <- fv ]
 
     -- Value recursion iterates a function while a conditional on that variable
     -- remains true.
@@ -223,11 +222,11 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       next <-                       cvtF1 f env aenv prev
       c    <- single "while" `fmap` cvtF1 p env aenv next
       bot  <- cbr c loop exit
-      _    <- sequence $ zipWith3 (phi' loop) ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+      _    <- sequence $ zipWith3 (phi loop) ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
 
       -- Now the loop exit
       setBlock exit
-      zipWithM phi ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+      zipWithM phi' ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
 
 
     -- Get the innermost index of a shape/index

@@ -126,7 +126,7 @@ mkMap aenv apply IRDelayed{..} = do
       i'   <- add nint i one
       c'   <- eq sint i' n
       bot  <- cbr c' loop exit
-      _    <- phi' loop indv (typeOf nint) [(i', bot), (zero,top)]
+      _    <- phi loop indv (typeOf nint) [(i', bot), (zero,top)]
 
       setBlock exit
       _    <- terminate $ Do (Ret Nothing [])

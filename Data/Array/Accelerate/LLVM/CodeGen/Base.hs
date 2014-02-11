@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -34,12 +33,7 @@ import LLVM.General.AST.Constant
 import LLVM.General.AST.Global                                  as G
 
 -- standard library
-import Control.Monad.State
-import qualified Data.Map                                       as Map
 import qualified Data.IntMap                                    as IM
-import qualified Data.Sequence                                  as Seq
-
-#include "accelerate.h"
 
 
 -- Names & Operands
@@ -104,41 +98,6 @@ data IRDelayed aenv a where
     , delayedIndex        :: IRFun1 aenv (sh  -> e)
     , delayedLinearIndex  :: IRFun1 aenv (Int -> e)
     }                     -> IRDelayed aenv (Array sh e)
-
-
--- Control flow
--- ============
-
--- | Unconditional branch
---
-br :: Name -> CodeGen Name
-br target = terminate $ Do (Br target [])
-
--- | Conditional branch
---
-cbr :: Operand -> Name -> Name -> CodeGen Name
-cbr cond t f = terminate $ Do (CondBr cond t f [])
-
--- | Phi nodes. These are always inserted at the start of the instruction
--- stream, at the top of the basic block.
---
-phi :: Type                 -- ^ type of the incoming value
-    -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
-    -> CodeGen Operand
-phi t incoming = do
-  name  <- freshName
-  block <- gets currentBlock
-  phi' block name t incoming
-
-phi' :: Name -> Name -> Type -> [(Operand, Name)] -> CodeGen Operand
-phi' block crit t incoming = do
-  let op            = Phi t incoming []
-      --
-      push Nothing  = INTERNAL_ERROR(error) "phi" "unknown basic block"
-      push (Just b) = Just $ b { instructions = crit := op Seq.<| instructions b }
-  --
-  modify $ \s -> s { blockChain = Map.alter push block (blockChain s) }
-  return (LocalReference crit)
 
 
 -- Functions & Declarations
