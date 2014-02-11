@@ -1,7 +1,8 @@
-{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
 -- Copyright   :
@@ -41,6 +42,7 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 -- standard library
 import Data.IntMap                                              ( IntMap )
 import Control.Applicative                                      ( (<$>), (<*>) )
+import Control.Monad.State
 import qualified Data.IntMap                                    as IM
 import qualified Data.Sequence                                  as Seq
 import qualified Data.Foldable                                  as Seq
@@ -89,21 +91,17 @@ prj _            _            = INTERNAL_ERROR(error) "prj" "inconsistent valuat
 --
 type IR env aenv t = [Operand]
 
+-- type Fun1 aenv t = [Operand]              -> ([Operand], [BasicBlock])
+-- type Fun2 aenv t = [Operand] -> [Operand] -> ([Operand], [BasicBlock])
 
-{--
+
 -- | Convert a closed function of one argument into a sequence of LLVM basic
 -- blocks.
 --
-llvmOfFun1
-    :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> [BasicBlock] -- TLM: type synonym here?
-llvmOfFun1 (Lam (Body f)) aenv xs =
-  let
-      (_, st)   = generateFunctionCode $ llvmOfOpenExp f (Empty `Push` xs) aenv
-      blocks    = cgf_blocks st
-                  Seq.|> BasicBlock (Name "end") (Seq.toList (cgf_instructions st)) (Do (Ret Nothing []))
-  in
-  Seq.toList blocks
---}
+llvmOfFun1 :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> LLVM [BasicBlock]
+llvmOfFun1 (Lam (Body f)) aenv xs = do
+  (retop, bb) <- runCodeGen "entry" (llvmOfOpenExp f (Empty `Push` xs) aenv)
+  return bb
 
 
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
@@ -115,10 +113,10 @@ llvmOfOpenExp
        OpenExp _env aenv _t
     -> Val _env
     -> Aval aenv
-    -> LLVM (IR _env aenv _t)
+    -> CodeGen (IR _env aenv _t)
 llvmOfOpenExp exp env aenv = cvtE exp env
   where
-    cvtE :: forall env t. OpenExp env aenv t -> Val env -> LLVM (IR env aenv t)
+    cvtE :: forall env t. OpenExp env aenv t -> Val env -> CodeGen (IR env aenv t)
     cvtE exp env =
       case exp of
 --        Let bnd body            -> elet bnd body env
@@ -159,7 +157,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- snoc-list ordering, so the element at tuple index zero is at the end of
     -- the list. Note that nested tuple structures are flattened.
     --
-    cvtT :: Tuple (OpenExp env aenv) t -> Val env -> LLVM (IR env aenv t)
+    cvtT :: Tuple (OpenExp env aenv) t -> Val env -> CodeGen (IR env aenv t)
     cvtT tup env =
       case tup of
         NilTup          -> return []
@@ -173,7 +171,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
          -> OpenExp env aenv t
          -> OpenExp env aenv e
          -> Val env
-         -> LLVM (IR env aenv t)
+         -> CodeGen (IR env aenv t)
     prjT ix t e env =
       let
           llt    = expType t -- preExpType delayedAccType t
@@ -214,7 +212,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
                -> OpenExp env aenv slix
                -> OpenExp env aenv sh
                -> Val env
-               -> LLVM (IR env aenv sl)
+               -> CodeGen (IR env aenv sl)
     indexSlice sliceIndex slix sh env =
       let restrict :: SliceIndex slix sl co sh -> IR env aenv slix -> IR env aenv sh -> IR env aenv sl
           restrict SliceNil              _       _       = []
@@ -233,7 +231,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
               -> OpenExp env aenv slix
               -> OpenExp env aenv sl
               -> Val env
-              -> LLVM (IR env aenv sh)
+              -> CodeGen (IR env aenv sh)
     indexFull sliceIndex slix sl env =
       let extend :: SliceIndex slix sl co sh -> IR env aenv slix -> IR env aenv sl -> IR env aenv sh
           extend SliceNil              _        _       = []
@@ -248,7 +246,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 
 -- | Generate llvm operations for primitive scalar functions
 --
-llvmOfPrimFun :: PrimFun f -> [Operand] -> LLVM Operand
+llvmOfPrimFun :: PrimFun f -> [Operand] -> CodeGen Operand
 llvmOfPrimFun (PrimAdd t)              [a,b] = A.add t a b
 llvmOfPrimFun (PrimSub t)              [a,b] = A.sub t a b
 llvmOfPrimFun (PrimMul t)              [a,b] = A.mul t a b

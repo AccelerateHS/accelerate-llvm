@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -28,7 +29,7 @@ import LLVM.General.AST
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.CallingConvention
 import LLVM.General.AST.Constant
-import LLVM.General.AST.Global
+import LLVM.General.AST.Global                                  as G
 
 #include "accelerate.h"
 
@@ -50,19 +51,28 @@ global :: Name -> Operand
 global = ConstantOperand . GlobalReference
 
 
--- Convert a list of operands into a list suitable for use as arguments to a
--- function (
---
-toArgs :: [Operand] -> [(Operand, [ParameterAttribute])]
-toArgs = map (,[])
-
-
 -- Call a global function. The function and arguments have no metadata attached.
+-- A function declaration is inserted into the symbol table.
 --
-call :: Name -> [Operand] -> LLVM Operand
-call fn args = instr $ Call False C [] (Right (global fn)) (toArgs args) [] []
+call :: Name                    -- ^ function name
+     -> Type                    -- ^ return type
+     -> [(Type, Operand)]       -- ^ list of function argument types and input operand
+     -> [FunctionAttribute]     -- ^ optional function attributes list (only: noreturn, nounwind, readonl, readnone)
+     -> CodeGen Operand
+call fn rt tyargs attrs = do
+  let (ty,args) = unzip tyargs
+      params    = [ Parameter t (UnName n) [] | t <- ty | n <- [0..] ]
+      toArgs    = map (,[])
+      decl      = functionDefaults { name                 = fn
+                                   , returnType           = rt
+                                   , parameters           = (params,False)
+                                   , G.functionAttributes = attrs }
+  --
+  declare decl
+  instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
 
 
+{--
 -- Floating point function calls are usually postfixed with 'f'.
 --
 postfix :: Name -> FloatingType a -> Name
@@ -72,31 +82,31 @@ postfix (Name fn)  t = Name $
     TypeFloat _  -> fn ++ "f"
     TypeCFloat _ -> fn ++ "f"
     _            -> fn
-
-
+--}
+{--
 -- Call an LLVM intrinsic functions
 --
-intrinsic :: Name -> FloatingType a -> [Operand] -> LLVM Operand
+intrinsic :: Name -> FloatingType a -> [Operand] -> CodeGen Operand
 intrinsic (UnName _) _ _    = INTERNAL_ERROR(error) "intrinsic" "attempt to call unnamed function"
-intrinsic (Name f)   t args = call name args
+intrinsic (Name f)   t args = error "intrinsic" -- call name args
   where
     name = Name $
       case typeBits (llvmOfFloatingType t) of
         32 -> f ++ ".f32"
         64 -> f ++ ".f64"
         _  -> INTERNAL_ERROR(error) "intrinsic" "unsupported floating point size"
-
-
+--}
+{--}
 -- | Create a LLVM global function definition using the default options:
 -- external C linkage, and no attributes or alignment annotations.
 --
-globalFunction :: Name -> Type -> [Parameter] -> [BasicBlock] -> Definition
+globalFunction :: Name -> Type -> [Parameter] -> [BasicBlock] -> Global
 globalFunction name returnType args basicBlocks
-  = GlobalDefinition
-  $ functionDefaults
+  = functionDefaults
     { name        = name
     , returnType  = returnType
     , parameters  = (args,False)
     , basicBlocks = basicBlocks
     }
+--}
 
