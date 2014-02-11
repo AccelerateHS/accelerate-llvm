@@ -185,10 +185,9 @@ llvmOfOpenExp exp env aenv = cvtE exp env
          -> CodeGen (IR env aenv t)
     prjT ix t e env =
       let
-          llt    = expType t -- preExpType delayedAccType t
           subset = reverse
-                 . take (length (llvmOfTupleType llt))
-                 . drop (prjToInt ix llt)
+                 . take (length      $ llvmOfTupleType (expType e))
+                 . drop (prjToInt ix $ expType t)
                  . reverse      -- as Accelerate expressions use a snoc-list representation
       in
       subset <$> cvtE t env
