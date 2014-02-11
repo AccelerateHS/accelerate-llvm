@@ -126,7 +126,7 @@ phi :: Type                 -- ^ type of the incoming value
     -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
     -> CodeGen Operand
 phi t incoming = do
-  name  <- lift freshName
+  name  <- freshName
   block <- gets currentBlock
   phi' block name t incoming
 

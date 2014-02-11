@@ -80,9 +80,9 @@ mkMap :: forall aenv sh a b. Elt b
       => Aval aenv
       -> IRFun1       aenv (a -> b)
       -> IRDelayed    aenv (Array sh a)
-      -> LLVM [Kernel aenv (Array sh b)]
+      -> CodeGen [Kernel aenv (Array sh b)]
 mkMap aenv apply IRDelayed{..} = do
-  code  <- execCodeGen body
+  code  <- body >> createBlocks
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "map"
@@ -117,7 +117,7 @@ mkMap aenv apply IRDelayed{..} = do
       -- into the result array.
       --
       setBlock loop
-      indv <- lift freshName
+      indv <- freshName
       let i = local indv
       xs   <- delayedLinearIndex [i]
       ys   <- apply xs

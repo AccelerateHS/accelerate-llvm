@@ -51,8 +51,8 @@ instance IsString Name where
 
 -- | Generate a fresh (un)name.
 --
-freshName :: LLVM Name
-freshName = state $ \s@ModuleState{..} -> ( UnName next, s { next = next + 1 } )
+freshName :: CodeGen Name
+freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
 
 
 -- Code generation operations
@@ -71,54 +71,16 @@ data Module aenv a = Module { unModule :: AST.Module }
 data Kernel aenv a = Kernel { unKernel :: AST.Global }
 
 
--- | The code generation state for a module. This keeps track of the module-wide
--- symbol table as well as our unique name supply counter.
---
--- Although instructions are only numbered sequentially within each function
--- definition (not per module), we will eventually inline all scalar expressions
--- and functions directly into the skeleton body. If instead we attempt generate
--- individual functions for each of the scalar fragments, even with inlining
--- there is some redundant code that LLVM is unable to remove; mainly related to
--- marshalling elements into and out of `struct`s (which are required to return
--- tuples from functions (unless we pass the result value by reference?))
---
-data ModuleState = ModuleState
-  { symbolTable         :: Map Name AST.Global          -- global function declarations
-  , next                :: {-# UNPACK #-} !Word         -- a name supply
-  }
-  deriving Show
-
-newtype LLVM a = LLVM { unLLVM :: State ModuleState a }
-  deriving (Functor, Applicative, Monad, MonadState ModuleState)
-
-runLLVM :: Target -> LLVM [Kernel aenv a] -> Module aenv a
-runLLVM Target{..} ll =
-  let (r, st)           = runState (unLLVM ll) (ModuleState Map.empty 0)
-      kernels           = map unKernel r
-      defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
-
-      name | x:_          <- kernels
-           , f@Function{} <- x
-           , Name s <- AST.name f = s
-           | otherwise            = "<string>"
-  in
-  Module $ AST.Module
-    { moduleName         = name
-    , moduleDataLayout   = targetDataLayout
-    , moduleTargetTriple = targetTriple
-    , moduleDefinitions  = defs
-    }
-
-
 -- | The code generation state for scalar functions and expressions.
 --
 -- We use two records: one to hold all the code generation state as it walks the
 -- AST, and one for each of the basic blocks that are generated during the walk.
--- All this is stacked on top of the module state.
 --
 data CodeGenState = CodeGenState
   { currentBlock        :: Name                         -- name of the currently active block
   , blockChain          :: Map Name BlockState          -- blocks for this function
+  , symbolTable         :: Map Name AST.Global          -- global (external) function declarations
+  , next                :: {-# UNPACK #-} !Word         -- a name supply
   }
   deriving Show
 
@@ -147,41 +109,50 @@ data BlockState = BlockState
   }
   deriving Show
 
-newtype CodeGenT m a = CodeGenT { unCodeGen :: StateT CodeGenState m a }
-  deriving (Functor, Applicative, Monad, MonadState CodeGenState, MonadTrans)
-
-type CodeGen a = CodeGenT LLVM a
-
-runCodeGen :: CodeGen a -> LLVM (a, [BasicBlock])
-runCodeGen cg = do
-  let st  = CodeGenState undefined Map.empty
-      cg' = newBlock "entry" >>= setBlock >> cg
-  --
-  (r, s) <- runStateT (unCodeGen cg') st
-  return (r, createBlocks s)
-
-execCodeGen :: CodeGen a -> LLVM [BasicBlock]
-execCodeGen = fmap snd . runCodeGen
+newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
+  deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
 
--- | Extract the block state and construct the basic blocks
+runLLVM :: Target -> CodeGen [Kernel aenv a] -> Module aenv a
+runLLVM Target{..} ll =
+  let ll'               = newBlock "entry" >>= setBlock >> ll
+      (r, st)           = runState (runCodeGen ll') (CodeGenState undefined Map.empty Map.empty 0)
+      kernels           = map unKernel r
+      defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+
+      name | x:_          <- kernels
+           , f@Function{} <- x
+           , Name s <- AST.name f = s
+           | otherwise            = "<string>"
+  in
+  Module $ AST.Module
+    { moduleName         = name
+    , moduleDataLayout   = targetDataLayout
+    , moduleTargetTriple = targetTriple
+    , moduleDefinitions  = defs
+    }
+
+
+-- | Extract the block state and construct the basic blocks to form a function
+-- body. This clears the block stream.
 --
-createBlocks :: CodeGenState -> [BasicBlock]
-createBlocks
-  = makeBlocks
-  . sortBlocks
-  . Map.toList
-  . blockChain
+createBlocks :: CodeGen [BasicBlock]
+createBlocks = state $ \s ->
+  let blocks    = makeBlocks . sortBlocks . Map.toList $ blockChain s
+      s'        = s { blockChain = Map.empty, next = 0 }
+  in
+  (blocks, s')
   where
-    makeBlocks = map (\(label, BlockState{..}) ->
-      let err   = Do (Ret Nothing []) -- TODO: INTERNAL_ERROR(error) "createBlocks" ("Block has no terminator (" ++ show label ++ ")")
+    sortBlocks = sortBy (compare `on` (blockIndex . snd))
+    makeBlocks = map (uncurry go)
+
+    go label BlockState{..} =
+      let err   = INTERNAL_ERROR(error) "createBlocks" ("Block has no terminator (" ++ show label ++ ")")
           term  = fromMaybe err terminator
           ins   = Seq.toList instructions
       in
-      BasicBlock label ins term)
+      BasicBlock label ins term
 
-    sortBlocks =
-      sortBy (compare `on` (blockIndex . snd))
 
 -- Instructions
 -- ------------
@@ -192,7 +163,7 @@ createBlocks
 --
 instr :: Instruction -> CodeGen Operand
 instr op = do
-  name  <- lift freshName
+  name  <- freshName
   let push Nothing  = INTERNAL_ERROR(error) "instr" "unknown basic block"
       push (Just b) = Just $ b { instructions = instructions b Seq.|> name := op }
   --
@@ -215,7 +186,7 @@ declare g =
                       | otherwise = Just g
       unique _                    = Just g
   in
-  lift $ modify (\s -> s { symbolTable = Map.alter unique (AST.name g) (symbolTable s) })
+  modify (\s -> s { symbolTable = Map.alter unique (AST.name g) (symbolTable s) })
 
 -- | Add a termination condition to the current instruction stream. Return the
 -- name of the block chain that was just terminated.

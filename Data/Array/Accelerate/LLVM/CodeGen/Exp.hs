@@ -213,7 +213,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       -- Create some temporary names. These will be used to store the operands
       -- resulting from the phi node we will add to the top of the loop. We
       -- can't use recursive do because the monadic effects are recursive.
-      ns   <- mapM (const $ lift freshName) ty
+      ns   <- mapM (const freshName) ty
       let prev = map local ns
 
       -- Now generate the loop body. Afterwards, we insert a phi node at the
