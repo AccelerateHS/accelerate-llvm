@@ -26,6 +26,27 @@ import LLVM.General.AST.Type
 import Foreign.C.Types
 
 
+-- Generate the LLVM type for atomic types
+--
+class TypeOf a where
+  typeOf :: a -> Type
+
+instance TypeOf (ScalarType a) where
+  typeOf = llvmOfScalarType
+
+instance TypeOf (NumType a) where
+  typeOf = llvmOfNumType
+
+instance TypeOf (IntegralType a) where
+  typeOf = llvmOfIntegralType
+
+instance TypeOf (FloatingType a) where
+  typeOf = llvmOfFloatingType
+
+instance TypeOf (NonNumType a) where
+  typeOf = llvmOfNonNumType
+
+
 llvmOfTupleType :: TupleType a -> [Type]
 llvmOfTupleType UnitTuple         = []
 llvmOfTupleType (SingleTuple t)   = [llvmOfScalarType t]
