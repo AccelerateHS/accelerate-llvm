@@ -17,17 +17,18 @@ module Data.Array.Accelerate.LLVM.CodeGen.Environment
 import LLVM.General.AST
 
 -- accelerate
-import Data.Array.Accelerate.AST                hiding ( Val(..), prj )
+import Data.Array.Accelerate.AST                        hiding ( Val(..), prj )
+import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt )
 
 -- standard library
-import Data.IntMap                              ( IntMap )
-import qualified Data.IntMap                    as Map
+import Data.IntMap                                      ( IntMap )
+import qualified Data.IntMap                            as IM
 
 #include "accelerate.h"
 
 
--- Environments
--- ============
+-- Array environment
+-- =================
 
 -- | A mapping between the environment index of a free array variable and the
 -- Name of that array to be used in the generated code.
@@ -37,7 +38,7 @@ import qualified Data.IntMap                    as Map
 -- result is still sensitive to the order of let bindings, but not of any
 -- intermediate (unused) free array variables.
 --
-type Aval aenv = IntMap Name
+type Aval aenv = IntMap (Name, Idx' aenv)
 
 -- Projection of a value from the array environment using a de Bruijn index.
 -- This returns a pair of operands to access the shape and array data
@@ -45,10 +46,17 @@ type Aval aenv = IntMap Name
 --
 aprj :: Idx aenv t -> Aval aenv -> Name
 aprj ix aenv =
-  case Map.lookup (idxToInt ix) aenv of
-    Just n  -> n
-    Nothing -> INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
+  case IM.lookup (idxToInt ix) aenv of
+    Just (n,_)  -> n
+    Nothing     -> INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
 
+
+data Idx' aenv where
+  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
+
+
+-- Scalar environment
+-- ==================
 
 -- | An environment for local scalar expression bindings, encoded at the value
 -- level as a heterogenous snoc list, and on the type level as nested tuples.

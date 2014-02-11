@@ -19,12 +19,10 @@ module Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 
 -- llvm-general
 import LLVM.General.AST
-import LLVM.General.AST.AddrSpace
-import LLVM.General.AST.Attribute
 import LLVM.General.AST.Global
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -83,37 +81,33 @@ mkMap :: forall aenv sh a b. Elt b
       -> IRFun1       aenv (a -> b)
       -> IRDelayed    aenv (Array sh a)
       -> LLVM [Kernel aenv (Array sh b)]
-mkMap _aenv apply IRDelayed{..}
-  = do
-        code <- execCodeGen body
-        return [ Kernel $ functionDefaults
-                   { returnType  = VoidType
-                   , name        = "map"
-                   , parameters  = (paramOut ++ paramIn, False)
-                   , basicBlocks = code
-                   }]
+mkMap aenv apply IRDelayed{..} = do
+  code  <- execCodeGen body
+  return [ Kernel $ functionDefaults
+             { returnType  = VoidType
+             , name        = "map"
+             , parameters  = (paramOut ++ paramIn, False)
+             , basicBlocks = code
+             } ]
   where
-    arrOut      = arrayData (undefined::Array sh b) "out"
-    n           = local $ Name "n"
+    arrOut      = arrayData  (undefined::Array sh b) "out"
+    shOut       = arrayShape (undefined::Array sh b) "out"
+
+    paramOut    = arrayParam "out" (undefined::Array sh b)
+    paramIn     = envParam aenv
+
     zero        = constOp $ scalar sint 0
     one         = constOp $ num nint 1
-
     sint        = scalarType :: ScalarType Int
     nint        = numType    :: NumType Int
-
-    -- TODO
-    arrIn       = arrayData (undefined::Array sh a) "in"
-    ptr t       = PointerType t (AddrSpace 0)
-    paramOut    = [ Parameter (ptr t) v [NoAlias, NoCapture] | t <- llvmOfTupleType (eltType (undefined::b)) | v <- arrOut ]
-    paramIn     = [ Parameter (ptr t) v [NoAlias, NoCapture] | t <- llvmOfTupleType (eltType (undefined::a)) | v <- arrIn ]
-               ++ [ Parameter (typeOf nint) (Name "n") [] ]
 
     body :: CodeGen ()
     body = do
       loop <- newBlock "loop.top"
       exit <- newBlock "loop.exit"
 
-      -- Header: check if n > 0
+      -- Header: check if size of output array > 0
+      n    <- foldM (mul nint) one (map local shOut)
       c    <- gt sint n zero
       top  <- cbr c loop exit
 

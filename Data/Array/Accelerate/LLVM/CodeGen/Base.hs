@@ -18,13 +18,16 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base
   where
 
 -- accelerate
+import Data.Array.Accelerate.AST                                ( Idx )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, eltType )
 
+import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- llvm-general
 import LLVM.General.AST
+import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.CallingConvention
 import LLVM.General.AST.Constant
@@ -33,6 +36,7 @@ import LLVM.General.AST.Global                                  as G
 -- standard library
 import Control.Monad.State
 import qualified Data.Map                                       as Map
+import qualified Data.IntMap                                    as IM
 import qualified Data.Sequence                                  as Seq
 
 #include "accelerate.h"
@@ -159,4 +163,29 @@ call fn rt tyargs attrs = do
   --
   declare decl
   instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
+
+
+-- | Unpack the array environment into a set of input parameters to a function.
+-- The environment here refers only to the actual free array variables that are
+-- accessed by the function.
+--
+envParam :: forall aenv. Aval aenv -> [Parameter]
+envParam aenv = concatMap (\(n, Idx' v) -> toParam n v) (IM.elems aenv)
+  where
+    toParam :: forall sh e. (Shape sh, Elt e) => Name -> Idx aenv (Array sh e) -> [Parameter]
+    toParam name _ = arrayParam name (undefined::Array sh e)
+
+-- | Specify an array of particular type and base name as an input parameter to
+-- a function.
+--
+arrayParam :: forall sh e. (Shape sh, Elt e) => Name -> Array sh e -> [Parameter]
+arrayParam name _
+  = let ptr t = PointerType t (AddrSpace 0)
+    in
+    [ Parameter (ptr t) v [NoAlias, NoCapture]                  -- accelerate arrays won't alias
+        | t <- llvmOfTupleType (eltType (undefined::e))
+        | v <- arrayData (undefined::Array sh e) name ] ++
+    [ Parameter t v []
+        | t <- llvmOfTupleType (eltType (undefined::sh))
+        | v <- arrayShape (undefined::Array sh e) name ]
 
