@@ -27,13 +27,14 @@ function htype {
   GHC_FLAGS="$GHC_FLAGS -optP-DSIZEOF_$3=$sizeof -optP-D$3=$ty"
 }
 
-htype CLong  Int  HTYPE_LONG
-htype CULong Word HTYPE_UNSIGNED_LONG
+# htype CLong  Int  HTYPE_LONG
+# htype CULong Word HTYPE_UNSIGNED_LONG
 
 GHC_FLAGS="$GHC_FLAGS
     -DACCELERATE_BOUNDS_CHECKS
     -DACCELERATE_INTERNAL_CHECKS
     -DACCELERATE_DEBUG
+    -package-db .cabal-sandbox/x86_64-osx-ghc-7.6.3-packages.conf.d
     -Iinclude -iutils -optP-include -optPdist/build/autogen/cabal_macros.h"
 
 # If we have specified one command line argument, but that file doesn't exist,
