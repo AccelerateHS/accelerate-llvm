@@ -50,6 +50,7 @@ Flag internal-checks
 
 Library
   exposed-modules:
+    Data.Array.Accelerate.LLVM.AST
     Data.Array.Accelerate.LLVM.CUDA
     Data.Array.Accelerate.LLVM.CodeGen
     Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -59,7 +60,9 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Exp
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
+    Data.Array.Accelerate.LLVM.Compile
     Data.Array.Accelerate.LLVM.Native
+    Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util
 
