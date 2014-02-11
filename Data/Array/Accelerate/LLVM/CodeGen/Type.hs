@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
 -- Copyright   :
@@ -39,8 +40,8 @@ llvmOfNumType :: NumType a -> Type
 llvmOfNumType (IntegralNumType i) = llvmOfIntegralType i
 llvmOfNumType (FloatingNumType f) = llvmOfFloatingType f
 
-llvmOfIntegralType :: IntegralType a -> Type
-llvmOfIntegralType i | IntegralDict <- integralDict i = IntegerType (bitSize (undefined::Int))
+llvmOfIntegralType :: forall a. IntegralType a -> Type
+llvmOfIntegralType i | IntegralDict <- integralDict i = IntegerType (bitSize (undefined::a))
 
 llvmOfFloatingType :: FloatingType a -> Type
 llvmOfFloatingType f =
