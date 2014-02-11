@@ -214,7 +214,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       -- resulting from the phi node we will add to the top of the loop. We
       -- can't use recursive do because the monadic effects are recursive.
       ns   <- mapM (const $ lift freshName) ty
-      let prev = map LocalReference ns
+      let prev = map local ns
 
       -- Now generate the loop body. Afterwards, we insert a phi node at the
       -- head of the instruction stream, which selects the input value depending
@@ -223,7 +223,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       next <-                       cvtF1 f env aenv prev
       c    <- single "while" `fmap` cvtF1 p env aenv next
       bot  <- cbr c loop exit
-      _    <- sequence $ zipWith3 phi' ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+      _    <- sequence $ zipWith3 (phi' loop) ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
 
       -- Now the loop exit
       setBlock exit
@@ -341,7 +341,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           sh    = arrayShape (undefined::Array sh e) name
       --
       ix' <- cvtE ix env
-      i   <- toIndex' sh ix'
+      i   <- toIndex' (map local sh) ix'
       readArray ad i
     index _ _ _ =
       INTERNAL_ERROR(error) "index" "expected array variable"
@@ -370,7 +370,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       let name  = aprj v aenv
           sh    = arrayShape (undefined::Array sh e) name
       in
-      return sh
+      return (map local sh)
     shape _ =
       INTERNAL_ERROR(error) "shape" "expected array variable"
 
@@ -401,19 +401,19 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 -- Read a value from an array.
 -- TODO: attach metedata node "!invariant.load" ?
 --
-readArray :: [Operand] -> Operand -> CodeGen [Operand]
+readArray :: [Name] -> Operand -> CodeGen [Operand]
 readArray arr i =
   forM arr $ \a -> do
-    p <- instr $ GetElementPtr False a [i] []
+    p <- instr $ GetElementPtr False (local a) [i] []
     v <- instr $ Load False p Nothing 0 []
     return v
 
 -- Write elements into an array.
 --
-writeArray :: [Operand] -> Operand -> [Operand] -> CodeGen ()
+writeArray :: [Name] -> Operand -> [Operand] -> CodeGen ()
 writeArray arr i val =
   zipWithM_ (\a v -> do
-    p <- instr $ GetElementPtr False a [i] []
+    p <- instr $ GetElementPtr False (local a) [i] []
     do_        $ Store False p v Nothing 0 []) arr val
 
 

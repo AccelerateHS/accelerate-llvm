@@ -38,24 +38,24 @@ import qualified Data.Sequence                                  as Seq
 #include "accelerate.h"
 
 
--- Names
--- =====
+-- Names & Operands
+-- ================
 
 -- Generate some names from a given base name and type
 --
-varNames :: Elt a => a -> String -> [Operand]
-varNames t base = [ local $ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
+varNames :: Elt a => a -> String -> [Name]
+varNames t base = [ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
   where
     n = length (llvmOfTupleType (eltType t))
 
-arrayData :: forall sh e. Elt e => Array sh e -> Name -> [Operand]
+arrayData :: forall sh e. Elt e => Array sh e -> Name -> [Name]
 arrayData _ base = varNames (undefined::e) (s ++ ".ad")
   where
     s = case base of
           UnName v -> (show v)
           Name v   -> v
 
-arrayShape :: forall sh e. Shape sh => Array sh e -> Name -> [Operand]
+arrayShape :: forall sh e. Shape sh => Array sh e -> Name -> [Name]
 arrayShape _ base = varNames (undefined::sh) (s ++ ".sh")
   where
     s = case base of
@@ -83,6 +83,8 @@ global = ConstantOperand . GlobalReference
 --
 type IR env aenv t = [Operand]
 
+type IRExp aenv t  = CodeGen [Operand]
+
 -- | The code generator for scalar functions emits monadic operations. Since
 -- LLVM IR is static single assignment, we need to generate new operand names
 -- each time the function is applied.
@@ -93,8 +95,8 @@ type IRFun2 aenv f = [Operand] -> [Operand] -> CodeGen [Operand]
 -- | A wrapper representing the state of code generation for a delayed array
 --
 data IRDelayed aenv a where
-  IRDelayed ::
-    { delayedExtent       :: IR () aenv sh
+  IRDelayed :: (Shape sh, Elt e) =>
+    { delayedExtent       :: IRExp  aenv sh
     , delayedIndex        :: IRFun1 aenv (sh  -> e)
     , delayedLinearIndex  :: IRFun1 aenv (Int -> e)
     }                     -> IRDelayed aenv (Array sh e)
@@ -121,17 +123,18 @@ phi :: Type                 -- ^ type of the incoming value
     -> CodeGen Operand
 phi t incoming = do
   name  <- lift freshName
-  phi' name t incoming
+  block <- gets currentBlock
+  phi' block name t incoming
 
-phi' :: Name -> Type -> [(Operand, Name)] -> CodeGen Operand
-phi' name t incoming = do
+phi' :: Name -> Name -> Type -> [(Operand, Name)] -> CodeGen Operand
+phi' block crit t incoming = do
   let op            = Phi t incoming []
       --
       push Nothing  = INTERNAL_ERROR(error) "phi" "unknown basic block"
-      push (Just b) = Just $ b { instructions = name := op Seq.<| instructions b }
+      push (Just b) = Just $ b { instructions = crit := op Seq.<| instructions b }
   --
-  modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
-  return (LocalReference name)
+  modify $ \s -> s { blockChain = Map.alter push block (blockChain s) }
+  return (LocalReference crit)
 
 
 -- Functions & Declarations

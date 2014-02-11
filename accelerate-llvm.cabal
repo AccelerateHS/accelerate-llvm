@@ -61,6 +61,9 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
 
+    Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+
+
   other-modules:
 
   build-depends:

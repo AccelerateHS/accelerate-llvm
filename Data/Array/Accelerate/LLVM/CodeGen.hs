@@ -32,6 +32,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
+import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+
 #include "accelerate.h"
 
 
@@ -42,33 +44,28 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- ------------------
 
 llvmOfAcc :: forall aenv arrs.
-          {- Target -}
+          {- Target -> -}
              DelayedOpenAcc aenv arrs
           -> Aval aenv
-          -> Module
+          -> Skeleton aenv arrs
 llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
-llvmOfAcc (Manifest pacc) aenv = codegen $
+llvmOfAcc (Manifest pacc) aenv =
   case pacc of
     -- Producers
---    Map f a             -> mkMap aenv (travF1 f) (travD a)
+    Map f a             -> mkMap aenv (travF1 f) (travD a)
 
     _                   -> error "silence!"
   where
-    codegen :: CodeGen (IR env aenv t) -> Module
-    codegen = undefined
-
     -- code generation for delayed arrays
-    travD :: (Shape sh, Elt e) => DelayedOpenAcc aenv (Array sh e) -> CodeGen (IRDelayed aenv (Array sh e))
+    travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed aenv (Array sh e)
     travD Manifest{}  = INTERNAL_ERROR(error) "llvmOfAcc" "expected delayed array"
-    travD Delayed{..} = do
-      sh <- travE extentD
-      return $ IRDelayed sh (travF1 indexD) (travF1 linearIndexD)
+    travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
 
     -- scalar code generation
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 aenv (a -> b)
     travF1 f = llvmOfFun1 f aenv
 
-    travE :: DelayedExp aenv t -> CodeGen (IR () aenv t)
+    travE :: DelayedExp aenv t -> IRExp aenv t
     travE e = llvmOfOpenExp e Empty aenv
 
 

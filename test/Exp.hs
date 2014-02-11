@@ -9,16 +9,18 @@ import qualified LLVM.General.AST                       as AST
 
 -- accelerate
 import Data.Array.Accelerate                            as A
-import Data.Array.Accelerate.Trafo.Sharing
+import Data.Array.Accelerate.Trafo -- .Sharing
 import Data.Array.Accelerate.Array.Sugar                ( Elt, eltType )
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.CUDA
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
+import qualified Data.Array.Accelerate.AST              as AST
 
 -- standard library
 import Prelude                                          as P
+import Control.Exception
 import Control.Monad.Error
 import qualified Data.IntMap                            as IM
 
@@ -32,12 +34,28 @@ main = do
       g x = let y = f x
             in  y >* 0 ? ( x, x-1 )
 
+      h :: Exp Int -> Exp Int
+      h = (+1)
+
       l :: Exp Int32 -> Exp Int32
       l = A.iterate (constant 10) (+1)
   --
-  putStrLn =<< llvmOfModule (testFun1 l)
+  putStrLn =<< llvmOfModule (testMap l)
 
 
+testMap :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
+testMap f =
+  let arr :: Acc (Vector a)
+      arr = use (fromList (Z:.0) [])
+
+      acc       = convertAcc $ A.map f arr
+      aenv      = IM.singleton 0 "in"
+  in
+  case acc of
+    Manifest (AST.Alet _ b) -> case llvmOfAcc b aenv of
+                                    Skeleton m -> m
+
+{--
 testFun1 :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
 testFun1 f =
   let ns        = varNames "x" (undefined :: a)
@@ -48,7 +66,7 @@ testFun1 f =
   runLLVM "test" $ do
     body     <- llvmOfFun1 (convertFun True f) IM.empty vars
     return $ globalFunction "test" AST.VoidType params body
-
+--}
 
 -- Perform the most common optimisations
 --
@@ -60,7 +78,7 @@ opt = defaultCuratedPassSetSpec -- { optLevel = Just 3 }
 --
 llvmOfModule :: AST.Module -> IO String
 llvmOfModule m =
-  fmap (either error id)
+  fmap (either (\s -> error (s P.++ "\n\n" P.++ show m)) id)
     $ withContext $ \ctx ->
         runErrorT $ withModuleFromAST ctx m $ \mdl ->
 --          withPassManager opt $ \pm -> do

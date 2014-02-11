@@ -77,16 +77,26 @@ data ModuleState = ModuleState
 newtype LLVM a = LLVM { unLLVM :: State ModuleState a }
   deriving (Functor, Applicative, Monad, MonadState ModuleState)
 
-runLLVM :: String -> {- Target -> -} LLVM Global -> Module
+runLLVM :: {- Target -> -} String -> LLVM Global -> Skeleton aenv a
 runLLVM nm ll =
   let (r, s) = runState (unLLVM ll) (ModuleState Map.empty 0)
       dfs    = map GlobalDefinition (r : Map.elems (symbolTable s))
   in
-  Module { moduleName         = nm
-         , moduleDataLayout   = Just CUDA.dataLayout            -- TODO: target data structure/class
-         , moduleTargetTriple = Just CUDA.targetTriple
-         , moduleDefinitions  = dfs
-         }
+  Skeleton $
+    Module { moduleName         = nm
+           , moduleDataLayout   = Just CUDA.dataLayout          -- TODO: target data structure/class
+           , moduleTargetTriple = Just CUDA.targetTriple
+           , moduleDefinitions  = dfs
+           }
+
+-- | A fully-instantiated skeleton is the result of running LLVM code
+-- generation. At the moment this just stores the underlying LLVM module, but in
+-- future could store more.
+--
+-- Moreover, the data type is useful in fixing the return type during code
+-- generation.
+--
+data Skeleton aenv a = Skeleton Module
 
 
 -- | The code generation state for scalar functions and expressions.
