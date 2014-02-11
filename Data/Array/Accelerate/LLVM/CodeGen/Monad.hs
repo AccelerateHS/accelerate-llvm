@@ -101,6 +101,24 @@ data CodeGenState = CodeGenState
   }
   deriving Show
 
+-- TLM: I think this idea of using a Map for the Blocks is not right. I think
+--      this should just be another Sequence. We sort the blocks on output based
+--      on the order in which they were defined, but that is not necessarily the
+--      order in which they are used. E.g. we define the bottom and top of a
+--      loop, so these blocks are sorted sequentially, but during definition of
+--      the loop body other blocks may be added, and so these will effectively
+--      be sorted after the loop end. oops!
+--
+--      Changes:
+--
+--        * newBlock: creates a new block, but doesn't add it to the queue.
+--        * setBlock: add the block to the end of the block chain.
+--
+--      Then, instructions are always appended to the last block in the chain,
+--      whatever that may be, instead of searching in the map and altering the
+--      appropriate block.
+--
+
 data BlockState = BlockState
   { blockIndex          :: {-# UNPACK #-} !Int          -- index of this block (for sorting on output)
   , instructions        :: Seq (Named Instruction)      -- stack of instructions
@@ -113,10 +131,10 @@ newtype CodeGenT m a = CodeGenT { unCodeGen :: StateT CodeGenState m a }
 
 type CodeGen a = CodeGenT LLVM a
 
-runCodeGen :: String -> CodeGen a -> LLVM (a, [BasicBlock])
-runCodeGen nm cg = do
+runCodeGen :: CodeGen a -> LLVM (a, [BasicBlock])
+runCodeGen cg = do
   let st  = CodeGenState undefined Map.empty
-      cg' = newBlock nm >>= setBlock >> cg
+      cg' = newBlock "entry" >>= setBlock >> cg
   --
   (r, s) <- runStateT (unCodeGen cg') st
   return (r, createBlocks s)
@@ -157,6 +175,13 @@ instr op = do
   modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
   return (LocalReference name)
 
+do_ :: Instruction -> CodeGen ()
+do_ op = do
+  let push Nothing  = INTERNAL_ERROR(error) "do_" "unknown basic block"
+      push (Just b) = Just $ b { instructions = instructions b Seq.|> Do op }
+  --
+  modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
+
 
 -- | Add a global declaration to the symbol table
 --
@@ -168,9 +193,6 @@ declare g =
   in
   lift $ modify (\s -> s { symbolTable = Map.alter unique (name g) (symbolTable s) })
 
--- Control flow
--- ------------
-
 -- | Add a termination condition to the current instruction stream. Return the
 -- name of the block chain that was just terminated.
 --
@@ -180,36 +202,6 @@ terminate target =
       end (Just b) = Just $ b { terminator = Just target }
   in
   state $ \s -> ( currentBlock s, s { blockChain = Map.alter end (currentBlock s) (blockChain s) })
-
--- | Unconditional branch
---
-br :: Name -> CodeGen Name
-br target = terminate $ Do (Br target [])
-
--- | Conditional branch
---
-cbr :: Operand -> Name -> Name -> CodeGen Name
-cbr cond t f = terminate $ Do (CondBr cond t f [])
-
--- | Phi nodes. These are always inserted at the start of the instruction
--- stream, at the top of the basic block.
---
-phi :: Type                 -- ^ type of the incoming value
-    -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
-    -> CodeGen Operand
-phi t incoming = do
-  name  <- lift freshName
-  phi' name t incoming
-
-phi' :: Name -> Type -> [(Operand, Name)] -> CodeGen Operand
-phi' name t incoming = do
-  let op            = Phi t incoming []
-      --
-      push Nothing  = INTERNAL_ERROR(error) "phi" "unknown basic block"
-      push (Just b) = Just $ b { instructions = name := op Seq.<| instructions b }
-  --
-  modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
-  return (LocalReference name)
 
 
 -- Block chain
@@ -239,22 +231,4 @@ subBlock ext = do
 --
 setBlock :: Name -> CodeGen ()
 setBlock name = modify (\s -> s { currentBlock = name })
-
-
-{--
--- | Replace the block state of the currently active block
---
-modifyCurrentBlock :: BlockState -> CodeGen ()
-modifyCurrentBlock new = modify $ \s@CodeGenState{..} ->
-  s { blockChain = Map.insert currentBlock new blockChain }
-
--- | Retrieve the state of the currently active block
---
-getCurrentBlock :: CodeGen BlockState
-getCurrentBlock = state $ \s@CodeGenState{..} ->
-  case Map.lookup currentBlock blockChain of
-    Just b      -> (b, s)
-    Nothing     -> INTERNAL_ERROR(error) "getCurrentBlock"
-                 $ "Unknown block: " ++ show currentBlock
---}
 

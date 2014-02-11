@@ -21,7 +21,7 @@ import Data.Array.Accelerate.AST                hiding ( Val(..), prj )
 
 -- standard library
 import Data.IntMap                              ( IntMap )
-import qualified  Data.IntMap                   as Map
+import qualified Data.IntMap                    as Map
 
 #include "accelerate.h"
 

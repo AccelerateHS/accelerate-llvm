@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -29,29 +30,34 @@ import LLVM.General.AST.CallingConvention
 import LLVM.General.AST.Constant
 import LLVM.General.AST.Global                                  as G
 
+-- standard library
+import Control.Monad.State
+import qualified Data.Map                                       as Map
+import qualified Data.Sequence                                  as Seq
+
+#include "accelerate.h"
+
+
+-- Names
+-- =====
 
 -- Generate some names from a given base name and type
 --
-varNames :: Elt a => String -> a -> [Name]
-varNames base t
-  | n <- length (llvmOfTupleType (eltType t))
-  = [ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
-
+varNames :: Elt a => a -> String -> [Operand]
+varNames t base = [ local $ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
+  where
+    n = length (llvmOfTupleType (eltType t))
 
 arrayData :: forall sh e. Elt e => Array sh e -> Name -> [Operand]
-arrayData _ base = [ local (Name (s ++ ".ad" ++ show i)) | i <- [n-1,n-2..0] ]
+arrayData _ base = varNames (undefined::e) (s ++ ".ad")
   where
-    t = llvmOfTupleType (eltType (undefined::e))
-    n = length t
     s = case base of
           UnName v -> (show v)
           Name v   -> v
 
 arrayShape :: forall sh e. Shape sh => Array sh e -> Name -> [Operand]
-arrayShape _ base = [ local (Name (s ++ ".sh" ++ show i)) | i <- [n-1,n-2..0] ]
+arrayShape _ base = varNames (undefined::sh) (s ++ ".sh")
   where
-    t = llvmOfTupleType (eltType (undefined::sh))
-    n = length t
     s = case base of
           UnName v -> (show v)
           Name v   -> v
@@ -65,7 +71,73 @@ global :: Name -> Operand
 global = ConstantOperand . GlobalReference
 
 
--- Call a global function. A function declaration is inserted into the symbol
+-- Code generation
+-- ===============
+
+-- | The code generator produces a sequence of operands representing the LLVM
+-- instructions needed to execute the expression of type `t` in surrounding
+-- environment `env`. These are just phantom types.
+--
+-- The result consists of a list of operands, each representing the single field
+-- of a (flattened) tuple expression down to atomic types.
+--
+type IR env aenv t = [Operand]
+
+-- | The code generator for scalar functions emits monadic operations. Since
+-- LLVM IR is static single assignment, we need to generate new operand names
+-- each time the function is applied.
+--
+type IRFun1 aenv f = [Operand]              -> CodeGen [Operand]
+type IRFun2 aenv f = [Operand] -> [Operand] -> CodeGen [Operand]
+
+-- | A wrapper representing the state of code generation for a delayed array
+--
+data IRDelayed aenv a where
+  IRDelayed ::
+    { delayedExtent       :: IR () aenv sh
+    , delayedIndex        :: IRFun1 aenv (sh  -> e)
+    , delayedLinearIndex  :: IRFun1 aenv (Int -> e)
+    }                     -> IRDelayed aenv (Array sh e)
+
+
+-- Control flow
+-- ============
+
+-- | Unconditional branch
+--
+br :: Name -> CodeGen Name
+br target = terminate $ Do (Br target [])
+
+-- | Conditional branch
+--
+cbr :: Operand -> Name -> Name -> CodeGen Name
+cbr cond t f = terminate $ Do (CondBr cond t f [])
+
+-- | Phi nodes. These are always inserted at the start of the instruction
+-- stream, at the top of the basic block.
+--
+phi :: Type                 -- ^ type of the incoming value
+    -> [(Operand, Name)]    -- ^ list of operands and the predecessor basic block they come from
+    -> CodeGen Operand
+phi t incoming = do
+  name  <- lift freshName
+  phi' name t incoming
+
+phi' :: Name -> Type -> [(Operand, Name)] -> CodeGen Operand
+phi' name t incoming = do
+  let op            = Phi t incoming []
+      --
+      push Nothing  = INTERNAL_ERROR(error) "phi" "unknown basic block"
+      push (Just b) = Just $ b { instructions = name := op Seq.<| instructions b }
+  --
+  modify $ \s -> s { blockChain = Map.alter push (currentBlock s) (blockChain s) }
+  return (LocalReference name)
+
+
+-- Functions & Declarations
+-- ========================
+
+-- | Call a global function. A function declaration is inserted into the symbol
 -- table.
 --
 call :: Name                    -- ^ function name
@@ -84,43 +156,4 @@ call fn rt tyargs attrs = do
   --
   declare decl
   instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
-
-
-{--
--- Floating point function calls are usually postfixed with 'f'.
---
-postfix :: Name -> FloatingType a -> Name
-postfix (UnName _) _ = INTERNAL_ERROR(error) "postfix" "attempt to call unnamed function"
-postfix (Name fn)  t = Name $
-  case t of
-    TypeFloat _  -> fn ++ "f"
-    TypeCFloat _ -> fn ++ "f"
-    _            -> fn
---}
-{--
--- Call an LLVM intrinsic functions
---
-intrinsic :: Name -> FloatingType a -> [Operand] -> CodeGen Operand
-intrinsic (UnName _) _ _    = INTERNAL_ERROR(error) "intrinsic" "attempt to call unnamed function"
-intrinsic (Name f)   t args = error "intrinsic" -- call name args
-  where
-    name = Name $
-      case typeBits (llvmOfFloatingType t) of
-        32 -> f ++ ".f32"
-        64 -> f ++ ".f64"
-        _  -> INTERNAL_ERROR(error) "intrinsic" "unsupported floating point size"
---}
-{--
--- | Create a LLVM global function definition using the default options:
--- external C linkage, and no attributes or alignment annotations.
---
-globalFunction :: Name -> Type -> [Parameter] -> [BasicBlock] -> Global
-globalFunction name returnType args basicBlocks
-  = functionDefaults
-    { name        = name
-    , returnType  = returnType
-    , parameters  = (args,False)
-    , basicBlocks = basicBlocks
-    }
---}
 
