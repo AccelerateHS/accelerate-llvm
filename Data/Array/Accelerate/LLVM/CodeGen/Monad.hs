@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -58,7 +59,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 
 -- | A compiled module consists of a number of global functions (kernels)
 --
-data Module aenv a = Module { unModule :: AST.Module }
+data Module t aenv a = Module { unModule :: AST.Module }
 
 -- | A fully-instantiated skeleton is a kernel that can be compiled by LLVM into
 -- a global function that we can execute.
@@ -66,7 +67,7 @@ data Module aenv a = Module { unModule :: AST.Module }
 -- The data type, rather than type synonym, is required to fix the phantom type
 -- parameters, which is useful during code generation.
 --
-data Kernel aenv a = Kernel { unKernel :: AST.Global }
+data Kernel t aenv a = Kernel { unKernel :: AST.Global }
 
 
 -- | The code generation state for scalar functions and expressions.
@@ -116,8 +117,8 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
 
-runLLVM :: Target -> CodeGen [Kernel aenv a] -> Module aenv a
-runLLVM Target{..} ll =
+runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
+runLLVM ll =
   let ll'               = newBlock "entry" >>= setBlock >> ll
       (r, st)           = runState (runCodeGen ll') (CodeGenState Seq.empty Map.empty 0)
       kernels           = map unKernel r
@@ -130,8 +131,8 @@ runLLVM Target{..} ll =
   in
   Module $ AST.Module
     { moduleName         = name
-    , moduleDataLayout   = targetDataLayout
-    , moduleTargetTriple = targetTriple
+    , moduleDataLayout   = targetDataLayout (undefined::t)
+    , moduleTargetTriple = targetTriple (undefined::t)
     , moduleDefinitions  = defs
     }
 

@@ -51,7 +51,6 @@ Flag internal-checks
 Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.AST
-    Data.Array.Accelerate.LLVM.CUDA
     Data.Array.Accelerate.LLVM.CodeGen
     Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
     Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -61,7 +60,9 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
     Data.Array.Accelerate.LLVM.Compile
-    Data.Array.Accelerate.LLVM.Native
+    Data.Array.Accelerate.LLVM.NVVM.Target
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Target
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util
@@ -74,6 +75,7 @@ Library
   build-depends:
     base                        >= 4.6 && <4.7,
     accelerate                  == 0.15.*,
+    bytestring                  >= 0.9,
     containers                  >= 0.5 && <0.6,
     llvm-general,
     llvm-general-pure,

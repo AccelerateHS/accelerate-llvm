@@ -1,5 +1,7 @@
+{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE TypeFamilies   #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CUDA
+-- Module      : Data.Array.Accelerate.LLVM.NVVM.Target
 -- Copyright   :
 -- License     :
 --
@@ -9,7 +11,7 @@
 --
 
 
-module Data.Array.Accelerate.LLVM.CUDA
+module Data.Array.Accelerate.LLVM.NVVM.Target
   where
 
 -- llvm-general
@@ -20,21 +22,25 @@ import LLVM.General.AST.DataLayout
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.Util
 
 -- standard library
-import Data.Bits
 import Data.Word
+import Data.ByteString                          ( ByteString )
 import qualified Data.Map                       as Map
 import qualified Data.Set                       as Set
 
 
--- | The CUDA PTX/NVVM execution target
+-- | The NVVM/PTX execution target for NVIDIA GPUs
 --
-cudaTarget :: Target
-cudaTarget = Target
-  { targetTriple     = Just nvptxTargetTriple
-  , targetDataLayout = Just dataLayout
-  }
+data NVVM
+
+instance Target NVVM where
+  data ExecutableR NVVM = NVVMR { executableR :: ByteString }
+  targetTriple _     = Just nvvmTargetTriple
+  targetDataLayout _ = Just nvvmDataLayout
+
+  compileForTarget _ _ = error "todo: compileForTarget NVVM"
 
 
 -- A description of the various data layout properties that may be used during
@@ -49,8 +55,8 @@ cudaTarget = Target
 -- Thus, only the size of the pointer layout changes depending on the host
 -- architecture.
 --
-dataLayout :: DataLayout
-dataLayout = DataLayout
+nvvmDataLayout :: DataLayout
+nvvmDataLayout = DataLayout
   { endianness          = Just LittleEndian
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
@@ -63,21 +69,21 @@ dataLayout = DataLayout
   , nativeSizes         = Just $ Set.fromList [ 16,32,64 ]
   }
   where
-    wordSize = fromIntegral (bitSize (undefined :: Int))
+    wordSize = bitSize (undefined :: Int)
 
 
 -- String that describes the target host.
 --
-nvptxTargetTriple :: String
-nvptxTargetTriple = "nvptx-nvidia-cl.1.0"
+nvvmTargetTriple :: String
+nvvmTargetTriple = "nvptx-nvidia-cl.1.0"
 
 
 -- Kernel annotation
 --
-annotateAsKernel :: String -> Word -> Definition
+annotateAsKernel :: Name -> Word -> Definition
 annotateAsKernel kernel metaID =
   MetadataNodeDefinition (MetadataNodeID metaID)
-    [ Just $ ConstantOperand (GlobalReference (Name kernel))
+    [ Just $ ConstantOperand (GlobalReference kernel)
     , Just $ MetadataStringOperand "kernel"
     , Just $ ConstantOperand (Int 32 1)
     ]

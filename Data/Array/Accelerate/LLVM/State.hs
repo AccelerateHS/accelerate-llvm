@@ -13,8 +13,8 @@
 module Data.Array.Accelerate.LLVM.State
   where
 
--- accelerate
-import Data.Array.Accelerate.LLVM.Target
+-- llvm-general
+import qualified LLVM.General.Context                   as LLVM
 
 -- library
 import Control.Applicative                              ( Applicative )
@@ -44,19 +44,20 @@ data State = State {
   }
 
 data Context = Context {
-    llvmTarget  :: Target
+    llvmContext         :: LLVM.Context
   }
 
 
 evalLLVM :: Context -> LLVM a -> IO a
 evalLLVM ctx acc =
-  bracket_ setup teardown action
-  `catch`
-  \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
-  where
-    setup       = return ()
-    teardown    = return ()
-    action      = evalStateT (runReaderT (runLLVM acc) ctx) theState
+  LLVM.withContext $ \lc ->
+    let setup    = return ()
+        teardown = return ()
+        action   = evalStateT (runReaderT (runLLVM acc) (ctx { llvmContext = lc })) theState
+    in
+    bracket_ setup teardown action
+    `catch`
+    \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 
 
 -- Top-level mutable state

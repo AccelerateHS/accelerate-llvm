@@ -17,31 +17,32 @@ import Data.Array.Accelerate.AST                        ( PreOpenAcc, PreAfun, P
 import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.Target
 
 
 -- | Annotate an open array expression with the information necessary to execute
 -- each node directly.
 --
-data ExecOpenAcc aenv a where
-  ExecAcc  :: Module aenv a
+data ExecOpenAcc arch aenv a where
+  ExecAcc  :: Target arch
+           => ExecutableR arch
            -> Aval aenv
-           -> PreOpenAcc ExecOpenAcc aenv a
-           -> ExecOpenAcc aenv a
+           -> PreOpenAcc (ExecOpenAcc arch) aenv a
+           -> ExecOpenAcc arch aenv a
 
   EmbedAcc :: (Shape sh, Elt e)
-           => PreExp ExecOpenAcc aenv sh
-           -> ExecOpenAcc aenv (Array sh e)
+           => PreExp (ExecOpenAcc arch) aenv sh
+           -> ExecOpenAcc arch aenv (Array sh e)
 
 
 -- An annotated AST suitable for execution
 --
-type ExecAcc  a         = ExecOpenAcc () a
-type ExecAfun a         = PreAfun ExecOpenAcc a
+type ExecAcc arch a     = ExecOpenAcc arch () a
+type ExecAfun arch a    = PreAfun (ExecOpenAcc arch) a
 
-type ExecOpenExp        = PreOpenExp ExecOpenAcc
-type ExecOpenFun        = PreOpenFun ExecOpenAcc
+type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
+type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
 
-type ExecExp            = ExecOpenExp ()
-type ExecFun            = ExecOpenFun ()
+type ExecExp arch       = ExecOpenExp arch ()
+type ExecFun arch       = ExecOpenFun arch ()
 

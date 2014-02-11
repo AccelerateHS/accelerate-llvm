@@ -41,13 +41,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 -- Array computations
 -- ------------------
 
-llvmOfAcc :: forall aenv arrs.
-             Target
-          -> DelayedOpenAcc aenv arrs
+llvmOfAcc :: forall arch aenv arrs. Target arch
+          => DelayedOpenAcc aenv arrs
           -> Aval aenv
-          -> Module aenv arrs
-llvmOfAcc _      Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
-llvmOfAcc target (Manifest pacc) aenv = runLLVM target $
+          -> Module arch aenv arrs
+llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
+llvmOfAcc (Manifest pacc) aenv = runLLVM $
   case pacc of
     -- Producers
     Map f a             -> mkMap aenv (travF1 f) (travD a)
@@ -76,5 +75,4 @@ llvmOfAcc target (Manifest pacc) aenv = runLLVM target $
 llvmOfFun1 :: DelayedFun aenv (a -> b) -> Aval aenv -> IRFun1 aenv (a -> b)
 llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
 llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike?"
-
 
