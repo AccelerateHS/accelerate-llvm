@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,17 +12,23 @@ import qualified LLVM.General.AST                       as AST
 import Data.Array.Accelerate                            as A
 import Data.Array.Accelerate.Trafo -- .Sharing
 import Data.Array.Accelerate.Array.Sugar                ( Elt, eltType )
+import qualified Data.Array.Accelerate.AST              as AST
+
+import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.CUDA
+import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
-import qualified Data.Array.Accelerate.AST              as AST
+import Data.Array.Accelerate.LLVM.Compile
+import Data.Array.Accelerate.LLVM.Native
+import Data.Array.Accelerate.LLVM.State
 
 -- standard library
 import Prelude                                          as P
 import Control.Exception
 import Control.Monad.Error
+import Control.Monad.Trans
 import qualified Data.IntMap                            as IM
 
 
@@ -32,41 +39,37 @@ main = do
 
       g :: Exp Int32 -> Exp Int32
       g x = let y = f x
-            in  y >* 0 ? ( x, x-1 )
+            in  y >* 0 ? ( x + 1, x - 1 )
 
       h :: Exp Int -> Exp Int
       h = (+1)
 
       l :: Exp Int32 -> Exp Int32
-      l = A.iterate (constant 10) (+1)
+      l = A.iterate (constant 10) g
+
+
+      acc :: Acc (Vector Int32)
+      acc = A.map g (use (fromList (Z:.0) []))
+
   --
-  putStrLn =<< llvmOfModule (testMap l)
+  evalLLVM (Context nativeTarget) (compileAcc (convertAcc acc) >>= printModules)
 
 
-testMap :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
-testMap f =
-  let arr :: Acc (Vector a)
-      arr = use (fromList (Z:.0) [])
+-- Traverse the annotated AST and dump any LLVM modules found.
+--
+printModules :: ExecOpenAcc aenv a -> LLVM ()
+printModules = travA
+  where
+    printM (Module m) = liftIO (putStrLn =<< llvmOfModule m)
 
-      acc       = convertAcc $ A.map f arr
-      aenv      = IM.singleton 0 "in"
-  in
-  case acc of
-    Manifest (AST.Alet _ b) -> case llvmOfAcc b aenv of
-                                    Skeleton m -> m
+    travA :: ExecOpenAcc aenv a -> LLVM ()
+    travA EmbedAcc{}           = return ()
+    travA (ExecAcc mdl _ pacc) =
+      case pacc of
+           AST.Alet a b     -> travA a >> travA b
+           AST.Use _        -> return ()
+           AST.Map _ a      -> printM mdl >> travA a
 
-{--
-testFun1 :: forall a b. (Elt a, Elt b) => (Exp a -> Exp b) -> AST.Module
-testFun1 f =
-  let ns        = varNames "x" (undefined :: a)
-      ty        = llvmOfTupleType (eltType (undefined :: a))
-      params    = P.zipWith (\t n -> AST.Parameter t n []) ty ns
-      vars      = P.map AST.LocalReference ns
-  in
-  runLLVM "test" $ do
-    body     <- llvmOfFun1 (convertFun True f) IM.empty vars
-    return $ globalFunction "test" AST.VoidType params body
---}
 
 -- Perform the most common optimisations
 --
@@ -81,7 +84,7 @@ llvmOfModule m =
   fmap (either (\s -> error (s P.++ "\n\n" P.++ show m)) id)
     $ withContext $ \ctx ->
         runErrorT $ withModuleFromAST ctx m $ \mdl ->
---          withPassManager opt $ \pm -> do
---            runPassManager pm mdl       -- returns whether any changes were made
+          withPassManager opt $ \pm -> do
+            runPassManager pm mdl       -- returns whether any changes were made
             moduleString mdl
 
