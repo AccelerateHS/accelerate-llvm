@@ -119,7 +119,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     cvtE :: forall env t. OpenExp env aenv t -> Val env -> CodeGen (IR env aenv t)
     cvtE exp env =
       case exp of
---        Let bnd body            -> elet bnd body env
+        Let bnd body            -> elet bnd body env
         Var ix                  -> return $ prj ix env
         PrimConst c             -> return $ [constOp (primConst c)]
         Const c                 -> return $ map constOp (constant (eltType (undefined::t)) c)
@@ -152,6 +152,18 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 
     -- The heavy lifting
     -- -----------------
+
+    -- Scalar let expressions evaluate the binding and store the results into
+    -- new variables. These names are added to the environment so they can be
+    -- picked out by `Var`.
+    --
+    -- Note that there is no restriction to the scope of the new binding. Once
+    -- something is added to the instruction stream, it remains there forever.
+    --
+    elet :: OpenExp env aenv bnd -> OpenExp (env,bnd) aenv body -> Val env -> CodeGen (IR env aenv body)
+    elet bnd body env = do
+      x <- cvtE bnd env
+      cvtE body (env `Push` x)
 
     -- Convert an open expression into a sequence of C expressions. We retain
     -- snoc-list ordering, so the element at tuple index zero is at the end of
