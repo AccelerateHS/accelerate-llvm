@@ -33,9 +33,11 @@ import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Analysis.Type              ( expType, preExpType, delayedAccType )
 
 import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
 import Data.IntMap                                      ( IntMap )
@@ -45,21 +47,6 @@ import qualified Data.Sequence                          as Seq
 import qualified Data.Foldable                          as Seq
 
 #include "accelerate.h"
-
-
--- Configuration
--- =============
-
--- | nuw and nsw stand for "No Unsigned Wrap" and "No Signed Wrap",
--- respectively. If the nuw and/or nsw keywords are present, the result value of
--- the instruction is a poison value if unsigned and/or signed overflow,
--- respectively, occurs.
---
-nuw :: Bool
-nuw = False
-
-nsw :: Bool
-nsw = False
 
 
 -- Environments
@@ -94,10 +81,6 @@ prj _            _            = INTERNAL_ERROR(error) "prj" "inconsistent valuat
 -- Code Generation
 -- ===============
 
--- | Code generation for functions
---
-type LLVM a = CodeGenFunction a
-
 -- | The code generator produces a sequence of operands representing the LLVM
 -- instructions needed to execute the expression of type `t` in surrounding
 -- environment `env`. These are just phantom types.
@@ -107,13 +90,11 @@ type LLVM a = CodeGenFunction a
 --
 type IR env aenv t = [Operand]
 
-type Blocks arch env aenv t = [BasicBlock]
-
 
 -- | Convert a closed function of one argument into the equivalent LLVM AST
 --
 llvmOfFun1
-    :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> Blocks CUDA () aenv b
+    :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> [BasicBlock] -- TLM: type synonym here?
 llvmOfFun1 (Lam (Body f)) aenv xs =
   let
       (_, st)   = generateFunctionCode $ llvmOfOpenExp f (Empty `Push` xs) aenv
@@ -272,105 +253,8 @@ llvmOfPrimFun (PrimMul ty) [x,y] = mul ty x y
 llvmOfPrimFun (PrimNeg ty) [x]   = neg ty x
 
 
--- Primitive operations from Num
--- -----------------------------
-
--- TODO: If both operands are `ConstantOperand`, then we should issue the
---       constant form of the instruction instead.
---
-add :: NumType a -> Operand -> Operand -> LLVM Operand
-add (IntegralNumType _) x y = instr $ Add nuw nsw x y []
-add (FloatingNumType _) x y = instr $ FAdd x y []
-
-cadd :: NumType a -> Constant -> Constant -> LLVM Operand
-cadd (IntegralNumType _) x y = return $ ConstantOperand $ C.Add nuw nsw x y
-cadd (FloatingNumType _) x y = return $ ConstantOperand $ C.FAdd x y
-
-
-sub :: NumType a -> Operand -> Operand -> LLVM Operand
-sub (IntegralNumType _) x y = instr $ Sub nuw nsw x y []
-sub (FloatingNumType _) x y = instr $ FSub x y []
-
-mul :: NumType a -> Operand -> Operand -> LLVM Operand
-mul (IntegralNumType _) x y = instr $ Mul nuw nsw x y []
-mul (FloatingNumType _) x y = instr $ FMul x y []
-
-neg :: forall a. NumType a -> Operand -> LLVM Operand
-neg t x =
-  case t of
-    IntegralNumType i | unsignedIntegralNum i          -> return x
-    IntegralNumType i | IntegralDict <- integralDict i -> mul t x (constOp (num t (-1)))
-    FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (constOp (num t (-1)))
-
-
-quot :: IntegralType a -> Operand -> Operand -> Instruction
-quot t x y
-  | signedIntegralNum t = SDiv False x y []
-  | otherwise           = UDiv False x y []
-
-
 -- Constants
 -- =========
-
--- | Helper to view a constant as an operand
---
-constOp :: Constant -> Operand
-constOp = ConstantOperand
-
--- | Primitive constants
---
-primConst :: PrimConst t -> Constant
-primConst (PrimMinBound t) = primMinBound t
-primConst (PrimMaxBound t) = primMaxBound t
-primConst (PrimPi t)       = primPi t
-
-primMinBound :: forall a. BoundedType a -> Constant
-primMinBound (IntegralBoundedType t) | IntegralDict <- integralDict t = integral t minBound
-primMinBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = nonnum t minBound
-
-primMaxBound :: forall a. BoundedType a -> Constant
-primMaxBound (IntegralBoundedType t) | IntegralDict <- integralDict t = integral t maxBound
-primMaxBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = nonnum t maxBound
-
-primPi :: forall a. FloatingType a -> Constant
-primPi t | FloatingDict <- floatingDict t = floating t pi
-
-
--- | A constant value. Note that this follows the EltRepr representation of the
--- type, meaning that any nested tupling of the surface type is flattened.
---
-constant :: TupleType a -> a -> [Constant]
-constant UnitTuple         _       = []
-constant (SingleTuple t)   c       = [scalar t c]
-constant (PairTuple t1 t2) (c1,c2) = constant t1 c1 ++ constant t2 c2
-
-
--- | A constant scalar value
---
-scalar :: ScalarType a -> a -> Constant
-scalar (NumScalarType t)    = num t
-scalar (NonNumScalarType t) = nonnum t
-
--- | A constant numeric value
---
-num :: NumType a -> a -> Constant
-num (IntegralNumType t) c = integral t c
-num (FloatingNumType t) c = floating t c
-
--- | A constant integral value
---
-integral :: IntegralType a -> a -> Constant
-integral t c | IntegralDict <- integralDict t = C.Int (typeBits (llvmOfIntegralType t)) (toInteger c)
-
--- | A constant floating-point value
---
-floating :: FloatingType a -> a -> Constant
-floating t c = C.Float (float t c)
-
--- | A constant non-numeric value
---
-nonnum :: NonNumType a -> a -> Constant
-nonnum t c | NonNumDict <- nonNumDict t = C.Int (typeBits (llvmOfNonNumType t)) (fromIntegral (fromEnum c))
 
 
 {--

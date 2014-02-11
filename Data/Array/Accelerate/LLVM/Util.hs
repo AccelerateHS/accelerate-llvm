@@ -14,13 +14,14 @@ module Data.Array.Accelerate.LLVM.Util
   where
 
 -- standard library
+import Data.Word
 import qualified Data.Bits as B
 
 
 -- | The number of bits in a type
 --
 {-# INLINE bitSize #-}
-bitSize :: (B.Bits a, Integral i) => a -> i
+bitSize :: B.Bits a => a -> Word32
 bitSize x = fromIntegral (B.bitSize x)
 
 
