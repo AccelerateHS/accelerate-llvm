@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -18,7 +17,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base
   where
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar                        ( Elt, eltType )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -30,8 +28,6 @@ import LLVM.General.AST.Attribute
 import LLVM.General.AST.CallingConvention
 import LLVM.General.AST.Constant
 import LLVM.General.AST.Global                                  as G
-
-#include "accelerate.h"
 
 
 -- Generate some names from a given base name and type
@@ -51,8 +47,8 @@ global :: Name -> Operand
 global = ConstantOperand . GlobalReference
 
 
--- Call a global function. The function and arguments have no metadata attached.
--- A function declaration is inserted into the symbol table.
+-- Call a global function. A function declaration is inserted into the symbol
+-- table.
 --
 call :: Name                    -- ^ function name
      -> Type                    -- ^ return type
@@ -96,7 +92,7 @@ intrinsic (Name f)   t args = error "intrinsic" -- call name args
         64 -> f ++ ".f64"
         _  -> INTERNAL_ERROR(error) "intrinsic" "unsupported floating point size"
 --}
-{--}
+{--
 -- | Create a LLVM global function definition using the default options:
 -- external C linkage, and no attributes or alignment annotations.
 --

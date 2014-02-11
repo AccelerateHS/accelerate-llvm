@@ -81,7 +81,7 @@ integral t c | IntegralDict <- integralDict t = C.Int (typeBits (llvmOfIntegralT
 -- | A constant floating-point value
 --
 floating :: FloatingType a -> a -> Constant
-floating t c = C.Float (float t c)
+floating t c = C.Float (someFloat t c)
 
 -- | A constant non-numeric value
 --

@@ -98,8 +98,8 @@ signedIntegralNum t =
 unsignedIntegralNum :: IntegralType a -> Bool
 unsignedIntegralNum = not . signedIntegralNum
 
-float :: FloatingType a -> a -> SomeFloat
-float t f =
+someFloat :: FloatingType a -> a -> SomeFloat
+someFloat t f =
   case t of
     TypeFloat  _                    -> Single f
     TypeDouble _                    -> Double f

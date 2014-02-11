@@ -24,14 +24,16 @@ import LLVM.General.AST                                         hiding ( nuw, ns
 
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Array.Sugar                        ( eltType, Elt, EltRepr, (:.) )
+import Data.Array.Accelerate.Analysis.Type                      ( preExpType, delayedAccType )
 import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Analysis.Type                      ( expType ) --, preExpType, delayedAccType )
+import Data.Array.Accelerate.Array.Sugar                        ( eltType, Elt, EltRepr, (:.) )
+import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Tuple
+import Data.Array.Accelerate.Type
 
 -- import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
@@ -44,37 +46,11 @@ import Control.Monad.State
 #include "accelerate.h"
 
 
--- Environments
--- ============
-
--- | A mapping between the environment index of a free array variable and the
--- Name of that array to be used in the generated code.
---
--- This simply compresses the array indices into a continuous range, rather than
--- directly using the integer equivalent of the de Bruijn index. Thus, the
--- result is still sensitive to the order of let bindings, but not of any
--- intermediate (unused) free array variables.
---
-type Aval aenv = IntMap Name
-
--- | An environment for local scalar expression bindings, encoded at the value
--- level as a heterogenous snoc list, and on the type level as nested tuples.
---
-data Val env where
-  Empty ::                             Val ()
-  Push  :: Val env -> IR env aenv t -> Val (env, t)
-                        -- ^ Idx env t
-
--- Projection of a value from the valuation environment using a de Bruijn index.
---
-prj :: Idx env t -> Val env -> IR env aenv t
-prj ZeroIdx      (Push _   v) = v
-prj (SuccIdx ix) (Push val _) = prj ix val
-prj _            _            = INTERNAL_ERROR(error) "prj" "inconsistent valuation"
-
-
 -- Code Generation
 -- ===============
+
+-- Scalar expressions
+-- ------------------
 
 -- | The code generator produces a sequence of operands representing the LLVM
 -- instructions needed to execute the expression of type `t` in surrounding
@@ -92,11 +68,20 @@ type IR env aenv t = [Operand]
 -- | Convert a closed function of one argument into a sequence of LLVM basic
 -- blocks.
 --
+{--
 llvmOfFun1 :: Fun aenv (a -> b) -> Aval aenv -> IR () aenv a -> LLVM [BasicBlock]
 llvmOfFun1 (Lam (Body f)) aenv xs = do
   (retop, bb) <- runCodeGen "entry" (llvmOfOpenExp f (Empty `Push` xs) aenv)
   return bb
 
+--}
+
+llvmOfFun1
+    :: DelayedFun aenv (a -> b)
+    -> Aval aenv
+    -> IR () aenv a
+    -> CodeGen (IR env aenv b)
+llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
 llvmOfFun1 _ _ _
   = error "dooo~ you knoooow~ what it's liiike?"
 
@@ -107,13 +92,13 @@ llvmOfFun1 _ _ _
 --
 llvmOfOpenExp
     :: forall _env aenv _t.
-       OpenExp _env aenv _t
+       DelayedOpenExp _env aenv _t
     -> Val _env
     -> Aval aenv
     -> CodeGen (IR _env aenv _t)
 llvmOfOpenExp exp env aenv = cvtE exp env
   where
-    cvtE :: forall env t. OpenExp env aenv t -> Val env -> CodeGen (IR env aenv t)
+    cvtE :: forall env t. DelayedOpenExp env aenv t -> Val env -> CodeGen (IR env aenv t)
     cvtE exp env =
       case exp of
         Let bnd body            -> elet bnd body env
@@ -134,8 +119,8 @@ llvmOfOpenExp exp env aenv = cvtE exp env
         IndexTail ix            -> indexTail <$> cvtE ix env
         IndexSlice ix slix sh   -> indexSlice ix slix sh env
         IndexFull  ix slix sl   -> indexFull  ix slix sl env
---        ToIndex sh ix           -> toIndex   sh ix env
---        FromIndex sh ix         -> fromIndex sh ix env
+        ToIndex sh ix           -> toIndex   sh ix env
+        FromIndex sh ix         -> fromIndex sh ix env
 
         -- Arrays and indexing
 --        Index acc ix            -> index acc ix env
@@ -157,7 +142,10 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- Note that there is no restriction to the scope of the new binding. Once
     -- something is added to the instruction stream, it remains there forever.
     --
-    elet :: OpenExp env aenv bnd -> OpenExp (env,bnd) aenv body -> Val env -> CodeGen (IR env aenv body)
+    elet :: DelayedOpenExp env       aenv bnd
+         -> DelayedOpenExp (env,bnd) aenv body
+         -> Val env
+         -> CodeGen (IR env aenv body)
     elet bnd body env = do
       x <- cvtE bnd env
       cvtE body (env `Push` x)
@@ -166,7 +154,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- snoc-list ordering, so the element at tuple index zero is at the end of
     -- the list. Note that nested tuple structures are flattened.
     --
-    cvtT :: Tuple (OpenExp env aenv) t -> Val env -> CodeGen (IR env aenv t)
+    cvtT :: Tuple (DelayedOpenExp env aenv) t -> Val env -> CodeGen (IR env aenv t)
     cvtT tup env =
       case tup of
         NilTup          -> return []
@@ -177,15 +165,14 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- expressions, rather than picking out a single element.
     --
     prjT :: TupleIdx (TupleRepr t) e
-         -> OpenExp env aenv t
-         -> OpenExp env aenv e
+         -> DelayedOpenExp env aenv t
+         -> DelayedOpenExp env aenv e
          -> Val env
          -> CodeGen (IR env aenv t)
     prjT ix t e env =
-      let
-          subset = reverse
-                 . take (length      $ llvmOfTupleType (expType e))
-                 . drop (prjToInt ix $ expType t)
+      let subset = reverse
+                 . take (length      $ llvmOfTupleType (preExpType delayedAccType e))
+                 . drop (prjToInt ix $ preExpType delayedAccType t)
                  . reverse      -- as Accelerate expressions use a snoc-list representation
       in
       subset <$> cvtE t env
@@ -213,9 +200,9 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- lead to new block labels being created as we walk the AST.
     --
     cond :: forall env t. Elt t
-         => OpenExp env aenv Bool
-         -> OpenExp env aenv t
-         -> OpenExp env aenv t
+         => DelayedOpenExp env aenv Bool
+         -> DelayedOpenExp env aenv t
+         -> DelayedOpenExp env aenv t
          -> Val env
          -> CodeGen (IR env aenv t)
     cond test t e env = do
@@ -244,9 +231,9 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- Value recursion iterates a function while a conditional on that variable
     -- remains true.
     while :: forall env a.
-             OpenFun env aenv (a -> Bool)
-          -> OpenFun env aenv (a -> a)
-          -> OpenExp env aenv a
+             DelayedOpenFun env aenv (a -> Bool)
+          -> DelayedOpenFun env aenv (a -> a)
+          -> DelayedOpenExp env aenv a
           -> Val env
           -> CodeGen (IR env aenv a)
     while (Lam (Body p)) (Lam (Body f)) x env = do
@@ -294,8 +281,8 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- represented in by any C term (Any ~ [])
     --
     indexSlice :: SliceIndex (EltRepr slix) sl co (EltRepr sh)
-               -> OpenExp env aenv slix
-               -> OpenExp env aenv sh
+               -> DelayedOpenExp env aenv slix
+               -> DelayedOpenExp env aenv sh
                -> Val env
                -> CodeGen (IR env aenv sl)
     indexSlice sliceIndex slix sh env =
@@ -313,8 +300,8 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- elide the presence of Any from the head of slx.
     --
     indexFull :: SliceIndex (EltRepr slix) (EltRepr sl) co sh
-              -> OpenExp env aenv slix
-              -> OpenExp env aenv sl
+              -> DelayedOpenExp env aenv slix
+              -> DelayedOpenExp env aenv sl
               -> Val env
               -> CodeGen (IR env aenv sh)
     indexFull sliceIndex slix sl env =
@@ -333,6 +320,46 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     single _   [x] = x
     single loc _   = INTERNAL_ERROR(error) loc "expected single expression"
 
+    -- Convert between linear and multidimensional indices
+    --
+    toIndex :: DelayedOpenExp env aenv sh
+            -> DelayedOpenExp env aenv sh
+            -> Val env
+            -> CodeGen (IR env aenv Int)
+    toIndex sh ix env = do
+      sh' <- cvtE sh env
+      ix' <- cvtE ix env
+      return `fmap` toIndex' (reverse sh') (reverse ix')
+      where
+        int = numType :: NumType Int
+
+        toIndex' []      []     = return (constOp $ num int 0)
+        toIndex' [_]     [i]    = return i
+        toIndex' (sz:sh) (i:ix) = do
+          a <- toIndex' sh ix
+          b <- A.mul int a sz
+          c <- A.add int b i
+          return c
+        toIndex' _       _      =
+          INTERNAL_ERROR(error) "toIndex" "argument mismatch"
+
+    fromIndex :: DelayedOpenExp env aenv sh
+              -> DelayedOpenExp env aenv Int
+              -> Val env
+              -> CodeGen (IR env aenv sh)
+    fromIndex sh ix env = do
+      sh' <-                           cvtE sh env
+      ix' <- single "fromIndex" `fmap` cvtE ix env
+      reverse `fmap` fromIndex' sh' ix'
+      where
+        int = integralType :: IntegralType Int
+
+        fromIndex' [_]     i = return [i]       -- assert( i >= 0 && i < sh )
+        fromIndex' (sz:sh) i = do
+          r  <- A.rem  int i sz
+          i' <- A.quot int i sz
+          rs <- fromIndex' sh i'
+          return (r:rs)
 
 -- | Generate llvm operations for primitive scalar functions
 --

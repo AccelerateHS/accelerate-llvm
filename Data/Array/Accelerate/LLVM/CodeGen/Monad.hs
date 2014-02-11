@@ -41,25 +41,6 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.CUDA        as CUDA
 
 #include "accelerate.h"
 
-{--
--- TODO: We might need to use LLVM for module-level code generation, for example
---       to keep track of adding global definitions (external functions, etc.)
---
-type LLVM a = CodeGen a
-
-
--- This isn't correct, since we should really be returning a module, with the
--- blocks formed, etc. The outer LLVM state should probably track what global
--- symbol declarations need to be emitted (as well as a per-skeleton counter).
--- The inner CodeGen monad keeps track of the basic blocks for an individual
--- function or expression.
---
-runLLVM :: LLVM a -> (a, CodeGenState)
-runLLVM ll = runState (runCodeGen ll) st
-  where
-    st  = CodeGenState "entry" (Map.singleton "entry" blk) 0
-    blk = BlockState 0 Seq.empty Nothing
---}
 
 -- Names
 -- =====
