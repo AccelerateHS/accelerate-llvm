@@ -84,7 +84,7 @@ Library
   default-language:     Haskell2010
 
   include-dirs:         include
-  ghc-options:          -O2 -Wall -fwarn-tabs
+  ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
 
   if flag(debug)
     cpp-options:        -DACCELERATE_DEBUG
@@ -101,7 +101,7 @@ Library
 
 Test-Suite test-exp
   Type:                 exitcode-stdio-1.0
-  ghc-options:          -O2 -Wall -fwarn-tabs
+  ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
 
   build-depends:
     base                        >= 4.6 && <4.7,
