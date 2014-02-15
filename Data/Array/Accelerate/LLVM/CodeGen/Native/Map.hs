@@ -87,7 +87,7 @@ mkMap aenv apply IRDelayed{..} = do
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "map"
-             , parameters  = (paramOut ++ paramIn, False)
+             , parameters  = (paramIn ++ paramOut, False)
              , basicBlocks = code
              } ]
   where

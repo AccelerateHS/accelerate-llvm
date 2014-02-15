@@ -24,6 +24,10 @@ extra-source-files:     include/accelerate.h
 -- Configuration flags
 -- -------------------
 
+Flag nvvm
+  Default:              True
+  Description:          Enable the NVVM backend for CUDA capable NVIDIA GPUs.
+
 Flag debug
   Default:              False
   Description:
@@ -50,6 +54,7 @@ Flag internal-checks
 
 Library
   exposed-modules:
+    -- Accelerate-LLVM middle-end
     Data.Array.Accelerate.LLVM.AST
     Data.Array.Accelerate.LLVM.CodeGen
     Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -61,14 +66,20 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
     Data.Array.Accelerate.LLVM.Compile
-    Data.Array.Accelerate.LLVM.NVVM.Target
-    Data.Array.Accelerate.LLVM.Native.Compile
-    Data.Array.Accelerate.LLVM.Native.Target
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util
 
     Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+
+    -- NVVM target
+    Data.Array.Accelerate.LLVM.NVVM.Target
+
+    -- Native target
+    Data.Array.Accelerate.LLVM.Native.Array.Data
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Execute
+    Data.Array.Accelerate.LLVM.Native.Target
 
 
   other-modules:
@@ -78,6 +89,7 @@ Library
     accelerate                  == 0.15.*,
     bytestring                  >= 0.9,
     containers                  >= 0.5 && <0.6,
+    libffi,
     llvm-general,
     llvm-general-pure,
     mtl
@@ -86,6 +98,11 @@ Library
 
   include-dirs:         include
   ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
+
+  if flag(nvvm)
+    build-depends:
+      cuda                      >= 0.5,
+      libnvvm
 
   if flag(debug)
     cpp-options:        -DACCELERATE_DEBUG

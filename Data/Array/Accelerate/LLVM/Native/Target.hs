@@ -14,16 +14,18 @@ module Data.Array.Accelerate.LLVM.Native.Target
   where
 
 -- llvm-general
+import LLVM.General.AST                                         as AST
 import LLVM.General.Target                                      hiding ( Target )
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.Native.Compile
+import Data.Array.Accelerate.LLVM.CodeGen.Module                ( unModule )
+-- import Data.Array.Accelerate.LLVM.Native.Compile
 
 -- standard library
 import Control.Monad.Error
 import System.IO.Unsafe
-import Foreign.Ptr
+-- import Foreign.Ptr
 
 
 -- | Native machine code JIT execution target
@@ -31,7 +33,8 @@ import Foreign.Ptr
 data Native
 
 instance Target Native where
-  data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
+  data ExecutableR Native = NativeR { executableR :: Module }
+--  data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
 
   {-# NOINLINE targetTriple #-}
   targetTriple _ =
@@ -41,6 +44,7 @@ instance Target Native where
   targetDataLayout _ = unsafePerformIO $
     either error Just `fmap` (runErrorT $ withDefaultTargetMachine getTargetMachineDataLayout)
 
-  compileForTarget m = error "todo: compile for native target"
+  compileForTarget m = return $ NativeR (unModule m)
+--    error "todo: compile for native target"
 --    NativeR `fmap` compileForMCJIT m n
 

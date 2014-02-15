@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS -fno-warn-unused-imports      #-}
 {-# OPTIONS -fno-warn-incomplete-patterns #-}
@@ -9,6 +10,7 @@ import LLVM.General
 import LLVM.General.Context
 import LLVM.General.PassManager
 import qualified LLVM.General.AST                       as AST
+import qualified LLVM.General.AST.Global                as AST
 
 -- accelerate
 import Data.Array.Accelerate                            as A
@@ -27,8 +29,11 @@ import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
+import Data.Array.Accelerate.LLVM.Native.Execute
+
 -- standard library
 import Prelude                                          as P
+import Data.Maybe
 import Control.Exception
 import Control.Monad.Error
 import Control.Monad.Trans
@@ -44,20 +49,19 @@ main = do
       g x = let y = f x
             in  y >* 0 ? ( x + 1, x - 1 )
 
-      h :: Exp Int -> Exp Int
-      h = (+1)
-
       l :: Exp Int32 -> Exp Int32
       l = A.iterate (constant 10) g
 
-
       acc :: Acc (Vector Int32)
-      acc = A.map l (use (fromList (Z:.0) []))
-
+      acc = A.map (+1) (use (fromList (Z:.10) [0..]))
   --
-  evalLLVM (compileAcc (convertAcc acc) >>= printModules)
+  evalLLVM $ do
+    eacc <- compileAcc (convertAcc acc)
+    v    <- executeAcc eacc
+    liftIO $ print v
 
 
+{--
 -- Traverse the annotated AST and dump any LLVM modules found.
 --
 printModules :: ExecOpenAcc LL aenv a -> LLVM ()
@@ -85,10 +89,21 @@ opt = defaultCuratedPassSetSpec -- { optLevel = Just 3 }
 --
 llvmOfModule :: AST.Module -> IO String
 llvmOfModule m =
+  return $ show (kernelsOf m)
+{--
   fmap (either (\s -> error (s P.++ "\n\n" P.++ show m)) id)
     $ withContext $ \ctx ->
         runErrorT $ withModuleFromAST ctx m $ \mdl ->
 --          withPassManager opt $ \pm -> do
 --            runPassManager pm mdl       -- returns whether any changes were made
             moduleLLVMAssembly mdl
+--}
 
+
+kernelsOf :: AST.Module -> [AST.Name]
+kernelsOf m = mapMaybe extract (AST.moduleDefinitions m)
+  where
+    extract (AST.GlobalDefinition AST.Function{..})
+      | P.not (P.null basicBlocks) = Just name
+    extract _                      = Nothing
+--}
