@@ -128,7 +128,7 @@ call fn rt tyargs attrs = do
 -- The environment here refers only to the actual free array variables that are
 -- accessed by the function.
 --
-envParam :: forall aenv. Aval aenv -> [Parameter]
+envParam :: forall aenv. Gamma aenv -> [Parameter]
 envParam aenv = concatMap (\(n, Idx' v) -> toParam n v) (IM.elems aenv)
   where
     toParam :: forall sh e. (Shape sh, Elt e) => Name -> Idx aenv (Array sh e) -> [Parameter]

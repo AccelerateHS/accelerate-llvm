@@ -26,7 +26,7 @@ import Data.Array.Accelerate.LLVM.Target
 data ExecOpenAcc arch aenv a where
   ExecAcc  :: Target arch
            => ExecutableR arch
-           -> Aval aenv
+           -> Gamma aenv
            -> PreOpenAcc (ExecOpenAcc arch) aenv a
            -> ExecOpenAcc arch aenv a
 

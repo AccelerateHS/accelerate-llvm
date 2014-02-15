@@ -142,7 +142,7 @@ compileOpenAcc = traverseAcc
         exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
              -> LLVM (ExecOpenAcc arch aenv arrs)
         exec (aenv, eacc) = do
-          let aval = makeAval aenv
+          let aval = makeGamma aenv
           kernel <- build topAcc aval
           return $! ExecAcc kernel aval eacc
 
@@ -227,7 +227,7 @@ compileOpenAcc = traverseAcc
 --
 build :: forall arch aenv a. Target arch
       => DelayedOpenAcc aenv a
-      -> Aval aenv
+      -> Gamma aenv
       -> LLVM (ExecutableR arch)
 build acc aenv =
   compileForTarget (llvmOfAcc acc aenv)

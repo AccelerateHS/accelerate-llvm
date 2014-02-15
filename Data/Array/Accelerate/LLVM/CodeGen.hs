@@ -43,7 +43,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 
 llvmOfAcc :: forall arch aenv arrs. Target arch
           => DelayedOpenAcc aenv arrs
-          -> Aval aenv
+          -> Gamma aenv
           -> Module arch aenv arrs
 llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
 llvmOfAcc (Manifest pacc) aenv = runLLVM $
@@ -72,7 +72,7 @@ llvmOfAcc (Manifest pacc) aenv = runLLVM $
 -- | Convert a closed function of one argument into a sequence of LLVM basic
 -- blocks.
 --
-llvmOfFun1 :: DelayedFun aenv (a -> b) -> Aval aenv -> IRFun1 aenv (a -> b)
+llvmOfFun1 :: DelayedFun aenv (a -> b) -> Gamma aenv -> IRFun1 aenv (a -> b)
 llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
 llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike?"
 

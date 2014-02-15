@@ -54,7 +54,7 @@ llvmOfOpenExp
     :: forall _env aenv _t.
        DelayedOpenExp _env aenv _t
     -> Val _env
-    -> Aval aenv
+    -> Gamma aenv
     -> CodeGen (IR _env aenv _t)
 llvmOfOpenExp exp env aenv = cvtE exp env
   where
@@ -92,7 +92,11 @@ llvmOfOpenExp exp env aenv = cvtE exp env
         --Foreign function
 --        Foreign ff _ e          -> foreignE ff e env
 
-    cvtF1 :: DelayedOpenFun env aenv (a -> b) -> Val env -> Aval aenv -> IR env aenv a -> CodeGen (IR env aenv b)
+    cvtF1 :: DelayedOpenFun env aenv (a -> b)
+          -> Val env
+          -> Gamma aenv
+          -> IR env aenv a
+          -> CodeGen (IR env aenv b)
     cvtF1 (Lam (Body f)) env aenv xs = llvmOfOpenExp f (env `Push` xs) aenv
     cvtF1 _              _   _    _  = error "impossible"
 

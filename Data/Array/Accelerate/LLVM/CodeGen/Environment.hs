@@ -38,13 +38,13 @@ import qualified Data.IntMap                            as IM
 -- result is still sensitive to the order of let bindings, but not of any
 -- intermediate (unused) free array variables.
 --
-type Aval aenv = IntMap (Name, Idx' aenv)
+type Gamma aenv = IntMap (Name, Idx' aenv)
 
 -- Projection of a value from the array environment using a de Bruijn index.
 -- This returns a pair of operands to access the shape and array data
 -- respectively.
 --
-aprj :: Idx aenv t -> Aval aenv -> Name
+aprj :: Idx aenv t -> Gamma aenv -> Name
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
     Just (n,_)  -> n
@@ -58,8 +58,8 @@ data Idx' aenv where
 -- | Construct the array environment index, will be used by code generation to
 -- map free array variable indices to names in the generated code.
 --
-makeAval :: IntMap (Idx' aenv) -> Aval aenv
-makeAval = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
+makeGamma :: IntMap (Idx' aenv) -> Gamma aenv
+makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
   where
     toAval :: Int -> Idx' aenv -> (Name, Idx' aenv)
     toAval n ix = (Name ("fv." ++ show n), ix)

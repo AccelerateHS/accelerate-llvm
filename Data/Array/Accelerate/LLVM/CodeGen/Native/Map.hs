@@ -78,7 +78,7 @@ import Control.Monad.State
 --
 
 mkMap :: forall t aenv sh a b. Elt b
-      => Aval aenv
+      => Gamma aenv
       -> IRFun1       aenv (a -> b)
       -> IRDelayed    aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
