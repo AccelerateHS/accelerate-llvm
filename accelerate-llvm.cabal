@@ -73,7 +73,7 @@ Library
   other-modules:
 
   build-depends:
-    base                        >= 4.6 && <4.7,
+    base                        >= 4.6 && <5.0,
     accelerate                  == 0.15.*,
     bytestring                  >= 0.9,
     containers                  >= 0.5 && <0.6,
@@ -104,7 +104,7 @@ Test-Suite test-exp
   ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
 
   build-depends:
-    base                        >= 4.6 && <4.7,
+    base                        >= 4.6 && <5.0,
     accelerate                  == 0.15.*,
     accelerate-llvm,
     containers,

@@ -54,7 +54,7 @@ main = do
       acc = A.map l (use (fromList (Z:.0) []))
 
   --
-  evalLLVM (Context undefined) (compileAcc (convertAcc acc) >>= printModules)
+  evalLLVM (compileAcc (convertAcc acc) >>= printModules)
 
 
 -- Traverse the annotated AST and dump any LLVM modules found.

@@ -82,30 +82,6 @@ data CodeGenState = CodeGenState
   }
   deriving Show
 
--- TLM: I think this idea of using a Map for the Blocks is not right. I think
---      this should just be another Sequence. We sort the blocks on output based
---      on the order in which they were defined, but that is not necessarily the
---      order in which they are used. E.g. we define the bottom and top of a
---      loop, so these blocks are sorted sequentially, but during definition of
---      the loop body other blocks may be added, and so these will effectively
---      be sorted after the loop end. oops!
---
---      Changes:
---
---        * newBlock: creates a new block, but doesn't add it to the queue.
---        * setBlock: add the block to the end of the block chain.
---
---      Then, instructions are always appended to the last block in the chain,
---      whatever that may be, instead of searching in the map and altering the
---      appropriate block.
---
---      Actually, it turns out that this doesn't matter, and LLVM just deals
---      with the graph. However, I think that it is fair to avoid an O(log n)
---      lookup in order to add each instruction, when 99% of the time we are
---      always adding to the end of the last block chain. The only exception
---      here is that of the phi node.
---
-
 data Block = Block
   { blockLabel          :: Name                         -- block label
   , instructions        :: Seq (Named Instruction)      -- stack of instructions

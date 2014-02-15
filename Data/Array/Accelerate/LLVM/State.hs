@@ -18,7 +18,7 @@ import qualified LLVM.General.Context                   as LLVM
 
 -- library
 import Control.Applicative                              ( Applicative )
-import Control.Exception                                ( SomeException, bracket_, catch )
+import Control.Exception                                ( SomeException, catch )
 import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
@@ -48,14 +48,10 @@ data Context = Context {
   }
 
 
-evalLLVM :: Context -> LLVM a -> IO a
-evalLLVM ctx acc =
-  LLVM.withContext $ \lc ->
-    let setup    = return ()
-        teardown = return ()
-        action   = evalStateT (runReaderT (runLLVM acc) (ctx { llvmContext = lc })) theState
-    in
-    bracket_ setup teardown action
+evalLLVM :: LLVM a -> IO a
+evalLLVM acc =
+  LLVM.withContext $ \ctx ->
+    evalStateT (runReaderT (runLLVM acc) (Context ctx)) theState
     `catch`
     \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 

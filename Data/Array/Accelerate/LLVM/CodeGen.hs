@@ -15,7 +15,6 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-
 module Data.Array.Accelerate.LLVM.CodeGen
   where
 

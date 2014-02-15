@@ -236,7 +236,10 @@ compileOpenAcc = traverseAcc
 --       * asynchronous compilation
 --       * kernel caching
 --
-build :: forall arch aenv a. Target arch => DelayedOpenAcc aenv a -> Aval aenv -> LLVM (ExecutableR arch)
+build :: forall arch aenv a. Target arch
+      => DelayedOpenAcc aenv a
+      -> Aval aenv
+      -> LLVM (ExecutableR arch)
 build acc aenv = do
   ctx <- asks llvmContext
 
@@ -248,11 +251,11 @@ build acc aenv = do
   when check $ runError (verify mdl)
   liftIO     $ withPassManager opt (\pm -> void $ runPassManager pm mdl)
 
-  -- Compile the C++ module into something executable by this backend
+  -- Compile the C++ module into something this target expects
   compileForTarget mdl (kernelsOf ast)
   where
-    runError e  = liftIO (either error id `fmap` runErrorT e)
     opt         = defaultCuratedPassSetSpec { optLevel = Just 3 }
+    runError e  = liftIO $ either (INTERNAL_ERROR(error) "build") id `fmap` runErrorT e
 
     kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
 
