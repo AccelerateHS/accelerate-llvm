@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute
 
 -- llvm-general
 import LLVM.General.Module
+import LLVM.General.PassManager
 import LLVM.General.ExecutionEngine
 import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.AST.Global                        as AST
@@ -379,13 +380,16 @@ jit ast run = do
   liftIO . runError $
     withModuleFromAST ctx ast            $ \mdl   ->
     withMCJIT ctx opt model ptrelim fast $ \mcjit ->
-    withModuleInEngine mcjit mdl         $ \exe   -> do
-      maybe (err "function not found") run =<< getFunction exe main
+    withPassManager passes               $ \pm    -> do
+      runPassManager pm mdl
+      withModuleInEngine mcjit mdl       $ \exe   ->
+        maybe (err "function not found") run =<< getFunction exe main
   where
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
     ptrelim     = Nothing       -- True to disable frame pointer elimination
     fast        = Just True     -- True to enable fast instruction selection
+    passes      = defaultCuratedPassSetSpec { optLevel = Just 3 }
 
     err msg     = INTERNAL_ERROR(error) "execute" msg
     runError e  = either err id `fmap` runErrorT e
