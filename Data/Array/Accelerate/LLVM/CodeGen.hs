@@ -40,12 +40,13 @@ import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 -- Array computations
 -- ------------------
 
-llvmOfAcc :: forall arch aenv arrs. Target arch
-          => DelayedOpenAcc aenv arrs
+llvmOfAcc :: forall aenv arrs.
+             Target
+          -> DelayedOpenAcc aenv arrs
           -> Aval aenv
-          -> Module arch aenv arrs
-llvmOfAcc Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
-llvmOfAcc (Manifest pacc) aenv = runLLVM $
+          -> Module aenv arrs
+llvmOfAcc _ Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
+llvmOfAcc t (Manifest pacc) aenv = runLLVM t $
   case pacc of
     -- Producers
     Map f a             -> mkMap aenv (travF1 f) (travD a)

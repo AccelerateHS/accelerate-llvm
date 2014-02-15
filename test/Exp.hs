@@ -20,7 +20,7 @@ import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
+--import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Target
@@ -54,18 +54,18 @@ main = do
       acc = A.map l (use (fromList (Z:.0) []))
 
   --
-  evalLLVM (compileAcc (convertAcc acc) >>= printModules)
+  evalLLVM defaultTarget (compileAcc (convertAcc acc) >>= printModules)
 
 
 -- Traverse the annotated AST and dump any LLVM modules found.
 --
-printModules :: ExecOpenAcc LL aenv a -> LLVM ()
+printModules :: ExecOpenAcc aenv a -> LLVM ()
 printModules = travA
   where
-    printM :: ExecutableR LL -> LLVM ()
-    printM (LL m) = liftIO (putStrLn =<< moduleLLVMAssembly m)
+    printM :: Module -> LLVM ()
+    printM m = liftIO (putStrLn =<< moduleLLVMAssembly m)
 
-    travA :: ExecOpenAcc LL aenv a -> LLVM ()
+    travA :: ExecOpenAcc aenv a -> LLVM ()
     travA EmbedAcc{}           = return ()
     travA (ExecAcc mdl _ pacc) =
       case pacc of

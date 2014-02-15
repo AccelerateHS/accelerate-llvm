@@ -15,6 +15,7 @@ module Data.Array.Accelerate.LLVM.Native.Target
 
 -- llvm-general
 import LLVM.General.Target                                      hiding ( Target )
+import LLVM.General.AST.DataLayout
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
@@ -28,19 +29,30 @@ import Foreign.Ptr
 
 -- | Native machine code JIT execution target
 --
+nativeTarget :: Target
+nativeTarget = Target nativeTargetTriple nativeDataLayout
+
+
+{-# NOINLINE nativeTargetTriple #-}
+nativeTargetTriple :: Maybe String
+nativeTargetTriple = Just $ unsafePerformIO getProcessTargetTriple
+
+{-# NOINLINE nativeDataLayout #-}
+nativeDataLayout :: Maybe DataLayout
+nativeDataLayout = unsafePerformIO $
+  either error Just `fmap` (runErrorT $ withDefaultTargetMachine getTargetMachineDataLayout)
+
+
+{--
 data Native
 
 instance Target Native where
   data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
 
-  {-# NOINLINE targetTriple #-}
-  targetTriple _ =
-    Just $ unsafePerformIO getProcessTargetTriple
-
-  {-# NOINLINE targetDataLayout #-}
-  targetDataLayout _ = unsafePerformIO $
-    either error Just `fmap` (runErrorT $ withDefaultTargetMachine getTargetMachineDataLayout)
+  targetTriple _     = nativeTargetTriple
+  targetDataLayout _ = nativeDataLayout
 
   compileForTarget m n =
     NativeR `fmap` compileForMCJIT m n
+--}
 

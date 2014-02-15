@@ -76,11 +76,11 @@ import Control.Monad.State
 -- declare float @apply(float)
 --
 
-mkMap :: forall t aenv sh a b. Elt b
+mkMap :: forall aenv sh a b. Elt b
       => Aval aenv
       -> IRFun1       aenv (a -> b)
       -> IRDelayed    aenv (Array sh a)
-      -> CodeGen [Kernel t aenv (Array sh b)]
+      -> CodeGen [Kernel aenv (Array sh b)]
 mkMap aenv apply IRDelayed{..} = do
   code  <- body >> createBlocks
   return [ Kernel $ functionDefaults
