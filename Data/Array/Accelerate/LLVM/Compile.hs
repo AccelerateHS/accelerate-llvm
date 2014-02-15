@@ -16,9 +16,11 @@ module Data.Array.Accelerate.LLVM.Compile
   where
 
 -- llvm-general
-import LLVM.General                                             as G
+import LLVM.General
 import LLVM.General.Analysis
 import LLVM.General.PassManager
+import qualified LLVM.General.AST                               as AST
+import qualified LLVM.General.AST.Global                        as AST
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -27,10 +29,11 @@ import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.CodeGen                       ( llvmOfAcc )
+import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 as A
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                 as CG
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Target
 
 -- standard library
 import Prelude                                                  hiding ( exp )
@@ -39,6 +42,7 @@ import Control.Monad                                            ( when, void )
 import Control.Monad.Error                                      ( runErrorT )
 import Control.Monad.Reader                                     ( asks )
 import Control.Monad.Trans                                      ( liftIO )
+import Data.Maybe                                               ( mapMaybe )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 
@@ -53,19 +57,22 @@ import Data.Monoid
 --
 --   * The compiled LLVM code required to execute the kernel
 --
-compileAcc :: DelayedAcc a -> LLVM (ExecAcc a)
+compileAcc :: Target arch => DelayedAcc a -> LLVM (ExecAcc arch a)
 compileAcc = compileOpenAcc
 
-compileAfun :: DelayedAfun f -> LLVM (ExecAfun f)
+compileAfun :: Target arch => DelayedAfun f -> LLVM (ExecAfun arch f)
 compileAfun = compileOpenAfun
 
 
-compileOpenAfun :: DelayedOpenAfun aenv f -> LLVM (PreOpenAfun ExecOpenAcc aenv f)
+compileOpenAfun :: Target arch => DelayedOpenAfun aenv f -> LLVM (PreOpenAfun (ExecOpenAcc arch) aenv f)
 compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
 compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
 
 
-compileOpenAcc :: forall _aenv _a. DelayedOpenAcc _aenv _a -> LLVM (ExecOpenAcc _aenv _a)
+compileOpenAcc
+    :: forall arch _aenv _a. Target arch
+    => DelayedOpenAcc _aenv _a
+    -> LLVM (ExecOpenAcc arch _aenv _a)
 compileOpenAcc = traverseAcc
   where
     -- Traverse an open array expression in depth-first order. The top-level
@@ -77,7 +84,7 @@ compileOpenAcc = traverseAcc
     -- array variables that were referred to within scalar sub-expressions.
     -- These will be required during code generation and execution.
     --
-    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM (ExecOpenAcc aenv arrs)
+    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM (ExecOpenAcc arch aenv arrs)
     traverseAcc Delayed{}              = INTERNAL_ERROR(error) "compileOpenAcc" "unexpected delayed array"
     traverseAcc topAcc@(Manifest pacc) =
       case pacc of
@@ -126,48 +133,48 @@ compileOpenAcc = traverseAcc
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
       where
-        travA :: DelayedOpenAcc aenv a -> LLVM (IntMap (Idx' aenv), ExecOpenAcc aenv a)
+        travA :: DelayedOpenAcc aenv a -> LLVM (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
 
         travAF :: DelayedOpenAfun aenv f
-               -> LLVM (IntMap (Idx' aenv), PreOpenAfun ExecOpenAcc aenv f)
+               -> LLVM (IntMap (Idx' aenv), PreOpenAfun (ExecOpenAcc arch) aenv f)
         travAF afun = pure <$> compileOpenAfun afun
 
         travAtup :: Atuple (DelayedOpenAcc aenv) a
-                 -> LLVM (IntMap (Idx' aenv), Atuple (ExecOpenAcc aenv) a)
+                 -> LLVM (IntMap (Idx' aenv), Atuple (ExecOpenAcc arch aenv) a)
         travAtup NilAtup        = return (pure NilAtup)
         travAtup (SnocAtup t a) = liftA2 SnocAtup <$> travAtup t <*> travA a
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM (IntMap (Idx' aenv), PreOpenFun ExecOpenAcc env aenv t)
+              -> LLVM (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
-        exec :: (IntMap (Idx' aenv), PreOpenAcc ExecOpenAcc aenv arrs)
-             -> LLVM (ExecOpenAcc aenv arrs)
+        exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
+             -> LLVM (ExecOpenAcc arch aenv arrs)
         exec (aenv, eacc) = do
           let aval = makeAval aenv
           kernel <- build topAcc aval
           return $! ExecAcc kernel aval eacc
 
-        node :: (IntMap (Idx' aenv'), PreOpenAcc ExecOpenAcc aenv' arrs')
-             -> LLVM (ExecOpenAcc aenv' arrs')
+        node :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
+             -> LLVM (ExecOpenAcc arch aenv' arrs')
         node = fmap snd . wrap
 
-        wrap :: (IntMap (Idx' aenv'), PreOpenAcc ExecOpenAcc aenv' arrs')
-             -> LLVM (IntMap (Idx' aenv'), ExecOpenAcc aenv' arrs')
+        wrap :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
+             -> LLVM (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
         wrap = return . liftA (ExecAcc noKernel mempty)
 
-        noKernel :: G.Module
+        noKernel :: ExecutableR arch
         noKernel =  INTERNAL_ERROR(error) "compile" "no kernel module for this node"
 
 
     -- Traverse a scalar expression
     --
     travE :: DelayedOpenExp env aenv e
-          -> LLVM (IntMap (Idx' aenv), PreOpenExp ExecOpenAcc env aenv e)
+          -> LLVM (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
     travE exp =
       case exp of
         Var ix                  -> return $ pure (Var ix)
@@ -199,22 +206,22 @@ compileOpenAcc = traverseAcc
       where
         travA :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM (IntMap (Idx' aenv), ExecOpenAcc aenv (Array sh e))
+              -> LLVM (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
         travA a = do
           a'    <- traverseAcc a
           return $ (bind a', a')
 
         travT :: Tuple (DelayedOpenExp env aenv) t
-              -> LLVM (IntMap (Idx' aenv), Tuple (PreOpenExp ExecOpenAcc env aenv) t)
+              -> LLVM (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
         travT NilTup        = return (pure NilTup)
         travT (SnocTup t e) = liftA2 SnocTup <$> travT t <*> travE e
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM (IntMap (Idx' aenv), PreOpenFun ExecOpenAcc env aenv t)
+              -> LLVM (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
-        bind :: (Shape sh, Elt e) => ExecOpenAcc aenv (Array sh e) -> IntMap (Idx' aenv)
+        bind :: (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = INTERNAL_ERROR(error) "bind" "expected array variable"
 
@@ -229,16 +236,15 @@ compileOpenAcc = traverseAcc
 --       * asynchronous compilation
 --       * kernel caching
 --
-build :: forall aenv a.
-         DelayedOpenAcc aenv a
+build :: forall arch aenv a. Target arch
+      => DelayedOpenAcc aenv a
       -> Aval aenv
-      -> LLVM G.Module
+      -> LLVM (ExecutableR arch)
 build acc aenv = do
   ctx <- asks llvmContext
-  tgt <- asks llvmTarget
 
   -- Run code generation on the array program
-  let ast = llvmOfAcc tgt acc aenv
+  let ast = llvmOfAcc acc aenv :: CG.Module arch aenv a
 
   -- Lower the Haskell AST into C++ objects. Run verification and optimisation.
   mdl <- runError $ withModuleFromAST ctx (unModule ast) return
@@ -246,17 +252,16 @@ build acc aenv = do
   liftIO     $ withPassManager opt (\pm -> void $ runPassManager pm mdl)
 
   -- Compile the C++ module into something this target expects
---  compileForTarget mdl (kernelsOf ast)
-  return mdl
+  compileForTarget mdl (kernelsOf ast)
   where
     opt         = defaultCuratedPassSetSpec { optLevel = Just 3 }
     runError e  = liftIO $ either (INTERNAL_ERROR(error) "build") id `fmap` runErrorT e
 
---    kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
---
---    extract (AST.GlobalDefinition AST.Function{..})
---      | not (null basicBlocks)  = Just name
---    extract _                   = Nothing
+    kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
+
+    extract (AST.GlobalDefinition AST.Function{..})
+      | not (null basicBlocks)  = Just name
+    extract _                   = Nothing
 
 #if defined(ACCELERATE_DEBUG) || defined(ACCELERATE_INTERNAL_CHECKS)
     check = True

@@ -26,24 +26,22 @@ import Data.Array.Accelerate.LLVM.Util
 
 -- standard library
 import Data.Word
+import Data.ByteString                          ( ByteString )
 import qualified Data.Map                       as Map
 import qualified Data.Set                       as Set
 
 
 -- | The NVVM/PTX execution target for NVIDIA GPUs
 --
-nvvmTarget :: Target
-nvvmTarget = Target nvvmTargetTriple nvvmDataLayout
-
-{--
 data NVVM
+
 instance Target NVVM where
   data ExecutableR NVVM = NVVMR { executableR :: ByteString }
   targetTriple _     = Just nvvmTargetTriple
   targetDataLayout _ = Just nvvmDataLayout
 
   compileForTarget _ _ = error "todo: compileForTarget NVVM"
---}
+
 
 -- A description of the various data layout properties that may be used during
 -- optimisation. For CUDA the following data layouts are supported:
@@ -57,8 +55,8 @@ instance Target NVVM where
 -- Thus, only the size of the pointer layout changes depending on the host
 -- architecture.
 --
-nvvmDataLayout :: Maybe DataLayout
-nvvmDataLayout = Just $ DataLayout
+nvvmDataLayout :: DataLayout
+nvvmDataLayout = DataLayout
   { endianness          = Just LittleEndian
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
@@ -76,8 +74,8 @@ nvvmDataLayout = Just $ DataLayout
 
 -- String that describes the target host.
 --
-nvvmTargetTriple :: Maybe String
-nvvmTargetTriple = Just "nvptx-nvidia-cl.1.0"
+nvvmTargetTriple :: String
+nvvmTargetTriple = "nvptx-nvidia-cl.1.0"
 
 
 -- Kernel annotation

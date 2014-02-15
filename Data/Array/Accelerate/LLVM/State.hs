@@ -16,9 +16,6 @@ module Data.Array.Accelerate.LLVM.State
 -- llvm-general
 import qualified LLVM.General.Context                   as LLVM
 
--- accelerate
-import Data.Array.Accelerate.LLVM.Target
-
 -- library
 import Control.Applicative                              ( Applicative )
 import Control.Exception                                ( SomeException, catch )
@@ -48,14 +45,13 @@ data State = State {
 
 data Context = Context {
     llvmContext         :: LLVM.Context
-  , llvmTarget          :: Target
   }
 
 
-evalLLVM :: Target -> LLVM a -> IO a
-evalLLVM tgt acc =
+evalLLVM :: LLVM a -> IO a
+evalLLVM acc =
   LLVM.withContext $ \ctx ->
-    evalStateT (runReaderT (runLLVM acc) (Context ctx tgt)) theState
+    evalStateT (runReaderT (runLLVM acc) (Context ctx)) theState
     `catch`
     \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 
