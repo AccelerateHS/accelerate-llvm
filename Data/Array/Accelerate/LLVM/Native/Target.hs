@@ -41,6 +41,6 @@ instance Target Native where
   targetDataLayout _ = unsafePerformIO $
     either error Just `fmap` (runErrorT $ withDefaultTargetMachine getTargetMachineDataLayout)
 
-  compileForTarget m n =
-    NativeR `fmap` compileForMCJIT m n
+  compileForTarget m = error "todo: compile for native target"
+--    NativeR `fmap` compileForMCJIT m n
 

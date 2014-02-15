@@ -40,7 +40,7 @@ instance Target NVVM where
   targetTriple _     = Just nvvmTargetTriple
   targetDataLayout _ = Just nvvmDataLayout
 
-  compileForTarget _ _ = error "todo: compileForTarget NVVM"
+  compileForTarget _ = error "todo: compileForTarget NVVM"
 
 
 -- A description of the various data layout properties that may be used during

@@ -15,13 +15,6 @@
 module Data.Array.Accelerate.LLVM.Compile
   where
 
--- llvm-general
-import LLVM.General
-import LLVM.General.Analysis
-import LLVM.General.PassManager
-import qualified LLVM.General.AST                               as AST
-import qualified LLVM.General.AST.Global                        as AST
-
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Trafo
@@ -31,18 +24,12 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 as CG
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
-import Control.Monad                                            ( when, void )
-import Control.Monad.Error                                      ( runErrorT )
-import Control.Monad.Reader                                     ( asks )
-import Control.Monad.Trans                                      ( liftIO )
-import Data.Maybe                                               ( mapMaybe )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 
@@ -228,46 +215,22 @@ compileOpenAcc = traverseAcc
 
 -- Compilation
 -- -----------
-
--- | Generate, compile, and link code that can be used to evaluate an array
--- computation.
 --
--- TODO: * actually compile the generated code, with the given target backend
---       * asynchronous compilation
---       * kernel caching
+-- TODO:
+--  * asynchronous compilation
+--  * kernel caching
+--
+
+-- | Generate code that will be used to evaluate an array computation. Pass the
+-- generated code to the appropriate backend handler, which may then, for
+-- example, compile and link the code into the running executable.
 --
 build :: forall arch aenv a. Target arch
       => DelayedOpenAcc aenv a
       -> Aval aenv
       -> LLVM (ExecutableR arch)
-build acc aenv = do
-  ctx <- asks llvmContext
-
-  -- Run code generation on the array program
-  let ast = llvmOfAcc acc aenv :: CG.Module arch aenv a
-
-  -- Lower the Haskell AST into C++ objects. Run verification and optimisation.
-  mdl <- runError $ withModuleFromAST ctx (unModule ast) return
-  when check $ runError (verify mdl)
-  liftIO     $ withPassManager opt (\pm -> void $ runPassManager pm mdl)
-
-  -- Compile the C++ module into something this target expects
-  compileForTarget mdl (kernelsOf ast)
-  where
-    opt         = defaultCuratedPassSetSpec { optLevel = Just 3 }
-    runError e  = liftIO $ either (INTERNAL_ERROR(error) "build") id `fmap` runErrorT e
-
-    kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
-
-    extract (AST.GlobalDefinition AST.Function{..})
-      | not (null basicBlocks)  = Just name
-    extract _                   = Nothing
-
-#if defined(ACCELERATE_DEBUG) || defined(ACCELERATE_INTERNAL_CHECKS)
-    check = True
-#else
-    check = False
-#endif
+build acc aenv =
+  compileForTarget (llvmOfAcc acc aenv)
 
 
 -- Applicative

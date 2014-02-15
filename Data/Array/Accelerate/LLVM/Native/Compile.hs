@@ -46,3 +46,33 @@ compileForMCJIT mdl f = do
     check Nothing  = INTERNAL_ERROR(error) "compileForMCJIT" "unknown function"
     check (Just p) = p
 
+
+{--
+  ctx <- asks llvmContext
+
+  -- Run code generation on the array program
+  let ast = llvmOfAcc acc aenv :: CG.Module arch aenv a
+
+  -- Lower the Haskell AST into C++ objects. Run verification and optimisation.
+  mdl <- runError $ withModuleFromAST ctx (unModule ast) return
+  when check $ runError (verify mdl)
+  liftIO     $ withPassManager opt (\pm -> void $ runPassManager pm mdl)
+
+  -- Compile the C++ module into something this target expects
+  compileForTarget mdl (kernelsOf ast)
+  where
+    opt         = defaultCuratedPassSetSpec { optLevel = Just 3 }
+    runError e  = liftIO $ either (INTERNAL_ERROR(error) "build") id `fmap` runErrorT e
+
+    kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
+
+    extract (AST.GlobalDefinition AST.Function{..})
+      | not (null basicBlocks)  = Just name
+    extract _                   = Nothing
+
+#if defined(ACCELERATE_DEBUG) || defined(ACCELERATE_INTERNAL_CHECKS)
+    check = True
+#else
+    check = False
+#endif
+--}

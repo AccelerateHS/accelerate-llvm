@@ -20,11 +20,12 @@ import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Compile
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Target
 
 -- standard library
 import Prelude                                          as P
@@ -63,7 +64,7 @@ printModules :: ExecOpenAcc LL aenv a -> LLVM ()
 printModules = travA
   where
     printM :: ExecutableR LL -> LLVM ()
-    printM (LL m) = liftIO (putStrLn =<< moduleLLVMAssembly m)
+    printM (LL m) = liftIO (putStrLn =<< llvmOfModule (unModule m))
 
     travA :: ExecOpenAcc LL aenv a -> LLVM ()
     travA EmbedAcc{}           = return ()
@@ -74,7 +75,6 @@ printModules = travA
            AST.Map _ a      -> printM mdl >> travA a
 
 
-{--
 -- Perform the most common optimisations
 --
 opt :: PassSetSpec
@@ -91,5 +91,4 @@ llvmOfModule m =
 --          withPassManager opt $ \pm -> do
 --            runPassManager pm mdl       -- returns whether any changes were made
             moduleLLVMAssembly mdl
---}
 
