@@ -134,8 +134,6 @@ gangWorker threadId varRequest varDone
         case req of
           ReqDo action
             -> do
-                  message ("woke up thread " ++ show threadId)
-
                   -- Run the action we were given.
                   action threadId
 
