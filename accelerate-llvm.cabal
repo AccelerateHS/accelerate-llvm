@@ -89,6 +89,7 @@ Library
     accelerate                  == 0.15.*,
     bytestring                  >= 0.9,
     containers                  >= 0.5 && <0.6,
+    fclabels                    >= 2.0,
     libffi,
     llvm-general,
     llvm-general-pure,
