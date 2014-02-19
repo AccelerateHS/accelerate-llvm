@@ -45,6 +45,7 @@ import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
+import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
 import Data.Array.Accelerate.LLVM.Debug                         ( dump_exec )
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
@@ -311,83 +312,6 @@ executeOpenExp rootExp env aenv = travE rootExp
         extend SliceNil              ()        ()       = ()
         extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
-
-
--- Marshalling data
--- ----------------
-
--- Data which can be marshalled as function arguments to a kernel invocation.
---
-class Marshalable a where
-  marshal' :: a -> DList FFI.Arg
-
-instance Marshalable () where
-  marshal' () = DL.empty
-
-instance ArrayElt e => Marshalable (ArrayData e) where
-  marshal' adata = marshalR arrayElt adata
-    where
-      marshalR :: ArrayEltR e' -> ArrayData e' -> DList FFI.Arg
-      marshalR ArrayEltRunit             _  = DL.empty
-      marshalR (ArrayEltRpair aeR1 aeR2) ad =
-        marshalR aeR1 (fstArrayData ad) `DL.append`
-        marshalR aeR2 (sndArrayData ad)
-      --
-      marshalR ArrayEltRint     ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRint8    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRint16   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRint32   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRint64   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRword    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRword8   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRword16  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRword32  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRword64  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRfloat   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRdouble  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRchar    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcshort  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcushort ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcint    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcuint   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRclong   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRculong  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcllong  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcullong ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcchar   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcschar  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcuchar  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcfloat  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRcdouble ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-      marshalR ArrayEltRbool    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
-
--- instance Shape sh => Marshalable sh where
---   marshal' sh = map FFI.argInt (reverse (shapeToList sh))
-
-instance (Shape sh, Elt e) => Marshalable (Array sh e) where
-  marshal' (Array sh adata) = marshal' adata `DL.append`
-                              marshal' (reverse (R.shapeToList sh))
-
-instance (Marshalable a, Marshalable b) => Marshalable (a, b) where
-  marshal' (a, b) = marshal' a `DL.append` marshal' b
-
-instance (Marshalable a, Marshalable b, Marshalable c) => Marshalable (a, b, c) where
-  marshal' (a, b, c)
-    = DL.concat [marshal' a, marshal' b, marshal' c]
-
-instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d) => Marshalable (a, b, c, d) where
-  marshal' (a, b, c, d)
-    = DL.concat [marshal' a, marshal' b, marshal' c, marshal' d]
-
-instance Marshalable Int where
-  marshal' x = DL.singleton (FFI.argInt x)
-
-instance Marshalable a => Marshalable [a] where
-  marshal' = DL.concat . map marshal'
-
-
-marshal :: Marshalable a => a -> [FFI.Arg]
-marshal = DL.toList . marshal'
 
 
 -- Skeleton execution

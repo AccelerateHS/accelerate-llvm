@@ -78,11 +78,13 @@ Library
     Data.Array.Accelerate.LLVM.Native
     Data.Array.Accelerate.LLVM.Native.Array.Data
     Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Target
+
     Data.Array.Accelerate.LLVM.Native.Execute
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.Fill
     Data.Array.Accelerate.LLVM.Native.Execute.Gang
-    Data.Array.Accelerate.LLVM.Native.Target
+    Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
     Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
     Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
