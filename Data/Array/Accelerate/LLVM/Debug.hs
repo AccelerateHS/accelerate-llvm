@@ -18,7 +18,7 @@ import Numeric
 import Data.List
 import Data.Label
 import Data.IORef
-import Control.Monad.IO.Class
+import Control.Monad.Trans
 import System.CPUTime
 import System.IO.Unsafe
 import System.Environment
@@ -78,12 +78,13 @@ initialise = parse `fmap` getArgs
                       [Option _ _ (NoArg go) _] -> go opts
                       _                         -> opts         -- not specified, or ambiguous
 
+#ifdef ACCELERATE_DEBUG
 setFlag :: (Flags :-> Bool) -> IO ()
 setFlag f = modifyIORef options (set f True)
 
 clearFlag :: (Flags :-> Bool) -> IO ()
 clearFlag f = modifyIORef options (set f False)
-
+#endif
 
 #ifdef ACCELERATE_DEBUG
 {-# NOINLINE options #-}
