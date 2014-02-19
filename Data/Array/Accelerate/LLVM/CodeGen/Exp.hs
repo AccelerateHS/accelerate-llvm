@@ -294,18 +294,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     toIndex sh ix env = do
       sh' <- cvtE sh env
       ix' <- cvtE ix env
-      return `fmap` toIndex' (reverse sh') (reverse ix')
-
-    toIndex' :: [Operand] -> [Operand] -> CodeGen Operand
-    toIndex' []      []     = return (constOp $ num (numType :: NumType Int) 0)
-    toIndex' [_]     [i]    = return i
-    toIndex' (sz:sh) (i:ix) = do
-      a <- toIndex' sh ix
-      b <- A.mul (numType :: NumType Int) a sz
-      c <- A.add (numType :: NumType Int) b i
-      return c
-    toIndex' _       _      =
-      INTERNAL_ERROR(error) "toIndex" "argument mismatch"
+      return `fmap` intOfIndex (reverse sh') (reverse ix')
 
     -- Generate a multidimensional index from a linear index and array shape
     --
@@ -316,17 +305,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     fromIndex sh ix env = do
       sh' <-                           cvtE sh env
       ix' <- single "fromIndex" `fmap` cvtE ix env
-      reverse `fmap` fromIndex' sh' ix'
-
-    fromIndex' :: [Operand] -> Operand -> CodeGen [Operand]
-    fromIndex' [_]     i = return [i]       -- assert( i >= 0 && i < sh )
-    fromIndex' (sz:sh) i = do
-      r  <- A.rem  (integralType :: IntegralType Int) i sz
-      i' <- A.quot (integralType :: IntegralType Int) i sz
-      rs <- fromIndex' sh i'
-      return (r:rs)
-    fromIndex' _       _ =
-      INTERNAL_ERROR(error) "fromIndex" "argument mismatch"
+      reverse `fmap` indexOfInt sh' ix'
 
     -- Project out a single scalar element from an array. The array expression
     -- does not contain any free scalar variables (strictly flat data
@@ -344,7 +323,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           sh    = arrayShape (undefined::Array sh e) name
       --
       ix' <- cvtE ix env
-      i   <- toIndex' (map local sh) ix'
+      i   <- intOfIndex (map local sh) ix'
       readArray ad i
     index _ _ _ =
       INTERNAL_ERROR(error) "index" "expected array variable"
@@ -418,6 +397,31 @@ writeArray arr i val =
   zipWithM_ (\a v -> do
     p <- instr $ GetElementPtr False (local a) [i] []
     do_        $ Store False p v Nothing 0 []) arr val
+
+-- Convert a multidimensional array index into a linear index
+--
+intOfIndex :: [Operand] -> [Operand] -> CodeGen Operand
+intOfIndex []      []     = return (constOp $ num (numType :: NumType Int) 0)
+intOfIndex [_]     [i]    = return i
+intOfIndex (sz:sh) (i:ix) = do
+  a <- intOfIndex sh ix
+  b <- A.mul (numType :: NumType Int) a sz
+  c <- A.add (numType :: NumType Int) b i
+  return c
+intOfIndex _       _      =
+  INTERNAL_ERROR(error) "intOfIndex" "argument mismatch"
+
+-- Convert a linear array index into a multidimensional array
+--
+indexOfInt :: [Operand] -> Operand -> CodeGen [Operand]
+indexOfInt [_]     i = return [i]       -- assert( i >= 0 && i < sh )
+indexOfInt (sz:sh) i = do
+  r  <- A.rem  (integralType :: IntegralType Int) i sz
+  i' <- A.quot (integralType :: IntegralType Int) i sz
+  rs <- indexOfInt sh i'
+  return (r:rs)
+indexOfInt _       _ =
+  INTERNAL_ERROR(error) "indexOfInt" "argument mismatch"
 
 
 -- Primitive functions
