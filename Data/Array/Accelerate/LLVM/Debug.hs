@@ -14,15 +14,17 @@
 module Data.Array.Accelerate.LLVM.Debug
   where
 
-import Numeric
-import Data.List
-import Data.Label
-import Data.IORef
 import Control.Monad.Trans
+import Data.IORef
+import Data.Label
+import Data.List
+import Data.Time.Clock
+import Numeric
 import System.CPUTime
-import System.IO.Unsafe
-import System.Environment
 import System.Console.GetOpt
+import System.Environment
+import System.IO.Unsafe
+import Text.Printf
 
 import Debug.Trace                              ( traceIO, traceEventIO )
 
@@ -47,11 +49,10 @@ showFFloatSIBase p b n
 fclabels [d|
   data Flags = Flags
     {
-      -- phase control
       dump_gc           :: !Bool        -- garbage collection & memory management
-    , dump_cc           :: !Bool        -- compilation & linking
-    , debug_cc          :: !Bool        -- compile device code with debug symbols
+    , dump_llvm         :: !Bool        -- dump generated (unoptimised) LLVM code
     , dump_exec         :: !Bool        -- kernel execution
+    , dump_gang         :: !Bool        -- print information about the gang
 
       -- general options
     , verbose           :: !Bool        -- additional status messages
@@ -62,9 +63,9 @@ fclabels [d|
 flags :: [OptDescr (Flags -> Flags)]
 flags =
   [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
-  , Option [] ["ddump-cc"]      (NoArg (set dump_cc True))      "print generated code and compilation information"
-  , Option [] ["ddebug-cc"]     (NoArg (set debug_cc True))     "generate debug information for device code"
+  , Option [] ["ddump-cc"]      (NoArg (set dump_llvm True))    "print generated (unoptimised) LLVM IR"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
+  , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
   , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
   , Option [] ["fflush-cache"]  (NoArg (set flush_cache True))  "delete the persistent cache directory"
   ]
@@ -139,4 +140,41 @@ unless f action
 #else
 unless _ action = action
 #endif
+
+{-# INLINE timed #-}
+timed :: MonadIO m
+      => (Flags :-> Bool)
+      -> (Double -> Double -> String)
+      -> m ()
+      -> m ()
+timed _f _msg action
+#ifdef ACCELERATE_DEBUG
+  | mode _f
+  = do
+        -- We will measure both wall clock as well as CPU time.
+        wall0   <- liftIO getCurrentTime
+        cpu0    <- liftIO getCPUTime
+
+        -- Run the action in the main thread.
+        action
+
+        wall1   <- liftIO getCurrentTime
+        cpu1    <- liftIO getCPUTime
+
+        let wallTime = realToFrac (diffUTCTime wall1 wall0)
+            cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+
+        message _f (_msg wallTime cpuTime)
+
+  | otherwise
+#endif
+  = action
+
+{-# INLINE elapsed #-}
+elapsed :: Double -> Double -> String
+elapsed wallTime cpuTime
+  = printf "wall: %s, cpu: %s, speedup: %.2f"
+      (showFFloatSIBase (Just 3) 1000 wallTime "s")
+      (showFFloatSIBase (Just 3) 1000 cpuTime  "s")
+      (cpuTime / wallTime)
 

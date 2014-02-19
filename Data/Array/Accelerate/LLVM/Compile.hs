@@ -31,7 +31,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
-import Data.Array.Accelerate.LLVM.Debug                         ( dump_cc )
+import Data.Array.Accelerate.LLVM.Debug                         ( dump_llvm )
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 -- standard library
@@ -242,11 +242,11 @@ build :: forall arch aenv a. Target arch
 build acc aenv = do
   let ast = llvmOfAcc acc aenv
 #ifdef ACCELERATE_DEBUG
-  Debug.when dump_cc $ do
+  Debug.when dump_llvm $ do
     ctx <- asks llvmContext
     r   <- liftIO . runErrorT $
            withModuleFromAST ctx (unModule ast) $ \mdl ->
-             Debug.message dump_cc =<< moduleLLVMAssembly mdl
+             Debug.message dump_llvm =<< moduleLLVMAssembly mdl
     either error return r
 #endif
   compileForTarget ast

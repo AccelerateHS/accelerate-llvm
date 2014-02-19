@@ -25,6 +25,9 @@ import GHC.Conc                                         ( forkOn, numCapabilitie
 import GHC.IO
 import GHC.ST
 
+import Data.Array.Accelerate.LLVM.Debug                 ( dump_gang, dump_exec )
+import qualified Data.Array.Accelerate.LLVM.Debug       as Debug
+
 
 -- The Gang --------------------------------------------------------------------
 -- | This globally shared gang is auto-initialised at startup and shared by all
@@ -93,6 +96,8 @@ forkGang :: Int -> IO Gang
 forkGang n
   = assert (n > 0)
   $ do
+        Debug.message dump_gang ("gang: creating with " ++ show n ++ " threads")
+
         -- Create the vars we'll use to issue work requests.
         mvsRequest      <- replicateM n newEmptyMVar
 
@@ -162,6 +167,7 @@ gangWorker threadId varRequest varDone
 finaliseWorker :: MVar Req -> MVar () -> IO ()
 finaliseWorker varReq varDone
   = do
+        Debug.message dump_gang "gang: shutting down"
         putMVar varReq ReqShutdown
         takeMVar varDone
         return ()
@@ -203,12 +209,16 @@ seqIO (Gang _n _ _ _) _action
 --
 parIO :: Gang -> (Int -> IO ()) -> IO ()
 parIO (Gang _ mvsRequest mvsResult _) action
-  = do
+  = Debug.timed dump_exec elapsed
+  $ do
         -- Send requests to all the threads.
         mapM_ (\v -> putMVar v (ReqDo action)) mvsRequest
 
         -- Wait for all the requests to complete.
         mapM_ takeMVar mvsResult
+
+elapsed :: Double -> Double -> String
+elapsed x y = "exec: " ++ Debug.elapsed x y
 
 
 -- | Same as 'gangIO' but in the 'ST' monad.
