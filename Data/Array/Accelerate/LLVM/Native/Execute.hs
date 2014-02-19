@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
@@ -153,6 +154,8 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
 
     -- Consumers
+    Fold _ _ a                  -> foldOp  =<< extent a
+    Fold1 _ a                   -> fold1Op =<< extent a
 
     -- Removed by fusion
     Replicate _ _ _             -> fusionError
@@ -207,6 +210,30 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     reshapeOp sh (Array sh' adata)
       = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
       $ Array (fromElt sh) adata
+
+    -- Execute fold operations. There are two flavours:
+    --
+    --   1. If we are collapsing to a single value, then the threads compute an
+    --   individual partial sum, then a single thread adds the results.
+    --
+    --   2. If this is a multidimensional reduction, then threads reduce the
+    --   inner dimensions sequentially.
+    --
+    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    fold1Op sh@(_ :. sz)
+      = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+      $ foldCore sh
+
+    -- Make space for the neutral element
+    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    foldOp (sh :. sz)
+      = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
+
+    foldCore :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    foldCore (sh :. sz) = do
+      let out = allocateArray sh
+      execute "fold" kernel gamma aenv (size sh) (out,sz)
+      return out
 
 
 -- Scalar expression evaluation
@@ -393,8 +420,9 @@ arguments gamma aenv a start end
   : FFI.argInt end
   : concatMap (\(_, Idx' idx) -> marshal (aprj idx aenv)) (IM.elems gamma) ++ marshal a
 
+
 -- JIT compile the LLVM code representing this kernel, link to the running
--- executable, and execute.
+-- executable, and execute using the 'fillP' method.
 --
 execute
     :: Marshalable args
