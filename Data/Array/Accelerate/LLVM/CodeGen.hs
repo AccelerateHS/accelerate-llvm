@@ -30,8 +30,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.Target
 
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 import Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
+import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+import Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
 
 #include "accelerate.h"
 
@@ -52,6 +53,8 @@ llvmOfAcc (Manifest pacc) aenv = runLLVM $
     -- Producers
     Map f a             -> mkMap aenv (travF1 f) (travD a)
     Generate _ f        -> mkGenerate aenv (travF1 f)
+    Transform _ p f a   -> mkTransform aenv (travF1 p) (travF1 f) (travD a)
+    Backpermute _ p a   -> mkTransform aenv (travF1 p) (return)   (travD a)
 
     _                   -> error "silence!"
   where

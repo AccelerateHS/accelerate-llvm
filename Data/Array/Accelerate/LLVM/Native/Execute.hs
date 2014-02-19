@@ -144,10 +144,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     Aforeign _ff _afun _a       -> error "todo: execute Aforeign"
 
     -- Producers
-    Map _ a                     -> executeOp "map"         =<< extent a
-    Generate sh _               -> executeOp "generate"    =<< travE sh
-    Transform sh _ _ _          -> executeOp "transform"   =<< travE sh
-    Backpermute sh _ _          -> executeOp "backpermute" =<< travE sh
+    Map _ a                     -> executeOp "map"       =<< extent a
+    Generate sh _               -> executeOp "generate"  =<< travE sh
+    Transform sh _ _ _          -> executeOp "transform" =<< travE sh
+    Backpermute sh _ _          -> executeOp "transform" =<< travE sh
 
     -- Consumers
 
