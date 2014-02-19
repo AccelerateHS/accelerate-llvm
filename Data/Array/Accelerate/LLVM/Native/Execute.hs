@@ -422,7 +422,8 @@ arguments gamma aenv a start end
 
 
 -- JIT compile the LLVM code representing this kernel, link to the running
--- executable, and execute using the 'fillP' method.
+-- executable, and execute the main function using the 'fillP' method to
+-- distribute work evenly amongst the threads.
 --
 execute
     :: Marshalable args
@@ -434,28 +435,32 @@ execute
     -> LLVM ()
 execute (NativeR ast) gamma aenv n a =
   let main = Name (AST.moduleName ast) in
-  jit main ast $ \f ->
+  compile ast  $ \ee ->
+  link ee main $ \f  ->
   fillP n      $ \start end ->
     callFFI f retVoid (arguments gamma aenv a start end)
 
 
-jit :: Name -> AST.Module -> (FunPtr () -> IO a) -> LLVM a
-jit main ast run = do
+link :: ExecutableModule MCJIT -> Name -> (FunPtr () -> IO a) -> IO a
+link exe main run =
+  maybe (INTERNAL_ERROR(error) "link" "function not found") run =<< getFunction exe main
+
+
+compile :: AST.Module -> (ExecutableModule MCJIT -> IO a) -> LLVM a
+compile ast cont = do
   ctx   <- asks llvmContext
   liftIO . runError $
     withModuleFromAST ctx ast            $ \mdl   ->
     withMCJIT ctx opt model ptrelim fast $ \mcjit ->
     withPassManager passes               $ \pm    -> do
       void $ runPassManager pm mdl
-      withModuleInEngine mcjit mdl       $ \exe   ->
-        maybe (err "function not found") run =<< getFunction exe main
+      withModuleInEngine mcjit mdl       $ \ee    ->
+        cont ee
   where
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
     ptrelim     = Nothing       -- True to disable frame pointer elimination
     fast        = Just True     -- True to enable fast instruction selection
     passes      = defaultCuratedPassSetSpec { optLevel = Just 3 }
-
-    err msg     = INTERNAL_ERROR(error) "execute" msg
-    runError e  = either err id `fmap` runErrorT e
+    runError e  = either (INTERNAL_ERROR(error) "execute") id `fmap` runErrorT e
 
