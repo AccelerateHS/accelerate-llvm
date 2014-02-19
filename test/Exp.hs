@@ -28,6 +28,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.Native
 
 import Data.Array.Accelerate.LLVM.Native.Execute
 
@@ -65,10 +66,10 @@ main = do
   print $ run acc
 
 
-run :: Arrays a => Acc a -> a
-run acc
-  = unsafePerformIO . evalLLVM
-  $ compileAcc (convertAcc acc) >>= executeAcc
+-- run :: Arrays a => Acc a -> a
+-- run acc
+--   = unsafePerformIO . evalLLVM
+--   $ compileAcc (convertAcc acc) >>= executeAcc
 
 {--
 -- Traverse the annotated AST and dump any LLVM modules found.
