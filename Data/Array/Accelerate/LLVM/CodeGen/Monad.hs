@@ -83,8 +83,7 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
 
 runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
 runLLVM ll =
-  let ll'               = newBlock "entry" >>= setBlock >> ll
-      (r, st)           = runState (runCodeGen ll') (CodeGenState Seq.empty Map.empty 0)
+  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty 0)
       kernels           = map unKernel r
       defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
 
@@ -101,12 +100,19 @@ runLLVM ll =
     }
 
 
+-- | An initial block chain
+--
+initBlockChain :: Seq Block
+initBlockChain =
+  Seq.singleton $ Block "entry" Seq.empty Nothing
+
+
 -- | Extract the block state and construct the basic blocks to form a function
 -- body. This also clears the block stream, ready for a new function to be
 -- generated.
 --
 createBlocks :: CodeGen [BasicBlock]
-createBlocks = state $ \s -> ( Seq.toList $ fmap makeBlock (blockChain s) , s { blockChain = Seq.empty, next = 0 } )
+createBlocks = state $ \s -> ( Seq.toList $ fmap makeBlock (blockChain s) , s { blockChain = initBlockChain, next = 0 } )
   where
     makeBlock Block{..} =
       let err   = INTERNAL_ERROR(error) "createBlocks" $ "Block has no terminator (" ++ show blockLabel ++ ")"
