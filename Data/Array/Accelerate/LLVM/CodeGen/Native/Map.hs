@@ -94,7 +94,6 @@ mkMap aenv apply IRDelayed{..} = do
              } ]
   where
     arrOut              = arrayData  (undefined::Array sh b) "out"
-    shOut               = arrayShape (undefined::Array sh b) "out"
     paramOut            = arrayParam (undefined::Array sh b) "out"
     paramIn             = envParam aenv
     (start, end, gang)  = gangParam
