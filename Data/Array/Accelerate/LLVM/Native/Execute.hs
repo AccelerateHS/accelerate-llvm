@@ -41,9 +41,6 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 
-import Data.Array.Accelerate.LLVM.Debug                         ( dump_cc )
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
@@ -409,8 +406,7 @@ jit fn ast run = do
     withMCJIT ctx opt model ptrelim fast $ \mcjit ->
     withPassManager passes               $ \pm    -> do
       void $ runPassManager pm mdl
-      withModuleInEngine mcjit mdl       $ \exe   -> do
-        Debug.when dump_cc (Debug.message dump_cc =<< moduleLLVMAssembly mdl)
+      withModuleInEngine mcjit mdl       $ \exe   ->
         maybe (err "function not found") run =<< getFunction exe fn
   where
     opt         = Just 3        -- optimisation level

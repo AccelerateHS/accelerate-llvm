@@ -15,6 +15,9 @@
 module Data.Array.Accelerate.LLVM.Compile
   where
 
+-- llvm-general
+import LLVM.General.Module
+
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Trafo
@@ -23,13 +26,20 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
+import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
+import Data.Array.Accelerate.LLVM.Debug                         ( dump_cc )
+import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
+import Control.Monad.Error                                      ( runErrorT )
+import Control.Monad.Reader                                     ( asks )
+import Control.Monad.Trans                                      ( liftIO )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 
@@ -229,8 +239,17 @@ build :: forall arch aenv a. Target arch
       => DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM (ExecutableR arch)
-build acc aenv =
-  compileForTarget (llvmOfAcc acc aenv)
+build acc aenv = do
+  let ast = llvmOfAcc acc aenv
+#ifdef ACCELERATE_DEBUG
+  Debug.when dump_cc $ do
+    ctx <- asks llvmContext
+    r   <- liftIO . runErrorT $
+           withModuleFromAST ctx (unModule ast) $ \mdl ->
+             Debug.message dump_cc =<< moduleLLVMAssembly mdl
+    either error return r
+#endif
+  compileForTarget ast
 
 
 -- Applicative
