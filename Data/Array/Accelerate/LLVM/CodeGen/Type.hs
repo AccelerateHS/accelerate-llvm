@@ -47,6 +47,22 @@ instance TypeOf (NonNumType a) where
   typeOf = llvmOfNonNumType
 
 
+-- In order to use operations from Arithemetic.hs when defining skeletons, we
+-- often need integer types
+--
+class IntType c where
+  int :: c Int
+
+instance IntType ScalarType where
+  int = scalarType
+
+instance IntType NumType where
+  int = numType
+
+instance IntType IntegralType where
+  int = integralType
+
+
 llvmOfTupleType :: TupleType a -> [Type]
 llvmOfTupleType UnitTuple         = []
 llvmOfTupleType (SingleTuple t)   = [llvmOfScalarType t]
