@@ -66,20 +66,25 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
     Data.Array.Accelerate.LLVM.Compile
+    Data.Array.Accelerate.LLVM.Debug
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util
-
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Map
 
     -- NVVM target
     Data.Array.Accelerate.LLVM.NVVM.Target
 
     -- Native target
+    Data.Array.Accelerate.LLVM.Native
     Data.Array.Accelerate.LLVM.Native.Array.Data
     Data.Array.Accelerate.LLVM.Native.Compile
     Data.Array.Accelerate.LLVM.Native.Execute
+    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+    Data.Array.Accelerate.LLVM.Native.Execute.Gang
     Data.Array.Accelerate.LLVM.Native.Target
+
+    Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+    Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
 
 
   other-modules:
@@ -120,7 +125,7 @@ Library
 
 Test-Suite test-exp
   Type:                 exitcode-stdio-1.0
-  ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
+  ghc-options:          -O2 -Wall -threaded -fwarn-tabs -dcore-lint
 
   build-depends:
     base                        >= 4.6 && <5.0,
