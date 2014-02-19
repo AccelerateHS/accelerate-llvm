@@ -43,6 +43,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 
 import Data.Array.Accelerate.LLVM.Debug                         ( dump_exec )
@@ -63,21 +64,6 @@ import Foreign.Ptr
 import Foreign.LibFFI                                           as FFI
 
 #include "accelerate.h"
-
-
--- Valuation for an environment of array computations
---
-data Aval env where
-  Aempty :: Aval ()
-  Apush  :: Aval env -> t -> Aval (env, t)
-
-
--- Projection of a value from a valuation using a de Bruijn index.
---
-aprj :: Idx env t -> Aval env -> t
-aprj ZeroIdx       (Apush _   x) = x
-aprj (SuccIdx idx) (Apush val _) = aprj idx val
-aprj _             _             = INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
 
 
 -- Array expression evaluation
