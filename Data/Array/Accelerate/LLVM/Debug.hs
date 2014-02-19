@@ -78,6 +78,13 @@ initialise = parse `fmap` getArgs
                       [Option _ _ (NoArg go) _] -> go opts
                       _                         -> opts         -- not specified, or ambiguous
 
+setFlag :: (Flags :-> Bool) -> IO ()
+setFlag f = modifyIORef options (set f True)
+
+clearFlag :: (Flags :-> Bool) -> IO ()
+clearFlag f = modifyIORef options (set f False)
+
+
 #ifdef ACCELERATE_DEBUG
 {-# NOINLINE options #-}
 options :: IORef Flags
