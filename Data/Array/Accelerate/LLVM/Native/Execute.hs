@@ -150,6 +150,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     Generate sh _               -> executeOp "generate"  =<< travE sh
     Transform sh _ _ _          -> executeOp "transform" =<< travE sh
     Backpermute sh _ _          -> executeOp "transform" =<< travE sh
+    Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
 
     -- Consumers
 
@@ -198,6 +199,14 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
       let out = allocateArray sh
       execute fn kernel gamma aenv (size sh) out
       return out
+
+    -- Change the shape of an array without altering its contents. This does not
+    -- execute any kernel programs.
+    --
+    reshapeOp :: Shape sh => sh -> Array sh' e -> Array sh e
+    reshapeOp sh (Array sh' adata)
+      = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
+      $ Array (fromElt sh) adata
 
 
 -- Scalar expression evaluation
