@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
@@ -89,7 +90,7 @@ instance ArrayElt e => Marshalable (ArrayData e) where
 -- instance Shape sh => Marshalable sh where
 --   marshal' sh = map FFI.argInt (reverse (shapeToList sh))
 
-instance Marshalable (Gamma aenv, Aval aenv) where
+instance Marshalable (Gamma aenv, Aval aenv) where              -- overlaps with instance (a,b)
   marshal' (gamma, aenv)
     = DL.concat
     $ map (\(_, Idx' idx) -> marshal' (aprj idx aenv)) (IM.elems gamma)
