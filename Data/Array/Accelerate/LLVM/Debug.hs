@@ -63,7 +63,7 @@ fclabels [d|
 flags :: [OptDescr (Flags -> Flags)]
 flags =
   [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
-  , Option [] ["ddump-cc"]      (NoArg (set dump_llvm True))    "print generated (unoptimised) LLVM IR"
+  , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated (unoptimised) LLVM IR"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
   , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
   , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
