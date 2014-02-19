@@ -31,6 +31,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+import Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
 
 #include "accelerate.h"
 
@@ -50,6 +51,7 @@ llvmOfAcc (Manifest pacc) aenv = runLLVM $
   case pacc of
     -- Producers
     Map f a             -> mkMap aenv (travF1 f) (travD a)
+    Generate _ f        -> mkGenerate aenv (travF1 f)
 
     _                   -> error "silence!"
   where
