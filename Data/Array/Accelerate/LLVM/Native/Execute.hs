@@ -39,12 +39,15 @@ import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
 
+import Data.Array.Accelerate.LLVM.Native.Execute.Fill
+
 import Data.Array.Accelerate.LLVM.Debug                         ( dump_cc )
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
+import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Reader
 import Data.Maybe
@@ -139,6 +142,9 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
 
     -- Producers
     Map _ a                     -> executeOp =<< extent a
+    Generate sh _               -> executeOp =<< travE sh
+    Transform sh _ _ _          -> executeOp =<< travE sh
+    Backpermute sh _ _          -> executeOp =<< travE sh
 
     -- Consumers
 
@@ -355,12 +361,18 @@ instance Marshalable a => Marshalable [a] where
 -- Skeleton execution
 -- ------------------
 
--- Generate FFI function arguments. The free array environment variables are
--- first, followed by any other (known) arguments.
+-- Generate FFI function arguments. The standard calling convention is
 --
-arguments :: Marshalable args => Gamma aenv -> Aval aenv -> args -> [FFI.Arg]
-arguments gamma aenv a =
-  concatMap (\(_, Idx' idx) -> marshal (aprj idx aenv)) (IM.elems gamma) ++ marshal a
+--   1. Starting index
+--   2. Final index
+--   3. Free array variables that were used
+--   4. Any remaining parameters (typically explicit output arrays)
+--
+arguments :: Marshalable args => Gamma aenv -> Aval aenv -> args -> Int -> Int -> [FFI.Arg]
+arguments gamma aenv a start end
+  = FFI.argInt start
+  : FFI.argInt end
+  : concatMap (\(_, Idx' idx) -> marshal (aprj idx aenv)) (IM.elems gamma) ++ marshal a
 
 -- JIT compile the LLVM code representing this kernel, link to the running
 -- executable, and execute.
@@ -374,20 +386,32 @@ execute
     -> args
     -> LLVM ()
 execute (NativeR ast) gamma aenv n a =
-  jit ast (\f -> callFFI f retVoid (arguments gamma aenv a))
+  jit fn ast $ \f ->
+  fillP n    $ \start end ->
+    callFFI f retVoid (arguments gamma aenv a start end)
+  where
+    fn  = case kernelsOf ast of
+            []  -> INTERNAL_ERROR(error) "execute" "function not found"
+            f:_ -> f
+
+    kernelsOf m = mapMaybe extract (AST.moduleDefinitions m)
+
+    extract (AST.GlobalDefinition AST.Function{..})
+      | not (null basicBlocks)  = Just name
+    extract _                   = Nothing
 
 
-jit :: AST.Module -> (FunPtr () -> IO a) -> LLVM a
-jit ast run = do
+jit :: AST.Name -> AST.Module -> (FunPtr () -> IO a) -> LLVM a
+jit fn ast run = do
   ctx   <- asks llvmContext
   liftIO . runError $
     withModuleFromAST ctx ast            $ \mdl   ->
     withMCJIT ctx opt model ptrelim fast $ \mcjit ->
     withPassManager passes               $ \pm    -> do
-      runPassManager pm mdl
+      void $ runPassManager pm mdl
       withModuleInEngine mcjit mdl       $ \exe   -> do
         Debug.when dump_cc (Debug.message dump_cc =<< moduleLLVMAssembly mdl)
-        maybe (err "function not found") run =<< getFunction exe main
+        maybe (err "function not found") run =<< getFunction exe fn
   where
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
@@ -397,17 +421,4 @@ jit ast run = do
 
     err msg     = INTERNAL_ERROR(error) "execute" msg
     runError e  = either err id `fmap` runErrorT e
-
-    -- The name of the function to invoke. This is a temporary hack because we
-    -- really need to have more than one function per module; c.f. fold, scan.
-    --
-    main        = case kernelsOf ast of
-                    []  -> err "function not found"
-                    f:_ -> f
-
-    kernelsOf m = mapMaybe extract (AST.moduleDefinitions m)
-
-    extract (AST.GlobalDefinition AST.Function{..})
-      | not (null basicBlocks)  = Just name
-    extract _                   = Nothing
 
