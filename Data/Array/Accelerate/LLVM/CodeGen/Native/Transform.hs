@@ -48,15 +48,15 @@ mkTransform aenv permute apply IRDelayed{..} = do
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "transform"
-             , parameters  = (gang ++ paramIn ++ paramOut, False)
+             , parameters  = (paramGang ++ paramOut ++ paramEnv, False)
              , basicBlocks = code
              } ]
   where
-    arrOut              = arrayData  (undefined::Array sh' b) "out"
-    shOut               = arrayShape (undefined::Array sh' b) "out"
-    paramOut            = arrayParam (undefined::Array sh' b) "out"
-    paramIn             = envParam aenv
-    (start, end, gang)  = gangParam
+    arrOut                      = arrayData  (undefined::Array sh' b) "out"
+    shOut                       = arrayShape (undefined::Array sh' b) "out"
+    paramOut                    = arrayParam (undefined::Array sh' b) "out"
+    paramEnv                    = envParam aenv
+    (start, end, paramGang)     = gangParam
 
     runBody :: CodeGen [BasicBlock]
     runBody = do

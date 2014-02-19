@@ -33,9 +33,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
--- standard library
-import Control.Monad
-
 
 -- C Code
 -- ======
@@ -89,14 +86,14 @@ mkMap aenv apply IRDelayed{..} = do
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "map"
-             , parameters  = (gang ++ paramIn ++ paramOut, False)
+             , parameters  = (paramGang ++ paramOut ++ paramEnv, False)
              , basicBlocks = code
              } ]
   where
-    arrOut              = arrayData  (undefined::Array sh b) "out"
-    paramOut            = arrayParam (undefined::Array sh b) "out"
-    paramIn             = envParam aenv
-    (start, end, gang)  = gangParam
+    (start, end, paramGang)     = gangParam
+    arrOut                      = arrayData  (undefined::Array sh b) "out"
+    paramOut                    = arrayParam (undefined::Array sh b) "out"
+    paramEnv                    = envParam aenv
 
     runBody :: CodeGen [BasicBlock]
     runBody = do

@@ -45,15 +45,15 @@ mkGenerate aenv apply = do
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "generate"
-             , parameters  = (gang ++ paramIn ++ paramOut, False)
+             , parameters  = (paramGang ++ paramOut ++ paramEnv, False)
              , basicBlocks = code
              } ]
   where
-    arrOut              = arrayData  (undefined::Array sh e) "out"
-    shOut               = arrayShape (undefined::Array sh e) "out"
-    paramOut            = arrayParam (undefined::Array sh e) "out"
-    paramIn             = envParam aenv
-    (start, end, gang)  = gangParam
+    arrOut                      = arrayData  (undefined::Array sh e) "out"
+    shOut                       = arrayShape (undefined::Array sh e) "out"
+    paramOut                    = arrayParam (undefined::Array sh e) "out"
+    paramEnv                    = envParam aenv
+    (start, end, paramGang)     = gangParam
 
     runBody :: CodeGen [BasicBlock]
     runBody = do
