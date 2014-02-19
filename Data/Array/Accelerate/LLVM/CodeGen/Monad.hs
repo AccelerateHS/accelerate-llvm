@@ -91,7 +91,7 @@ runLLVM ll =
       name | x:_          <- kernels
            , f@Function{} <- x
            , Name s <- AST.name f = s
-           | otherwise            = "<string>"
+           | otherwise            = "<undefined>"
   in
   Module $ AST.Module
     { moduleName         = name

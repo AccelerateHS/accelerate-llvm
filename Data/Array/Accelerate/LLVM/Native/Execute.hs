@@ -147,10 +147,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     Aforeign _ff _afun _a       -> error "todo: execute Aforeign"
 
     -- Producers
-    Map _ a                     -> executeOp "map"       =<< extent a
-    Generate sh _               -> executeOp "generate"  =<< travE sh
-    Transform sh _ _ _          -> executeOp "transform" =<< travE sh
-    Backpermute sh _ _          -> executeOp "transform" =<< travE sh
+    Map _ a                     -> executeOp =<< extent a
+    Generate sh _               -> executeOp =<< travE sh
+    Transform sh _ _ _          -> executeOp =<< travE sh
+    Backpermute sh _ _          -> executeOp =<< travE sh
     Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
 
     -- Consumers
@@ -197,10 +197,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     -- Execute a skeleton that has no special requirements: thread decomposition
     -- is based on the given shape.
     --
-    executeOp :: (Shape sh, Elt e) => Name -> sh -> LLVM (Array sh e)
-    executeOp fn sh = do
+    executeOp :: (Shape sh, Elt e) => sh -> LLVM (Array sh e)
+    executeOp sh = do
       let out = allocateArray sh
-      execute fn kernel gamma aenv (size sh) out
+      execute kernel gamma aenv (size sh) out
       return out
 
     -- Change the shape of an array without altering its contents. This does not
@@ -232,7 +232,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     foldCore :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
     foldCore (sh :. sz) = do
       let out = allocateArray sh
-      execute "fold" kernel gamma aenv (size sh) (out,sz)
+      execute kernel gamma aenv (size sh) (out,sz)
       return out
 
 
@@ -426,14 +426,14 @@ arguments gamma aenv a start end
 --
 execute
     :: Marshalable args
-    => Name
-    -> ExecutableR Native
+    => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Int
     -> args
     -> LLVM ()
-execute main (NativeR ast) gamma aenv n a =
+execute (NativeR ast) gamma aenv n a =
+  let main = Name (AST.moduleName ast) in
   jit main ast $ \f ->
   fillP n      $ \start end ->
     callFFI f retVoid (arguments gamma aenv a start end)
