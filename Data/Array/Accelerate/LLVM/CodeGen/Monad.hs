@@ -142,6 +142,12 @@ do_ op = do
       bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> Do op } }
 
 
+-- | Return void from a basic block
+--
+return_ :: CodeGen ()
+return_ = void $ terminate (Do (Ret Nothing []))
+
+
 -- | Add a phi node to the top of the specified block
 --
 phi :: Block                    -- ^ the basic block to modify

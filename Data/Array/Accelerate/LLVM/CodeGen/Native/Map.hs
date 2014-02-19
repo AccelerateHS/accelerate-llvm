@@ -35,7 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
-import Control.Monad.State
+import Control.Monad
 
 
 -- C Code
@@ -77,6 +77,9 @@ import Control.Monad.State
 -- declare float @apply(float)
 --
 
+
+-- Apply the given unary function to each element of an array.
+--
 mkMap :: forall t aenv sh a b. Elt b
       => Gamma aenv
       -> IRFun1       aenv (a -> b)
@@ -87,36 +90,31 @@ mkMap aenv apply IRDelayed{..} = do
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "map"
-             , parameters  = (paramIn ++ paramOut, False)
+             , parameters  = (gang ++ paramIn ++ paramOut, False)
              , basicBlocks = code
              } ]
   where
-    arrOut      = arrayData  (undefined::Array sh b) "out"
-    shOut       = arrayShape (undefined::Array sh b) "out"
+    arrOut              = arrayData  (undefined::Array sh b) "out"
+    shOut               = arrayShape (undefined::Array sh b) "out"
+    paramOut            = arrayParam (undefined::Array sh b) "out"
+    paramIn             = envParam aenv
+    (start, end, gang)  = gangParam
 
-    paramOut    = arrayParam "out" (undefined::Array sh b)
-    paramIn     = envParam aenv
-
-    zero        = constOp $ scalar sint 0
-    one         = constOp $ num nint 1
-    sint        = scalarType :: ScalarType Int
-    nint        = numType    :: NumType Int
+    zero                = constOp $ scalar int 0
+    one                 = constOp $ num int 1
 
     body :: CodeGen ()
     body = do
       loop <- newBlock "loop.top"
       exit <- newBlock "loop.exit"
 
-      -- Header: check if size of output array > 0
-      n    <- foldM (mul nint) one (map local shOut)
-      c    <- gt sint n zero
+      -- Entry
+      -- -----
+      c    <- lt int start end
       top  <- cbr c loop exit
 
-      -- Body: keep looping until i == n
-      --
-      -- Read an element from the array, apply the function, and store the value
-      -- into the result array.
-      --
+      -- Main loop
+      -- ---------
       setBlock loop
       indv <- freshName
       let i = local indv
@@ -124,11 +122,11 @@ mkMap aenv apply IRDelayed{..} = do
       ys   <- apply xs
       writeArray arrOut i ys
 
-      i'   <- add nint i one
-      c'   <- eq sint i' n
+      i'   <- add int i one
+      c'   <- eq int i' end
       bot  <- cbr c' exit loop
-      _    <- phi loop indv (typeOf nint) [(i', bot), (zero,top)]
+      _    <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (zero,top)]
 
       setBlock exit
-      _    <- terminate $ Do (Ret Nothing [])
-      return ()
+      return_
+
