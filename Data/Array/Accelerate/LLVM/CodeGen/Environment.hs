@@ -62,7 +62,7 @@ makeGamma :: IntMap (Idx' aenv) -> Gamma aenv
 makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
   where
     toAval :: Int -> Idx' aenv -> (Name, Idx' aenv)
-    toAval n ix = (Name ("fv." ++ show n), ix)
+    toAval n ix = (Name ("fv" ++ show n), ix)
 
 freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
 freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
