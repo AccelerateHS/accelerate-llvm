@@ -31,9 +31,10 @@ import Text.Printf
 -- empty (start >= end).
 --
 fillP :: Int    -- ^ total number of elements
-      -> (Int -> Int -> IO ())
-                -- ^ function to execute. The two parameters are the start and
-                -- end indices of the array that this thread should process.
+      -> (Int -> Int -> Int -> IO ())
+                -- ^ function to execute. The first parameters are the start and
+                -- end indices of the array that this thread should process, and
+                -- the final is the ID of this thread.
       -> IO ()
 fillP len fill
   = gangIO theGang
@@ -43,7 +44,7 @@ fillP len fill
         in
         when (start < end) $ do
           Debug.message Debug.dump_gang (printf "gang/fillP: thread %d -> [%d,%d)" thread start end)
-          fill start end
+          fill start end thread
   where
     -- Decide now to split the work across the threads. If the length of the
     -- vector doesn't divide evenly among the threads, then the first few get an

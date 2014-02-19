@@ -317,20 +317,6 @@ executeOpenExp rootExp env aenv = travE rootExp
 -- Skeleton execution
 -- ------------------
 
--- Generate FFI function arguments. The standard calling convention is
---
---   1. Starting index
---   2. Final index
---   3. Free array variables that were used
---   4. Any remaining parameters (typically explicit output arrays)
---
-arguments :: Marshalable args => Gamma aenv -> Aval aenv -> args -> Int -> Int -> [FFI.Arg]
-arguments gamma aenv a start end
-  = FFI.argInt start
-  : FFI.argInt end
-  : concatMap (\(_, Idx' idx) -> marshal (aprj idx aenv)) (IM.elems gamma) ++ marshal a
-
-
 -- JIT compile the LLVM code representing this kernel, link to the running
 -- executable, and execute the main function using the 'fillP' method to
 -- distribute work evenly amongst the threads.
@@ -343,12 +329,12 @@ execute
     -> Int
     -> args
     -> LLVM ()
-execute (NativeR ast) gamma aenv n a =
+execute kernel@(NativeR ast) gamma aenv n args =
   let main = Name (AST.moduleName ast) in
-  compile ast  $ \ee ->
-  link ee main $ \f  ->
-  fillP n      $ \start end ->
-    callFFI f retVoid (arguments gamma aenv a start end)
+  compile kernel $ \ee ->
+  link ee main   $ \f  ->
+  fillP n        $ \start end _ ->
+    callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
 
 
 link :: ExecutableModule MCJIT -> Name -> (FunPtr () -> IO a) -> IO a
@@ -356,8 +342,8 @@ link exe main run =
   maybe (INTERNAL_ERROR(error) "link" "function not found") run =<< getFunction exe main
 
 
-compile :: AST.Module -> (ExecutableModule MCJIT -> IO a) -> LLVM a
-compile ast cont = do
+compile :: ExecutableR Native -> (ExecutableModule MCJIT -> IO a) -> LLVM a
+compile (NativeR ast) cont = do
   ctx   <- asks llvmContext
   liftIO . runError $
     withModuleFromAST ctx ast            $ \mdl   ->
