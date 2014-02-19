@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -21,6 +22,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute
 import LLVM.General.Module
 import LLVM.General.PassManager
 import LLVM.General.ExecutionEngine
+import LLVM.General.AST.Name
 import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.AST.Global                        as AST
 
@@ -33,13 +35,17 @@ import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Idx'(..), Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ()
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
+
+import Data.Array.Accelerate.LLVM.Debug                         ( dump_exec )
+import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 -- standard library
 import Prelude                                                  hiding ( exp )
@@ -138,10 +144,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     Aforeign _ff _afun _a       -> error "todo: execute Aforeign"
 
     -- Producers
-    Map _ a                     -> executeOp =<< extent a
-    Generate sh _               -> executeOp =<< travE sh
-    Transform sh _ _ _          -> executeOp =<< travE sh
-    Backpermute sh _ _          -> executeOp =<< travE sh
+    Map _ a                     -> executeOp "map"         =<< extent a
+    Generate sh _               -> executeOp "generate"    =<< travE sh
+    Transform sh _ _ _          -> executeOp "transform"   =<< travE sh
+    Backpermute sh _ _          -> executeOp "backpermute" =<< travE sh
 
     -- Consumers
 
@@ -185,10 +191,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     -- Execute a skeleton that has no special requirements: thread decomposition
     -- is based on the given shape.
     --
-    executeOp :: (Shape sh, Elt e) => sh -> LLVM (Array sh e)
-    executeOp sh = do
+    executeOp :: (Shape sh, Elt e) => Name -> sh -> LLVM (Array sh e)
+    executeOp fn sh = do
       let out = allocateArray sh
-      execute kernel gamma aenv (size sh) out
+      execute fn kernel gamma aenv (size sh) out
       return out
 
 
@@ -376,30 +382,21 @@ arguments gamma aenv a start end
 --
 execute
     :: Marshalable args
-    => ExecutableR Native
+    => Name
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Int
     -> args
     -> LLVM ()
-execute (NativeR ast) gamma aenv n a =
-  jit fn ast $ \f ->
-  fillP n    $ \start end ->
+execute main (NativeR ast) gamma aenv n a =
+  jit main ast $ \f ->
+  fillP n      $ \start end ->
     callFFI f retVoid (arguments gamma aenv a start end)
-  where
-    fn  = case kernelsOf ast of
-            []  -> INTERNAL_ERROR(error) "execute" "function not found"
-            f:_ -> f
-
-    kernelsOf m = mapMaybe extract (AST.moduleDefinitions m)
-
-    extract (AST.GlobalDefinition AST.Function{..})
-      | not (null basicBlocks)  = Just name
-    extract _                   = Nothing
 
 
-jit :: AST.Name -> AST.Module -> (FunPtr () -> IO a) -> LLVM a
-jit fn ast run = do
+jit :: Name -> AST.Module -> (FunPtr () -> IO a) -> LLVM a
+jit main ast run = do
   ctx   <- asks llvmContext
   liftIO . runError $
     withModuleFromAST ctx ast            $ \mdl   ->
@@ -407,7 +404,7 @@ jit fn ast run = do
     withPassManager passes               $ \pm    -> do
       void $ runPassManager pm mdl
       withModuleInEngine mcjit mdl       $ \exe   ->
-        maybe (err "function not found") run =<< getFunction exe fn
+        maybe (err "function not found") run =<< getFunction exe main
   where
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
