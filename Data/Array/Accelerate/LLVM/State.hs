@@ -50,10 +50,11 @@ data Context = Context {
 
 evalLLVM :: LLVM a -> IO a
 evalLLVM acc =
+--  runInBoundThread $
   LLVM.withContext $ \ctx ->
     evalStateT (runReaderT (runLLVM acc) (Context ctx)) theState
-    `catch`
-    \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
+--    `catch`
+--    \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 
 
 -- Top-level mutable state

@@ -18,6 +18,8 @@ import Data.Array.Accelerate.Trafo -- .Sharing
 import Data.Array.Accelerate.Array.Sugar                ( Elt, eltType )
 import qualified Data.Array.Accelerate.AST              as AST
 
+import qualified Data.Array.Accelerate.Interpreter      as I
+
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -28,7 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.Native
+import Data.Array.Accelerate.LLVM.Native                as LLVM
 
 import Data.Array.Accelerate.LLVM.Native.Execute
 
@@ -43,27 +45,25 @@ import Control.Monad.Trans
 import qualified Data.IntMap                            as IM
 import System.IO.Unsafe
 
+f :: Exp Int32 -> Exp Float
+f x = cos . sin . A.fromIntegral $ (x + 1) * 4 - (x*x)
+
+g :: Exp Int32 -> Exp Int32
+g x = let y = f x
+      in  y >* 0 ? ( x + 1, x - 1 )
+
+l :: Exp Int32 -> Exp Int32
+l = A.iterate (constant 10) g
+
 
 xs :: Acc (Vector Float)
 xs = use (fromList (Z:.10) [1..])
 
+ys :: Acc (Vector Int32)
+ys = use (fromList (Z:.10) [0..])
 
 main :: IO ()
-main = do
-  let f :: Exp Int32 -> Exp Float
-      f x = cos . sin . A.fromIntegral $ (x + 1) * 4 - (x*x)
-
-      g :: Exp Int32 -> Exp Int32
-      g x = let y = f x
-            in  y >* 0 ? ( x + 1, x - 1 )
-
-      l :: Exp Int32 -> Exp Int32
-      l = A.iterate (constant 10) g
-
-      acc :: Acc (Vector Int32)
-      acc = A.map (+1) (use (fromList (Z:.10) [0..]))
-  --
-  print $ run acc
+main = print . LLVM.run $ A.map f ys
 
 
 -- run :: Arrays a => Acc a -> a

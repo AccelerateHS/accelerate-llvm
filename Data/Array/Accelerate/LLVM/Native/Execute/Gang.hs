@@ -96,7 +96,7 @@ forkGang :: Int -> IO Gang
 forkGang n
   = assert (n > 0)
   $ do
-        Debug.message dump_gang ("gang: creating with " ++ show n ++ " threads")
+        message ("creating with " ++ show n ++ " threads")
 
         -- Create the vars we'll use to issue work requests.
         mvsRequest      <- replicateM n newEmptyMVar
@@ -133,7 +133,10 @@ gangWorker threadId varRequest varDone
 
         case req of
           ReqDo action
-            -> do -- Run the action we were given.
+            -> do
+                  message ("woke up thread " ++ show threadId)
+
+                  -- Run the action we were given.
                   action threadId
 
                   -- Signal that the action is complete.
@@ -167,7 +170,7 @@ gangWorker threadId varRequest varDone
 finaliseWorker :: MVar Req -> MVar () -> IO ()
 finaliseWorker varReq varDone
   = do
-        Debug.message dump_gang "gang: shutting down"
+        message "shutting down"
         putMVar varReq ReqShutdown
         takeMVar varDone
         return ()
@@ -227,4 +230,10 @@ gangST :: Gang -> (Int -> ST s ()) -> ST s ()
 gangST g p = unsafeIOToST . gangIO g $ unsafeSTToIO . p
 
 
+-- Debugging
+-- ---------
+
+{-# INLINE message #-}
+message :: String -> IO ()
+message str = Debug.message dump_gang ("gang: " ++ str)
 
