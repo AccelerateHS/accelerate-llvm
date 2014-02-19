@@ -98,7 +98,8 @@ Library
     libffi,
     llvm-general,
     llvm-general-pure,
-    mtl
+    mtl,
+    time
 
   default-language:     Haskell2010
 
