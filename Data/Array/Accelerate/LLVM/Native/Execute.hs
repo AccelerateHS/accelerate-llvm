@@ -45,6 +45,7 @@ import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
+import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
 import Data.Array.Accelerate.LLVM.Debug                         ( dump_exec )
@@ -185,9 +186,12 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     -- is based on the given shape.
     --
     executeOp :: (Shape sh, Elt e) => sh -> LLVM (Array sh e)
-    executeOp sh = do
+    executeOp = executeOpWith ()
+
+    executeOpWith :: (Shape sh, Elt e, Marshalable args) => args -> sh -> LLVM (Array sh e)
+    executeOpWith args sh = do
       let out = allocateArray sh
-      execute kernel gamma aenv (size sh) out
+      execute kernel gamma aenv (size sh) (args,out)
       return out
 
     -- Change the shape of an array without altering its contents. This does not
@@ -216,11 +220,28 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     foldOp (sh :. sz)
       = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
 
-    foldCore :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
-    foldCore (sh :. sz) = do
-      let out = allocateArray sh
-      execute kernel gamma aenv (size sh) (out,sz)
-      return out
+    foldCore :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    foldCore (sh :. sz)
+      -- Either (1) multidimensional reduction; or
+      --        (2) sequential reduction
+      | dim sh > 0 || gangSize theGang == 1
+      = do executeOpWith sz sh
+
+      -- Parallel reduction
+      | otherwise
+      = do  let chunks  = gangSize theGang
+                tmp     = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
+                out     = allocateArray sh
+                n       = sz `min` chunks
+            --
+            compile kernel $ \ee -> do
+              link ee "fold1" $ \f ->
+                fillP (size sh * sz) $ \start end tid ->
+                  callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
+              link ee "foldAll" $ \f ->
+                  callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
+
+            return out
 
 
 -- Scalar expression evaluation

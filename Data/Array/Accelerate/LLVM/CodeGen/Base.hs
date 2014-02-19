@@ -126,10 +126,8 @@ call fn rt tyargs attrs = do
   instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
 
 
-
--- | Used for the native backend. Generate function parameters that will
---   specify the first and last (linear) index of the array this thread should
---   evaluate.
+-- | Used for the native backend. Generate function parameters that will specify
+-- the first and last (linear) index of the array this thread should evaluate.
 --
 gangParam :: (Operand, Operand, [Parameter])
 gangParam =
@@ -137,7 +135,16 @@ gangParam =
       start     = "ix.start"
       end       = "ix.end"
   in
-  (local start, local end, [ Parameter t start [], Parameter t end [] ])
+  (local start, local end, [ Parameter t start [], Parameter t end [] ] )
+
+-- | The thread ID of a gang worker
+--
+gangId :: (Operand, [Parameter])
+gangId =
+  let t         = typeOf (scalarType :: ScalarType Int)
+      thread    = "ix.tid"
+  in
+  (local thread, [Parameter t thread []] )
 
 
 -- | Unpack the array environment into a set of input parameters to a function.

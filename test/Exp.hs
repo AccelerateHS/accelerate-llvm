@@ -62,6 +62,10 @@ xs = use (fromList (Z:.10) [1..])
 ys :: Acc (Vector Int32)
 ys = use (fromList (Z:.10) [0..])
 
+mat :: Acc (Array DIM2 Int32)
+mat = use $ fromList (Z:.4:.10) [ 10*r + c | r <- [0..3], c <- [0..9] ]
+
+
 main :: IO ()
 main = print . LLVM.run $ A.map f ys
 
