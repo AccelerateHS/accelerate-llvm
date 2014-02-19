@@ -31,6 +31,8 @@ import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Execute
 
+import Data.Array.Accelerate.LLVM.Debug
+
 -- standard library
 import Prelude                                          as P
 import Data.Maybe
@@ -38,6 +40,11 @@ import Control.Exception
 import Control.Monad.Error
 import Control.Monad.Trans
 import qualified Data.IntMap                            as IM
+import System.IO.Unsafe
+
+
+xs :: Acc (Vector Float)
+xs = use (fromList (Z:.10) [1..])
 
 
 main :: IO ()
@@ -55,11 +62,13 @@ main = do
       acc :: Acc (Vector Int32)
       acc = A.map (+1) (use (fromList (Z:.10) [0..]))
   --
-  evalLLVM $ do
-    eacc <- compileAcc (convertAcc acc)
-    v    <- executeAcc eacc
-    liftIO $ print v
+  print $ run acc
 
+
+run :: Arrays a => Acc a -> a
+run acc
+  = unsafePerformIO . evalLLVM
+  $ compileAcc (convertAcc acc) >>= executeAcc
 
 {--
 -- Traverse the annotated AST and dump any LLVM modules found.
