@@ -1,6 +1,5 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
@@ -86,7 +85,7 @@ mkMap :: forall t aenv sh a b. Elt b
       -> IRDelayed    aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
 mkMap aenv apply IRDelayed{..} = do
-  code  <- body >> createBlocks
+  code  <- runBody
   return [ Kernel $ functionDefaults
              { returnType  = VoidType
              , name        = "map"
@@ -100,11 +99,8 @@ mkMap aenv apply IRDelayed{..} = do
     paramIn             = envParam aenv
     (start, end, gang)  = gangParam
 
-    zero                = constOp $ scalar int 0
-    one                 = constOp $ num int 1
-
-    body :: CodeGen ()
-    body = do
+    runBody :: CodeGen [BasicBlock]
+    runBody = do
       loop <- newBlock "loop.top"
       exit <- newBlock "loop.exit"
 
@@ -122,11 +118,13 @@ mkMap aenv apply IRDelayed{..} = do
       ys   <- apply xs
       writeArray arrOut i ys
 
-      i'   <- add int i one
+      i'   <- add int i (constOp $ num int 1)
       c'   <- eq int i' end
       bot  <- cbr c' exit loop
-      _    <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (zero,top)]
+      _    <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (start,top)]
 
       setBlock exit
       return_
+      --
+      >> createBlocks
 
