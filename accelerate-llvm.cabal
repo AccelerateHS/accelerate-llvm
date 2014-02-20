@@ -12,7 +12,7 @@ description:
     <http://hackage.haskell.org/package/accelerate>
 
 -- license:
-license-file:           LICENSE
+-- license-file:           LICENSE
 author:                 Trevor L. McDonell
 maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
