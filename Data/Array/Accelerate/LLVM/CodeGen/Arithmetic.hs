@@ -36,10 +36,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
-import Prelude                                                  ( ($), (++), error, undefined, map )
+import Prelude                                                  ( ($), (++), (-), error, undefined, map )
 import Data.Bool
 import Data.Char                                                ( Char )
 import Control.Monad
+import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
 #include "accelerate.h"
@@ -150,16 +151,39 @@ complement :: IntegralType a -> Operand -> CodeGen Operand
 complement t x | IntegralDict <- integralDict t = xor t x (constOp (integral t (-1)))
 
 shiftL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-shiftL _ x i = instr $ Shl nsw nuw x i []
+shiftL t x i = do
+  i'   <- fromIntegral int (IntegralNumType t) i
+  instr $ Shl nsw nuw x i' []
 
 shiftR :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-shiftR _ x i = instr $ AShr False x i []
+shiftR t x i = do
+  i'   <- fromIntegral int (IntegralNumType t) i
+  instr $ if signedIntegralNum t
+             then AShr False x i' []
+             else LShr False x i' []
 
 rotateL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-rotateL = error "todo: rotateL"
+rotateL t x i | IntegralDict <- integralDict t = do
+  let bits = P.fromIntegral (typeBits (typeOf t))
+  --
+  i'    <- fromIntegral int (IntegralNumType t) i
+  v1    <- band t i' (constOp $ integral t (bits - 1))
+  v2    <- shiftL t x v1
+  v3    <- sub (IntegralNumType t) (constOp $ integral t bits) v1
+  v4    <- instr $ LShr False x v3 []           -- require unsigned shift here
+  bor t v4 v2
 
-rotateR :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-rotateR = error "todo: rotateR"
+
+rotateR :: forall a. IntegralType a -> Operand -> Operand -> CodeGen Operand
+rotateR t x i | IntegralDict <- integralDict t = do
+  let bits = P.fromIntegral (typeBits (typeOf t))
+  --
+  i'    <- fromIntegral int (IntegralNumType t) i
+  v1    <- band t i' (constOp $ integral t (bits - 1))
+  v2    <- instr $ LShr False x v1 []           -- require unsigned shift here
+  v3    <- sub (IntegralNumType t) (constOp $ integral t bits) v1
+  v4    <- shiftL t x v3
+  bor t v4 v2
 
 
 -- Operators from Fractional, Floating, RealFrac & RealFloat
