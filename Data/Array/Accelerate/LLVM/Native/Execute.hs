@@ -16,8 +16,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Execute
-  where
+module Data.Array.Accelerate.LLVM.Native.Execute (
+
+  executeAcc, executeAfun1,
+
+) where
 
 -- llvm-general
 import LLVM.General.Module
@@ -25,7 +28,6 @@ import LLVM.General.PassManager
 import LLVM.General.ExecutionEngine
 import LLVM.General.AST.Name
 import qualified LLVM.General.AST                               as AST
-import qualified LLVM.General.AST.Global                        as AST
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -36,7 +38,7 @@ import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Idx'(..), Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ()
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -48,19 +50,12 @@ import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
-import Data.Array.Accelerate.LLVM.Debug                         ( dump_exec )
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
 -- library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Reader
-import Data.Maybe
-import Data.DList                                               ( DList )
-import qualified Data.DList                                     as DL
-import qualified Data.IntMap                                    as IM
 
 import Foreign.Ptr
 import Foreign.LibFFI                                           as FFI
