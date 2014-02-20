@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Gang
 -- Copyright   :
@@ -65,29 +67,31 @@ data Req
 data Gang
     = Gang
     { -- | Number of threads in the gang.
-      _gangThreads      :: {-# UNPACK #-} !Int
+      gangThreads       :: {-# UNPACK #-} !Int
 
       -- | Workers listen for requests on these vars.
-    , _gangRequestVars  :: [MVar Req]
+    , gangRequestVars   :: [MVar Req]
 
       -- | Workers put their results in these vars.
-    , _gangResultVars   :: [MVar ()]
+    , gangResultVars    :: [MVar ()]
 
+#ifdef ACCELERATE_INTERNAL_CHECKS
       -- | Indicates that the gang is busy.
-    , _gangBusy         :: MVar Bool
+    , gangBusy          :: MVar Bool
+#endif
     }
 
 instance Show Gang where
-  showsPrec p (Gang n _ _ _)
+  showsPrec p gang
         = showString "<<"
-        . showsPrec p n
+        . showsPrec p (gangSize gang)
         . showString " threads>>"
 
 
 -- | O(1). Yield the number of threads in the 'Gang'.
 --
 gangSize :: Gang -> Int
-gangSize (Gang n _ _ _) = n
+gangSize Gang{..} = gangThreads
 
 
 -- | Fork a 'Gang' with the given number of threads (at least 1).
@@ -115,10 +119,14 @@ forkGang n
         zipWithM_ forkOn [0..]
                 $ zipWith3 gangWorker [0 .. n-1] mvsRequest mvsDone
 
+#ifdef ACCELERATE_INTERNAL_CHECKS
         -- The gang is currently idle.
         busy    <- newMVar False
 
         return  $! Gang n mvsRequest mvsDone busy
+#else
+        return  $! Gang n mvsRequest mvsDone
+#endif
 
 
 -- | The worker thread of a 'Gang'.
@@ -178,6 +186,7 @@ finaliseWorker varReq varDone
 --
 {-# NOINLINE gangIO #-}
 gangIO :: Gang -> (Int -> IO ()) -> IO ()
+#if ACCELERATE_INTERNAL_CHECKS
 gangIO gang@(Gang _ _ _ busy) action
   = do  b <- swapMVar busy True
         if b
@@ -186,40 +195,30 @@ gangIO gang@(Gang _ _ _ busy) action
                 parIO gang action
                 _ <- swapMVar busy False
                 return ()
+#else
+gangIO gang action
+  = do  parIO gang action
+#endif
 
-
+#ifdef ACCELERATE_INTERNAL_CHECKS
 -- | Run an action on the gang sequentially.
 --
 seqIO :: Gang -> (Int -> IO ()) -> IO ()
-seqIO (Gang _n _ _ _) _action
+seqIO _gang _action
   = error "seqIO: I was not expecting that..."
-{--
-  do   hPutStr stderr
-         $ unlines
-         [ "Data.Array.Repa: Performing nested parallel computation sequentially."
-         , "  You've probably called the 'compute' or 'copy' function while another"
-         , "  instance was already running. This can happen if the second version"
-         , "  was suspended due to lazy evaluation. Use 'deepSeqArray' to ensure"
-         , "  that each array is fully evaluated before you 'compute' the next one."
-         , "" ]
-
-        mapM_ action [0 .. n-1]
---}
+#endif
 
 -- | Run an action on the gang in parallel.
 --
 parIO :: Gang -> (Int -> IO ()) -> IO ()
-parIO (Gang _ mvsRequest mvsResult _) action
+parIO Gang{..} action
   = Debug.timed dump_exec elapsed
   $ do
         -- Send requests to all the threads.
-        mapM_ (\v -> putMVar v (ReqDo action)) mvsRequest
+        mapM_ (\v -> putMVar v (ReqDo action)) gangRequestVars
 
         -- Wait for all the requests to complete.
-        mapM_ takeMVar mvsResult
-
-elapsed :: Double -> Double -> String
-elapsed x y = "exec: " ++ Debug.elapsed x y
+        mapM_ takeMVar gangResultVars
 
 
 -- | Same as 'gangIO' but in the 'ST' monad.
@@ -234,4 +233,8 @@ gangST g p = unsafeIOToST . gangIO g $ unsafeSTToIO . p
 {-# INLINE message #-}
 message :: String -> IO ()
 message str = Debug.message dump_gang ("gang: " ++ str)
+
+{-# INLINE elapsed #-}
+elapsed :: Double -> Double -> String
+elapsed x y = "exec: " ++ Debug.elapsed x y
 
