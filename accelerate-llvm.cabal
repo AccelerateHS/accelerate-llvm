@@ -54,6 +54,9 @@ Flag internal-checks
 
 Library
   exposed-modules:
+    Data.Array.Accelerate.LLVM.Native
+
+  other-modules:
     -- Accelerate-LLVM middle-end
     Data.Array.Accelerate.LLVM.AST
     Data.Array.Accelerate.LLVM.CodeGen
@@ -75,7 +78,6 @@ Library
     Data.Array.Accelerate.LLVM.NVVM.Target
 
     -- Native target
-    Data.Array.Accelerate.LLVM.Native
     Data.Array.Accelerate.LLVM.Native.Array.Data
     Data.Array.Accelerate.LLVM.Native.Compile
     Data.Array.Accelerate.LLVM.Native.Target
