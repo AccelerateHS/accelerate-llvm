@@ -76,8 +76,9 @@ mathf (Name n)   f args = call name t (toArgs args) [NoUnwind, ReadNone]
     t      = typeOf f
     toArgs = map (t,)
     name   = Name $ case typeBits t of
-                    32 -> n ++ "f"
-                    64 -> n ++ "f"
+                    32  -> n ++ "f"
+                    64  -> n
+                    128 -> n ++ "l"     -- long double
                     _  -> INTERNAL_ERROR(error) "mathf" "unsupported floating point size"
 
 
@@ -114,7 +115,7 @@ abs t x =
                                             _  -> call "abs"   (typeOf i) [(typeOf i, x)] [NoUnwind, ReadNone]
 
 signum :: NumType a -> Operand -> CodeGen Operand
-signum = error "signum"
+signum = error "todo: signum"
 
 
 -- Operations from Integral and Bits
@@ -177,28 +178,28 @@ cos :: FloatingType a -> Operand -> CodeGen Operand
 cos t x = mathf "cos" t [x]
 
 tan :: FloatingType a -> Operand -> CodeGen Operand
-tan = error "todo: tan"
+tan t x = mathf "tan" t [x]
 
 asin :: FloatingType a -> Operand -> CodeGen Operand
-asin = error "todo: asin"
+asin t x = mathf "asin" t [x]
 
 acos :: FloatingType a -> Operand -> CodeGen Operand
-acos = error "todo: acos"
+acos t x = mathf "acos" t [x]
 
 atan :: FloatingType a -> Operand -> CodeGen Operand
-atan = error "todo: atan"
+atan t x = mathf "atan" t [x]
 
 asinh :: FloatingType a -> Operand -> CodeGen Operand
-asinh = error "todo: asinh"
+asinh t x = mathf "asinh" t [x]
 
 acosh :: FloatingType a -> Operand -> CodeGen Operand
-acosh = error "todo: acosh"
+acosh t x = mathf "acosh" t [x]
 
 atanh :: FloatingType a -> Operand -> CodeGen Operand
-atanh = error "todo: atanh"
+atanh t x = mathf "atanh" t [x]
 
 atan2 :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-atan2 = error "todo: atan2"
+atan2 t x y = mathf "atan2" t [x,y]
 
 exp :: FloatingType a -> Operand -> CodeGen Operand
 exp t x = mathf "exp" t [x]
@@ -224,13 +225,19 @@ truncate _ i x
   | otherwise           = instr $ FPToUI x (typeOf i) []
 
 round :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
-round = error "todo: round"
+round tf ti x = do
+  i <- mathf "round" tf [x]
+  truncate tf ti i
 
 floor :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
-floor = error "todo: floor"
+floor tf ti x = do
+  i <- mathf "floor" tf [x]
+  truncate tf ti i
 
 ceiling :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
-ceiling = error "todo: ceiling"
+ceiling tf ti x = do
+  i <- mathf "ceil" tf [x]
+  truncate tf ti i
 
 
 -- Relational and equality operators
@@ -257,10 +264,18 @@ neq :: ScalarType a -> Operand -> Operand -> CodeGen Operand
 neq = cmp NE
 
 max :: ScalarType a -> Operand -> Operand -> CodeGen Operand
-max = error "todo: max"
+max ty x y =
+  case ty of
+    NumScalarType (FloatingNumType f)   -> mathf "fmax" f [x,y]
+    _                                   -> do c <- gte ty x y
+                                              instr $ Select c x y []
 
 min :: ScalarType a -> Operand -> Operand -> CodeGen Operand
-min = error "todo: min"
+min ty x y =
+  case ty of
+    NumScalarType (FloatingNumType f)   -> mathf "fmin" f [x,y]
+    _                                   -> do c <- lte ty x y
+                                              instr $ Select c x y []
 
 -- This might also need to insert a `zext .. to` instruction, as the result of
 -- `icmp` and `fcmp` are of type `i1'.
@@ -268,11 +283,17 @@ min = error "todo: min"
 cmp :: Predicate -> ScalarType t -> Operand -> Operand -> CodeGen Operand
 cmp op ty x y =
   case ty of
+    NumScalarType (FloatingNumType _) -> instr $ FCmp (floatingP op) x y []
+
     NumScalarType (IntegralNumType i)
       | signedIntegralNum i           -> instr $ ICmp (signedP op) x y []
       | otherwise                     -> instr $ ICmp (unsignedP op) x y []
-    NumScalarType (FloatingNumType _) -> instr $ FCmp (floatingP op) x y []
-    NonNumScalarType _                -> error "todo: non-numeric scalar comparison"
+
+    NonNumScalarType (TypeBool _)     -> instr $ ICmp (unsignedP op) x y []
+    NonNumScalarType (TypeChar _)     -> instr $ ICmp (unsignedP op) x y []
+    NonNumScalarType (TypeCUChar _)   -> instr $ ICmp (unsignedP op) x y []
+    NonNumScalarType (TypeCSChar _)   -> instr $ ICmp (signedP op) x y []
+    NonNumScalarType (TypeCChar _)    -> instr $ ICmp (signedP op) x y []
   where
     signedP :: Predicate -> IP.IntegerPredicate
     signedP EQ = IP.EQ
@@ -356,14 +377,14 @@ ord x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> instr $ SExt x (typeOf (integralType :: IntegralType Int)) []
-    _  -> error "I don't know what architecture I am"
+    _  -> INTERNAL_ERROR(error) "ord" "I don't know what architecture I am"
 
 chr :: Operand -> CodeGen Operand
 chr x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> trunc (scalarType :: ScalarType Char) x
-    _  -> error "I don't know what architecture I am"
+    _  -> INTERNAL_ERROR(error) "ord" "I don't know what architecture I am"
 
 boolToInt :: Operand -> CodeGen Operand
 boolToInt x = zext (scalarType :: ScalarType Int) x
