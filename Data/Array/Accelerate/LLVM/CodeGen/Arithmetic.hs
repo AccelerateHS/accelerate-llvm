@@ -152,7 +152,7 @@ shiftL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
 shiftL _ x i = instr $ Shl nsw nuw x i []
 
 shiftR :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-shiftR _ x i = instr $ LShr False x i []
+shiftR _ x i = instr $ AShr False x i []
 
 rotateL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
 rotateL = error "todo: rotateL"
