@@ -236,7 +236,7 @@ newSubBlock ext = do
   chain <- gets blockChain
   case Seq.viewr chain of
     _ Seq.:> b | Name base <- blockLabel b -> newBlock $ base ++ ('.':ext)
-    Seq.EmptyR                             -> INTERNAL_ERROR(error) "newSubBlock" "empty block chain"
+    _                                      -> INTERNAL_ERROR(error) "newSubBlock" "empty block chain"
 
 -- | Add this block to the block stream. Any instructions pushed onto the stream
 -- by 'instr' and friends will now apply to this block.
