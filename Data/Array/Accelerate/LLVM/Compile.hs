@@ -17,6 +17,7 @@ module Data.Array.Accelerate.LLVM.Compile
 
 -- llvm-general
 import LLVM.General.Module
+import LLVM.General.PassManager
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -37,6 +38,7 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
+import Control.Monad                                            ( void )
 import Control.Monad.Error                                      ( runErrorT )
 import Control.Monad.Reader                                     ( asks )
 import Control.Monad.Trans                                      ( liftIO )
@@ -242,11 +244,14 @@ build :: forall arch aenv a. Target arch
 build acc aenv = do
   let ast = llvmOfAcc acc aenv
 #ifdef ACCELERATE_DEBUG
+      pss = defaultCuratedPassSetSpec { optLevel = Just 3 }
   Debug.when dump_llvm $ do
     ctx <- asks llvmContext
     r   <- liftIO . runErrorT $
-           withModuleFromAST ctx (unModule ast) $ \mdl ->
-             Debug.message dump_llvm =<< moduleLLVMAssembly mdl
+            withModuleFromAST ctx (unModule ast) $ \mdl ->
+            withPassManager pss                  $ \pm  -> do
+              void $ runPassManager pm mdl
+              Debug.message dump_llvm =<< moduleLLVMAssembly mdl
     either error return r
 #endif
   compileForTarget ast
