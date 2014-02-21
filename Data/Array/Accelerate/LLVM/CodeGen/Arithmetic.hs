@@ -301,9 +301,6 @@ min ty x y =
     _                                   -> do c <- lte ty x y
                                               instr $ Select c x y []
 
--- This might also need to insert a `zext .. to` instruction, as the result of
--- `icmp` and `fcmp` are of type `i1'.
---
 cmp :: Predicate -> ScalarType t -> Operand -> Operand -> CodeGen Operand
 cmp op ty x y =
   case ty of
@@ -346,31 +343,28 @@ cmp op ty x y =
 -- Logical operators
 -- -----------------
 
--- Here we make use of the fact that Bool is represented as a Word8
---
-
 land :: Operand -> Operand -> CodeGen Operand
 land x y = do
-  let i8    = scalarType :: ScalarType Word8
-      false = constOp (scalar i8 0)
+  let i1    = scalarType :: ScalarType Bool
+      false = constOp (scalar i1 False)
   --
-  u <- neq i8 x false
-  v <- neq i8 y false
-  band (integralType :: IntegralType Word8) u v
+  u    <- neq i1 x false
+  v    <- neq i1 y false
+  instr $ And u v []
 
 lor  :: Operand -> Operand -> CodeGen Operand
 lor x y = do
-  let i8   = scalarType :: ScalarType Int8
-      zero = constOp (scalar i8 0)
+  let i1   = scalarType :: ScalarType Bool
+      false = constOp (scalar i1 False)
   --
-  u <- bor (integralType :: IntegralType Word8) x y
-  neq i8 u zero
+  u <- instr $ Or x y []
+  neq i1 u false
 
 lnot :: Operand -> CodeGen Operand
 lnot x =
-  let i8   = scalarType :: ScalarType Int8
-      zero = constOp (scalar i8 0)
-  in  eq i8 x zero
+  let i1    = scalarType :: ScalarType Bool
+      false = constOp (scalar i1 False)
+  in  eq i1 x false
 
 
 -- Type conversions

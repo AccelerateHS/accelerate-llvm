@@ -92,7 +92,7 @@ llvmOfFloatingType f =
 llvmOfNonNumType :: NonNumType t -> Type
 llvmOfNonNumType t =
   case t of
-    TypeBool _ -> IntegerType 8
+    TypeBool _ -> IntegerType 1         -- data layout ensures 8-bits are actually used
     TypeChar _ -> IntegerType 32        -- Haskell char
     _          -> IntegerType 8         -- signed and unsigned C characters
 
