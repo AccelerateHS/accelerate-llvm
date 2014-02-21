@@ -214,11 +214,15 @@ parIO :: Gang -> (Int -> IO ()) -> IO ()
 parIO Gang{..} action
   = Debug.timed dump_exec elapsed
   $ do
+        event "parIO start"
+
         -- Send requests to all the threads.
         mapM_ (\v -> putMVar v (ReqDo action)) gangRequestVars
 
         -- Wait for all the requests to complete.
         mapM_ takeMVar gangResultVars
+
+        event "parIO end"
 
 
 -- | Same as 'gangIO' but in the 'ST' monad.
@@ -237,4 +241,8 @@ message str = Debug.message dump_gang ("gang: " ++ str)
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String
 elapsed x y = "exec: " ++ Debug.elapsed x y
+
+{-# INLINE event #-}
+event :: String -> IO ()
+event str = Debug.event dump_exec ("exec: " ++ str)
 
