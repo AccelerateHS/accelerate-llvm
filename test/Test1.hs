@@ -45,6 +45,7 @@ import Control.Monad.Trans
 import qualified Data.IntMap                            as IM
 import System.IO.Unsafe
 
+
 f :: Exp Int32 -> Exp Float
 f x = cos . sin . A.fromIntegral $ (x + 1) * 4 - (x*x)
 
@@ -56,14 +57,33 @@ l :: Exp Int32 -> Exp Int32
 l = A.iterate (constant 10) g
 
 
+as :: Acc (Vector Int32)
+as = use (fromList (Z:.11) [-5..5])
+
 xs :: Acc (Vector Float)
 xs = use (fromList (Z:.10) [1..])
 
 ys :: Acc (Vector Int32)
 ys = use (fromList (Z:.10) [0..])
 
+zs :: Acc (Vector Float)
+zs = use $ fromList (Z:.11) [ x/5 | x <- [-5..5] ]
+
 mat :: Acc (Array DIM2 Int32)
 mat = use $ fromList (Z:.4:.10) [ 10*r + c | r <- [0..3], c <- [0..9] ]
+
+ws :: Acc (Vector Word)
+ws = use $ fromList (Z:.10) [0..]
+
+str1 :: Acc (Vector Char)
+str1 = use $ fromList (Z:.length s) s
+  where
+    s = "the quick brown fox jumped over the lazy dog"
+
+str2 :: Acc (Vector Char)
+str2 = use $ fromList (Z:.length s) s
+  where
+    s = "and that's why we can't have nice things"
 
 
 main :: IO ()
