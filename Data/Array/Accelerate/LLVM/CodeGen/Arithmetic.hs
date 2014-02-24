@@ -36,7 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
-import Prelude                                                  ( ($), (++), (-), error, undefined, map )
+import Prelude                                                  ( Num, ($), (++), (-), undefined, map )
 import Data.Bool
 import Data.Char                                                ( Char )
 import Control.Applicative
@@ -117,7 +117,34 @@ abs t x =
                                             _  -> call "abs"   (typeOf i) [(typeOf i, x)] [NoUnwind, ReadNone]
 
 signum :: NumType a -> Operand -> CodeGen Operand
-signum = error "todo: signum"
+signum t x =
+  case t of
+    FloatingNumType f | FloatingDict <- floatingDict f -> signum' t x
+    IntegralNumType i | IntegralDict <- integralDict i ->
+      if signedIntegralNum i
+         then signum' t x
+         else let t' = NumScalarType t
+              in  zext t' =<< neq t' x (constOp (num t 0))
+
+signum' :: Num a => NumType a -> Operand -> CodeGen Operand
+signum' t x = do
+  let t'    = NumScalarType t
+      zero  = constOp (num t 0)
+      mone  = constOp (num t (-1))
+  --
+  ifFalse       <- newBlock "signum.false"
+  ifEnd         <- newBlock "signum.end"
+
+  c1            <- lt t' x zero
+  top           <- cbr c1 ifEnd ifFalse
+
+  setBlock ifFalse
+  c2            <- neq t' x zero
+  s             <- zext t' c2
+  bot           <- br ifEnd
+
+  setBlock ifEnd
+  phi' (typeOf t) [(mone,top), (s,bot)]
 
 
 -- Operations from Integral and Bits
