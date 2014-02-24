@@ -39,6 +39,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Prelude                                                  ( ($), (++), (-), error, undefined, map )
 import Data.Bool
 import Data.Char                                                ( Char )
+import Control.Applicative
 import Control.Monad
 import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
@@ -135,8 +136,44 @@ rem t x y
 idiv :: IntegralType a -> Operand -> Operand -> CodeGen Operand
 idiv = error "todo: idiv"
 
-mod :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-mod = error "todo: mod"
+
+-- Integer modules, satisfying: (x `div` y)*y + (x `mod` y) == x
+--
+-- > mod x y =
+-- >   if ((x > 0 && y < 0) || (x < 0 && y > 0))
+-- >      then if (r /= 0)
+-- >              then r + y
+-- >              else 0
+-- >      else r
+-- >   where r = x `rem` y
+--
+mod :: forall a. IntegralType a -> Operand -> Operand -> CodeGen Operand
+mod t x y
+  | unsignedIntegralNum t          = rem t x y
+  | IntegralDict <- integralDict t = do
+      let t'   = NumScalarType (IntegralNumType t)
+          zero = constOp (scalar t' 0)
+      ifOr      <- newBlock "mod.or"
+      ifTrue    <- newBlock "mod.true"
+      ifEnd     <- newBlock "mod.end"
+
+      r         <- rem t x y
+      c1        <- join $ land <$> gt t' x zero <*> lt t' y zero
+      _         <- cbr c1 ifTrue ifOr
+
+      setBlock ifOr
+      c2        <- join $ land <$> lt t' x zero <*> gt t' y zero
+      false     <- cbr c2 ifTrue ifEnd
+
+      setBlock ifTrue
+      c3        <- eq t' r zero
+      v'        <- add (IntegralNumType t) r y
+      v         <- instr $ Select c3 zero v' []
+      true      <- br ifEnd
+
+      setBlock ifEnd
+      phi' (typeOf t) [(v,true), (r,false)]
+
 
 band :: IntegralType a -> Operand -> Operand -> CodeGen Operand
 band _ x y = instr $ And x y []
