@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP           #-}
+{-# LANGUAGE TypeOperators #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Debug
 -- Copyright   :
@@ -14,6 +15,7 @@ module Data.Array.Accelerate.LLVM.Debug
 
 import Control.Monad.Trans
 import Data.IORef
+import Data.Label
 import Data.List
 import Data.Time.Clock
 import Numeric
@@ -45,24 +47,24 @@ showFFloatSIBase p b n
 
 data Flags = Flags
   {
-    dump_gc           :: !Bool          -- garbage collection & memory management
-  , dump_llvm         :: !Bool          -- dump generated (unoptimised) LLVM code
-  , dump_exec         :: !Bool          -- kernel execution
-  , dump_gang         :: !Bool          -- print information about the gang
+    _dump_gc           :: !Bool         -- garbage collection & memory management
+  , _dump_llvm         :: !Bool         -- dump generated (unoptimised) LLVM code
+  , _dump_exec         :: !Bool         -- kernel execution
+  , _dump_gang         :: !Bool         -- print information about the gang
 
     -- general options
-  , verbose           :: !Bool          -- additional status messages
-  , flush_cache       :: !Bool          -- delete the persistent cache directory
+  , _verbose           :: !Bool         -- additional status messages
+  , _flush_cache       :: !Bool         -- delete the persistent cache directory
   }
 
 flags :: [OptDescr (Flags -> Flags)]
 flags =
-  [ Option [] ["ddump-gc"]      (NoArg (\s -> s { dump_gc=True }))      "print device memory management trace"
-  , Option [] ["ddump-llvm"]    (NoArg (\s -> s { dump_llvm=True }))    "print generated (unoptimised) LLVM IR"
-  , Option [] ["ddump-exec"]    (NoArg (\s -> s { dump_exec=True }))    "print kernel execution trace"
-  , Option [] ["ddump-gang"]    (NoArg (\s -> s { dump_gang=True }))    "print thread gang information"
-  , Option [] ["dverbose"]      (NoArg (\s -> s { verbose=True }))      "print additional information"
-  , Option [] ["fflush-cache"]  (NoArg (\s -> s { flush_cache=True }))  "delete the persistent cache directory"
+  [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
+  , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated (unoptimised) LLVM IR"
+  , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
+  , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
+  , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
+  , Option [] ["fflush-cache"]  (NoArg (set flush_cache True))  "delete the persistent cache directory"
   ]
 
 initialise :: IO Flags
@@ -75,6 +77,27 @@ initialise = parse `fmap` getArgs
                       _                         -> opts         -- not specified, or ambiguous
 
 
+-- Create lenses manually, instead of deriving automatically using Template
+-- Haskell. Since llvm-general binds to a C++ library, we can't load it into
+-- ghci expect in ghc-7.8.
+--
+dump_gc, dump_llvm, dump_exec, dump_gang, verbose, flush_cache :: Flags :-> Bool
+dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
+dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
+dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })
+dump_gang       = lens _dump_gang (\f x -> x { _dump_gang = f (_dump_gang x) })
+
+verbose         = lens _verbose     (\f x -> x { _verbose     = f (_verbose x) })
+flush_cache     = lens _flush_cache (\f x -> x { _flush_cache = f (_flush_cache x) })
+
+#ifdef ACCELERATE_DEBUG
+setFlag :: (Flags :-> Bool) -> IO ()
+setFlag f = modifyIORef options (set f True)
+
+clearFlag :: (Flags :-> Bool) -> IO ()
+clearFlag f = modifyIORef options (set f False)
+#endif
+
 #ifdef ACCELERATE_DEBUG
 {-# NOINLINE options #-}
 options :: IORef Flags
@@ -82,15 +105,15 @@ options = unsafePerformIO $ newIORef =<< initialise
 #endif
 
 {-# INLINE mode #-}
-mode :: (Flags -> Bool) -> Bool
+mode :: (Flags :-> Bool) -> Bool
 #ifdef ACCELERATE_DEBUG
-mode f = unsafePerformIO $ f `fmap` readIORef options
+mode f = unsafePerformIO $ get f `fmap` readIORef options
 #else
 mode _ = False
 #endif
 
 {-# INLINE message #-}
-message :: MonadIO m => (Flags -> Bool) -> String -> m ()
+message :: MonadIO m => (Flags :-> Bool) -> String -> m ()
 #ifdef ACCELERATE_DEBUG
 message f str
   = when f . liftIO
@@ -102,7 +125,7 @@ message _ _   = return ()
 #endif
 
 {-# INLINE event #-}
-event :: MonadIO m => (Flags -> Bool) -> String -> m ()
+event :: MonadIO m => (Flags :-> Bool) -> String -> m ()
 #ifdef ACCELERATE_DEBUG
 event f str = when f (liftIO $ traceEventIO str)
 #else
@@ -110,7 +133,7 @@ event _ _   = return ()
 #endif
 
 {-# INLINE when #-}
-when :: MonadIO m => (Flags -> Bool) -> m () -> m ()
+when :: MonadIO m => (Flags :-> Bool) -> m () -> m ()
 #ifdef ACCELERATE_DEBUG
 when f action
   | mode f      = action
@@ -120,7 +143,7 @@ when _ _        = return ()
 #endif
 
 {-# INLINE unless #-}
-unless :: MonadIO m => (Flags -> Bool) -> m () -> m ()
+unless :: MonadIO m => (Flags :-> Bool) -> m () -> m ()
 #ifdef ACCELERATE_DEBUG
 unless f action
   | mode f      = return ()
@@ -131,7 +154,7 @@ unless _ action = action
 
 {-# INLINE timed #-}
 timed :: MonadIO m
-      => (Flags -> Bool)
+      => (Flags :-> Bool)
       -> (Double -> Double -> String)
       -> m ()
       -> m ()
