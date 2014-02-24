@@ -294,7 +294,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     toIndex sh ix env = do
       sh' <- cvtE sh env
       ix' <- cvtE ix env
-      return `fmap` intOfIndex (reverse sh') (reverse ix')
+      return `fmap` intOfIndex sh' ix'
 
     -- Generate a multidimensional index from a linear index and array shape
     --
@@ -305,7 +305,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     fromIndex sh ix env = do
       sh' <-                           cvtE sh env
       ix' <- single "fromIndex" `fmap` cvtE ix env
-      reverse `fmap` indexOfInt sh' ix'
+      indexOfInt sh' ix'
 
     -- Project out a single scalar element from an array. The array expression
     -- does not contain any free scalar variables (strictly flat data
@@ -401,27 +401,31 @@ writeArray arr i val =
 -- Convert a multidimensional array index into a linear index
 --
 intOfIndex :: [Operand] -> [Operand] -> CodeGen Operand
-intOfIndex []      []     = return (constOp $ num (numType :: NumType Int) 0)
-intOfIndex [_]     [i]    = return i
-intOfIndex (sz:sh) (i:ix) = do
-  a <- intOfIndex sh ix
-  b <- A.mul (numType :: NumType Int) a sz
-  c <- A.add (numType :: NumType Int) b i
-  return c
-intOfIndex _       _      =
-  INTERNAL_ERROR(error) "intOfIndex" "argument mismatch"
+intOfIndex extent idx = cvt (reverse extent) (reverse idx)
+  where
+    cvt []      []     = return (constOp $ num int 0)
+    cvt [_]     [i]    = return i
+    cvt (sz:sh) (i:ix) = do
+      a <- cvt sh ix
+      b <- A.mul (numType :: NumType Int) a sz
+      c <- A.add (numType :: NumType Int) b i
+      return c
+    cvt _       _      =
+      INTERNAL_ERROR(error) "cvt" "argument mismatch"
 
 -- Convert a linear array index into a multidimensional array
 --
 indexOfInt :: [Operand] -> Operand -> CodeGen [Operand]
-indexOfInt [_]     i = return [i]       -- assert( i >= 0 && i < sh )
-indexOfInt (sz:sh) i = do
-  r  <- A.rem  (integralType :: IntegralType Int) i sz
-  i' <- A.quot (integralType :: IntegralType Int) i sz
-  rs <- indexOfInt sh i'
-  return (r:rs)
-indexOfInt _       _ =
-  INTERNAL_ERROR(error) "indexOfInt" "argument mismatch"
+indexOfInt extent idx = reverse `fmap` cvt (reverse extent) idx
+  where
+    cvt [_]     i = return [i]  -- assert( i >= 0 && i < sh )
+    cvt (sz:sh) i = do
+      r  <- A.rem  int i sz
+      i' <- A.quot int i sz
+      rs <- cvt sh i'
+      return (r:rs)
+    cvt _       _ =
+      INTERNAL_ERROR(error) "indexOfInt" "argument mismatch"
 
 
 -- Primitive functions
