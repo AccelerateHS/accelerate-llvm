@@ -133,8 +133,49 @@ rem t x y
   | signedIntegralNum t = instr $ SRem x y []
   | otherwise           = instr $ URem x y []
 
+-- Integer division, truncated towards negative infinity
+--
 idiv :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-idiv = error "todo: idiv"
+idiv t x y
+  | unsignedIntegralNum t          = quot t x y
+  | IntegralDict <- integralDict t = do
+      let tn   = IntegralNumType t
+          ts   = NumScalarType tn
+          mone = constOp (integral t (-1))
+          zero = constOp (integral t 0)
+          one  = constOp (integral t 1)
+
+      ifThen    <- newBlock "idiv.then"
+      ifOr      <- newBlock "idiv.or"
+      ifElse    <- newBlock "idiv.else"
+      ifFalse   <- newBlock "idiv.false"
+      ifEnd     <- newBlock "idiv.end"
+
+      c1        <- join $ land <$> gt ts x zero <*> lt ts y zero
+      _         <- cbr c1 ifThen ifOr
+
+      setBlock ifThen
+      t1        <- add tn x mone
+      t2        <- quot t t1 y
+      v1        <- add tn t2 mone
+      bthen     <- br ifEnd
+
+      setBlock ifOr
+      c2        <- join $ land <$> lt ts x zero <*> gt ts y zero
+      _         <- cbr c2 ifElse ifFalse
+
+      setBlock ifElse
+      e1        <- add tn x one
+      e2        <- quot t e1 y
+      v2        <- add tn e2 mone
+      belse     <- br ifEnd
+
+      setBlock ifFalse
+      v3        <- quot t x y
+      bfalse    <- br ifEnd
+
+      setBlock ifEnd
+      phi' (typeOf t) [(v1,bthen), (v2,belse), (v3,bfalse)]
 
 
 -- Integer modules, satisfying: (x `div` y)*y + (x `mod` y) == x
