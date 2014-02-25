@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -12,7 +12,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Native (
+module Data.Array.Accelerate.LLVM.Native.CodeGen (
 
   llvmOfAcc
 
@@ -23,17 +23,18 @@ import Data.Array.Accelerate.AST                                hiding ( Val(..)
 import Data.Array.Accelerate.Array.Sugar                        ( Array )
 import Data.Array.Accelerate.Trafo
 
+import Data.Array.Accelerate.LLVM.Target
+
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.Target
 
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Map
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
 #include "accelerate.h"
 

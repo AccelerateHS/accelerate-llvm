@@ -1,9 +1,7 @@
-{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -12,7 +10,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
+
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
   where
 
 -- accelerate
@@ -28,28 +27,26 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 
 
--- A combination map/backpermute, where the index and value transformations have
--- been separated
+-- Construct a new array by applying a function to each index. Each thread
+-- processes multiple adjacent elements.
 --
-mkTransform
-    :: forall t aenv sh sh' a b. (Shape sh, Shape sh', Elt a, Elt b)
+mkGenerate
+    :: forall arch aenv sh e. (Shape sh, Elt e)
     => Gamma aenv
-    -> IRFun1    aenv (sh' -> sh)
-    -> IRFun1    aenv (a -> b)
-    -> IRDelayed aenv (Array sh a)
-    -> CodeGen [Kernel t aenv (Array sh' b)]
-mkTransform aenv permute apply IRDelayed{..} =
+    -> IRFun1 aenv (sh -> e)
+    -> CodeGen [Kernel arch aenv (Array sh e)]
+mkGenerate aenv apply =
   let
-      arrOut                      = arrayData  (undefined::Array sh' b) "out"
-      shOut                       = arrayShape (undefined::Array sh' b) "out"
-      paramOut                    = arrayParam (undefined::Array sh' b) "out"
+      arrOut                      = arrayData  (undefined::Array sh e) "out"
+      shOut                       = arrayShape (undefined::Array sh e) "out"
+      paramOut                    = arrayParam (undefined::Array sh e) "out"
       paramEnv                    = envParam aenv
       (start, end, paramGang)     = gangParam
   in
-  makeKernel "transform" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeKernel "generate" (paramGang ++ paramOut ++ paramEnv) $ do
     loop        <- newBlock "loop.top"
     exit        <- newBlock "loop.exit"
 
@@ -58,21 +55,19 @@ mkTransform aenv permute apply IRDelayed{..} =
     c           <- lt int start end
     top         <- cbr c loop exit
 
-    -- Main loop
-    -- ---------
+    -- Body
+    -- ----
     setBlock loop
-    indv <- freshName
-    let i = local indv
+    indv        <- freshName                            -- induction variable
+    let i       =  local indv
     ix          <- indexOfInt (map local shOut) i       -- convert to multidimensional index
-    ix'         <- permute ix                           -- apply backwards index permutation
-    xs          <- delayedIndex ix'                     -- get element
-    ys          <- apply xs                             -- apply function from input array
-    writeArray arrOut i ys
+    r           <- apply ix                             -- apply generator function
+    writeArray arrOut i r                               -- store result
 
     i'          <- add int i (constOp $ num int 1)
     c'          <- eq int i' end
     bot         <- cbr c' exit loop
-    _           <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (start,top)]
+    _           <- phi loop indv (typeOf (int :: IntegralType Int)) [(i',bot), (start,top)]
 
     setBlock exit
     return_

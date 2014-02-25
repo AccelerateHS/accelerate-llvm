@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -12,7 +12,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Native.Map
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
 -- accelerate
@@ -28,7 +28,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 
 
 -- C Code

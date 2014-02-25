@@ -6,7 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -15,7 +15,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
 -- llvm-general
@@ -36,7 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 
 -- standard library
 import Control.Applicative

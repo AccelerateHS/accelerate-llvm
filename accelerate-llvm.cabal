@@ -76,8 +76,8 @@ Library
     -- NVVM target
     Data.Array.Accelerate.LLVM.NVVM.Target
 
-    Data.Array.Accelerate.LLVM.CodeGen.NVVM.Base
-    Data.Array.Accelerate.LLVM.CodeGen.NVVM.Map
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
 
     -- Native target
     Data.Array.Accelerate.LLVM.Native.Array.Data
@@ -90,12 +90,12 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Gang
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
-    Data.Array.Accelerate.LLVM.CodeGen.Native
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Base
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Map
-    Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
+    Data.Array.Accelerate.LLVM.Native.CodeGen
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
 
   other-modules:

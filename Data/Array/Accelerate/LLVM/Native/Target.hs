@@ -24,7 +24,7 @@ import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
-import Data.Array.Accelerate.LLVM.CodeGen.Native                ( llvmOfAcc )
+import Data.Array.Accelerate.LLVM.Native.CodeGen                ( llvmOfAcc )
 import Data.Array.Accelerate.LLVM.State                         ( LLVM )
 import Data.Array.Accelerate.LLVM.Target
 

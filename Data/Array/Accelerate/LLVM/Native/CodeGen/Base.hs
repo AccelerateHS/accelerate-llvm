@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -9,7 +9,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
   where
 
 -- llvm-general

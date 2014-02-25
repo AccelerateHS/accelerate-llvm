@@ -40,15 +40,15 @@ import qualified Data.Array.Accelerate.Array.Representation     as R
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ()
-import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
+import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+import Data.Array.Accelerate.LLVM.Native.Target
 
 -- library
 import Prelude                                                  hiding ( exp )
