@@ -1,12 +1,9 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# OPTIONS -fno-warn-name-shadowing #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen
+-- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -15,8 +12,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Native (
+
+  llvmOfAcc
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
@@ -38,11 +38,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Native.Transform
 #include "accelerate.h"
 
 
--- Code Generation
--- ===============
-
 -- Array computations
--- ------------------
+-- ==================
 
 llvmOfAcc :: forall arch aenv arrs. Target arch
           => DelayedOpenAcc aenv arrs
