@@ -11,8 +11,8 @@ description:
     further information, refer to the main /Accelerate/ package:
     <http://hackage.haskell.org/package/accelerate>
 
--- license:
--- license-file:           LICENSE
+license:                BSD3
+license-file:           LICENSE
 author:                 Trevor L. McDonell
 maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues

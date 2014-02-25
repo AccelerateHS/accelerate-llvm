@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
--- Copyright   :
--- License     :
+-- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
+-- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>
 -- Stability   : experimental
