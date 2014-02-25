@@ -52,7 +52,10 @@ shapeSize arr base =
 gridSize :: CodeGen Operand
 gridSize = mul int32 blockDim gridDim
 
-
+-- Create a complete kernel function by running the code generation sequence
+-- specified at the final parameter. The function is annotated as being a
+-- __global__ kernel function.
+--
 makeKernel :: Name -> [Parameter] -> CodeGen () -> CodeGen [Kernel t aenv a]
 makeKernel kernel param body = do
   code <- body >> createBlocks

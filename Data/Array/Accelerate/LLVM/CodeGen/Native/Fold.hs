@@ -20,7 +20,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
 
 -- llvm-general
 import LLVM.General.AST
-import LLVM.General.AST.Global
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -37,7 +36,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Native.Base
+
 -- standard library
+import Control.Applicative
 import Control.Monad
 import GHC.Conc
 
@@ -107,55 +109,43 @@ mkFold'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold' aenv combine seed IRDelayed{..} = do
-  code <- runBody
-  return [ Kernel $ functionDefaults
-             { returnType  = VoidType
-             , name        = "fold"
-             , parameters  = (paramGang ++ paramStride ++ paramOut ++ paramEnv, False)
-             , basicBlocks = code
-             } ]
-  where
-    (start, end, paramGang)     = gangParam
-    paramEnv                    = envParam aenv
-    arrOut                      = arrayData  (undefined::Array sh e) "out"
-    paramOut                    = arrayParam (undefined::Array sh e) "out"
-    paramStride                 = [Parameter (typeOf (integralType :: IntegralType Int)) "ix.stride" []]
+mkFold' aenv combine seed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      paramEnv                  = envParam aenv
+      arrOut                    = arrayData  (undefined::Array sh e) "out"
+      paramOut                  = arrayParam (undefined::Array sh e) "out"
+      paramStride               = [Parameter (typeOf (integralType :: IntegralType Int)) "ix.stride" []]
 
-    ty_acc                      = llvmOfTupleType (eltType (undefined::e))
+      n                         = local "ix.stride"     -- innermost dimension; length to reduce over
+      ty_acc                    = llvmOfTupleType (eltType (undefined::e))
+  in
+  makeKernel "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
+    loop        <- newBlock "fold.top"
+    exit        <- newBlock "fold.exit"
 
-    -- innermost dimension; length to reduce over
-    n                   = local "ix.stride"
+    seg         <- mul int start n
+    c           <- gte int start end
+    top         <- cbr c exit loop
 
-    runBody :: CodeGen [BasicBlock]
-    runBody = do
-      loop      <- newBlock "fold.top"
-      exit      <- newBlock "fold.exit"
+    setBlock loop
+    c_sh        <- freshName
+    c_sz        <- freshName
+    let sh      = local c_sh
+        sz      = local c_sz
 
-      seg       <- mul int start n
-      c         <- gte int start end
-      top       <- cbr c exit loop
+    next        <- add int sz n
+    r           <- reduce ty_acc delayedLinearIndex combine seed sz next
+    writeArray arrOut sh r
 
-      setBlock loop
-      c_sh      <- freshName
-      c_sz      <- freshName
-      let sh    = local c_sh
-          sz    = local c_sz
+    sh'         <- add int sh (constOp $ num int 1)
+    c'          <- gte int sh' end
+    bot         <- cbr c' exit loop
+    _           <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
+    _           <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot)  ]
 
-      next      <- add int sz n
-      r         <- reduce ty_acc delayedLinearIndex combine seed sz next
-      writeArray arrOut sh r
-
-      sh'       <- add int sh (constOp $ num int 1)
-      c'        <- gte int sh' end
-      bot       <- cbr c' exit loop
-      _         <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
-      _         <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot)  ]
-
-      setBlock exit
-      return_
-      >>
-      createBlocks
+    setBlock exit
+    return_
 
 
 -- Reduce a non-empty array to a single element. Since there is no seed element
@@ -168,53 +158,43 @@ mkFold1'
     -> IRFun2    aenv (e -> e -> e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold1' aenv combine IRDelayed{..} = do
-  code <- runBody
-  return [ Kernel $ functionDefaults
-             { returnType  = VoidType
-             , name        = "fold1"
-             , parameters  = (paramGang ++ paramStride ++ paramOut ++ paramEnv, False)
-             , basicBlocks = code
-             } ]
-  where
-    (start, end, paramGang)     = gangParam
-    paramEnv                    = envParam aenv
-    arrOut                      = arrayData  (undefined::Array sh e) "out"
-    paramOut                    = arrayParam (undefined::Array sh e) "out"
-    paramStride                 = [Parameter (typeOf (integralType :: IntegralType Int)) "ix.stride" []]
+mkFold1' aenv combine IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      paramEnv                  = envParam aenv
+      arrOut                    = arrayData  (undefined::Array sh e) "out"
+      paramOut                  = arrayParam (undefined::Array sh e) "out"
+      paramStride               = [Parameter (typeOf (integralType :: IntegralType Int)) "ix.stride" []]
 
-    n                           = local "ix.stride"
-    ty_acc                      = llvmOfTupleType (eltType (undefined::e))
+      n                         = local "ix.stride"
+      ty_acc                    = llvmOfTupleType (eltType (undefined::e))
+  in
+  makeKernel "fold1" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
+    loop        <- newBlock "fold.top"
+    exit        <- newBlock "fold.exit"
 
-    runBody :: CodeGen [BasicBlock]
-    runBody = do
-      loop      <- newBlock "fold.top"
-      exit      <- newBlock "fold.exit"
+    seg         <- mul int start n
+    c           <- gte int start end
+    top         <- cbr c exit loop
 
-      seg       <- mul int start n
-      c         <- gte int start end
-      top       <- cbr c exit loop
+    setBlock loop
+    c_sh        <- freshName
+    c_sz        <- freshName
+    let sh      = local c_sh
+        sz      = local c_sz
 
-      setBlock loop
-      c_sh      <- freshName
-      c_sz      <- freshName
-      let sh    = local c_sh
-          sz    = local c_sz
+    next        <- add int sz n
+    r           <- reduce1 ty_acc delayedLinearIndex combine sz next
+    writeArray arrOut sh r
 
-      next      <- add int sz n
-      r         <- reduce1 ty_acc delayedLinearIndex combine sz next
-      writeArray arrOut sh r
+    sh'         <- add int sh (constOp $ num int 1)
+    c'          <- gte int sh' end
+    bot         <- cbr c' exit loop
+    _           <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
+    _           <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot) ]
 
-      sh'       <- add int sh (constOp $ num int 1)
-      c'        <- gte int sh' end
-      bot       <- cbr c' exit loop
-      _         <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
-      _         <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot) ]
-
-      setBlock exit
-      return_
-      >>
-      createBlocks
+    setBlock exit
+    return_
 
 
 -- Reduction to scalar
@@ -242,59 +222,37 @@ mkFoldAll'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFoldAll' aenv combine seed IRDelayed{..} = do
-  step2 <- runBody2
-  step1 <- runBody1
-  return
-    [ Kernel $ functionDefaults
-        { returnType  = VoidType
-        , name        = "foldAll"
-        , parameters  = (paramGang ++ paramTmp ++ paramOut ++ paramEnv, False)
-        , basicBlocks = step2
-        }
-    , Kernel $ functionDefaults
-        { returnType  = VoidType
-        , name        = "fold1"
-        , parameters  = (paramGang ++ paramId ++ paramTmp ++ paramEnv, False)
-        , basicBlocks = step1
-        }
-    ]
-  where
-    -- inputs
-    (start, end, paramGang)     = gangParam
-    (tid, paramId)              = gangId
-    paramEnv                    = envParam aenv
+mkFoldAll' aenv combine seed IRDelayed{..} =
+  let
+      -- inputs
+      (start, end, paramGang)   = gangParam
+      (tid, paramId)            = gangId
+      paramEnv                  = envParam aenv
 
-    -- intermediate result of first step
-    paramTmp    = arrayParam (undefined::Vector e) "tmp"
-    arrTmp      = arrayData  (undefined::Vector e) "tmp"
+      -- intermediate result of first step
+      paramTmp  = arrayParam (undefined::Vector e) "tmp"
+      arrTmp    = arrayData  (undefined::Vector e) "tmp"
 
-    -- output array from final step
-    paramOut    = arrayParam (undefined::Scalar e) "out"
-    arrOut      = arrayData  (undefined::Scalar e) "out"
+      -- output array from final step
+      paramOut  = arrayParam (undefined::Scalar e) "out"
+      arrOut    = arrayData  (undefined::Scalar e) "out"
 
-    ty_acc      = llvmOfTupleType (eltType (undefined::e))
-    zero        = constOp (num int 0)
+      ty_acc    = llvmOfTupleType (eltType (undefined::e))
+      zero      = constOp (num int 0)
 
-    manifestLinearIndex [i] = readArray arrTmp i
-    manifestLinearIndex _   = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
-
-    runBody1 :: CodeGen [BasicBlock]
-    runBody1 = do
-      r <- reduce1 ty_acc delayedLinearIndex combine start end
-      writeArray arrTmp tid r
-      return_
-      >>
-      createBlocks
-
-    runBody2 :: CodeGen [BasicBlock]
-    runBody2 = do
-      r <- reduce ty_acc manifestLinearIndex combine seed start end
-      writeArray arrOut zero r
-      return_
-      >>
-      createBlocks
-
+      manifestLinearIndex [i]   = readArray arrTmp i
+      manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
+  in
+  (++)  <$> makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) (do
+              r <- reduce ty_acc manifestLinearIndex combine seed start end
+              writeArray arrOut zero r
+              return_
+            )
+        <*> makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) (do
+              r <- reduce1 ty_acc delayedLinearIndex combine start end
+              writeArray arrTmp tid r
+              return_
+            )
 
 -- Reduce an array to a single element, without a starting value.
 --
@@ -308,58 +266,37 @@ mkFold1All'
     -> IRFun2 aenv (e -> e -> e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold1All' aenv combine IRDelayed{..} = do
-  step2 <- runBody2
-  step1 <- runBody1
-  return
-    [ Kernel $ functionDefaults
-        { returnType  = VoidType
-        , name        = "foldAll"
-        , parameters  = (paramGang ++ paramTmp ++ paramOut ++ paramEnv, False)
-        , basicBlocks = step2
-        }
-    , Kernel $ functionDefaults
-        { returnType  = VoidType
-        , name        = "fold1"
-        , parameters  = (paramGang ++ paramId ++ paramTmp ++ paramEnv, False)
-        , basicBlocks = step1
-        }
-    ]
-  where
-    -- inputs
-    (start, end, paramGang)     = gangParam
-    (tid, paramId)              = gangId
-    paramEnv                    = envParam aenv
+mkFold1All' aenv combine IRDelayed{..} =
+  let
+      -- inputs
+      (start, end, paramGang)   = gangParam
+      (tid, paramId)            = gangId
+      paramEnv                  = envParam aenv
 
-    -- intermediate result of first step
-    paramTmp    = arrayParam (undefined::Vector e) "tmp"
-    arrTmp      = arrayData  (undefined::Vector e) "tmp"
+      -- intermediate result of first step
+      paramTmp  = arrayParam (undefined::Vector e) "tmp"
+      arrTmp    = arrayData  (undefined::Vector e) "tmp"
 
-    -- output array from final step
-    paramOut    = arrayParam (undefined::Scalar e) "out"
-    arrOut      = arrayData  (undefined::Scalar e) "out"
+      -- output array from final step
+      paramOut  = arrayParam (undefined::Scalar e) "out"
+      arrOut    = arrayData  (undefined::Scalar e) "out"
 
-    ty_acc      = llvmOfTupleType (eltType (undefined::e))
-    zero        = constOp (num int 0)
+      ty_acc    = llvmOfTupleType (eltType (undefined::e))
+      zero      = constOp (num int 0)
 
-    manifestLinearIndex [i] = readArray arrTmp i
-    manifestLinearIndex _   = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
-
-    runBody1 :: CodeGen [BasicBlock]
-    runBody1 = do
-      r <- reduce1 ty_acc delayedLinearIndex combine start end
-      writeArray arrTmp tid r
-      return_
-      >>
-      createBlocks
-
-    runBody2 :: CodeGen [BasicBlock]
-    runBody2 = do
-      r <- reduce1 ty_acc manifestLinearIndex combine start end
-      writeArray arrOut zero r
-      return_
-      >>
-      createBlocks
+      manifestLinearIndex [i]   = readArray arrTmp i
+      manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
+  in
+  (++)  <$> makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) (do
+              r <- reduce1 ty_acc manifestLinearIndex combine start end
+              writeArray arrOut zero r
+              return_
+            )
+        <*> makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) (do
+              r <- reduce1 ty_acc delayedLinearIndex combine start end
+              writeArray arrTmp tid r
+              return_
+            )
 
 
 -- Reduction loops

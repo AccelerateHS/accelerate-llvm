@@ -91,6 +91,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
     Data.Array.Accelerate.LLVM.CodeGen.Native
+    Data.Array.Accelerate.LLVM.CodeGen.Native.Base
     Data.Array.Accelerate.LLVM.CodeGen.Native.Fold
     Data.Array.Accelerate.LLVM.CodeGen.Native.Generate
     Data.Array.Accelerate.LLVM.CodeGen.Native.Map
