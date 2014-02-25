@@ -46,6 +46,21 @@ import Control.Monad.State
 -- Scalar functions
 -- ================
 
+-- | Convert a closed function of one argument into a sequence of LLVM basic
+-- blocks.
+--
+llvmOfFun1 :: DelayedFun aenv (a -> b) -> Gamma aenv -> IRFun1 aenv (a -> b)
+llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
+llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike"
+
+llvmOfFun2 :: DelayedFun aenv (a -> b -> c) -> Gamma aenv -> IRFun2 aenv (a -> b -> c)
+llvmOfFun2 (Lam (Lam (Body f))) aenv xs ys = llvmOfOpenExp f (Empty `Push` xs `Push` ys) aenv
+llvmOfFun2 _                    _    _  _  = error "when the world seems to chaaaange~ overniiight"
+
+
+-- Scalar expressions
+-- ==================
+
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
