@@ -64,9 +64,10 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- AST, and one for each of the basic blocks that are generated during the walk.
 --
 data CodeGenState = CodeGenState
-  { blockChain          :: Seq Block                    -- blocks for this function
-  , symbolTable         :: Map Name AST.Global          -- global (external) function declarations
-  , next                :: {-# UNPACK #-} !Word         -- a name supply
+  { blockChain          :: Seq Block                            -- blocks for this function
+  , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
+  , metadataTable       :: Map String (Seq [Maybe Operand])     -- module metadata to be collected
+  , next                :: {-# UNPACK #-} !Word                 -- a name supply
   }
   deriving Show
 
@@ -83,9 +84,10 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
 
 runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
 runLLVM ll =
-  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty 0)
+  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty Map.empty 0)
       kernels           = map unKernel r
       defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+                       ++ createMetadata (metadataTable st)
 
       name | x:_          <- kernels
            , f@Function{} <- x
@@ -244,4 +246,43 @@ newSubBlock ext = do
 setBlock :: Block -> CodeGen ()
 setBlock next =
   modify $ \s -> s { blockChain = blockChain s Seq.|> next }
+
+
+-- Metadata
+-- ========
+
+-- | Insert a metadata key/value pair into the current module.
+--
+addMetadata :: String -> [Maybe Operand] -> CodeGen ()
+addMetadata key val =
+  modify $ \s ->
+    s { metadataTable = Map.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }
+
+
+-- | Generate the metadata definitions for the file. Every key in the map
+-- represents a named metadata definition. The values associated with that key
+-- represent the metadata node definitions that will be attached to that
+-- definition.
+--
+createMetadata :: Map String (Seq [Maybe Operand]) -> [Definition]
+createMetadata md = build (Map.assocs md) (Seq.empty, Seq.empty)
+  where
+    build :: [(String, Seq [Maybe Operand])]
+          -> (Seq Definition, Seq Definition)   -- accumulator of (names, metadata)
+          -> [Definition]
+    build []     (k,d) = Seq.toList (k Seq.>< d)
+    build (x:xs) (k,d) =
+      let (k',d') = meta (Seq.length d) x
+      in  build xs (k Seq.|> k', d Seq.>< d')
+
+    meta :: Int                                 -- number of metadata node definitions so far
+         -> (String, Seq [Maybe Operand])       -- current assoc of the metadata map
+         -> (Definition, Seq Definition)
+    meta n (key, vals)
+      = let node i      = MetadataNodeID (fromIntegral (i+n))
+            nodes       = Seq.mapWithIndex (\i x -> MetadataNodeDefinition (node i) (Seq.toList x)) vals
+            name        = NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
+        in
+        (name, nodes)
+
 
