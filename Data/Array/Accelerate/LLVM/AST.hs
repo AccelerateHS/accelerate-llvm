@@ -13,19 +13,18 @@ module Data.Array.Accelerate.LLVM.AST
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST                        ( PreOpenAcc, PreAfun, PreExp, PreOpenExp, PreOpenFun )
-import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt )
+import Data.Array.Accelerate.AST                                ( PreOpenAcc, PreAfun, PreExp, PreOpenExp, PreOpenFun )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
-import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
+import Data.Array.Accelerate.LLVM.Target                        ( ExecutableR )
 
 
 -- | Annotate an open array expression with the information necessary to execute
 -- each node directly.
 --
 data ExecOpenAcc arch aenv a where
-  ExecAcc  :: Target arch
-           => ExecutableR arch
+  ExecAcc  :: ExecutableR arch
            -> Gamma aenv
            -> PreOpenAcc (ExecOpenAcc arch) aenv a
            -> ExecOpenAcc arch aenv a

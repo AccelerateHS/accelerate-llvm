@@ -12,12 +12,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Compile
-  where
+module Data.Array.Accelerate.LLVM.Compile (
 
--- llvm-general
-import LLVM.General.Module
-import LLVM.General.PassManager
+  compileAcc, compileAfun,
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -26,22 +25,13 @@ import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Array.Sugar                        ( Arrays, Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.CodeGen
-import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
-import Data.Array.Accelerate.LLVM.Debug                         ( dump_llvm )
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
 -- standard library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
-import Control.Monad                                            ( void )
-import Control.Monad.Error                                      ( runErrorT )
-import Control.Monad.Reader                                     ( asks )
-import Control.Monad.Trans                                      ( liftIO )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 
@@ -243,34 +233,21 @@ compileOpenAcc = traverseAcc
 
 -- Compilation
 -- -----------
---
--- TODO:
---  * asynchronous compilation
---  * kernel caching
---
 
 -- | Generate code that will be used to evaluate an array computation. Pass the
 -- generated code to the appropriate backend handler, which may then, for
 -- example, compile and link the code into the running executable.
 --
+-- TODO:
+--  * asynchronous compilation
+--  * kernel caching
+--
 build :: forall arch aenv a. Target arch
       => DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM (ExecutableR arch)
-build acc aenv = do
-  let ast = llvmOfAcc acc aenv
-#ifdef ACCELERATE_DEBUG
-      pss = defaultCuratedPassSetSpec { optLevel = Just 3 }
-  Debug.when dump_llvm $ do
-    ctx <- asks llvmContext
-    r   <- liftIO . runErrorT $
-            withModuleFromAST ctx (unModule ast) $ \mdl ->
-            withPassManager pss                  $ \pm  -> do
-              void $ runPassManager pm mdl
-              Debug.message dump_llvm =<< moduleLLVMAssembly mdl
-    either error return r
-#endif
-  compileForTarget ast
+build acc aenv =
+  compileForTarget acc aenv
 
 
 -- Applicative
