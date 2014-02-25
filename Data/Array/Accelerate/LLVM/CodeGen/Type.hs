@@ -51,16 +51,20 @@ instance TypeOf (NonNumType a) where
 -- often need integer types
 --
 class IntType c where
-  int :: c Int
+  int   :: c Int
+  int32 :: c Int32
 
 instance IntType ScalarType where
-  int = scalarType
+  int   = scalarType
+  int32 = scalarType
 
 instance IntType NumType where
-  int = numType
+  int   = numType
+  int32 = numType
 
 instance IntType IntegralType where
-  int = integralType
+  int   = integralType
+  int32 = integralType
 
 
 llvmOfTupleType :: TupleType a -> [Type]
