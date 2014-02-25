@@ -23,7 +23,7 @@ import LLVM.General.PassManager
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Arrays, Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -97,7 +97,7 @@ compileOpenAcc = traverseAcc
         Aprj ix tup             -> node =<< liftA (Aprj ix)     <$> travA    tup
 
         -- Foreign
---        Aforeign ff afun a      -> node =<< foreignA ff afun a
+        Aforeign ff afun a      -> node =<< foreignA ff afun a
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
@@ -169,6 +169,15 @@ compileOpenAcc = traverseAcc
         noKernel :: ExecutableR arch
         noKernel =  INTERNAL_ERROR(error) "compile" "no kernel module for this node"
 
+        -- If there is a foreign call for the LLVM backend, don't bother
+        -- compiling the pure version
+        foreignA :: (Arrays a, Arrays b, Foreign f)
+                 => f a b
+                 -> DelayedAfun (a -> b)
+                 -> DelayedOpenAcc aenv a
+                 -> LLVM (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
+        foreignA = error "todo: compile/foreign array computations"
+
 
     -- Traverse a scalar expression
     --
@@ -181,7 +190,7 @@ compileOpenAcc = traverseAcc
         PrimConst c             -> return $ pure (PrimConst c)
         IndexAny                -> return $ pure IndexAny
         IndexNil                -> return $ pure IndexNil
---        Foreign ff f x          -> foreignE ff f x
+        Foreign ff f x          -> foreignE ff f x
         --
         Let a b                 -> liftA2 Let                   <$> travE a <*> travE b
         IndexCons t h           -> liftA2 IndexCons             <$> travE t <*> travE h
@@ -223,6 +232,13 @@ compileOpenAcc = traverseAcc
         bind :: (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = INTERNAL_ERROR(error) "bind" "expected array variable"
+
+        foreignE :: (Elt a, Elt b, Foreign f)
+                 => f a b
+                 -> DelayedFun () (a -> b)
+                 -> DelayedOpenExp env aenv a
+                 -> LLVM (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
+        foreignE = error "todo: compile/foreign expressions"
 
 
 -- Compilation

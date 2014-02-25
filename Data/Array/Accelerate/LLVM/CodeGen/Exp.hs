@@ -24,7 +24,7 @@ import LLVM.General.AST
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Type                      ( preExpType, delayedAccType )
 import Data.Array.Accelerate.Array.Representation               hiding ( Shape )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, (:.), eltType )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, Foreign, (:.), eltType )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Type
@@ -90,7 +90,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
         Intersect sh1 sh2       -> intersect sh1 sh2 env
 
         --Foreign function
---        Foreign ff _ e          -> foreignE ff e env
+        Foreign ff _ e          -> foreignE ff e env
 
     cvtF1 :: DelayedOpenFun env aenv (a -> b)
           -> Val env
@@ -375,6 +375,15 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       sh1' <- cvtE sh1 env
       sh2' <- cvtE sh2 env
       zipWithM (A.min (scalarType :: ScalarType Int)) sh1' sh2'
+
+    -- Foreign scalar functions.
+    --
+    foreignE :: (Foreign f, Elt a, Elt b)
+             => f a b
+             -> DelayedOpenExp env aenv a
+             -> Val env
+             -> CodeGen (IR env aenv b)
+    foreignE = error "todo: codegen/foreign expressions"
 
 
 -- Helper functions

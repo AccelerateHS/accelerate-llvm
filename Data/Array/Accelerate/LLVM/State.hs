@@ -18,13 +18,10 @@ import qualified LLVM.General.Context                   as LLVM
 
 -- library
 import Control.Applicative                              ( Applicative )
-import Control.Exception                                ( SomeException, catch )
 import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
 import System.IO.Unsafe                                 ( unsafePerformIO )
-
-#include "accelerate.h"
 
 
 -- Execution state
