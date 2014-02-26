@@ -39,7 +39,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 
 -- standard library
-import Control.Applicative
 import Control.Monad
 import GHC.Conc
 
@@ -242,17 +241,16 @@ mkFoldAll' aenv combine seed IRDelayed{..} =
 
       manifestLinearIndex [i]   = readArray arrTmp i
       manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
-  in
-  (++)  <$> makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) (do
-              r <- reduce ty_acc manifestLinearIndex combine seed start end
-              writeArray arrOut zero r
-              return_
-            )
-        <*> makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) (do
-              r <- reduce1 ty_acc delayedLinearIndex combine start end
-              writeArray arrTmp tid r
-              return_
-            )
+  in do
+  [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+            r <- reduce ty_acc manifestLinearIndex combine seed start end
+            writeArray arrOut zero r
+            return_
+  [k2] <- makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
+            r <- reduce1 ty_acc delayedLinearIndex combine start end
+            writeArray arrTmp tid r
+            return_
+  return [k1,k2]
 
 -- Reduce an array to a single element, without a starting value.
 --
@@ -286,17 +284,16 @@ mkFold1All' aenv combine IRDelayed{..} =
 
       manifestLinearIndex [i]   = readArray arrTmp i
       manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
-  in
-  (++)  <$> makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) (do
-              r <- reduce1 ty_acc manifestLinearIndex combine start end
-              writeArray arrOut zero r
-              return_
-            )
-        <*> makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) (do
-              r <- reduce1 ty_acc delayedLinearIndex combine start end
-              writeArray arrTmp tid r
-              return_
-            )
+  in do
+  [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+            r <- reduce1 ty_acc manifestLinearIndex combine start end
+            writeArray arrOut zero r
+            return_
+  [k2] <- makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
+            r <- reduce1 ty_acc delayedLinearIndex combine start end
+            writeArray arrTmp tid r
+            return_
+  return [k1,k2]
 
 
 -- Reduction loops
