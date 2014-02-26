@@ -14,6 +14,7 @@
 
 module Data.Array.Accelerate.LLVM.Compile (
 
+  Compile(..),
   compileAcc, compileAfun,
 
 ) where
@@ -38,6 +39,15 @@ import Data.Monoid
 #include "accelerate.h"
 
 
+class Target arch => Compile arch where
+  -- | Compile an accelerate computation into some backend-specific executable format
+  --
+  compileForTarget
+      :: DelayedOpenAcc aenv a
+      -> Gamma aenv
+      -> LLVM (ExecutableR arch)
+
+
 -- | Initialise code generation, compilation, and data transfer (if required)
 -- for an array expression. The returned array computation is annotated to be
 -- suitable for execution on the target:
@@ -46,20 +56,20 @@ import Data.Monoid
 --
 --   * The compiled LLVM code required to execute the kernel
 --
-compileAcc :: Target arch => DelayedAcc a -> LLVM (ExecAcc arch a)
+compileAcc :: Compile arch => DelayedAcc a -> LLVM (ExecAcc arch a)
 compileAcc = compileOpenAcc
 
-compileAfun :: Target arch => DelayedAfun f -> LLVM (ExecAfun arch f)
+compileAfun :: Compile arch => DelayedAfun f -> LLVM (ExecAfun arch f)
 compileAfun = compileOpenAfun
 
 
-compileOpenAfun :: Target arch => DelayedOpenAfun aenv f -> LLVM (PreOpenAfun (ExecOpenAcc arch) aenv f)
+compileOpenAfun :: Compile arch => DelayedOpenAfun aenv f -> LLVM (PreOpenAfun (ExecOpenAcc arch) aenv f)
 compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
 compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
 
 
 compileOpenAcc
-    :: forall arch _aenv _a. Target arch
+    :: forall arch _aenv _a. Compile arch
     => DelayedOpenAcc _aenv _a
     -> LLVM (ExecOpenAcc arch _aenv _a)
 compileOpenAcc = traverseAcc
@@ -242,7 +252,7 @@ compileOpenAcc = traverseAcc
 --  * asynchronous compilation
 --  * kernel caching
 --
-build :: forall arch aenv a. Target arch
+build :: forall arch aenv a. Compile arch
       => DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM (ExecutableR arch)

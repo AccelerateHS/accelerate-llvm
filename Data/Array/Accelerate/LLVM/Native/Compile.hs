@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -9,25 +10,60 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Compile
-  where
+module Data.Array.Accelerate.LLVM.Native.Compile (
 
--- llvm-general
-import LLVM.General
-import LLVM.General.ExecutionEngine
-import LLVM.General.AST.Name
+  module Data.Array.Accelerate.LLVM.Compile
+
+) where
 
 -- accelerate
+import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
+
+import Data.Array.Accelerate.LLVM.CodeGen
+import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
+
+import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
 
 -- standard library
-import Control.Monad.Trans
+import Control.Monad.Error
+
+-- extra modules need for dumping the llvm code
+#ifdef ACCELERATE_DEBUG
+import qualified LLVM.General.Module                            as LLVM
+import qualified LLVM.General.PassManager                       as LLVM
+import Data.Array.Accelerate.LLVM.Debug                         as Debug
 import Control.Monad.Reader
-import Foreign.Ptr
-
-#include "accelerate.h"
+#endif
 
 
+instance Compile Native where
+  compileForTarget = compileForNativeTarget
+
+
+-- Compile an Accelerate expression for the native CPU target
+--
+compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM (ExecutableR Native)
+compileForNativeTarget acc aenv = do
+  let ast = llvmOfAcc Native acc aenv
+#ifdef ACCELERATE_DEBUG
+      pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+  Debug.when dump_llvm $ do
+    ctx <- asks llvmContext
+    r   <- liftIO . runErrorT $
+            LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
+            LLVM.withPassManager pss                  $ \pm  -> do
+              void $ LLVM.runPassManager pm mdl
+              Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+    either error return r
+#endif
+  return $ NativeR (unModule ast)
+
+
+{--
 -- | Compile an LLVM module to native target, and return function pointers to
 -- the named functions within the module.
 --
@@ -45,8 +81,7 @@ compileForMCJIT mdl f = do
 
     check Nothing  = INTERNAL_ERROR(error) "compileForMCJIT" "unknown function"
     check (Just p) = p
-
-
+--}
 {--
   ctx <- asks llvmContext
 
