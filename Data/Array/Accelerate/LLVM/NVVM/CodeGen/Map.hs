@@ -27,22 +27,20 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
+import Data.Array.Accelerate.LLVM.NVVM.Target
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
-
--- cuda
-import Foreign.CUDA.Analysis.Device
 
 
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
 mkMap :: forall t aenv sh a b. Elt b
-      => DeviceProperties
+      => NVVM
       -> Gamma aenv
       -> IRFun1    aenv (a -> b)
       -> IRDelayed aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
-mkMap _dev aenv apply IRDelayed{..} =
+mkMap _nvvm aenv apply IRDelayed{..} =
   let
       arrOut      = arrayData  (undefined::Array sh b) "out"
       paramOut    = arrayParam (undefined::Array sh b) "out"
@@ -53,31 +51,34 @@ mkMap _dev aenv apply IRDelayed{..} =
     loop      <- newBlock "loop.top"
     exit      <- newBlock "loop.exit"
 
-    -- Setup loop parameters.
+    -- setup main loop
+    -- ---------------
     --
     -- Threads process multiple elements, striding by array by the grid size.
     -- This gives optimal memory coalescing (at least for the case when
     -- delayedLinearIndex is direct indexing) and amortises the cost of
     -- launching the thread block.
     --
-    n         <- shapeSize (undefined::Array sh b) "out"
-    step      <- gridSize
+    n           <- shapeSize (undefined::Array sh b) "out"
+    step        <- gridSize
 
-    c         <- lt int32 threadIdx n
-    top       <- cbr c loop exit
+    c           <- lt int32 threadIdx n
+    top         <- cbr c loop exit
 
+    -- main loop
+    -- ---------
     setBlock loop
-    indv      <- freshName
-    let i      = local indv
+    indv        <- freshName
+    let i        = local indv
 
-    xs        <- delayedLinearIndex [i]
-    ys        <- apply xs
+    xs          <- delayedLinearIndex [i]
+    ys          <- apply xs
     writeArray arrOut i ys
 
-    i'        <- add int32 i step
-    c'        <- lt int32 i' n
-    bot       <- cbr c' loop exit
-    _         <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (threadIdx,top)]
+    i'          <- add int32 i step
+    c'          <- lt int32 i' n
+    bot         <- cbr c' loop exit
+    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (threadIdx,top)]
 
     setBlock exit
     return_
