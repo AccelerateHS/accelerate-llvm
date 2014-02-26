@@ -76,6 +76,7 @@ Library
     -- NVVM target
     Data.Array.Accelerate.LLVM.NVVM.Target
 
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
 
