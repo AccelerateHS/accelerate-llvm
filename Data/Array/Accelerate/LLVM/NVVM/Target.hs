@@ -24,6 +24,10 @@ import LLVM.General.AST.DataLayout
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
+-- cuda
+import Foreign.CUDA.Driver                      as CUDA
+import Foreign.CUDA.Analysis.Device             as CUDA
+
 -- standard library
 import Data.Word
 import Data.ByteString                          ( ByteString )
@@ -33,7 +37,10 @@ import qualified Data.Set                       as Set
 
 -- | The NVVM/PTX execution target for NVIDIA GPUs
 --
-data NVVM
+data NVVM = NVVM {
+    nvvmContext                 :: {-# UNPACK #-} !CUDA.Context
+  , nvvmDeviceProperties        :: {-# UNPACK #-} !CUDA.DeviceProperties
+  }
 
 instance Target NVVM where
   data ExecutableR NVVM = NVVMR { executableR :: ByteString }
