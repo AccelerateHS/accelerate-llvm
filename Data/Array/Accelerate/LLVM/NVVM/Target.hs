@@ -24,30 +24,32 @@ import LLVM.General.AST.DataLayout
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
--- cuda
-import Foreign.CUDA.Driver                      as CUDA
-import Foreign.CUDA.Analysis.Device             as CUDA
+import Data.Array.Accelerate.LLVM.NVVM.Array.Table
+
+-- CUDA
+import Foreign.CUDA.Driver                                      as CUDA
 
 -- standard library
 import Data.Word
-import Data.ByteString                          ( ByteString )
-import qualified Data.Map                       as Map
-import qualified Data.Set                       as Set
+import Data.ByteString                                          ( ByteString )
+import qualified Data.Map                                       as Map
+import qualified Data.Set                                       as Set
 
 
 -- | The NVVM/PTX execution target for NVIDIA GPUs
 --
+-- TLM: hmm, this is turning into a state structure...
+--
 data NVVM = NVVM {
     nvvmContext                 :: {-# UNPACK #-} !CUDA.Context
   , nvvmDeviceProperties        :: {-# UNPACK #-} !CUDA.DeviceProperties
+  , nvvmMemoryTable             :: {-# UNPACK #-} !MemoryTable
   }
 
 instance Target NVVM where
   data ExecutableR NVVM = NVVMR { executableR :: ByteString }
   targetTriple _     = Just nvvmTargetTriple
   targetDataLayout _ = Just nvvmDataLayout
-
-  compileForTarget _ = error "todo: compileForTarget NVVM"
 
 
 -- A description of the various data layout properties that may be used during
@@ -83,15 +85,4 @@ nvvmDataLayout = DataLayout
 --
 nvvmTargetTriple :: String
 nvvmTargetTriple = "nvptx-nvidia-cl.1.0"
-
-
--- Kernel annotation
---
-annotateAsKernel :: Name -> Word -> Definition
-annotateAsKernel kernel metaID =
-  MetadataNodeDefinition (MetadataNodeID metaID)
-    [ Just $ ConstantOperand (GlobalReference kernel)
-    , Just $ MetadataStringOperand "kernel"
-    , Just $ ConstantOperand (Int 32 1)
-    ]
 
