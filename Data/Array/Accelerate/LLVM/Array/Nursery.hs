@@ -48,11 +48,8 @@ type NRS a      = MVar ( IntMap (Seq a) )
 new :: forall a. (a -> IO ()) -> IO (Nursery a)
 new delete = do
   ref   <- newMVar ( IM.empty )
-  weak  <- mkWeakMVar ref (finalise ref)
+  weak  <- mkWeakMVar ref (cleanup delete ref)
   return $! Nursery ref weak
-  where
-    finalise :: NRS a -> IO ()
-    finalise r = withMVar r (mapM_ (Seq.mapM delete) . IM.elems)
 
 
 -- | Look up an entry in the nursery with a given key.
@@ -79,4 +76,13 @@ insert :: Int -> a -> NRS a -> IO ()
 insert !key !val !ref =
   modifyMVar_ ref $ \nrs ->
     return $! IM.insertWith (Seq.><) key (Seq.singleton val) nrs
+
+
+-- | Delete all entries from the nursery.
+--
+{-# INLINEABLE cleanup #-}
+cleanup :: forall a. (a -> IO ()) -> NRS a -> IO ()
+cleanup delete !ref =
+  modifyMVar_ ref (\nrs -> do mapM_ (Seq.mapM delete) (IM.elems nrs)
+                              return IM.empty)
 
