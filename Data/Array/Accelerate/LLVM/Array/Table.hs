@@ -15,8 +15,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Array.Table
-  where
+module Data.Array.Accelerate.LLVM.Array.Table (
+
+  MemoryTable, MallocRemote, FreeRemote,
+  new, lookup, malloc, cleanup,
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.Array.Data
@@ -27,11 +31,15 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 -- standard library
 import Prelude                                                  hiding ( lookup )
 import Control.Concurrent.MVar
+import Control.Monad
 import Data.HashMap.Strict                                      ( HashMap )
 import Data.Hashable
+import Data.Maybe
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
+import Unsafe.Coerce                                            ( unsafeCoerce )
+import System.Mem
 import System.Mem.Weak                                          as Weak
 import qualified Data.HashMap.Strict                            as Hash
 
@@ -50,13 +58,11 @@ import GHC.Ptr
 -- remove this entry from the table, and further attempts to dereference the
 -- weak pointer will fail.
 --
-data MemoryTable c where
-  MemoryTable :: Remote c => {
-      memoryTable       :: {-# UNPACK #-} !(MT c)
-    , memoryNursery     :: {-# UNPACK #-} !(Nursery (c ()))
-    , weakTable         :: {-# UNPACK #-} !(Weak (MT c))
-    }
-    -> MemoryTable c
+data MemoryTable c = MemoryTable {
+    memoryTable         :: {-# UNPACK #-} !(MT c)
+  , memoryNursery       :: {-# UNPACK #-} !(Nursery (c ()))
+  , weakTable           :: {-# UNPACK #-} !(Weak (MT c))
+  }
 
 type MT c = MVar ( HashMap HostArray (RemoteArray c) )
 
@@ -80,23 +86,20 @@ instance Show HostArray where
   show (HostArray p) = "Array " ++ show p
 
 
--- | Functions to allocate and delete remote arrays. We also need to be able to
--- cast the type of the remote array data, for use with the nursery.
+-- The type of functions to allocate and deallocate remote arrays.
 --
--- TLM: Using a class here might not be appropriate. E.g. we need to make the
---      correct CUDA context active before doing any de/allocations.
---
-class Remote c where
-  castRemote    :: c a -> c b
-  freeRemote    :: c a -> IO ()
-  mallocRemote  :: Int -> IO (c a)
+type FreeRemote c       = forall a. c a -> IO ()
+type MallocRemote c a   = Int -> IO (c a)
+
+castRemote :: c a -> c b
+castRemote = unsafeCoerce
 
 
 -- | Create a new memory table from host to remote arrays. When the structure is
 -- collected it will finalise all entries in the table.
 --
-new :: Remote c => IO (MemoryTable c)
-new = do
+new :: FreeRemote c -> IO (MemoryTable c)
+new freeRemote = do
   message "initialise memory table"
   ref   <- newMVar ( Hash.empty )
   nrs   <- Nursery.new freeRemote
@@ -169,11 +172,13 @@ makeHostArray !adata = HostArray (ptrsOfArrayData adata)
 {-# INLINEABLE malloc #-}
 malloc
     :: forall c e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
-    => MemoryTable c
+    => FreeRemote c
+    -> MallocRemote c a
+    -> MemoryTable c
     -> ArrayData e              -- Associated host array
     -> Int                      -- The number of _elements_ in the array
     -> IO (c a)
-malloc mt@MemoryTable{..} !adata !n =
+malloc freeRemote mallocRemote !mt@MemoryTable{..} !adata !n =
   let
       -- Calculate the number of elements that should actually be allocated. If
       -- this is a singleton array then just allocate for that element,
@@ -192,7 +197,7 @@ malloc mt@MemoryTable{..} !adata !n =
              Just p     -> trace "malloc/nursery" $ return (castRemote p)
              Nothing    -> trace "malloc/new"     $ mallocRemote numElements    -- TODO: exception handling?
     --
-    insert mt adata ptr bytes
+    insert freeRemote mt adata ptr bytes
     return ptr
 
 
@@ -202,29 +207,34 @@ malloc mt@MemoryTable{..} !adata !n =
 {-# INLINEABLE insert #-}
 insert
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a)
-    => MemoryTable c
+    => FreeRemote c
+    -> MemoryTable c
     -> ArrayData e
     -> c a
     -> Int
     -> IO ()
-insert (MemoryTable !memoryTable (Nursery _ !weakNursery) !weakTable) !adata !ptr !bytes =
-  let !key      = makeHostArray adata
+insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
+  let !key                      = makeHostArray adata
+      Nursery _ !weakNursery    = memoryNursery
   in do
-    remote      <- RemoteArray `fmap` mkWeak adata ptr (Just $ delete weakTable weakNursery key ptr bytes)
+    remote      <- RemoteArray `fmap` mkWeak adata ptr (Just $ delete freeRemote weakTable weakNursery key ptr bytes)
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable (return . Hash.insert key remote)
 
 
+-- | Remove an entry from the memory table. This might stash the memory into the
+-- nursery for later reuse, or actually deallocate the remote memory.
+--
 {-# INLINEABLE delete #-}
 delete
-    :: Remote c
-    => Weak (MT c)
+    :: FreeRemote c
+    -> Weak (MT c)
     -> Weak (NRS (c ()))
     -> HostArray
     -> c a
     -> Int
     -> IO ()
-delete !weak_mt !weak_nrs !key !remote !bytes = do
+delete freeRemote !weak_mt !weak_nrs !key !remote !bytes = do
   -- First check if the memory table is still active. If it is, we first need to
   -- remove this entry from the table.
   mmt   <- deRefWeak weak_mt
@@ -240,12 +250,32 @@ delete !weak_mt !weak_nrs !key !remote !bytes = do
     Just nrs    -> trace ("finalise/stash: " ++ show key) $ Nursery.insert bytes (castRemote remote) nrs
 
 
+-- | Cleanup the memory table in an attempt to create more free space on the
+-- remote device. This removes all entries from the nursery, and finalises any
+-- unreachable arrays.
+--
+{-# INLINEABLE cleanup #-}
+cleanup
+    :: FreeRemote c
+    -> MemoryTable c
+    -> IO ()
+cleanup freeRemote !MemoryTable{..} = do
+  let Nursery nursery _ = memoryNursery
+  --
+  Nursery.cleanup freeRemote nursery
+  performGC
+  mr    <- deRefWeak weakTable
+  case mr of
+    Nothing     -> return ()
+    Just ref    -> withMVar ref $ \mt ->
+                      forM_ (Hash.elems mt) $ \(RemoteArray w) -> do
+                        alive   <- isJust `fmap` deRefWeak w
+                        unless alive (finalize w)
+  performGC
+
+
 -- Debug
 -- -----
-
-{-# INLINE showBytes #-}
-showBytes :: Int -> String
-showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B"
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
