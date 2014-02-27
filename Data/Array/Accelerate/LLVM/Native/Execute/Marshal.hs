@@ -19,11 +19,12 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Marshal (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
+
+import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 
 -- libraries
