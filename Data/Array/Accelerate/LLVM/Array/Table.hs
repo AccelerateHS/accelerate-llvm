@@ -78,6 +78,7 @@ data RemoteArray c where
                 => {-# UNPACK #-} !(Weak (c e))
                 -> RemoteArray c
 
+-- GHC core lint warning: INLINE binder is (non-rule) loop breaker
 instance Eq HostArray where
   HostArray (Ptr a1#) == HostArray (Ptr a2#)
     | 1# <- eqAddr# a1# a2#     = True
