@@ -58,6 +58,8 @@ import GHC.Ptr
 -- remove this entry from the table, and further attempts to dereference the
 -- weak pointer will fail.
 --
+-- PRECONDITION: The underlying Accelerate array is pinned.
+--
 data MemoryTable c = MemoryTable {
     memoryTable         :: {-# UNPACK #-} !(MT c)
   , memoryNursery       :: {-# UNPACK #-} !(Nursery (c ()))
@@ -77,7 +79,9 @@ data RemoteArray c where
                 -> RemoteArray c
 
 instance Eq HostArray where
-  HostArray a1 == HostArray a2 = maybe False (== a2) (gcast a1)
+  HostArray (Ptr a1#) == HostArray (Ptr a2#)
+    | 1# <- eqAddr# a1# a2#     = True
+    | otherwise                 = False
 
 instance Hashable HostArray where
   hashWithSalt salt (HostArray (Ptr a#)) = salt `hashWithSalt` (I# (addr2Int# a#))
