@@ -136,7 +136,7 @@ lookup MemoryTable{..} !adata = do
             case mv of
               Just v
                 | Just p <- gcast v -> trace ("lookup/found: " ++ show key) $ return (Just p)
-                | otherwise         -> INTERNAL_ERROR(error) "memory table/lookup" $ "type mismatch"
+                | otherwise         -> INTERNAL_ERROR(error) "memory table/lookup" "type mismatch"
 
               -- Note: [Weak pointer weirdness]
               --
@@ -149,8 +149,8 @@ lookup MemoryTable{..} !adata = do
               -- failure case, this ensure that it is reachable in the
               -- continuation and thus 'deRefWeak' always succeeds! This sort of
               -- weirdness --- typical in the world of weak pointers --- is why
-              -- we _must not_ reuse the stable name 'sa' computed above in the
-              -- error message.
+              -- we _must not_ reuse the table key computed above in the error
+              -- message.
               --
               Nothing
                 -> let !key' = makeHostArray adata
