@@ -278,7 +278,7 @@ executeOpenExp rootExp env aenv = travE rootExp
       Shape acc                 -> shape <$> travA acc
       Index acc ix              -> (!)        <$> travA acc <*> travE ix
       LinearIndex acc ix        -> indexArray <$> travA acc <*> travE ix
---      Foreign _ f x             -> eforeign f x
+      Foreign _ f x             -> eforeign f x
 
     -- Helpers
     -- -------
@@ -291,7 +291,8 @@ executeOpenExp rootExp env aenv = travE rootExp
     travA :: ExecOpenAcc Native aenv a -> LLVM a
     travA acc = executeOpenAcc acc aenv
 
---    eforeign :: ExecFun () (a -> b) -> ExecOpenExp Native env aenv a -> LLVM b
+    eforeign :: ExecFun Native () (a -> b) -> ExecOpenExp Native env aenv a -> LLVM b
+    eforeign _ _ = error "todo: execute Foreign"
 --    eforeign (Lam (Body f)) x = travE x >>= \e -> executeOpenExp f (Empty `Push` e) Aempty
 --    eforeign _              _ = error "I bless the rains down in Africa"
 
