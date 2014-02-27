@@ -15,9 +15,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Target
   where
 
 -- llvm-general
-import LLVM.General.AST
 import LLVM.General.AST.AddrSpace
-import LLVM.General.AST.Constant
 import LLVM.General.AST.DataLayout
 
 -- accelerate
@@ -30,7 +28,6 @@ import Data.Array.Accelerate.LLVM.NVVM.Array.Table
 import Foreign.CUDA.Driver                                      as CUDA
 
 -- standard library
-import Data.Word
 import Data.ByteString                                          ( ByteString )
 import qualified Data.Map                                       as Map
 import qualified Data.Set                                       as Set
