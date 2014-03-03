@@ -31,6 +31,7 @@ import Control.Monad
 
 
 -- Standard CUDA thread and grid identifiers
+-- http://docs.nvidia.com/cuda/nvvm-ir-spec/index.html#nvvm-intrin-spreg ??
 --
 blockDim, gridDim, threadIdx, blockIdx :: Operand
 blockDim  = local "blockDim.x"
