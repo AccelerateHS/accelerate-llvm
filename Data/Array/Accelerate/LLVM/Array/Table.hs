@@ -32,7 +32,7 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 import Prelude                                                  hiding ( lookup )
 import Control.Concurrent.MVar
 import Control.Monad
-import Data.IntMap                                              ( IntMap )
+import Data.IntMap.Strict                                       ( IntMap )
 import Data.Maybe
 import Data.Typeable
 import Foreign.Ptr
@@ -40,7 +40,7 @@ import Foreign.Storable
 import System.Mem
 import System.Mem.Weak
 import Unsafe.Coerce                                            ( unsafeCoerce )
-import qualified Data.IntMap                                    as IM
+import qualified Data.IntMap.Strict                             as IM
 
 import GHC.Base
 import GHC.Ptr
@@ -107,7 +107,7 @@ new freeRemote = do
 -- | Lookup the remote array corresponding to the given host-side array
 --
 {-# INLINEABLE lookup #-}
-lookup :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Typeable b)
+lookup :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable b)
        => MemoryTable c
        -> ArrayData e
        -> IO (Maybe (c b))
@@ -144,11 +144,12 @@ lookup MemoryTable{..} !adata = do
                 -> let !key' = makeHostArray adata
                    in  INTERNAL_ERROR(error) "memory table/lookup" ("dead weak pointer: " ++ show key')
 
+
 -- | Convert the host array data into a memory table key
 --
 {-# INLINEABLE makeHostArray #-}
 makeHostArray
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a)
+    :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
     => ArrayData e
     -> HostArray
 makeHostArray !adata =
