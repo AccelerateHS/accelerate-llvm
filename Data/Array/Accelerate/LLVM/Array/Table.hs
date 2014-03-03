@@ -32,16 +32,15 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 import Prelude                                                  hiding ( lookup )
 import Control.Concurrent.MVar
 import Control.Monad
-import Data.HashMap.Strict                                      ( HashMap )
-import Data.Hashable
+import Data.IntMap                                              ( IntMap )
 import Data.Maybe
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
-import Unsafe.Coerce                                            ( unsafeCoerce )
 import System.Mem
-import System.Mem.Weak                                          as Weak
-import qualified Data.HashMap.Strict                            as Hash
+import System.Mem.Weak
+import Unsafe.Coerce                                            ( unsafeCoerce )
+import qualified Data.IntMap                                    as IM
 
 import GHC.Base
 import GHC.Ptr
@@ -66,29 +65,14 @@ data MemoryTable c = MemoryTable {
   , weakTable           :: {-# UNPACK #-} !(Weak (MT c))
   }
 
-type MT c = MVar ( HashMap HostArray (RemoteArray c) )
+type MT c = MVar ( IntMap (RemoteArray c) )
 
-data HostArray where
-  HostArray     :: Typeable e
-                => {-# UNPACK #-} !(Ptr e)
-                -> HostArray
+type HostArray = Int
 
 data RemoteArray c where
   RemoteArray   :: Typeable e
                 => {-# UNPACK #-} !(Weak (c e))
                 -> RemoteArray c
-
--- GHC core lint warning: INLINE binder is (non-rule) loop breaker
-instance Eq HostArray where
-  HostArray (Ptr a1#) == HostArray (Ptr a2#)
-    | 1# <- eqAddr# a1# a2#     = True
-    | otherwise                 = False
-
-instance Hashable HostArray where
-  hashWithSalt salt (HostArray (Ptr a#)) = salt `hashWithSalt` (I# (addr2Int# a#))
-
-instance Show HostArray where
-  show (HostArray p) = "Array " ++ show p
 
 
 -- The type of functions to allocate and deallocate remote arrays.
@@ -96,6 +80,9 @@ instance Show HostArray where
 type FreeRemote c       = forall a. c a -> IO ()
 type MallocRemote c a   = Int -> IO (c a)
 
+
+-- | TODO: derp...
+--
 castRemote :: c a -> c b
 castRemote = unsafeCoerce
 
@@ -106,7 +93,7 @@ castRemote = unsafeCoerce
 new :: FreeRemote c -> IO (MemoryTable c)
 new freeRemote = do
   message "initialise memory table"
-  ref   <- newMVar ( Hash.empty )
+  ref   <- newMVar ( IM.empty )
   nrs   <- Nursery.new freeRemote
   weak  <- mkWeakMVar ref (finalise ref)
   return $! MemoryTable ref nrs weak
@@ -114,7 +101,7 @@ new freeRemote = do
     finalise :: MT c -> IO ()
     finalise r = do
       message "finalise memory table"
-      withMVar r (mapM_ (\(RemoteArray w) -> Weak.finalize w) . Hash.elems)
+      withMVar r (mapM_ (\(RemoteArray w) -> finalize w) . IM.elems)
 
 
 -- | Lookup the remote array corresponding to the given host-side array
@@ -126,7 +113,7 @@ lookup :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Typeable b)
        -> IO (Maybe (c b))
 lookup MemoryTable{..} !adata = do
   let !key      =  makeHostArray adata
-  mw            <- withMVar memoryTable (\mt -> return (Hash.lookup key mt))
+  mw            <- withMVar memoryTable (\mt -> return (IM.lookup key mt))
   case mw of
     Nothing
       -> trace ("lookup/not found: " ++ show key) $ return Nothing
@@ -164,7 +151,9 @@ makeHostArray
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a)
     => ArrayData e
     -> HostArray
-makeHostArray !adata = HostArray (ptrsOfArrayData adata)
+makeHostArray !adata =
+  case ptrsOfArrayData adata of
+    Ptr a# -> I# (addr2Int# a#)
 
 
 -- | Allocate a new remote array and associate it with the given host side
@@ -224,7 +213,7 @@ insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
   in do
     remote      <- RemoteArray `fmap` mkWeak adata ptr (Just $ delete freeRemote weakTable weakNursery key ptr bytes)
     message ("insert: " ++ show key)
-    modifyMVar_ memoryTable (return . Hash.insert key remote)
+    modifyMVar_ memoryTable (return . IM.insert key remote)
 
 
 -- | Remove an entry from the memory table. This might stash the memory into the
@@ -245,7 +234,7 @@ delete freeRemote !weak_mt !weak_nrs !key !remote !bytes = do
   mmt   <- deRefWeak weak_mt
   case mmt of
     Nothing     -> message ("finalise/dead table: " ++ show key)
-    Just r      -> modifyMVar_ r (return . Hash.delete key)
+    Just r      -> modifyMVar_ r (return . IM.delete key)
 
   -- If the nursery if still alive, stash the data there. Otherwise, just delete
   -- it immediately.
@@ -273,7 +262,7 @@ cleanup freeRemote !MemoryTable{..} = do
   case mr of
     Nothing     -> return ()
     Just ref    -> withMVar ref $ \mt ->
-                      forM_ (Hash.elems mt) $ \(RemoteArray w) -> do
+                      forM_ (IM.elems mt) $ \(RemoteArray w) -> do
                         alive   <- isJust `fmap` deRefWeak w
                         unless alive (finalize w)
   performGC
