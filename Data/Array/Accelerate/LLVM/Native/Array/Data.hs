@@ -1,3 +1,4 @@
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Array.Data
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -10,18 +11,18 @@
 
 module Data.Array.Accelerate.LLVM.Native.Array.Data (
 
-  indexArray, allocateArray,
-
-  module Data.Array.Accelerate.Array.Data,
+  module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
 
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Array.Sugar        ( Array(..), allocateArray, toElt )
+
+import Data.Array.Accelerate.LLVM.Array.Data
+import Data.Array.Accelerate.LLVM.Native.Target
 
 
--- | Read a single element from an array at a given row-major index.
+-- | Data instance for arrays in the native backend. We assume a shared-memory
+-- machine, and just manipulate the underlying Haskell array directly.
 --
-indexArray :: Array sh e -> Int -> e
-indexArray (Array _ adata) i = toElt (adata `unsafeIndexArrayData` i)
+instance Remote Native
 

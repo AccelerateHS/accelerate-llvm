@@ -101,7 +101,9 @@ compileOpenAcc = traverseAcc
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
-        Use arrs                -> node $ pure (Use arrs)       -- TODO: remote memory management
+        Use arrs                -> do
+          useR (arrays (undefined::arrs)) arrs
+          node (pure $ Use arrs)
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
@@ -133,6 +135,11 @@ compileOpenAcc = traverseAcc
 
       where
         travA :: DelayedOpenAcc aenv a -> LLVM (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
+        useR :: ArraysR a -> a -> LLVM arch ()
+        useR ArraysRunit ()               = return ()
+        useR ArraysRarray arr             = useArray arr
+        useR (ArraysRpair r1 r2) (a1, a2) = useR r1 a1 >> useR r2 a2
+
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
