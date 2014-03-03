@@ -46,7 +46,7 @@ instance Compile Native where
 
 -- Compile an Accelerate expression for the native CPU target
 --
-compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM (ExecutableR Native)
+compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
 compileForNativeTarget acc aenv = do
   let ast = llvmOfAcc Native acc aenv
 #ifdef ACCELERATE_DEBUG

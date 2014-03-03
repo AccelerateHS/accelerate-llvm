@@ -23,9 +23,10 @@ module Data.Array.Accelerate.LLVM.Compile (
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Array.Sugar                        ( Arrays, Array, Shape, Elt, Foreign )
+import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), ArraysR(..), Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.AST
+import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
@@ -45,7 +46,7 @@ class Target arch => Compile arch where
   compileForTarget
       :: DelayedOpenAcc aenv a
       -> Gamma aenv
-      -> LLVM (ExecutableR arch)
+      -> LLVM arch (ExecutableR arch)
 
 
 -- | Initialise code generation, compilation, and data transfer (if required)
@@ -56,22 +57,31 @@ class Target arch => Compile arch where
 --
 --   * The compiled LLVM code required to execute the kernel
 --
-compileAcc :: Compile arch => DelayedAcc a -> LLVM (ExecAcc arch a)
+compileAcc
+    :: (Compile arch, Remote arch)
+    => DelayedAcc a
+    -> LLVM arch (ExecAcc arch a)
 compileAcc = compileOpenAcc
 
-compileAfun :: Compile arch => DelayedAfun f -> LLVM (ExecAfun arch f)
+compileAfun
+    :: (Compile arch, Remote arch)
+    => DelayedAfun f
+    -> LLVM arch (ExecAfun arch f)
 compileAfun = compileOpenAfun
 
 
-compileOpenAfun :: Compile arch => DelayedOpenAfun aenv f -> LLVM (PreOpenAfun (ExecOpenAcc arch) aenv f)
+compileOpenAfun
+    :: (Compile arch, Remote arch)
+    => DelayedOpenAfun aenv f
+    -> LLVM arch (PreOpenAfun (ExecOpenAcc arch) aenv f)
 compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
 compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
 
 
 compileOpenAcc
-    :: forall arch _aenv _a. Compile arch
+    :: forall arch _aenv _a. (Compile arch, Remote arch)
     => DelayedOpenAcc _aenv _a
-    -> LLVM (ExecOpenAcc arch _aenv _a)
+    -> LLVM arch (ExecOpenAcc arch _aenv _a)
 compileOpenAcc = traverseAcc
   where
     -- Traverse an open array expression in depth-first order. The top-level
@@ -83,7 +93,7 @@ compileOpenAcc = traverseAcc
     -- array variables that were referred to within scalar sub-expressions.
     -- These will be required during code generation and execution.
     --
-    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM (ExecOpenAcc arch aenv arrs)
+    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
     traverseAcc Delayed{}              = INTERNAL_ERROR(error) "compileOpenAcc" "unexpected delayed array"
     traverseAcc topAcc@(Manifest pacc) =
       case pacc of
@@ -134,43 +144,43 @@ compileOpenAcc = traverseAcc
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
       where
-        travA :: DelayedOpenAcc aenv a -> LLVM (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         useR :: ArraysR a -> a -> LLVM arch ()
         useR ArraysRunit ()               = return ()
         useR ArraysRarray arr             = useArray arr
         useR (ArraysRpair r1 r2) (a1, a2) = useR r1 a1 >> useR r2 a2
 
+        travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
 
         travAF :: DelayedOpenAfun aenv f
-               -> LLVM (IntMap (Idx' aenv), PreOpenAfun (ExecOpenAcc arch) aenv f)
+               -> LLVM arch (IntMap (Idx' aenv), PreOpenAfun (ExecOpenAcc arch) aenv f)
         travAF afun = pure <$> compileOpenAfun afun
 
         travAtup :: Atuple (DelayedOpenAcc aenv) a
-                 -> LLVM (IntMap (Idx' aenv), Atuple (ExecOpenAcc arch aenv) a)
+                 -> LLVM arch (IntMap (Idx' aenv), Atuple (ExecOpenAcc arch aenv) a)
         travAtup NilAtup        = return (pure NilAtup)
         travAtup (SnocAtup t a) = liftA2 SnocAtup <$> travAtup t <*> travA a
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
+              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
         exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
-             -> LLVM (ExecOpenAcc arch aenv arrs)
+             -> LLVM arch (ExecOpenAcc arch aenv arrs)
         exec (aenv, eacc) = do
           let aval = makeGamma aenv
           kernel <- build topAcc aval
           return $! ExecAcc kernel aval eacc
 
         node :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
-             -> LLVM (ExecOpenAcc arch aenv' arrs')
+             -> LLVM arch (ExecOpenAcc arch aenv' arrs')
         node = fmap snd . wrap
 
         wrap :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
-             -> LLVM (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
+             -> LLVM arch (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
         wrap = return . liftA (ExecAcc noKernel mempty)
 
         noKernel :: ExecutableR arch
@@ -182,14 +192,14 @@ compileOpenAcc = traverseAcc
                  => f a b
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
-                 -> LLVM (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
+                 -> LLVM arch (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
         foreignA = error "todo: compile/foreign array computations"
 
 
     -- Traverse a scalar expression
     --
     travE :: DelayedOpenExp env aenv e
-          -> LLVM (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+          -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
     travE exp =
       case exp of
         Var ix                  -> return $ pure (Var ix)
@@ -221,18 +231,18 @@ compileOpenAcc = traverseAcc
       where
         travA :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
+              -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
         travA a = do
           a'    <- traverseAcc a
           return $ (bind a', a')
 
         travT :: Tuple (DelayedOpenExp env aenv) t
-              -> LLVM (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
+              -> LLVM arch (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
         travT NilTup        = return (pure NilTup)
         travT (SnocTup t e) = liftA2 SnocTup <$> travT t <*> travE e
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
+              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
@@ -244,7 +254,7 @@ compileOpenAcc = traverseAcc
                  => f a b
                  -> DelayedFun () (a -> b)
                  -> DelayedOpenExp env aenv a
-                 -> LLVM (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
+                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
         foreignE = error "todo: compile/foreign expressions"
 
 
@@ -262,7 +272,7 @@ compileOpenAcc = traverseAcc
 build :: forall arch aenv a. Compile arch
       => DelayedOpenAcc aenv a
       -> Gamma aenv
-      -> LLVM (ExecutableR arch)
+      -> LLVM arch (ExecutableR arch)
 build acc aenv =
   compileForTarget acc aenv
 

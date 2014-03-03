@@ -21,7 +21,6 @@ import Control.Applicative                              ( Applicative )
 import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
-import System.IO.Unsafe                                 ( unsafePerformIO )
 
 
 -- Execution state
@@ -29,15 +28,16 @@ import System.IO.Unsafe                                 ( unsafePerformIO )
 
 -- | The LLVM monad, for executing array computations
 --
-newtype LLVM a = LLVM { runLLVM :: ReaderT Context (StateT State IO) a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadReader Context, MonadState State)
+newtype LLVM t a = LLVM { runLLVM :: ReaderT Context (StateT (State t) IO) a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader Context, MonadState (State t))
 
 -- | The state for executing accelerate array computations using LLVM. This
 -- consists of a stack of (read only) device properties and execution context,
 -- as well as mutable state for device memory and kernel object code.
 --
-data State = State {
+data State t = State {
     -- memory table, kernel table, etc.
+    llvmTarget          :: t
   }
 
 data Context = Context {
@@ -45,23 +45,12 @@ data Context = Context {
   }
 
 
-evalLLVM :: LLVM a -> IO a
-evalLLVM acc =
+evalLLVM :: t -> LLVM t a -> IO a
+evalLLVM target acc =
 --  runInBoundThread $
   LLVM.withContext $ \ctx ->
-    evalStateT (runReaderT (runLLVM acc) (Context ctx)) theState
+    evalStateT (runReaderT (runLLVM acc) (Context ctx)) (State target)
 --    `catch`
 --    \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 
-
--- Top-level mutable state
--- -----------------------
---
--- It is important to keep some information alive for the entire run of the
--- program, not just a single execution. These tokens use unsafePerformIO to
--- ensure they are executed only once, and reused for subsequent invocations.
---
-{-# NOINLINE theState #-}
-theState :: State
-theState = unsafePerformIO $ do return State
 

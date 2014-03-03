@@ -33,6 +33,7 @@ import Data.Array.Accelerate.Array.Sugar                ( Arrays )
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute
+import Data.Array.Accelerate.LLVM.Native.Target
 
 #if ACCELERATE_DEBUG
 import Data.Array.Accelerate.Debug
@@ -55,7 +56,7 @@ run :: Arrays a => Acc a -> a
 run a = unsafePerformIO execute
   where
     !acc        = convertAccWith config a
-    execute     = evalLLVM (compileAcc acc >>= dumpStats >>= executeAcc)
+    execute     = evalLLVM Native (compileAcc acc >>= dumpStats >>= executeAcc)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -95,8 +96,8 @@ run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 f = \a -> unsafePerformIO (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ evalLLVM (compileAfun acc) >>= dumpStats
-    execute a   = evalLLVM (executeAfun1 afun a)
+    !afun       = unsafePerformIO $ evalLLVM Native (compileAfun acc) >>= dumpStats
+    execute a   = evalLLVM Native (executeAfun1 afun a)
 
 
 -- | Stream a lazily read list of input arrays through the given program,

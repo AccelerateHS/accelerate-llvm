@@ -85,10 +85,10 @@ import Foreign.LibFFI                                           as FFI
 --      c) linking the returned function pointer into the running code
 --      d) evaluate the function with the thread gang.
 --
-executeAcc :: Arrays a => ExecAcc Native a -> LLVM a
+executeAcc :: Arrays a => ExecAcc Native a -> LLVM Native a
 executeAcc acc = executeOpenAcc acc Aempty
 
-executeAfun1 :: (Arrays a, Arrays b) => ExecAfun Native (a -> b) -> a -> LLVM b
+executeAfun1 :: (Arrays a, Arrays b) => ExecAfun Native (a -> b) -> a -> LLVM Native b
 executeAfun1 afun arrs = executeOpenAfun1 afun Aempty arrs
 
 
@@ -96,7 +96,7 @@ executeOpenAfun1
     :: PreOpenAfun (ExecOpenAcc Native) aenv (a -> b)
     -> Aval aenv
     -> a
-    -> LLVM b
+    -> LLVM Native b
 executeOpenAfun1 (Alam (Abody f)) aenv a = executeOpenAcc f (aenv `Apush` a)
 executeOpenAfun1 _                _    _ = error "boop!"
 
@@ -107,7 +107,7 @@ executeOpenAcc
     :: forall aenv arrs.
        ExecOpenAcc Native aenv arrs
     -> Aval aenv
-    -> LLVM arrs
+    -> LLVM Native arrs
 executeOpenAcc EmbedAcc{} _ =
   INTERNAL_ERROR(error) "execute" "unexpected delayed array"
 executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
@@ -149,20 +149,20 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     fusionError = INTERNAL_ERROR(error) "execute" "unexpected fusible matter"
 
     -- term traversals
-    travA :: ExecOpenAcc Native aenv a -> LLVM a
+    travA :: ExecOpenAcc Native aenv a -> LLVM Native a
     travA acc = executeOpenAcc acc aenv
 
-    travE :: ExecExp Native aenv t -> LLVM t
+    travE :: ExecExp Native aenv t -> LLVM Native t
     travE exp = executeExp exp aenv
 
-    travT :: Atuple (ExecOpenAcc Native aenv) t -> LLVM t
+    travT :: Atuple (ExecOpenAcc Native aenv) t -> LLVM Native t
     travT NilAtup        = return ()
     travT (SnocAtup t a) = (,) <$> travT t <*> travA a
 
     awhile :: PreOpenAfun (ExecOpenAcc Native) aenv (a -> Scalar Bool)
            -> PreOpenAfun (ExecOpenAcc Native) aenv (a -> a)
            -> a
-           -> LLVM a
+           -> LLVM Native a
     awhile p f a = do
       r   <- executeOpenAfun1 p aenv a
       ok  <- indexArray r 0
@@ -171,7 +171,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
          else return a
 
     -- get the extent of an embedded array
-    extent :: Shape sh => ExecOpenAcc Native aenv (Array sh e) -> LLVM sh
+    extent :: Shape sh => ExecOpenAcc Native aenv (Array sh e) -> LLVM Native sh
     extent ExecAcc{}     = INTERNAL_ERROR(error) "executeOpenAcc" "expected delayed array"
     extent (EmbedAcc sh) = travE sh
 
@@ -181,10 +181,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     -- Execute a skeleton that has no special requirements: thread decomposition
     -- is based on the given shape.
     --
-    executeOp :: (Shape sh, Elt e) => sh -> LLVM (Array sh e)
+    executeOp :: (Shape sh, Elt e) => sh -> LLVM Native (Array sh e)
     executeOp = executeOpWith ()
 
-    executeOpWith :: (Shape sh, Elt e, Marshalable args) => args -> sh -> LLVM (Array sh e)
+    executeOpWith :: (Shape sh, Elt e, Marshalable args) => args -> sh -> LLVM Native (Array sh e)
     executeOpWith args sh = do
       let out = allocateArray sh
       execute kernel gamma aenv (size sh) (args,out)
@@ -206,17 +206,17 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
     --   2. If this is a multidimensional reduction, then threads reduce the
     --   inner dimensions sequentially.
     --
-    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
     fold1Op sh@(_ :. sz)
       = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
       $ foldCore sh
 
     -- Make space for the neutral element
-    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
     foldOp (sh :. sz)
       = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
 
-    foldCore :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM (Array sh e)
+    foldCore :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
     foldCore (sh :. sz)
       -- Either (1) multidimensional reduction; or
       --        (2) sequential reduction
@@ -243,7 +243,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
 -- Scalar expression evaluation
 -- ----------------------------
 
-executeExp :: ExecExp Native aenv t -> Aval aenv -> LLVM t
+executeExp :: ExecExp Native aenv t -> Aval aenv -> LLVM Native t
 executeExp exp aenv = executeOpenExp exp Empty aenv
 
 executeOpenExp
@@ -251,10 +251,10 @@ executeOpenExp
        ExecOpenExp Native env aenv exp
     -> Val env
     -> Aval aenv
-    -> LLVM exp
+    -> LLVM Native exp
 executeOpenExp rootExp env aenv = travE rootExp
   where
-    travE :: ExecOpenExp Native env aenv t -> LLVM t
+    travE :: ExecOpenExp Native env aenv t -> LLVM Native t
     travE exp = case exp of
       Var ix                    -> return (prj ix env)
       Let bnd body              -> travE bnd >>= \x -> executeOpenExp body (env `Push` x) aenv
@@ -284,24 +284,24 @@ executeOpenExp rootExp env aenv = travE rootExp
     -- Helpers
     -- -------
 
-    travT :: Tuple (ExecOpenExp Native env aenv) t -> LLVM t
+    travT :: Tuple (ExecOpenExp Native env aenv) t -> LLVM Native t
     travT tup = case tup of
       NilTup            -> return ()
       SnocTup t e       -> (,) <$> travT t <*> travE e
 
-    travA :: ExecOpenAcc Native aenv a -> LLVM a
+    travA :: ExecOpenAcc Native aenv a -> LLVM Native a
     travA acc = executeOpenAcc acc aenv
 
-    eforeign :: ExecFun Native () (a -> b) -> ExecOpenExp Native env aenv a -> LLVM b
+    eforeign :: ExecFun Native () (a -> b) -> ExecOpenExp Native env aenv a -> LLVM Native b
     eforeign _ _ = error "todo: execute Foreign"
 --    eforeign (Lam (Body f)) x = travE x >>= \e -> executeOpenExp f (Empty `Push` e) Aempty
 --    eforeign _              _ = error "I bless the rains down in Africa"
 
-    travF1 :: ExecOpenFun Native env aenv (a -> b) -> a -> LLVM b
+    travF1 :: ExecOpenFun Native env aenv (a -> b) -> a -> LLVM Native b
     travF1 (Lam (Body f)) x = executeOpenExp f (env `Push` x) aenv
     travF1 _              _ = error "hayoooo~"
 
-    while :: ExecOpenFun Native env aenv (a -> Bool) -> ExecOpenFun Native env aenv (a -> a) -> a -> LLVM a
+    while :: ExecOpenFun Native env aenv (a -> Bool) -> ExecOpenFun Native env aenv (a -> a) -> a -> LLVM Native a
     while p f x = do
       ok <- travF1 p x
       if ok then while p f =<< travF1 f x
@@ -349,7 +349,7 @@ execute
     -> Aval aenv
     -> Int
     -> args
-    -> LLVM ()
+    -> LLVM Native ()
 execute kernel@(NativeR ast) gamma aenv n args =
   let main = Name (AST.moduleName ast) in
   compile kernel $ \ee ->
@@ -363,7 +363,7 @@ link exe main run =
   maybe (INTERNAL_ERROR(error) "link" "function not found") run =<< getFunction exe main
 
 
-compile :: ExecutableR Native -> (ExecutableModule MCJIT -> IO a) -> LLVM a
+compile :: ExecutableR Native -> (ExecutableModule MCJIT -> IO a) -> LLVM Native a
 compile (NativeR ast) cont = do
   ctx   <- asks llvmContext
   liftIO . runError $
