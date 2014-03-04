@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP            #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE TypeFamilies   #-}
 -- |
@@ -16,6 +17,11 @@ module Data.Array.Accelerate.LLVM.NVVM.Target
 -- llvm-general
 import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.DataLayout
+import LLVM.General.Target                                      hiding ( Target )
+import qualified LLVM.General.Target                            as LLVM
+import qualified LLVM.General.Relocation                        as R
+import qualified LLVM.General.CodeModel                         as CM
+import qualified LLVM.General.CodeGenOpt                        as CGO
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
@@ -29,8 +35,12 @@ import Foreign.CUDA.Driver                                      as CUDA
 import Foreign.CUDA.Analysis                                    as CUDA
 
 -- standard library
+import Control.Monad.Error
+import System.IO.Unsafe
 import qualified Data.Map                                       as Map
 import qualified Data.Set                                       as Set
+
+#include "accelerate.h"
 
 
 -- | The NVVM/PTX execution target for NVIDIA GPUs
@@ -59,7 +69,7 @@ instance Target NVVM where
   targetDataLayout _ = Just nvvmDataLayout
 
 
--- A description of the various data layout properties that may be used during
+-- | A description of the various data layout properties that may be used during
 -- optimisation. For CUDA the following data layouts are supported:
 --
 -- 32-bit:
@@ -88,8 +98,32 @@ nvvmDataLayout = DataLayout
     wordSize = bitSize (undefined :: Int)
 
 
--- String that describes the target host.
+-- | String that describes the target host.
 --
 nvvmTargetTriple :: String
-nvvmTargetTriple = "nvptx-nvidia-cl.1.0"
+nvvmTargetTriple =
+  case bitSize (undefined::Int) of
+    32  -> "nvptx-nvidia-cuda"
+    64  -> "nvptx64-nvidia-cuda"
+    _   -> INTERNAL_ERROR(error) "nvvmTargetTriple" "I don't know what architecture I am"
+
+
+-- | Bracket creation and destruction of the NVVM TargetMachine.
+--
+withNVVMTargetMachine :: (TargetMachine -> IO a) -> IO a
+withNVVMTargetMachine f =
+  withTargetOptions $ \options -> do
+    withTargetMachine nvvmTarget nvvmTargetTriple "" Set.empty options R.Default CM.Default CGO.Default f
+
+
+-- | The NVPTX target for this host.
+--
+-- The top-level 'unsafePerformIO' is so that 'initializeAllTargets' is run once
+-- per program execution (although that might not be necessary?)
+--
+{-# NOINLINE nvvmTarget #-}
+nvvmTarget :: LLVM.Target
+nvvmTarget = unsafePerformIO $ do
+  initializeAllTargets
+  either error fst `fmap` runErrorT (lookupTarget Nothing nvvmTargetTriple)
 

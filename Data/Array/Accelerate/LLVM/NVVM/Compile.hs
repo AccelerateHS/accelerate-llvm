@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.Native.Compile
+-- Module      : Data.Array.Accelerate.LLVM.NVVM.Compile
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
 -- License     : BSD3
 --
@@ -11,7 +11,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Compile (
+module Data.Array.Accelerate.LLVM.NVVM.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile
 
@@ -51,17 +51,20 @@ import Numeric
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.ByteString                                          ( ByteString )
 import Data.List
 import System.IO.Unsafe
+import qualified Data.ByteString.Char8                          as B
+
+import GHC.Conc                                                 ( par )
 
 
 instance Compile NVVM where
   compileForTarget = compileForNVPTX
 
--- | Compile a given module for the NVPTX backend. If we linked with libNVVM
--- then use that to do the final module creation, otherwise just use llvm. The
--- advantage with libNVVM is that it performs additional (sekrit) optimisations.
+
+-- | Compile a given module for the NVPTX backend. This produces a CUDA module
+-- as well as a list of the kernel functions in the module, together with some
+-- occupancy information.
 --
 compileForNVPTX
     :: DelayedOpenAcc aenv a
@@ -71,7 +74,6 @@ compileForNVPTX acc aenv = do
   nvvm   <- gets llvmTarget
   ctx    <- asks llvmContext
   let Module ast = llvmOfAcc nvvm acc aenv
-      pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
       dev        = nvvmDeviceProperties nvvm
 
   -- We use 'unsafePerformIO' here to leverage Haskell's non-strict semantics,
@@ -79,27 +81,48 @@ compileForNVPTX acc aenv = do
   -- needed during the execution phase.
   --
   let exe = unsafePerformIO $ do
-              ptx  <- either error return =<< runErrorT (
-                        LLVM.withModuleFromAST ctx ast $ \mdl ->
-                        LLVM.withPassManager pss       $ \pm  -> do
-                          void $ LLVM.runPassManager pm mdl
-                          compileModule (moduleName ast) =<< LLVM.moduleBitcode mdl)
+              ptx  <- either error return =<< runErrorT
+                        (LLVM.withModuleFromAST ctx ast (compileModule dev (moduleName ast)))
               --
               funs <- sequence [ linkFunction acc dev ptx f | f <- globalFunctions (moduleDefinitions ast) ]
               return (NVVMR funs ptx)
 
-  return exe
+  exe `par` return exe
 
 
--- | Compile the named bitcode to produce a CUDA module. This might also include
--- optimisations with libNVVM.
+-- | Compile the LLVM module to produce a CUDA module.
 --
-compileModule :: String -> ByteString -> IO CUDA.Module
-compileModule _name bc =
-#ifdef ACCELERATE_USE_LIBNVVM
-  NVVM.Result _ bc      <- NVVM.compileModule _name bc []
+--    * If we are using libNVVM, this includes all LLVM optimisations plus some
+--    sekrit optimisations.
+--
+--    * If we are just using the llvm ptx backend, we still need to run the
+--    standard optimisations.
+--
+compileModule :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
+compileModule _dev _name mdl =
+  withNVVMTargetMachine $ \nvptx -> do
+
+#ifndef ACCELERATE_USE_LIBNVVM
+    -- Run the standard optimisation pass, if using nvptx backend to LLVM
+    let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+    LLVM.withPassManager pss $ \pm -> do
+      void $ LLVM.runPassManager pm mdl
 #endif
-  CUDA.loadData bc
+
+    -- Dump the module to target assembly (PTX)
+    ptx <- either error id `fmap` runErrorT (LLVM.moduleTargetAssembly nvptx mdl)
+    Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+    Debug.message Debug.dump_ptx ptx
+
+    -- Finally, compile into a CUDA module
+#ifdef ACCELERATE_USE_LIBNVVM
+    let CUDA.Compute m n = CUDA.computeCapability _dev
+    NVVM.Result _ ptx' <- NVVM.compileModule _name (B.pack ptx) ["-arch=sm_" ++ show m ++ show n]
+#else
+    let ptx' = B.pack ptx
+#endif
+    CUDA.loadData ptx'
+
 
 -- | Extract the named function from the module and package into a Kernel
 -- object, which includes meta-information on resource usage.
@@ -134,7 +157,7 @@ linkFunction acc dev mdl name = do
   -- make sure kernel/stats are printed together. Use 'intercalate' rather than
   -- 'unlines' to avoid a trailing newline.
   --
-  message (intercalate "\n     ... " [msg1, msg2])
+  Debug.message Debug.dump_ptx (intercalate "\n     ... " [msg1, msg2])
   return $ Kernel f occ smem cta blocks name
 
 
@@ -147,16 +170,4 @@ globalFunctions defs =
       , not (null basicBlocks)
       , let Name n = name
       ]
-
-
--- Debug
--- -----
-
-{-# INLINE message #-}
-message :: MonadIO m => String -> m ()
-message msg = trace msg $ return ()
-
-{-# INLINE trace #-}
-trace :: MonadIO m => String -> m a -> m a
-trace msg next = Debug.message Debug.dump_llvm ("ll: " ++ msg) >> next
 

@@ -57,20 +57,22 @@ showFFloatSIBase p b n
 
 data Flags = Flags
   {
-    _dump_gc           :: !Bool         -- garbage collection & memory management
-  , _dump_llvm         :: !Bool         -- dump generated (unoptimised) LLVM code
-  , _dump_exec         :: !Bool         -- kernel execution
-  , _dump_gang         :: !Bool         -- print information about the gang
+    _dump_gc            :: !Bool        -- garbage collection & memory management
+  , _dump_ptx           :: !Bool        -- dump generated PTX code
+  , _dump_llvm          :: !Bool        -- dump generated LLVM code
+  , _dump_exec          :: !Bool        -- kernel execution
+  , _dump_gang          :: !Bool        -- print information about the gang
 
     -- general options
-  , _verbose           :: !Bool         -- additional status messages
-  , _flush_cache       :: !Bool         -- delete the persistent cache directory
+  , _verbose            :: !Bool        -- additional status messages
+  , _flush_cache        :: !Bool        -- delete the persistent cache directory
   }
 
 flags :: [OptDescr (Flags -> Flags)]
 flags =
   [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
-  , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated (unoptimised) LLVM IR"
+  , Option [] ["ddump-ptx"]     (NoArg (set dump_ptx True))     "print generated PTX"
+  , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated LLVM"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
   , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
   , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
@@ -80,19 +82,29 @@ flags =
 initialise :: IO Flags
 initialise = parse `fmap` getArgs
   where
-    defaults      = Flags False False False False False False
     parse         = foldl parse1 defaults
     parse1 opts x = case filter (\(Option _ [f] _ _) -> x `isPrefixOf` ('-':f)) flags of
                       [Option _ _ (NoArg go) _] -> go opts
                       _                         -> opts         -- not specified, or ambiguous
+
+    defaults      = Flags {
+        _dump_gc        = False
+      , _dump_ptx       = False
+      , _dump_llvm      = False
+      , _dump_exec      = False
+      , _dump_gang      = False
+      , _verbose        = False
+      , _flush_cache    = False
+      }
 
 
 -- Create lenses manually, instead of deriving automatically using Template
 -- Haskell. Since llvm-general binds to a C++ library, we can't load it into
 -- ghci expect in ghc-7.8.
 --
-dump_gc, dump_llvm, dump_exec, dump_gang, verbose, flush_cache :: Flags :-> Bool
+dump_gc, dump_ptx, dump_llvm, dump_exec, dump_gang, verbose, flush_cache :: Flags :-> Bool
 dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
+dump_ptx        = lens _dump_ptx  (\f x -> x { _dump_ptx  = f (_dump_ptx x) })
 dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
 dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })
 dump_gang       = lens _dump_gang (\f x -> x { _dump_gang = f (_dump_gang x) })
