@@ -24,9 +24,13 @@ extra-source-files:     include/accelerate.h
 -- Configuration flags
 -- -------------------
 
-Flag nvvm
+Flag nvptx
   Default:              True
-  Description:          Enable the NVVM backend for CUDA capable NVIDIA GPUs.
+  Description:          Enable the nvptx backend for CUDA capable NVIDIA GPUs.
+
+Flag libnvvm
+  Default               False
+  Description:          Use the libNVVM bindings to optimise generated nvptx
 
 Flag debug
   Default:              False
@@ -118,14 +122,19 @@ Library
     time,
     unordered-containers        >= 0.2
 
-  default-language:     Haskell2010
+  default-language:
+    Haskell2010
 
-  include-dirs:         include
-  ghc-options:          -O2 -Wall -fwarn-tabs -dcore-lint
+  include-dirs:                 include
+  ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
-  if flag(nvvm)
+  if flag(nvptx)
     build-depends:
-      cuda                      >= 0.5,
+      cuda                      >= 0.5
+
+  if flag(libnvvm)
+    cpp-options:        -DACCELERATE_USE_LIBNVVM
+    build-depends:
       libnvvm
 
   if flag(debug)

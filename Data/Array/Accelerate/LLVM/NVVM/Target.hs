@@ -10,7 +10,6 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-
 module Data.Array.Accelerate.LLVM.NVVM.Target
   where
 
@@ -22,29 +21,40 @@ import LLVM.General.AST.DataLayout
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
-import Data.Array.Accelerate.LLVM.NVVM.Array.Table
+import Data.Array.Accelerate.LLVM.NVVM.Array.Table              ( MemoryTable )
+import Data.Array.Accelerate.LLVM.NVVM.Execute.Stream           ( Reservoir )
 
 -- CUDA
 import Foreign.CUDA.Driver                                      as CUDA
+import Foreign.CUDA.Analysis                                    as CUDA
 
 -- standard library
-import Data.ByteString                                          ( ByteString )
 import qualified Data.Map                                       as Map
 import qualified Data.Set                                       as Set
 
 
 -- | The NVVM/PTX execution target for NVIDIA GPUs
 --
--- TLM: hmm, this is turning into a state structure...
---
 data NVVM = NVVM {
     nvvmContext                 :: {-# UNPACK #-} !CUDA.Context
   , nvvmDeviceProperties        :: {-# UNPACK #-} !CUDA.DeviceProperties
   , nvvmMemoryTable             :: {-# UNPACK #-} !MemoryTable
+  , nvvmStreamReservoir         :: {-# UNPACK #-} !Reservoir
+  }
+
+data Kernel = Kernel {
+    kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
+  , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
+  , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
+  , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
+  , kernelThreadBlocks          :: (Int -> Int)
+  , kernelName                  :: String
   }
 
 instance Target NVVM where
-  data ExecutableR NVVM = NVVMR { executableR :: ByteString }
+  data ExecutableR NVVM = NVVMR { nvvmKernel :: [Kernel]
+                                , nvvmModule :: CUDA.Module
+                                }
   targetTriple _     = Just nvvmTargetTriple
   targetDataLayout _ = Just nvvmDataLayout
 

@@ -27,7 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.NVVM.Target
+import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
 
