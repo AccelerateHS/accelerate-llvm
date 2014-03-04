@@ -47,10 +47,7 @@ data Context = Context {
 
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
---  runInBoundThread $
   LLVM.withContext $ \ctx ->
     evalStateT (runReaderT (runLLVM acc) (Context ctx)) (State target)
---    `catch`
---    \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: SomeException))
 
 
