@@ -14,10 +14,13 @@ module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
 -- llvm-general
 import LLVM.General.AST
-import LLVM.General.AST.Global
+import LLVM.General.AST.Attribute
+import LLVM.General.AST.Global                                  as G
+import LLVM.General.AST.CallingConvention
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape )
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -31,13 +34,30 @@ import Control.Monad
 
 
 -- Standard CUDA thread and grid identifiers
--- http://docs.nvidia.com/cuda/nvvm-ir-spec/index.html#nvvm-intrin-spreg ??
 --
-blockDim, gridDim, threadIdx, blockIdx :: Operand
-blockDim  = local "blockDim.x"
-gridDim   = local "gridDim.x"
-threadIdx = local "threadIdx.x"
-blockIdx  = local "blockIdx.x"
+blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen Operand
+blockDim  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
+gridDim   = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
+threadIdx = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
+blockIdx  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
+warpSize  = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+
+specialPTXReg :: Name -> CodeGen Operand
+specialPTXReg reg =
+  call reg (typeOf (int32 :: IntegralType Int32)) [] [NoUnwind, ReadNone]
+
+
+-- Thread barriers
+--
+__syncthreads :: CodeGen ()
+__syncthreads =
+  let fn        = "llvm.nvvm.barrier0"
+      attrs     = [NoUnwind, ReadOnly]
+      decl      = functionDefaults { name = fn, returnType = VoidType, G.functionAttributes = attrs }
+  in do
+    declare decl
+    do_ $ Call False C [] (Right (global fn)) [] attrs []
+
 
 -- The total number of elements in the given array. The first argument is a
 -- dummy to fix the types. Note that the output operand is truncated to a 32-bit
@@ -51,7 +71,10 @@ shapeSize arr base =
 -- The size of the thread grid.
 --
 gridSize :: CodeGen Operand
-gridSize = mul int32 blockDim gridDim
+gridSize = do
+  ncta  <- gridDim
+  nt    <- blockDim
+  mul int32 ncta nt
 
 -- Create a complete kernel function by running the code generation sequence
 -- specified at the final parameter. The function is annotated as being a

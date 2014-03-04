@@ -58,7 +58,8 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
     -- -----
     n           <- shapeSize (undefined::Array sh b) "out"
     step        <- gridSize
-    c           <- lt int threadIdx n
+    tid         <- threadIdx
+    c           <- lt int tid n
     top         <- cbr c loop exit
 
     -- Main loop
@@ -75,7 +76,7 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
     i'          <- add int32 i step
     c'          <- lt int32 i' n
     bot         <- cbr c' loop exit
-    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (threadIdx,top)]
+    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (tid,top)]
 
     setBlock exit
     return_

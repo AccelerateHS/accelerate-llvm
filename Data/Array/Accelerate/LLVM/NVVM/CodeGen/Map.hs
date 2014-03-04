@@ -62,7 +62,8 @@ mkMap _nvvm aenv apply IRDelayed{..} =
     n           <- shapeSize (undefined::Array sh b) "out"
     step        <- gridSize
 
-    c           <- lt int32 threadIdx n
+    tid         <- threadIdx
+    c           <- lt int32 tid n
     top         <- cbr c loop exit
 
     -- main loop
@@ -78,7 +79,7 @@ mkMap _nvvm aenv apply IRDelayed{..} =
     i'          <- add int32 i step
     c'          <- lt int32 i' n
     bot         <- cbr c' loop exit
-    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (threadIdx,top)]
+    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (tid,top)]
 
     setBlock exit
     return_
