@@ -22,6 +22,7 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
 -- standard library
 import Prelude                                                  hiding ( lookup )
@@ -47,13 +48,27 @@ useArray
     -> ArrayData e
     -> Int
     -> IO ()
-useArray !ctx !mt !ad !i = do
-  let !src      = ptrsOfArrayData ad
+useArray !ctx !mt !ad !i =
+  useArrayAsync ctx mt Nothing ad i
+
+
+{-# INLINEABLE useArrayAsync #-}
+useArrayAsync
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
+    => CUDA.Context
+    -> MemoryTable
+    -> Maybe (CUDA.Stream)
+    -> ArrayData e
+    -> Int
+    -> IO ()
+useArrayAsync !ctx !mt !st !ad !i = do
+  let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
       !bytes    = i * sizeOf (undefined::a)
   exists        <- isJust `liftM` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
   unless exists $ do
     dst <- malloc ctx mt ad i
-    transfer "useArray/malloc" bytes $ CUDA.pokeArray i src dst
+    transfer "useArray" bytes $ CUDA.pokeArrayAsync i src dst st
+
 
 -- | Read a single element from an array at a given row-major index
 --

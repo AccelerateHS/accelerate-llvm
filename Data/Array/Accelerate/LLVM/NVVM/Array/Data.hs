@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Array.Data
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -11,20 +12,21 @@
 
 module Data.Array.Accelerate.LLVM.NVVM.Array.Data (
 
+  useArrayAsync,
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Array.Sugar                        ( Array )
+
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
-
 import Data.Array.Accelerate.LLVM.NVVM.Target
-import Data.Array.Accelerate.LLVM.NVVM.Array.Table
 import qualified Data.Array.Accelerate.LLVM.NVVM.Array.Prim     as Prim
 
 -- cuda
-import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
 -- standard library
 import Control.Monad.State
@@ -34,11 +36,19 @@ import Control.Monad.State
 --
 instance Remote NVVM where
 
-  indexArray arr i = do
+  indexArray adata i = do
     NVVM{..}    <- gets llvmTarget
-    liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) arr i
+    liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) adata i
 
-  useArray arr = do
+  useArray adata = do
     NVVM{..}    <- gets llvmTarget
-    liftIO      $ runUseArray (Prim.useArray nvvmContext nvvmMemoryTable) arr
+    liftIO      $ runUseArray (Prim.useArray nvvmContext nvvmMemoryTable) adata
+
+
+-- | Upload an existing array to the device
+--
+useArrayAsync :: Array sh e -> Maybe CUDA.Stream -> LLVM NVVM ()
+useArrayAsync arr st = do
+  NVVM{..} <- gets llvmTarget
+  liftIO    $ runUseArray (Prim.useArrayAsync nvvmContext nvvmMemoryTable st) arr
 
