@@ -111,7 +111,7 @@ data IRDelayed aenv a where
 call :: Name                    -- ^ function name
      -> Type                    -- ^ return type
      -> [(Type, Operand)]       -- ^ list of function argument types and input operand
-     -> [FunctionAttribute]     -- ^ optional function attributes list (only: noreturn, nounwind, readonl, readnone)
+     -> [FunctionAttribute]     -- ^ optional function attributes list (only: noreturn, nounwind, readonly, readnone)
      -> CodeGen Operand
 call fn rt tyargs attrs = do
   let (ty,args) = unzip tyargs
