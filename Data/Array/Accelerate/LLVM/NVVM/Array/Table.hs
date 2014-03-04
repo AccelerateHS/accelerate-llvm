@@ -78,11 +78,10 @@ mallocRemote
     -> Int
     -> IO (CUDA.DevicePtr a)
 mallocRemote !ctx !mt !n =
-  bracket_ (CUDA.push ctx) CUDA.pop $ do
-    CUDA.mallocArray n `catch` \(e :: CUDAException) ->
-      case e of
-        ExitCode OutOfMemory -> cleanup ctx mt >> CUDA.mallocArray n
-        _                    -> throwIO e
+  CUDA.mallocArray n `catch` \(e :: CUDAException) ->
+    case e of
+      ExitCode OutOfMemory -> cleanup ctx mt >> CUDA.mallocArray n
+      _                    -> throwIO e
 
 
 -- | Delete an array from the NVVM context. Since there may be multiple contexts
