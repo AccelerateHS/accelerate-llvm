@@ -31,7 +31,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
 -- standard library
 import Control.Monad.Error
 
--- extra modules need for dumping the llvm code
+-- extra modules needed for dumping the LLVM code
 #ifdef ACCELERATE_DEBUG
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM

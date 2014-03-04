@@ -42,7 +42,7 @@ import Prelude                                                  hiding ( map )
 -- Client backends implement an instance of this class.
 --
 class Skeleton arch where
-  map          :: (Shape sh, Elt a, Elt b)
+  map           :: (Shape sh, Elt a, Elt b)
                 => arch
                 -> Gamma aenv
                 -> IRFun1    aenv (a -> b)

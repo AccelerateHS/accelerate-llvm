@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP           #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS -fno-warn-incomplete-patterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Debug
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -35,11 +36,20 @@ showFFloatSIBase :: RealFloat a => Maybe Int -> a -> a -> ShowS
 showFFloatSIBase p b n
   = showString
   . nubBy (\x y -> x == ' ' && y == ' ')
-  $ showFFloat p n' [ ' ', si_unit ]
+  $ showFFloat p n' (' ':si_unit)
   where
-    n'          = n / (b ^^ (pow-4))
-    pow         = max 0 . min 8 . (+) 4 . floor $ logBase b n
-    si_unit     = "pnµm kMGT" !! pow
+    n'          = n / (b ^^ pow)
+    pow         = (-4) `max` floor (logBase b n) `min` (4 :: Int)
+    si_unit     = case pow of
+                       -4 -> "p"
+                       -3 -> "n"
+                       -2 -> "µ"
+                       -1 -> "m"
+                       0  -> ""
+                       1  -> "k"
+                       2  -> "M"
+                       3  -> "G"
+                       4  -> "T"
 
 
 -- Internals

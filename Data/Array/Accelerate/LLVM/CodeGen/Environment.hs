@@ -17,12 +17,12 @@ module Data.Array.Accelerate.LLVM.CodeGen.Environment
 import LLVM.General.AST
 
 -- accelerate
-import Data.Array.Accelerate.AST                        hiding ( Val(..), prj )
-import Data.Array.Accelerate.Array.Sugar                ( Array, Shape, Elt )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 -- standard library
-import Data.IntMap                                      ( IntMap )
-import qualified Data.IntMap                            as IM
+import Data.IntMap                                              ( IntMap )
+import qualified Data.IntMap                                    as IM
 
 #include "accelerate.h"
 
