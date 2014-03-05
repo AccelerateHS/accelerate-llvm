@@ -47,15 +47,18 @@ import qualified Foreign.LibNVVM                                as NVVM
 #endif
 
 -- standard library
-import Numeric
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
-import Data.List
+import Text.Printf
 import System.IO.Unsafe
 import qualified Data.ByteString.Char8                          as B
 
 import GHC.Conc                                                 ( par )
+
+#ifdef ACCELERATE_USE_LIBNVVM
+#include "accelerate.h"
+#endif
 
 
 instance Compile NVVM where
@@ -100,28 +103,48 @@ compileForNVPTX acc aenv = do
 --
 compileModule :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
 compileModule _dev _name mdl =
+#ifdef ACCELERATE_USE_LIBNVVM
+  compileModuleNVVM _dev _name mdl
+#else
+  compileModuleNVPTX mdl
+#endif
+
+#ifdef ACCELERATE_USE_LIBNVVM
+compileModuleNVVM :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
+compileModuleNVVM dev name mdl = do
+  -- Lower the module to bitcode and have libNVVM compile to PTX
+  let CUDA.Compute m n   = CUDA.computeCapability dev
+  bc                    <- LLVM.moduleBitcode mdl
+  NVVM.Result msg r     <- NVVM.compileModule bc name [printf "-arch=sm_%d%d" m n]
+
+  -- Check errors, do some debug prints
+  case r of
+    Left err    -> INTERNAL_ERROR(error) "compile" (printf "error (%s): %s" (show err) (B.unpack msg))
+    Right ptx   -> do
+      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+      Debug.when Debug.dump_ptx $ do
+        Debug.message Debug.dump_ptx (B.unpack ptx)
+        Debug.message Debug.verbose  (B.unpack msg)
+      --
+      CUDA.loadData ptx
+#endif
+
+compileModuleNVPTX :: LLVM.Module -> IO CUDA.Module
+compileModuleNVPTX mdl =
   withNVVMTargetMachine $ \nvptx -> do
 
-#ifndef ACCELERATE_USE_LIBNVVM
-    -- Run the standard optimisation pass, if using nvptx backend to LLVM
+    -- Run the standard optimisation pass
     let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
     LLVM.withPassManager pss $ \pm -> do
       void $ LLVM.runPassManager pm mdl
-#endif
 
-    -- Dump the module to target assembly (PTX)
-    ptx <- either error id `fmap` runErrorT (LLVM.moduleTargetAssembly nvptx mdl)
-    Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
-    Debug.message Debug.dump_ptx ptx
+      -- Dump the module to target assembly (PTX)
+      ptx <- either error id `fmap` runErrorT (LLVM.moduleTargetAssembly nvptx mdl)
+      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+      Debug.message Debug.dump_ptx ptx
 
-    -- Finally, compile into a CUDA module
-#ifdef ACCELERATE_USE_LIBNVVM
-    let CUDA.Compute m n = CUDA.computeCapability _dev
-    NVVM.Result _ ptx' <- NVVM.compileModule _name (B.pack ptx) ["-arch=sm_" ++ show m ++ show n]
-#else
-    let ptx' = B.pack ptx
-#endif
-    CUDA.loadData ptx'
+      -- Load to a CUDA module
+      CUDA.loadData (B.pack ptx)
 
 
 -- | Extract the named function from the module and package into a Kernel
@@ -146,18 +169,17 @@ linkFunction acc dev mdl name = do
   let occ               = determineOccupancy acc dev maxt regs ssmem
       (cta,blocks,smem) = launchConfig acc dev occ
 
-      msg1 = "entry function '" ++ name ++ "' used "
-              ++ shows regs " registers, "  ++ shows smem " bytes smem, "
-              ++ shows lmem " bytes lmem, " ++ shows cmem " bytes cmem"
-      msg2 = "multiprocessor occupancy " ++ showFFloat (Just 1) (CUDA.occupancy100 occ) "% : "
-              ++ shows (CUDA.activeThreads occ)      " threads over "
-              ++ shows (CUDA.activeWarps occ)        " warps in "
-              ++ shows (CUDA.activeThreadBlocks occ) " blocks"
+      msg1, msg2 :: String
+      msg1 = printf "entry function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
+                      name regs smem lmem cmem
 
-  -- make sure kernel/stats are printed together. Use 'intercalate' rather than
-  -- 'unlines' to avoid a trailing newline.
-  --
-  Debug.message Debug.dump_ptx (intercalate "\n     ... " [msg1, msg2])
+      msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
+                      (CUDA.occupancy100 occ)
+                      (CUDA.activeThreads occ)
+                      (CUDA.activeWarps occ)
+                      (CUDA.activeThreadBlocks occ)
+
+  Debug.message Debug.dump_ptx (printf "%s\n     ... %s" msg1 msg2)
   return $ Kernel f occ smem cta blocks name
 
 
