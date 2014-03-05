@@ -12,8 +12,14 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.NVVM.Array.Prim
-  where
+module Data.Array.Accelerate.LLVM.NVVM.Array.Prim (
+
+  mallocArray,
+  useArray, useArrayAsync,
+  indexArray,
+  devicePtr,
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.Array.Data
@@ -34,6 +40,26 @@ import Foreign.Storable
 import Foreign.Marshal.Alloc                                    ( alloca )
 
 #include "accelerate.h"
+
+-- | Allocate a device-side array associated with the given host array. If the
+-- allocation fails due to a memory error, we attempt some last-ditch memory
+-- cleanup before trying again.
+--
+{-# INLINEABLE mallocArray #-}
+mallocArray
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
+    => CUDA.Context
+    -> MemoryTable
+    -> ArrayData e
+    -> Int
+    -> IO ()
+mallocArray !ctx !mt !ad !i = do
+#ifdef ACCELERATE_INTERNAL_CHECKS
+  exists <- isJust `fmap` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
+  _      <- INTERNAL_CHECK(error) "mallocArray" "double malloc" (not exists) ()
+#endif
+  message ("mallocArray: " ++ showBytes (i * sizeOf (undefined::a)))
+  void (malloc ctx mt ad i :: IO (CUDA.DevicePtr a))
 
 
 -- | A combination of 'mallocArray' and 'pokeArray', that allocates remotes

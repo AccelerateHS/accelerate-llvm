@@ -12,13 +12,18 @@
 
 module Data.Array.Accelerate.LLVM.NVVM.Array.Data (
 
+  newArray,
+  allocateArray,
+
   useArrayAsync,
+
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array )
+import Data.Array.Accelerate.Array.Sugar                        ( Array(..), Shape, Elt, size )
+import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -36,19 +41,43 @@ import Control.Monad.State
 --
 instance Remote NVVM where
 
-  indexArray adata i = do
+  {-# INLINEABLE indexArray #-}
+  indexArray arr i = do
     NVVM{..}    <- gets llvmTarget
-    liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) adata i
+    liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) arr i
 
-  useArray adata = do
-    NVVM{..}    <- gets llvmTarget
-    liftIO      $ runUseArray (Prim.useArray nvvmContext nvvmMemoryTable) adata
+  {-# INLINEABLE useArray #-}
+  useArray arr = useArrayAsync arr Nothing
 
 
--- | Upload an existing array to the device
+
+-- | Upload an existing array to the device, asynchronously
 --
+{-# INLINEABLE useArrayAsync #-}
 useArrayAsync :: Array sh e -> Maybe CUDA.Stream -> LLVM NVVM ()
 useArrayAsync arr st = do
   NVVM{..} <- gets llvmTarget
   liftIO    $ runUseArray (Prim.useArrayAsync nvvmContext nvvmMemoryTable st) arr
+
+
+-- | Create an array from its representation function, uploading the result to
+-- the device.
+--
+{-# INLINEABLE newArray #-}
+newArray :: (Shape sh, Elt e) => sh -> (sh -> e) -> LLVM NVVM (Array sh e)
+newArray sh f = do
+  let arr = Sugar.newArray sh f
+  useArray arr
+  return arr
+
+
+-- | Allocate a new, uninitialised Accelerate array on the host and device.
+--
+{-# INLINEABLE allocateArray #-}
+allocateArray :: (Shape sh, Elt e) => sh -> LLVM NVVM (Array sh e)
+allocateArray sh = do
+  let arr = Sugar.allocateArray sh
+  NVVM{..} <- gets llvmTarget
+  liftIO    $ runArrayData1 (Prim.mallocArray nvvmContext nvvmMemoryTable) arr (size sh)
+  return arr
 
