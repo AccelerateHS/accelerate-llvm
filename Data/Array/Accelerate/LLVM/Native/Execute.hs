@@ -162,8 +162,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
            -> LLVM Native a
     awhile p f a = do
       r   <- executeOpenAfun1 p aenv a
-      ok  <- indexArray r 0
-      if ok
+      if indexArray r 0
          then awhile p f =<< executeOpenAfun1 f aenv a
          else return a
 
@@ -274,8 +273,8 @@ executeOpenExp rootExp env aenv = travE rootExp
       Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
       ShapeSize sh              -> size  <$> travE sh
       Shape acc                 -> shape <$> travA acc
-      Index acc ix              -> join $ index      <$> travA acc <*> travE ix
-      LinearIndex acc ix        -> join $ indexArray <$> travA acc <*> travE ix
+      Index acc ix              -> index      <$> travA acc <*> travE ix
+      LinearIndex acc ix        -> indexArray <$> travA acc <*> travE ix
       Foreign _ f x             -> eforeign f x
 
     -- Helpers
@@ -328,7 +327,7 @@ executeOpenExp rootExp env aenv = travE rootExp
         extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
-    index :: (Shape sh, Elt e) => Array sh e -> sh -> LLVM Native e
+    index :: (Shape sh, Elt e) => Array sh e -> sh -> e
     index arr ix = indexArray arr (toIndex (shape arr) ix)
 
 

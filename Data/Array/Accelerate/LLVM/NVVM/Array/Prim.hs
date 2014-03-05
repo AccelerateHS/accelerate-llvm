@@ -54,14 +54,14 @@ mallocArray
     -> MemoryTable
     -> ArrayData e
     -> Int
-    -> IO ()
-mallocArray !ctx !mt !ad !i = do
+    -> IO (CUDA.DevicePtr a)
+mallocArray !ctx !mt !ad !n = do
 #ifdef ACCELERATE_INTERNAL_CHECKS
   exists <- isJust `fmap` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
   _      <- INTERNAL_CHECK(check) "mallocArray" "double malloc" (not exists) (return ())
 #endif
-  message ("mallocArray: " ++ showBytes (i * sizeOf (undefined::a)))
-  void (malloc ctx mt ad i :: IO (CUDA.DevicePtr a))
+  message ("mallocArray: " ++ showBytes (n * sizeOf (undefined::a)))
+  malloc ctx mt ad n :: IO (CUDA.DevicePtr a)
 
 
 -- | A combination of 'mallocArray' and 'pokeArray', that allocates remotes

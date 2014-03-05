@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
-import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), ArraysR(..), Array, Shape, Elt, Foreign )
+import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -111,9 +111,8 @@ compileOpenAcc = traverseAcc
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
-        Use arrs                -> do
-          useR (arrays (undefined::arrs)) arrs
-          node (pure $ Use arrs)
+        Use arrs                -> do copyToRemote (toArr arrs::arrs)
+                                      node (pure (Use arrs))
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
@@ -144,11 +143,6 @@ compileOpenAcc = traverseAcc
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
       where
-        useR :: ArraysR a -> a -> LLVM arch ()
-        useR ArraysRunit ()               = return ()
-        useR ArraysRarray arr             = useArray arr
-        useR (ArraysRpair r1 r2) (a1, a2) = useR r1 a1 >> useR r2 a2
-
         travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc

@@ -15,6 +15,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Array.Data (
   newArray,
   allocateArray,
 
+  indexArray,
   useArrayAsync,
 
   module Data.Array.Accelerate.LLVM.Array.Data,
@@ -24,6 +25,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array(..), Shape, Elt, size )
 import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
+import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -41,15 +43,35 @@ import Control.Monad.State
 --
 instance Remote NVVM where
 
-  {-# INLINEABLE indexArray #-}
-  indexArray arr i = do
-    NVVM{..}    <- gets llvmTarget
-    liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) arr i
+  {-# INLINEABLE copyToRemote #-}
+  copyToRemote arrs = do
+    NVVM{..} <- gets llvmTarget
+    liftIO $ runArrays (runUseArray (Prim.useArrayAsync nvvmContext nvvmMemoryTable Nothing)) arrs
 
-  {-# INLINEABLE useArray #-}
-  useArray arr = useArrayAsync arr Nothing
+  {-# INLINEABLE copyToHost #-}
+  copyToHost arrs = do
+    NVVM{..} <- gets llvmTarget
+    liftIO $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.peekArray nvvmContext nvvmMemoryTable) arr (R.size sh)) arrs
+    return arrs
+
+  {-# INLINEABLE copyToPeer #-}
+  copyToPeer peer arrs = do
+    NVVM dstCtx _ dstMT _       <- return peer
+    NVVM srcCtx _ srcMT _       <- gets llvmTarget
+
+    liftIO . unless (srcCtx == dstCtx)
+      $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer srcCtx srcMT dstCtx dstMT) arr (R.size sh)) arrs
+
+    return arrs
 
 
+-- | Read a single element from the array at a given row-major index
+--
+{-# INLINEABLE indexArray #-}
+indexArray :: Array sh e -> Int -> LLVM NVVM e
+indexArray arr i = do
+  NVVM{..}    <- gets llvmTarget
+  liftIO      $ runIndexArray (Prim.indexArray nvvmContext nvvmMemoryTable) arr i
 
 -- | Upload an existing array to the device, asynchronously
 --
@@ -67,7 +89,7 @@ useArrayAsync arr st = do
 newArray :: (Shape sh, Elt e) => sh -> (sh -> e) -> LLVM NVVM (Array sh e)
 newArray sh f = do
   let arr = Sugar.newArray sh f
-  useArray arr
+  useArrayAsync arr Nothing
   return arr
 
 
@@ -78,6 +100,6 @@ allocateArray :: (Shape sh, Elt e) => sh -> LLVM NVVM (Array sh e)
 allocateArray sh = do
   let arr = Sugar.allocateArray sh
   NVVM{..} <- gets llvmTarget
-  liftIO    $ runArrayData1 (Prim.mallocArray nvvmContext nvvmMemoryTable) arr (size sh)
+  liftIO    $ runArrayData1 (\ad i -> void $ Prim.mallocArray nvvmContext nvvmMemoryTable ad i) arr (size sh)
   return arr
 

@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Array.Data (
   Remote(..),
   runUseArray, runIndexArray,
 
+  runArrays,
   runArrayData1,
 
   module Data.Array.Accelerate.Array.Data,
@@ -28,7 +29,7 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Representation               ( size )
-import Data.Array.Accelerate.Array.Sugar                        ( Array(..), Shape, toElt )
+import Data.Array.Accelerate.Array.Sugar                        ( Arrays, ArraysR(..), Array(..), toElt, fromArr, arrays )
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -45,19 +46,23 @@ class Remote arch where
 
   -- | Upload an existing array from the host to the remote device.
   --
-  {-# INLINEABLE useArray #-}
-  useArray      :: Shape sh
-                => Array sh e
-                -> LLVM arch ()
-  useArray _ = return ()
+  {-# INLINEABLE copyToRemote #-}
+  copyToRemote :: Arrays a => a -> LLVM arch ()
+  copyToRemote _ = return ()
 
-  -- | Read a single element from the remote array at a given row-major index
+  -- | Copy an array from the remote device to the host.
   --
-  {-# INLINEABLE indexArray #-}
-  indexArray    :: Array sh e
-                -> Int
-                -> LLVM arch e
-  indexArray (Array _ adata) i = return . toElt $ unsafeIndexArrayData adata i
+  {-# INLINEABLE copyToHost #-}
+  copyToHost :: Arrays a => a -> LLVM arch a
+  copyToHost a = return a
+
+  -- | Copy an array between two remote instances of the same type. This may be
+  -- more efficient than copying to the host and then to the second remote
+  -- instance (e.g. DMA between CUDA devices).
+  --
+  {-# INLINEABLE copyToPeer #-}
+  copyToPeer :: Arrays a => arch -> a -> LLVM arch a
+  copyToPeer _ a = return a
 
 
 -- CPP hackery to generate the cases where we dispatch to the worker function handling
@@ -151,7 +156,23 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
         toBool _ = True
 
 
--- | Generalised functions to traverse the array data struct
+-- | Generalised function to traverse the Arrays structure
+--
+{-# INLINE runArrays #-}
+runArrays
+    :: Arrays arrs
+    => (forall sh e. Array sh e -> IO ())
+    -> arrs
+    -> IO ()
+runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
+  where
+    runR :: ArraysR a -> a -> IO ()
+    runR ArraysRunit             ()             = return ()
+    runR ArraysRarray            arr            = worker arr
+    runR (ArraysRpair aeR1 aeR2) (arrs1, arrs2) = runR aeR1 arrs1 >> runR aeR2 arrs2
+
+
+-- | Generalised functions to traverse the ArrayData structure
 
 {-# INLINE runArrayData1 #-}
 runArrayData1
