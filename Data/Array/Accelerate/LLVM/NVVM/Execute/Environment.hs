@@ -13,7 +13,7 @@
 
 module Data.Array.Accelerate.LLVM.NVVM.Execute.Environment (
 
-  Async(..), Aval(..),
+  Async(..), Aval(..), Event, Stream,
   aprj, after, wait, streaming,
 
 ) where
