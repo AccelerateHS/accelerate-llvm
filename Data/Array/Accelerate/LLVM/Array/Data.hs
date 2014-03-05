@@ -1,7 +1,8 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE RankNTypes   #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS -fno-warn-name-shadowing #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Data
@@ -17,6 +18,8 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 
   Remote(..),
   runUseArray, runIndexArray,
+
+  runArrayData1,
 
   module Data.Array.Accelerate.Array.Data,
 
@@ -108,17 +111,7 @@ runUseArray
     :: (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> IO ())
     -> Array sh e
     -> IO ()
-runUseArray worker (Array sh adata) = useR arrayElt adata
-  where
-    !n = size sh
-
-    useR :: ArrayEltR a -> ArrayData a -> IO ()
-    useR ArrayEltRunit             _  = return ()
-    useR (ArrayEltRpair aeR1 aeR2) ad = useR aeR1 (fst ad) >> useR aeR2 (snd ad)
-    useR aer                       ad = usePrim aer ad n
-    --
-    usePrim :: ArrayEltR a -> ArrayData a -> Int -> IO ()
-    mkPrimDispatch(usePrim, worker)
+runUseArray worker arr@(Array sh _) = runArrayData1 worker arr (size sh)
 
 
 -- |Read a single element from an array at the given row-major index.
@@ -166,4 +159,23 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
       where
         toBool 0 = False
         toBool _ = True
+
+
+-- | Generalised functions to traverse the array data struct
+
+{-# INLINE runArrayData1 #-}
+runArrayData1
+    :: forall sh e a. (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> a -> IO ())
+    -> Array sh e
+    -> a
+    -> IO ()
+runArrayData1 worker (Array _ adata) a = runR arrayElt adata
+  where
+    runR :: ArrayEltR e' -> ArrayData e' -> IO ()
+    runR ArrayEltRunit             _  = return ()
+    runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fst ad) >> runR aeR2 (snd ad)
+    runR aer                       ad = runW aer ad a
+    --
+    runW :: ArrayEltR e' -> ArrayData e' -> a -> IO ()
+    mkPrimDispatch(runW, worker)
 
