@@ -56,7 +56,7 @@ mallocArray
 mallocArray !ctx !mt !ad !i = do
 #ifdef ACCELERATE_INTERNAL_CHECKS
   exists <- isJust `fmap` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
-  _      <- INTERNAL_CHECK(error) "mallocArray" "double malloc" (not exists) ()
+  _      <- INTERNAL_CHECK(check) "mallocArray" "double malloc" (not exists) (return ())
 #endif
   message ("mallocArray: " ++ showBytes (i * sizeOf (undefined::a)))
   void (malloc ctx mt ad i :: IO (CUDA.DevicePtr a))
