@@ -3,7 +3,8 @@ import Prelude                                          as P
 import Data.Array.Accelerate                            as A
 import qualified Data.Array.Accelerate.Interpreter      as I
 
-import Data.Array.Accelerate.LLVM.Native
+import Data.Array.Accelerate.LLVM.Native                as CPU
+import Data.Array.Accelerate.LLVM.NVVM                  as GPU
 import Data.Array.Accelerate.LLVM.Debug
 
 import System.Environment
@@ -42,8 +43,6 @@ str2 :: Acc (Vector Char)
 str2 = use (fromList (Z:.18) "I am Lord Voldemort")
 
 
-
-main = print (run test)
 
 test :: Acc (Vector Double)
 test = let steps = use (A.fromList (Z:.10) (repeat 100000))
