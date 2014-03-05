@@ -29,7 +29,7 @@ Flag nvptx
   Description:          Enable the nvptx backend for CUDA capable NVIDIA GPUs.
 
 Flag libnvvm
-  Default               False
+  Default:              False
   Description:          Use the libNVVM bindings to optimise generated nvptx
 
 Flag debug
