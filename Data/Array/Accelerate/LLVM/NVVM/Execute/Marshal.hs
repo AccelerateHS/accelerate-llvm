@@ -14,7 +14,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Execute.Marshal (
+module Data.Array.Accelerate.LLVM.NVVM.Execute.Marshal (
 
   Marshalable, marshal
 
@@ -49,8 +49,8 @@ import qualified Data.IntMap                                    as IM
 
 -- | Convert function arguments into stream a form suitable for CUDA function calls
 --
-marshal :: Marshalable args => args -> Stream -> LLVM NVVM [CUDA.FunParam]
-marshal args stream = DL.toList `fmap` marshal' stream args
+marshal :: Marshalable args => Stream -> args -> LLVM NVVM [CUDA.FunParam]
+marshal stream args = DL.toList `fmap` marshal' stream args
 
 
 -- Data which can be marshalled as function arguments to kernels
