@@ -30,6 +30,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
+-- standard library
+import Prelude                                                  hiding ( fromIntegral )
+
 
 -- A combination map/backpermute, where the index and value transformations have
 -- been separated
@@ -59,7 +62,7 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
     n           <- shapeSize (undefined::Array sh b) "out"
     step        <- gridSize
     tid         <- threadIdx
-    c           <- lt int tid n
+    c           <- lt int32 tid n
     top         <- cbr c loop exit
 
     -- Main loop
@@ -67,7 +70,8 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
     setBlock loop
     indv        <- freshName
     let i       =  local indv
-    ix          <- indexOfInt (map local shOut) i       -- convert to multidimensional index
+    ii          <- fromIntegral int32 int i             -- loop counter is i32, calculation is in Int
+    ix          <- indexOfInt (map local shOut) ii      -- convert to multidimensional index
     ix'         <- permute ix                           -- apply backwards index permutation
     xs          <- delayedIndex ix'                     -- get element
     ys          <- apply xs                             -- apply function from input array

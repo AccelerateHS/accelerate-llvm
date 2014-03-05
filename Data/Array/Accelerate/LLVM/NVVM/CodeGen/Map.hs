@@ -30,6 +30,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
+-- standard library
+import Prelude                                                  hiding ( fromIntegral )
+
 
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
@@ -63,7 +66,8 @@ mkMap _nvvm aenv apply IRDelayed{..} =
     step        <- gridSize
 
     tid         <- threadIdx
-    c           <- lt int32 tid n
+    n'          <- fromIntegral int int32 n
+    c           <- lt int32 tid n'
     top         <- cbr c loop exit
 
     -- main loop
@@ -77,7 +81,7 @@ mkMap _nvvm aenv apply IRDelayed{..} =
     writeArray arrOut i ys
 
     i'          <- add int32 i step
-    c'          <- lt int32 i' n
+    c'          <- lt int32 i' n'
     bot         <- cbr c' loop exit
     _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (tid,top)]
 

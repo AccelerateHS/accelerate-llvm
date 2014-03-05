@@ -28,6 +28,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
+-- standard library
+import Prelude                                                  hiding ( fromIntegral )
+
 
 -- Construct a new array by applying a function to each index. Each thread
 -- processes multiple adjacent elements.
@@ -62,8 +65,9 @@ mkGenerate _dev aenv apply =
     -- ---------
     setBlock loop
     indv        <- freshName                            -- induction variable
-    let i        = local indv
-    ix          <- indexOfInt (map local shOut) i       -- convert to multidimensional index
+    let i       = local indv
+    ii          <- fromIntegral int32 int i             -- keep the loop counter as i32, but do calculations in Int
+    ix          <- indexOfInt (map local shOut) ii      -- convert to multidimensional index
     r           <- apply ix                             -- apply generator function
     writeArray arrOut i r                               -- write result
 
