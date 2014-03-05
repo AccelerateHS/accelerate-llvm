@@ -115,11 +115,11 @@ Library
     containers                  >= 0.5 && <0.6,
     dlist                       >= 0.6,
     fclabels                    >= 2.0,
-    hashable                    >= 1.2,
     libffi,
     llvm-general,
     llvm-general-pure,
     mtl,
+    pretty                      >= 1.1,
     time,
     unordered-containers        >= 0.2
 
