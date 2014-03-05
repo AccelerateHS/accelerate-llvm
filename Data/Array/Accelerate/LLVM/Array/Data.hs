@@ -33,7 +33,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array(..), Sha
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
-import Prelude                                                  hiding ( fst, snd )
 import Control.Applicative
 import Control.Monad
 import Data.Typeable
@@ -95,15 +94,6 @@ class Remote arch where
 ; dispatcher _                = error "mkPrimDispatcher: not primitive"
 
 
--- Array tuple extraction
---
-fst :: ArrayData (a,b) -> ArrayData a
-fst = fstArrayData
-
-snd :: ArrayData (a,b) -> ArrayData b
-snd = sndArrayData
-
-
 -- |Upload an existing array from the host
 --
 {-# INLINEABLE runUseArray #-}
@@ -126,8 +116,8 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
   where
     indexR :: ArrayEltR a -> ArrayData a -> IO a
     indexR ArrayEltRunit             _  = return ()
-    indexR (ArrayEltRpair aeR1 aeR2) ad = liftM2 (,) (indexR aeR1 (fst ad))
-                                                     (indexR aeR2 (snd ad))
+    indexR (ArrayEltRpair aeR1 aeR2) ad = liftM2 (,) (indexR aeR1 (fstArrayData ad))
+                                                     (indexR aeR2 (sndArrayData ad))
     --
     indexR ArrayEltRint              ad = worker ad i
     indexR ArrayEltRint8             ad = worker ad i
@@ -173,7 +163,8 @@ runArrayData1 worker (Array _ adata) a = runR arrayElt adata
   where
     runR :: ArrayEltR e' -> ArrayData e' -> IO ()
     runR ArrayEltRunit             _  = return ()
-    runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fst ad) >> runR aeR2 (snd ad)
+    runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fstArrayData ad) >>
+                                        runR aeR2 (sndArrayData ad)
     runR aer                       ad = runW aer ad a
     --
     runW :: ArrayEltR e' -> ArrayData e' -> a -> IO ()
