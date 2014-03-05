@@ -33,7 +33,7 @@ Flag libnvvm
   Description:          Use the libNVVM bindings to optimise generated nvptx
 
 Flag debug
-  Default:              False
+  Default:              True
   Description:
     Enable tracing message flags. These are read from the command-line
     arguments, which is convenient but may cause problems interacting with the
@@ -59,6 +59,7 @@ Flag internal-checks
 Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.Native
+    Data.Array.Accelerate.LLVM.NVVM
 
   other-modules:
     -- Accelerate-LLVM middle-end
@@ -89,6 +90,15 @@ Library
     Data.Array.Accelerate.LLVM.NVVM.CodeGen
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
+
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Device
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
+
+    Data.Array.Accelerate.LLVM.NVVM.Execute
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Environment
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Event
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Marshal
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Stream
 
     -- Native target
     Data.Array.Accelerate.LLVM.Native.Array.Data
