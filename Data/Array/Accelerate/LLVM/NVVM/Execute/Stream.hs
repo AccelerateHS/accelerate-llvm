@@ -1,6 +1,6 @@
-{-# LANGUAGE MagicHash #-}
-{-# LANGUAGE CPP #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE CPP          #-}
+{-# LANGUAGE MagicHash    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Execute.Stream
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -32,7 +32,6 @@ import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad.Trans
 import Data.Sequence                                            ( Seq )
-import System.Mem.Weak
 import qualified Data.Foldable                                  as Seq ( toList )
 import qualified Data.Sequence                                  as Seq
 
@@ -47,9 +46,7 @@ import GHC.Ptr
 -- inactive. When a new stream is requested one is provided from the reservoir
 -- if available, otherwise a fresh execution stream is created.
 --
-data Reservoir          = Reservoir {-# UNPACK #-} !RSV
-                                    {-# UNPACK #-} !(Weak RSV)
-type RSV                = MVar (Seq Stream)
+type Reservoir  = MVar (Seq Stream)
 
 
 -- Executing operations in streams
@@ -68,12 +65,12 @@ streaming
     -> (Stream -> m a)
     -> (Event -> a -> m b)
     -> m b
-streaming !ctx !rsv@(Reservoir !_ !weak_rsv) !action !after = do
+streaming !ctx !rsv !action !after = do
   stream <- liftIO $ create ctx rsv
   first  <- action stream
   end    <- liftIO $ Event.waypoint stream
   final  <- after end first
-  liftIO $ do destroy ctx weak_rsv stream
+  liftIO $ do destroy ctx rsv stream
               Event.destroy end
   return final
 
@@ -87,14 +84,15 @@ streaming !ctx !rsv@(Reservoir !_ !weak_rsv) !action !after = do
 new :: CUDA.Context -> IO Reservoir
 new !ctx = do
   ref    <- newMVar ( Seq.empty )
-  weak   <- mkWeakMVar ref (flush ctx ref)
-  return $! Reservoir ref weak
+  _      <- mkWeakMVar ref (flush ctx ref)
+  return ref
 
-flush :: CUDA.Context -> RSV -> IO ()
+flush :: CUDA.Context -> Reservoir -> IO ()
 flush !ctx !ref =
   withMVar ref $ \rsv ->
     trace "flush reservoir" $
-      bracket_ (CUDA.push ctx) CUDA.pop (mapM_ Stream.destroy (Seq.toList rsv))
+      let delete st = trace ("free " ++ show st) (Stream.destroy st)
+      in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
 
 
 -- | Create a CUDA execution stream. If an inactive stream is available for use,
@@ -102,10 +100,10 @@ flush !ctx !ref =
 --
 {-# INLINEABLE create #-}
 create :: CUDA.Context -> Reservoir -> IO Stream
-create !ctx (Reservoir !ref _) = modifyMVar ref $ \rsv ->
+create _ctx !ref = modifyMVar ref $ \rsv ->
   case Seq.viewl rsv of
     s Seq.:< ss -> return (ss, s)
-    Seq.EmptyL  -> do   s <- bracket_ (CUDA.push ctx) CUDA.pop (Stream.create [])
+    Seq.EmptyL  -> do   s <- Stream.create []
                         message ("new " ++ showStream s)
                         return (Seq.empty, s)
 
@@ -114,8 +112,8 @@ create !ctx (Reservoir !ref _) = modifyMVar ref $ \rsv ->
 -- pending operations in the stream have completed.
 --
 {-# INLINEABLE destroy #-}
-destroy :: CUDA.Context -> Weak RSV -> Stream -> IO ()
-destroy !ctx !weak_rsv !stream = do
+destroy :: CUDA.Context -> Reservoir -> Stream -> IO ()
+destroy _ctx !ref !stream = do
   -- Wait for all preceding operations submitted to the stream to complete.
   --
   -- Note: Placing the block here seems to force _all_ streams to block, or at
@@ -126,9 +124,6 @@ destroy !ctx !weak_rsv !stream = do
   --
   -- Stream.block stream
 
-  -- Check whether the context and reservoir are still active. Return the stream
-  -- for later reuse if so, otherwise destroy it.
-  --
   -- Note: We use a sequence here so that the old stream can be placed onto the
   --       end of the reservoir, while new streams are popped from the front.
   --       Since we don't block on the stream when returning it (see above),
@@ -136,11 +131,7 @@ destroy !ctx !weak_rsv !stream = do
   --       immediately, and so it has some time yet to finish any outstanding
   --       operations (just in case).
   --
-  mr <- deRefWeak weak_rsv
-  case mr of
-    Just ref -> modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
-    Nothing  -> do message ("destroy/free " ++ showStream stream)
-                   bracket_ (CUDA.push ctx) CUDA.pop (Stream.destroy stream)
+  modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
 
 
 -- Debug
