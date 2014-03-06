@@ -2,23 +2,16 @@
 
 # Adjust to the installed location of ghci, if this script can not find it.
 #
-GHC=`which -a ghc`
+GHC=`which ghc`
 VER=`$GHC --numeric-version`
 GHC_FLAGS="--interactive"
-
-
-# We assume that the dependent packages are install with 'cabal'. If you have
-# installed them with another tool such as 'cabal-dev', add the following to the
-# command.
-#
-#    -package-conf cabal-dev/packages-$VER.conf
 
 # We need to figure out the size of some basic types. This is the same as what
 # the configure script does when we do a regular install.
 #
 function htype {
 
-  sizeof=`$GHC -w -ignore-dot-ghci -e "import Foreign" -e "import Foreign.C" -e "sizeOf (undefined::$1)"`
+  sizeof=`$GHC -w -ignore-dot-ghci -e "Foreign.sizeOf (undefined::Foreign.C.$1)"`
   case $sizeof in
     4) ty="$2"32 ;;
     8) ty="$2"64 ;;
@@ -30,6 +23,9 @@ function htype {
 # htype CLong  Int  HTYPE_LONG
 # htype CULong Word HTYPE_UNSIGNED_LONG
 
+# We assume a cabal sandbox. If you have installed elsewhere or are using some
+# other tool, change or delete the '-package-db' line.
+#
 GHC_FLAGS="$GHC_FLAGS
     -DACCELERATE_BOUNDS_CHECKS
     -DACCELERATE_INTERNAL_CHECKS
