@@ -26,7 +26,7 @@ import qualified Foreign.CUDA.Driver.Event              as Event
 import Control.Concurrent
 import Control.Monad.Trans
 import Data.Label
-import System.CPUTime
+import Data.Time.Clock
 import Text.Printf
 
 import GHC.Float
@@ -46,11 +46,11 @@ timed _f _str _stream action
   = do
       gpuBegin  <- liftIO $ Event.create []
       gpuEnd    <- liftIO $ Event.create []
-      cpuBegin  <- liftIO getCPUTime
+      wallBegin <- liftIO getCurrentTime
       liftIO $ Event.record gpuBegin _stream
       action
       liftIO $ Event.record gpuEnd _stream
-      cpuEnd    <- liftIO getCPUTime
+      wallEnd   <- liftIO getCurrentTime
 
       -- Wait for the GPU to finish executing then display the timing execution
       -- message. Do this in a separate thread so that the remaining kernels can
@@ -59,13 +59,13 @@ timed _f _str _stream action
       _         <- liftIO . forkIO $ do
         Event.block gpuEnd
         diff    <- Event.elapsedTime gpuBegin gpuEnd
-        let gpuTime = float2Double $ diff * 1E-3                         -- milliseconds
-            cpuTime = fromIntegral (cpuEnd - cpuBegin) * 1E-12 :: Double -- picoseconds
+        let gpuTime  = float2Double $ diff * 1E-3       -- milliseconds
+            wallTime = realToFrac (diffUTCTime wallEnd wallBegin)
 
         Event.destroy gpuBegin
         Event.destroy gpuEnd
         --
-        message _f (_str gpuTime cpuTime)
+        message _f (_str gpuTime wallTime)
       --
       return ()
 
@@ -75,8 +75,8 @@ timed _f _str _stream action
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String
-elapsed gpuTime cpuTime =
-  printf "gpu: %s, cpu: %s"
+elapsed gpuTime wallTime =
+  printf "gpu: %s, wall: %s"
     (showFFloatSIBase (Just 3) 1000 gpuTime "s")
-    (showFFloatSIBase (Just 3) 1000 cpuTime "s")
+    (showFFloatSIBase (Just 3) 1000 wallTime "s")
 
