@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Fill
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Execute.Gang
-import qualified Data.Array.Accelerate.LLVM.Debug                       as Debug
+import qualified Data.Array.Accelerate.LLVM.Native.Debug                as Debug
 
 -- standard library
 import Control.Monad

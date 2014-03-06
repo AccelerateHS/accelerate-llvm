@@ -37,7 +37,7 @@ import Data.Array.Accelerate.LLVM.NVVM.Target
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen                  ( )
 import Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
 
-import qualified  Data.Array.Accelerate.LLVM.Debug              as Debug
+import qualified  Data.Array.Accelerate.LLVM.NVVM.Debug         as Debug
 
 -- cuda
 import qualified Foreign.CUDA.Analysis                          as CUDA

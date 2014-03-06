@@ -21,14 +21,14 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Gang (
 ) where
 
 import Control.Concurrent.MVar
-import Control.Exception                                ( assert )
+import Control.Exception                                        ( assert )
 import Control.Monad
-import GHC.Conc                                         ( forkOn, numCapabilities )
+import GHC.Conc                                                 ( forkOn, numCapabilities )
 import GHC.IO
 import GHC.ST
 
-import Data.Array.Accelerate.LLVM.Debug                 ( dump_gang, dump_exec )
-import qualified Data.Array.Accelerate.LLVM.Debug       as Debug
+import Data.Array.Accelerate.LLVM.Native.Debug                  ( dump_gang, dump_exec )
+import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 
 -- The Gang --------------------------------------------------------------------

@@ -81,18 +81,18 @@ Library
     Data.Array.Accelerate.LLVM.Util
 
     -- NVVM target
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Device
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
     Data.Array.Accelerate.LLVM.NVVM.Array.Data
     Data.Array.Accelerate.LLVM.NVVM.Array.Prim
     Data.Array.Accelerate.LLVM.NVVM.Array.Table
-    Data.Array.Accelerate.LLVM.NVVM.Target
+    Data.Array.Accelerate.LLVM.NVVM.Debug
     Data.Array.Accelerate.LLVM.NVVM.State
+    Data.Array.Accelerate.LLVM.NVVM.Target
 
     Data.Array.Accelerate.LLVM.NVVM.CodeGen
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
     Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
-
-    Data.Array.Accelerate.LLVM.NVVM.Analysis.Device
-    Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
 
     Data.Array.Accelerate.LLVM.NVVM.Execute
     Data.Array.Accelerate.LLVM.NVVM.Execute.Environment
@@ -103,13 +103,8 @@ Library
     -- Native target
     Data.Array.Accelerate.LLVM.Native.Array.Data
     Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Debug
     Data.Array.Accelerate.LLVM.Native.Target
-
-    Data.Array.Accelerate.LLVM.Native.Execute
-    Data.Array.Accelerate.LLVM.Native.Execute.Environment
-    Data.Array.Accelerate.LLVM.Native.Execute.Fill
-    Data.Array.Accelerate.LLVM.Native.Execute.Gang
-    Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
     Data.Array.Accelerate.LLVM.Native.CodeGen
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
@@ -117,6 +112,12 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
     Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+
+    Data.Array.Accelerate.LLVM.Native.Execute
+    Data.Array.Accelerate.LLVM.Native.Execute.Environment
+    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+    Data.Array.Accelerate.LLVM.Native.Execute.Gang
+    Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
     accelerate                  == 0.15.*,

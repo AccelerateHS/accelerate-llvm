@@ -25,7 +25,7 @@ import Data.Array.Accelerate.LLVM.NVVM.Analysis.Device
 import Data.Array.Accelerate.LLVM.NVVM.Target
 import qualified Data.Array.Accelerate.LLVM.NVVM.Array.Table    as MT
 import qualified Data.Array.Accelerate.LLVM.NVVM.Execute.Stream as RT
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
 -- standard library
 import Control.Exception                                        ( bracket_, catch )

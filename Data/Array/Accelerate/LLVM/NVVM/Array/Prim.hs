@@ -26,7 +26,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Array.Prim (
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.LLVM.NVVM.Array.Table
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -94,7 +94,7 @@ useArrayAsync !ctx !mt !st !ad !n = do
   exists        <- isJust `liftM` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
   unless exists $ do
     dst <- malloc ctx mt ad n
-    transfer "useArray" bytes $ CUDA.pokeArrayAsync n src dst st
+    transfer "useArray" bytes st $ CUDA.pokeArrayAsync n src dst st
 
 
 -- | Read a single element from an array at a given row-major index
@@ -141,7 +141,7 @@ peekArrayAsync _ !mt !ad !n !st = do
   let !bytes    = n * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
   src   <- devicePtr mt ad
-  transfer "peekArray" bytes $ CUDA.peekArrayAsync n src dst st
+  transfer "peekArray" bytes st $ CUDA.peekArrayAsync n src dst st
 
 
 -- | Copy data from one device context into a _new_ array on the second context.
@@ -171,7 +171,7 @@ copyArrayPeerAsync !ctx1 !mt1 !ctx2 !mt2 !ad !n !st = do
   let !bytes    = n * sizeOf (undefined :: a)
   src   <- devicePtr mt1 ad
   dst   <- mallocArray ctx2 mt2 ad n
-  transfer "copyArrayPeer" bytes $ CUDA.copyArrayPeerAsync n src ctx1 dst ctx2 st
+  transfer "copyArrayPeer" bytes st $ CUDA.copyArrayPeerAsync n src ctx1 dst ctx2 st
 
 
 -- | Lookup the device memory associated with a given host array
@@ -205,12 +205,12 @@ message :: String -> IO ()
 message s = s `trace` return ()
 
 {-# INLINE transfer #-}
-transfer :: String -> Int -> IO () -> IO ()
-transfer name bytes action
+transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
+transfer name bytes stream action
   = let showRate x t         = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
         msg wallTime cpuTime = "gc: " ++ name ++ ": "
                                       ++ showBytes bytes ++ " @ " ++ showRate bytes wallTime ++ ", "
                                       ++ Debug.elapsed wallTime cpuTime
     in
-    Debug.timed Debug.dump_gc msg action
+    Debug.timed Debug.dump_gc msg stream action
 

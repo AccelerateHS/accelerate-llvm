@@ -35,7 +35,7 @@ import Control.Monad.Error
 #ifdef ACCELERATE_DEBUG
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
-import Data.Array.Accelerate.LLVM.Debug                         as Debug
+import Data.Array.Accelerate.LLVM.Native.Debug                  as Debug
 import Control.Monad.Reader
 #endif
 

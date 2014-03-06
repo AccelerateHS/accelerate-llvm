@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Array.Table (
 import Data.Array.Accelerate.Array.Data
 
 import qualified Data.Array.Accelerate.LLVM.Array.Table         as MT
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
 -- CUDA
 import Foreign.CUDA.Driver.Error

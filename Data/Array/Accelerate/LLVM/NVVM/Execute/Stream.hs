@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Execute.Stream (
 
 -- accelerate
 import qualified Data.Array.Accelerate.LLVM.NVVM.Execute.Event  as Event
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
 -- cuda
 import Foreign.CUDA.Driver.Event                                ( Event(..) )

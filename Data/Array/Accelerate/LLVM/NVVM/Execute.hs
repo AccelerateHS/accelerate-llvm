@@ -37,6 +37,8 @@ import Data.Array.Accelerate.LLVM.NVVM.Execute.Marshal
 import Data.Array.Accelerate.LLVM.NVVM.Target
 import qualified Data.Array.Accelerate.LLVM.NVVM.Execute.Event  as Event
 
+import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
+
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
@@ -45,6 +47,7 @@ import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
 import Control.Monad.Error
+import Text.Printf
 
 #include "accelerate.h"
 
@@ -312,13 +315,15 @@ execute kernel gamma aenv stream n args =
 --
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> LLVM NVVM ()
 launch Kernel{..} stream n args =
-  liftIO $ CUDA.launchKernel kernelFun grid cta smem (Just stream) args
+  liftIO $ Debug.timed Debug.dump_exec msg (Just stream)
+         $ CUDA.launchKernel kernelFun grid cta smem (Just stream) args
   where
     cta         = (kernelThreadBlockSize, 1, 1)
     grid        = (kernelThreadBlocks n, 1, 1)
     smem        = kernelSharedMemBytes
 
-
--- Debug
--- -----
+    fst3 (x,_,_)        = x
+    msg gpuTime cpuTime =
+      printf "exec: %s <<< %d, %d, %d >>> %s"
+             kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed gpuTime cpuTime)
 

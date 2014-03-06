@@ -18,13 +18,11 @@ import Control.Monad.Trans
 import Data.IORef
 import Data.Label
 import Data.List
-import Data.Time.Clock
 import Numeric
 import System.CPUTime
 import System.Console.GetOpt
 import System.Environment
 import System.IO.Unsafe
-import Text.Printf
 
 import Debug.Trace                              ( traceIO, traceEventIO )
 
@@ -173,41 +171,4 @@ unless f action
 #else
 unless _ action = action
 #endif
-
-{-# INLINE timed #-}
-timed :: MonadIO m
-      => (Flags :-> Bool)
-      -> (Double -> Double -> String)
-      -> m ()
-      -> m ()
-timed _f _msg action
-#ifdef ACCELERATE_DEBUG
-  | mode _f
-  = do
-        -- We will measure both wall clock as well as CPU time.
-        wall0   <- liftIO getCurrentTime
-        cpu0    <- liftIO getCPUTime
-
-        -- Run the action in the main thread.
-        action
-
-        wall1   <- liftIO getCurrentTime
-        cpu1    <- liftIO getCPUTime
-
-        let wallTime = realToFrac (diffUTCTime wall1 wall0)
-            cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
-
-        message _f (_msg wallTime cpuTime)
-
-  | otherwise
-#endif
-  = action
-
-{-# INLINE elapsed #-}
-elapsed :: Double -> Double -> String
-elapsed wallTime cpuTime
-  = printf "wall: %s, cpu: %s, speedup: %.2f"
-      (showFFloatSIBase (Just 3) 1000 wallTime "s")
-      (showFFloatSIBase (Just 3) 1000 cpuTime  "s")
-      (cpuTime / wallTime)
 
