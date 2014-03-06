@@ -62,6 +62,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
     Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
     Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
     Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 

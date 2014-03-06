@@ -37,9 +37,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 -- standard library
-import Control.Monad
 import GHC.Conc
 
 #include "accelerate.h"
@@ -317,37 +317,8 @@ reduce :: [Type]                                        -- Type of the accumulat
        -> Operand                                       -- final index
        -> CodeGen [Operand]                             -- reduction
 reduce ty get combine seed start end = do
-  loop  <- newBlock "reduce.top"
-  exit  <- newBlock "reduce.exit"
-
-  z     <- seed
-  c     <- gte int start end    -- segment may be empty: just the initial value
-  top   <- cbr c exit loop
-
-  setBlock loop
-  -- First define the critical variables
-  c_i   <- freshName
-  c_acc <- replicateM (length ty) freshName
-  let i   = local c_i
-      acc = map local c_acc
-
-  -- Get new element, add to accumulator
-  x     <- get [i]
-  acc'  <- combine acc x
-
-  -- Determine the loop condition and branch
-  i'    <- add int i (constOp $ num int 1)
-  c'    <- gte int i' end
-  bot   <- cbr c' exit loop
-
-  -- set up the phi loop
-  _     <- phi loop c_i (typeOf (int :: IntegralType Int)) [ (i',bot), (start,top) ]
-  _     <- sequence $ zipWith3 (phi loop) c_acc ty
-              [ [(t,top), (b,bot)] | t <- z | b <- acc' ]
-
-  -- exit loop
-  setBlock exit
-  zipWithM phi' ty [ [(t,top), (b,bot) ] | t <- z | b <- acc' ]
+  z <- seed
+  iterFromTo start end ty z $ \i acc -> combine acc =<< get [i]
 
 
 -- Sequential reduction loop over a non-empty sequence. The condition is not

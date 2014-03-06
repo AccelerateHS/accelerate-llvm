@@ -17,18 +17,15 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
 -- A combination map/backpermute, where the index and value transformations have
@@ -50,30 +47,12 @@ mkTransform aenv permute apply IRDelayed{..} =
       (start, end, paramGang)     = gangParam
   in
   makeKernel "transform" (paramGang ++ paramOut ++ paramEnv) $ do
-    loop        <- newBlock "loop.top"
-    exit        <- newBlock "loop.exit"
+    imapFromTo start end $ \i -> do
+      ix  <- indexOfInt (map local shOut) i     -- convert to multidimensional index
+      ix' <- permute ix                         -- apply backwards index permutation
+      xs  <- delayedIndex ix'                   -- get element
+      ys  <- apply xs                           -- apply function from input array
+      writeArray arrOut i ys
 
-    -- Entry
-    -- -----
-    c           <- lt int start end
-    top         <- cbr c loop exit
-
-    -- Main loop
-    -- ---------
-    setBlock loop
-    indv <- freshName
-    let i = local indv
-    ix          <- indexOfInt (map local shOut) i       -- convert to multidimensional index
-    ix'         <- permute ix                           -- apply backwards index permutation
-    xs          <- delayedIndex ix'                     -- get element
-    ys          <- apply xs                             -- apply function from input array
-    writeArray arrOut i ys
-
-    i'          <- add int i (constOp $ num int 1)
-    c'          <- eq int i' end
-    bot         <- cbr c' exit loop
-    _           <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (start,top)]
-
-    setBlock exit
     return_
 

@@ -17,18 +17,15 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
 -- C Code
@@ -86,28 +83,11 @@ mkMap aenv apply IRDelayed{..} =
       paramEnv                  = envParam aenv
   in
   makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
-    loop        <- newBlock "loop.top"
-    exit        <- newBlock "loop.exit"
 
-    -- Entry
-    -- -----
-    c           <- lt int start end
-    top         <- cbr c loop exit
+    imapFromTo start end $ \i -> do
+      xs <- delayedLinearIndex [i]
+      ys <- apply xs
+      writeArray arrOut i ys
 
-    -- Main loop
-    -- ---------
-    setBlock loop
-    indv        <- freshName
-    let i       =  local indv
-    xs          <- delayedLinearIndex [i]
-    ys          <- apply xs
-    writeArray arrOut i ys
-
-    i'          <- add int i (constOp $ num int 1)
-    c'          <- eq int i' end
-    bot         <- cbr c' exit loop
-    _           <- phi loop indv (typeOf (int :: IntegralType Int)) [(i', bot), (start,top)]
-
-    setBlock exit
     return_
 
