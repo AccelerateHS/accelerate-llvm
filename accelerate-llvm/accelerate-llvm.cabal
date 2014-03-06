@@ -1,0 +1,171 @@
+name:                   accelerate-llvm
+version:                0.15.0.0
+cabal-version:          >= 1.10
+tested-with:            GHC == 7.6.*
+build-type:             Simple
+
+synopsis:               Accelerate backend generating LLVM
+description:
+    This library implements a backend for the /Accelerate/ language which
+    generates LLVM-IR, targeting both CUDA capable GPUs and multicore CPUs. For
+    further information, refer to the main /Accelerate/ package:
+    <http://hackage.haskell.org/package/accelerate>
+
+license:                BSD3
+license-file:           LICENSE
+author:                 Trevor L. McDonell
+maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
+bug-reports:            https://github.com/AccelerateHS/accelerate/issues
+category:               Compilers/Interpreters, Concurrency, Data, Parallelism
+
+extra-source-files:     include/accelerate.h
+
+
+-- Configuration flags
+-- -------------------
+
+Flag libnvvm
+  Default:              False
+  Description:          Use the libNVVM bindings to optimise generated PTX
+
+Flag debug
+  Default:              True
+  Description:
+    Enable tracing message flags. These are read from the command-line
+    arguments, which is convenient but may cause problems interacting with the
+    user program, so is not enabled by default. The available options:
+    .
+
+Flag bounds-checks
+  Default:              True
+  Description:          Enable bounds checking
+
+Flag unsafe-checks
+  Default:              True
+  Description:          Enable bounds checking in unsafe operations
+
+Flag internal-checks
+  Default:              True
+  Description:          Enable internal consistency checks
+
+
+-- Build configuration
+-- -------------------
+
+Library
+  exposed-modules:
+    Data.Array.Accelerate.LLVM.Native
+    Data.Array.Accelerate.LLVM.NVVM
+
+  other-modules:
+    -- Accelerate-LLVM middle-end
+    Data.Array.Accelerate.LLVM.AST
+    Data.Array.Accelerate.LLVM.Array.Data
+    Data.Array.Accelerate.LLVM.Array.Nursery
+    Data.Array.Accelerate.LLVM.Array.Table
+    Data.Array.Accelerate.LLVM.CodeGen
+    Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+    Data.Array.Accelerate.LLVM.CodeGen.Base
+    Data.Array.Accelerate.LLVM.CodeGen.Constant
+    Data.Array.Accelerate.LLVM.CodeGen.Environment
+    Data.Array.Accelerate.LLVM.CodeGen.Exp
+    Data.Array.Accelerate.LLVM.CodeGen.Module
+    Data.Array.Accelerate.LLVM.CodeGen.Monad
+    Data.Array.Accelerate.LLVM.CodeGen.Type
+    Data.Array.Accelerate.LLVM.Compile
+    Data.Array.Accelerate.LLVM.Debug
+    Data.Array.Accelerate.LLVM.State
+    Data.Array.Accelerate.LLVM.Target
+    Data.Array.Accelerate.LLVM.Util
+
+    -- NVVM target
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Device
+    Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
+    Data.Array.Accelerate.LLVM.NVVM.Array.Data
+    Data.Array.Accelerate.LLVM.NVVM.Array.Prim
+    Data.Array.Accelerate.LLVM.NVVM.Array.Table
+    Data.Array.Accelerate.LLVM.NVVM.Compile
+    Data.Array.Accelerate.LLVM.NVVM.Debug
+    Data.Array.Accelerate.LLVM.NVVM.State
+    Data.Array.Accelerate.LLVM.NVVM.Target
+
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
+    Data.Array.Accelerate.LLVM.NVVM.CodeGen.Transform
+
+    Data.Array.Accelerate.LLVM.NVVM.Execute
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Environment
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Event
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Marshal
+    Data.Array.Accelerate.LLVM.NVVM.Execute.Stream
+
+    -- Native target
+    Data.Array.Accelerate.LLVM.Native.Array.Data
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Debug
+    Data.Array.Accelerate.LLVM.Native.Target
+
+    Data.Array.Accelerate.LLVM.Native.CodeGen
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+
+    Data.Array.Accelerate.LLVM.Native.Execute
+    Data.Array.Accelerate.LLVM.Native.Execute.Environment
+    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+    Data.Array.Accelerate.LLVM.Native.Execute.Gang
+    Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+
+  build-depends:
+    accelerate                  == 0.15.*,
+    base                        >= 4.6 && <5.0,
+    bytestring                  >= 0.9,
+    containers                  >= 0.5 && <0.6,
+    cuda                        >= 0.5,
+    dlist                       >= 0.6,
+    fclabels                    >= 2.0,
+    libffi                      >= 0.1,
+    mtl                         >= 2.0,
+    pretty                      >= 1.1,
+    time                        >= 1.4,
+    unordered-containers        >= 0.2
+
+  default-language:
+    Haskell2010
+
+  include-dirs:                 include
+  ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
+
+  if flag(libnvvm)
+    cpp-options:                -DACCELERATE_USE_LIBNVVM
+    build-depends:
+      libnvvm                   >= 1.0,
+      llvm-general              == 3.2.*,
+      llvm-general-pure         == 3.2.*
+  else
+    build-depends:
+      llvm-general              >= 3.3,
+      llvm-general-pure         >= 3.3
+
+  if flag(debug)
+    cpp-options:                -DACCELERATE_DEBUG
+
+  if flag(bounds-checks)
+    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
+
+  if flag(unsafe-checks)
+    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
+
+  if flag(internal-checks)
+    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
+
+
+source-repository head
+  type:                 git
+  location:
+
+-- vim: nospell
