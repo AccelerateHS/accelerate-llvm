@@ -24,13 +24,9 @@ extra-source-files:     include/accelerate.h
 -- Configuration flags
 -- -------------------
 
-Flag nvptx
-  Default:              True
-  Description:          Enable the nvptx backend for CUDA capable NVIDIA GPUs.
-
 Flag libnvvm
   Default:              False
-  Description:          Use the libNVVM bindings to optimise generated nvptx
+  Description:          Use the libNVVM bindings to optimise generated PTX
 
 Flag debug
   Default:              True
@@ -124,14 +120,13 @@ Library
     base                        >= 4.6 && <5.0,
     bytestring                  >= 0.9,
     containers                  >= 0.5 && <0.6,
+    cuda                        >= 0.5,
     dlist                       >= 0.6,
     fclabels                    >= 2.0,
-    libffi,
-    llvm-general,
-    llvm-general-pure,
-    mtl,
+    libffi                      >= 0.1,
+    mtl                         >= 2.0,
     pretty                      >= 1.1,
-    time,
+    time                        >= 1.4,
     unordered-containers        >= 0.2
 
   default-language:
@@ -140,26 +135,28 @@ Library
   include-dirs:                 include
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
-  if flag(nvptx)
-    build-depends:
-      cuda                      >= 0.5
-
   if flag(libnvvm)
-    cpp-options:        -DACCELERATE_USE_LIBNVVM
+    cpp-options:                -DACCELERATE_USE_LIBNVVM
     build-depends:
-      libnvvm
+      libnvvm                   >= 1.0,
+      llvm-general              == 3.2.*,
+      llvm-general-pure         == 3.2.*
+  else
+    build-depends:
+      llvm-general              >= 3.3,
+      llvm-general-pure         >= 3.3
 
   if flag(debug)
-    cpp-options:        -DACCELERATE_DEBUG
+    cpp-options:                -DACCELERATE_DEBUG
 
   if flag(bounds-checks)
-    cpp-options:        -DACCELERATE_BOUNDS_CHECKS
+    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
 
   if flag(unsafe-checks)
-    cpp-options:        -DACCELERATE_UNSAFE_CHECKS
+    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
 
   if flag(internal-checks)
-    cpp-options:        -DACCELERATE_INTERNAL_CHECKS
+    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
 
 
 source-repository head

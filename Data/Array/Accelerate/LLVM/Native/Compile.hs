@@ -57,7 +57,11 @@ compileForNativeTarget acc aenv = do
             LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
             LLVM.withPassManager pss                  $ \pm  -> do
               void $ LLVM.runPassManager pm mdl
+#if MIN_VERSION_llvm_general(3,3,0)
               Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+#else
+              Debug.message dump_llvm =<< LLVM.moduleString mdl
+#endif
     either error return r
 #endif
   return $ NativeR (unModule ast)

@@ -57,6 +57,12 @@ import Control.Monad.Reader
 import Foreign.Ptr
 import Foreign.LibFFI                                           as FFI
 
+#if !MIN_VERSION_llvm_general(3,3,0)
+import Data.Word
+import Data.Maybe
+import qualified LLVM.General.Context                           as LLVM
+#endif
+
 #include "accelerate.h"
 
 
@@ -376,4 +382,23 @@ compile (NativeR ast) cont = do
     fast        = Just True     -- True to enable fast instruction selection
     passes      = defaultCuratedPassSetSpec { optLevel = Just 3 }
     runError e  = either (INTERNAL_ERROR(error) "execute") id `fmap` runErrorT e
+
+
+#if !MIN_VERSION_llvm_general(3,3,0)
+-- Shims to support the older LLVM-3.2, which are required if the user is using
+-- libNVVM to optimise NVPTX code.
+--
+type MCJIT = JIT
+
+withMCJIT
+    :: LLVM.Context
+    -> Maybe Word
+    -> model
+    -> fpe
+    -> fis
+    -> (MCJIT -> IO a)
+    -> IO a
+withMCJIT ctx opt _ _ _ action =
+  withJIT ctx (fromMaybe 0 opt) action
+#endif
 

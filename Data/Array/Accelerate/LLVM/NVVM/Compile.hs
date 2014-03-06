@@ -110,25 +110,29 @@ compileModule _dev _name mdl =
 #endif
 
 #ifdef ACCELERATE_USE_LIBNVVM
+-- Compiling the module with libNVVM implicitly uses LLVM-3.2.
+--
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
 compileModuleNVVM dev name mdl = do
   -- Lower the module to bitcode and have libNVVM compile to PTX
   let CUDA.Compute m n   = CUDA.computeCapability dev
-  bc                    <- LLVM.moduleBitcode mdl
-  NVVM.Result msg r     <- NVVM.compileModule bc name [printf "-arch=sm_%d%d" m n]
+  ll                    <- LLVM.moduleString mdl
+  NVVM.Result msg r     <- NVVM.compileModule (B.pack ll) name [printf "-arch=compute_%d%d" m n]
 
   -- Check errors, do some debug prints
   case r of
-    Left err    -> INTERNAL_ERROR(error) "compile" (printf "error (%s): %s" (show err) (B.unpack msg))
+    Left err    -> INTERNAL_ERROR(error) "compile" (printf "%s: %s" (show err) (B.unpack msg))
     Right ptx   -> do
-      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+      Debug.message Debug.dump_llvm =<< LLVM.moduleString mdl
       Debug.when Debug.dump_ptx $ do
         Debug.message Debug.dump_ptx (B.unpack ptx)
         Debug.message Debug.verbose  (B.unpack msg)
       --
       CUDA.loadData ptx
-#endif
 
+#else
+-- Compiling with the NVPTX backend uses LLVM-3.3 and above
+--
 compileModuleNVPTX :: LLVM.Module -> IO CUDA.Module
 compileModuleNVPTX mdl =
   withNVVMTargetMachine $ \nvptx -> do
@@ -145,7 +149,7 @@ compileModuleNVPTX mdl =
 
       -- Load to a CUDA module
       CUDA.loadData (B.pack ptx)
-
+#endif
 
 -- | Extract the named function from the module and package into a Kernel
 -- object, which includes meta-information on resource usage.

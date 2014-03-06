@@ -39,8 +39,14 @@ instance Target Native where
 --  data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
 
   {-# NOINLINE targetTriple #-}
-  targetTriple _ =
-    Just $ unsafePerformIO getProcessTargetTriple
+  targetTriple _ = Just $ unsafePerformIO
+#if MIN_VERSION_llvm_general(3,3,0)
+    -- A target triple suitable for loading code into the current process
+    getProcessTargetTriple
+#else
+    -- The default target triple LLVM has been configured to produce code for
+    getDefaultTargetTriple
+#endif
 
   {-# NOINLINE targetDataLayout #-}
   targetDataLayout _ = unsafePerformIO $
