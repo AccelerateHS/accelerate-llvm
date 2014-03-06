@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base
 
 -- accelerate
 import Data.Array.Accelerate.AST                                ( Idx )
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, eltType )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -126,27 +125,6 @@ call fn rt tyargs attrs = do
   instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
 
 
--- | Used for the native backend. Generate function parameters that will specify
--- the first and last (linear) index of the array this thread should evaluate.
---
-gangParam :: (Operand, Operand, [Parameter])
-gangParam =
-  let t         = typeOf (scalarType :: ScalarType Int)
-      start     = "ix.start"
-      end       = "ix.end"
-  in
-  (local start, local end, [ Parameter t start [], Parameter t end [] ] )
-
--- | The thread ID of a gang worker
---
-gangId :: (Operand, [Parameter])
-gangId =
-  let t         = typeOf (scalarType :: ScalarType Int)
-      thread    = "ix.tid"
-  in
-  (local thread, [Parameter t thread []] )
-
-
 -- | Unpack the array environment into a set of input parameters to a function.
 -- The environment here refers only to the actual free array variables that are
 -- accessed by the function.
@@ -156,6 +134,7 @@ envParam aenv = concatMap (\(n, Idx' v) -> toParam v n) (IM.elems aenv)
   where
     toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Name -> [Parameter]
     toParam _ name = arrayParam (undefined::Array sh e) name
+
 
 -- | Specify an array of particular type and base name as an input parameter to
 -- a function.
