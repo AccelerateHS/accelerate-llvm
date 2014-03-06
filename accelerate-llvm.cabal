@@ -41,11 +41,11 @@ Flag bounds-checks
   Description:          Enable bounds checking
 
 Flag unsafe-checks
-  Default:              False
+  Default:              True
   Description:          Enable bounds checking in unsafe operations
 
 Flag internal-checks
-  Default:              False
+  Default:              True
   Description:          Enable internal consistency checks
 
 
