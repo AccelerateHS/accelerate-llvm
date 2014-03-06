@@ -1,4 +1,4 @@
-name:                   accelerate-llvm
+name:                   accelerate-llvm-native
 version:                0.15.0.0
 cabal-version:          >= 1.10
 tested-with:            GHC == 7.6.*
@@ -6,8 +6,9 @@ build-type:             Simple
 
 synopsis:               Accelerate backend generating LLVM
 description:
-    This library implements direct LLVM IR generation for the /Accelerate/
-    language. For further information, refer to the main /Accelerate/ package:
+    This library implements a backend for the /Accelerate/ language which
+    generates LLVM-IR targeting multicore CPUs. For further information, refer
+    to the main /Accelerate/ package:
     <http://hackage.haskell.org/package/accelerate>
 
 license:                BSD3
@@ -49,34 +50,39 @@ Flag internal-checks
 
 Library
   exposed-modules:
-    -- Accelerate-LLVM middle-end
-    Data.Array.Accelerate.LLVM.AST
-    Data.Array.Accelerate.LLVM.Array.Data
-    Data.Array.Accelerate.LLVM.Array.Nursery
-    Data.Array.Accelerate.LLVM.Array.Table
-    Data.Array.Accelerate.LLVM.CodeGen
-    Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
-    Data.Array.Accelerate.LLVM.CodeGen.Base
-    Data.Array.Accelerate.LLVM.CodeGen.Constant
-    Data.Array.Accelerate.LLVM.CodeGen.Environment
-    Data.Array.Accelerate.LLVM.CodeGen.Exp
-    Data.Array.Accelerate.LLVM.CodeGen.Module
-    Data.Array.Accelerate.LLVM.CodeGen.Monad
-    Data.Array.Accelerate.LLVM.CodeGen.Type
-    Data.Array.Accelerate.LLVM.Compile
-    Data.Array.Accelerate.LLVM.Debug
-    Data.Array.Accelerate.LLVM.State
-    Data.Array.Accelerate.LLVM.Target
-    Data.Array.Accelerate.LLVM.Util
+    Data.Array.Accelerate.LLVM.Native
+
+  other-modules:
+    Data.Array.Accelerate.LLVM.Native.Array.Data
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Debug
+    Data.Array.Accelerate.LLVM.Native.Target
+
+    Data.Array.Accelerate.LLVM.Native.CodeGen
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+
+    Data.Array.Accelerate.LLVM.Native.Execute
+    Data.Array.Accelerate.LLVM.Native.Execute.Environment
+    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+    Data.Array.Accelerate.LLVM.Native.Execute.Gang
+    Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
     accelerate                  == 0.15.*,
+    accelerate-llvm             == 0.15.*,
     base                        >= 4.6 && <5.0,
     containers                  >= 0.5 && <0.6,
+    dlist                       >= 0.6,
     fclabels                    >= 2.0,
+    libffi                      >= 0.1,
     llvm-general                >= 3.2,
     llvm-general-pure           >= 3.2,
-    mtl                         >= 2.0
+    mtl                         >= 2.0,
+    time                        >= 1.4
 
   default-language:
     Haskell2010
