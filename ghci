@@ -30,8 +30,11 @@ GHC_FLAGS="$GHC_FLAGS
     -DACCELERATE_BOUNDS_CHECKS
     -DACCELERATE_INTERNAL_CHECKS
     -DACCELERATE_DEBUG
+    -iaccelerate-llvm
+    -iaccelerate-llvm-native
+    -iaccelerate-llvm-nvvm
     -package-db .cabal-sandbox/x86_64-osx-ghc-$VER-packages.conf.d
-    -Iinclude -iutils -optP-include -optPdist/build/autogen/cabal_macros.h"
+    -Iaccelerate-llvm/include -optP-include -optPaccelerate-llvm/dist/build/autogen/cabal_macros.h"
 
 # If we have specified one command line argument, but that file doesn't exist,
 # search the source files for something with that name prefix.
@@ -42,7 +45,7 @@ GHC_FLAGS="$GHC_FLAGS
 #
 # > ghci Data/Array/Accelerate/Trafo/Sharing.hs
 #
-FILES=`find Data -iname "$1*" -name "*.hs"`
+FILES=`find accelerate-llvm*/Data -iname "$1*" -name "*.hs"`
 COUNT=`echo $FILES | wc -w`
 
 if [ $COUNT -eq 1 ]; then
