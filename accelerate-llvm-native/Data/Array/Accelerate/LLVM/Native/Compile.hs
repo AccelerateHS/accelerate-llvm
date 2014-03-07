@@ -33,10 +33,13 @@ import Control.Monad.Error
 
 -- extra modules needed for dumping the LLVM code
 #ifdef ACCELERATE_DEBUG
+import qualified LLVM.General.Analysis                          as LLVM
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
 import Data.Array.Accelerate.LLVM.Native.Debug                  as Debug
 import Control.Monad.Reader
+
+#include "accelerate.h"
 #endif
 
 
@@ -44,25 +47,30 @@ instance Compile Native where
   compileForTarget = compileForNativeTarget
 
 
--- Compile an Accelerate expression for the native CPU target
+-- Compile an Accelerate expression for the native CPU target.
+--
+-- TODO: We desperately want to return a compiled MCJIT function from here,
+--       instead of just embedding the generated llvm-general-pure AST.
 --
 compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
 compileForNativeTarget acc aenv = do
   let ast = llvmOfAcc Native acc aenv
 #ifdef ACCELERATE_DEBUG
-      pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+      runError e  = liftIO $ either (INTERNAL_ERROR(error) "compile") id `fmap` runErrorT e
+      pss         = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+
   Debug.when dump_llvm $ do
-    ctx <- asks llvmContext
-    r   <- liftIO . runErrorT $
-            LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
-            LLVM.withPassManager pss                  $ \pm  -> do
-              void $ LLVM.runPassManager pm mdl
+    ctx     <- asks llvmContext
+    runError $ do
+      LLVM.withModuleFromAST ctx (unModule ast) $ \mdl -> do
+        runError (LLVM.verify mdl)
+        LLVM.withPassManager pss                $ \pm  -> do
+          void $ LLVM.runPassManager pm mdl
 #if MIN_VERSION_llvm_general(3,3,0)
-              Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+          Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
 #else
-              Debug.message dump_llvm =<< LLVM.moduleString mdl
+          Debug.message dump_llvm =<< LLVM.moduleString mdl
 #endif
-    either error return r
 #endif
   return $ NativeR (unModule ast)
 
