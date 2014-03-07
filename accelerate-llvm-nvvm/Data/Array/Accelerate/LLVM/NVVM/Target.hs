@@ -37,6 +37,7 @@ import Foreign.CUDA.Analysis                                    as CUDA
 -- standard library
 import Control.Monad.Error
 import System.IO.Unsafe
+import Text.Printf
 import qualified Data.Map                                       as Map
 import qualified Data.Set                                       as Set
 
@@ -110,10 +111,22 @@ nvvmTargetTriple =
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
 --
-withNVVMTargetMachine :: (TargetMachine -> IO a) -> IO a
-withNVVMTargetMachine f =
+withNVVMTargetMachine :: DeviceProperties -> (TargetMachine -> IO a) -> IO a
+withNVVMTargetMachine dev go =
+  let Compute m n = computeCapability dev
+      sm          = printf "sm_%d%d" m n
+  in
   withTargetOptions $ \options -> do
-    withTargetMachine nvvmTarget nvvmTargetTriple "" Set.empty options R.Default CM.Default CGO.Default f
+    withTargetMachine
+        nvvmTarget
+        nvvmTargetTriple
+        sm
+        Set.empty               -- CPU features
+        options                 -- target options
+        R.Default               -- relocation model
+        CM.Default              -- code model
+        CGO.Default             -- optimisation level
+        go
 
 
 -- | The NVPTX target for this host.

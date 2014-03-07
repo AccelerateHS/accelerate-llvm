@@ -102,11 +102,11 @@ compileForNVPTX acc aenv = do
 --    standard optimisations.
 --
 compileModule :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
-compileModule _dev _name mdl =
+compileModule dev _name mdl =
 #ifdef ACCELERATE_USE_LIBNVVM
-  compileModuleNVVM _dev _name mdl
+  compileModuleNVVM dev _name mdl
 #else
-  compileModuleNVPTX mdl
+  compileModuleNVPTX dev mdl
 #endif
 
 #ifdef ACCELERATE_USE_LIBNVVM
@@ -133,9 +133,9 @@ compileModuleNVVM dev name mdl = do
 #else
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: LLVM.Module -> IO CUDA.Module
-compileModuleNVPTX mdl =
-  withNVVMTargetMachine $ \nvptx -> do
+compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO CUDA.Module
+compileModuleNVPTX dev mdl =
+  withNVVMTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
     let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
