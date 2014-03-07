@@ -175,12 +175,14 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     sizeTupleType (PairTuple a b) = sizeTupleType a + sizeTupleType b
 
     -- Evaluate scalar conditions. We create three new basic blocks: one for
-    -- each side of the branch (true/false) and a new block to jump both
-    -- branches jump to after evaluating their part.
+    -- each side of the branch (true/false) and a new block both branches jump
+    -- to after evaluating their part.
     --
-    -- Note that that the branch instruction 'br' returns the name of the basic
-    -- block that it terminates. This is because evaluation of the branches can
-    -- lead to new block labels being created as we walk the AST.
+    -- The branch instructions 'br' and 'cbr' return the name of the basic block
+    -- that it terminates (branches from). This is because evaluation of the
+    -- branches can lead to new block labels being created as we walk the AST.
+    --
+    -- See note: [Basic blocks]
     --
     cond :: forall env t. Elt t
          => DelayedOpenExp env aenv Bool
@@ -192,6 +194,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       ifThen <- newBlock "if.then"
       ifElse <- newBlock "if.else"
       ifExit <- newBlock "if.exit"
+      beginGroup "if"
 
       -- Compute the conditional
       p  <- single "cond" `fmap` cvtE test env
@@ -211,7 +214,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       zipWithM phi' (llvmOfTupleType (eltType (undefined::t))) [ [(t,true), (f,false)] | t <- tv | f <- fv ]
 
     -- Value recursion iterates a function while a conditional on that variable
-    -- remains true.
+    -- remains true. See note: [Basic blocks]
     while :: forall env a. Elt a
           => DelayedOpenFun env aenv (a -> Bool)
           -> DelayedOpenFun env aenv (a -> a)
@@ -220,8 +223,9 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           -> CodeGen (IR env aenv a)
     while p f x env = do
       let ty = llvmOfTupleType (eltType (undefined::a))
-      loop <- newBlock "loop.top"
-      exit <- newBlock "loop.exit"
+      loop <- newBlock "while.top"
+      exit <- newBlock "while.exit"
+      beginGroup "while"
 
       -- Generate the seed value
       seed <-                       cvtE  x env

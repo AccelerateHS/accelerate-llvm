@@ -16,17 +16,35 @@
 --
 
 
-module Data.Array.Accelerate.LLVM.CodeGen.Monad
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Monad (
+
+  CodeGen,
+  runLLVM,
+
+  -- declarations
+  freshName, declare,
+
+  -- basic blocks
+  newBlock, setBlock, createBlocks, beginGroup,
+
+  -- instructions
+  instr, do_, return_, phi, phi', br, cbr,
+
+  -- metadata
+  addMetadata,
+
+) where
 
 -- standard library
-import Data.Word
-import Data.Maybe
-import Data.String
 import Control.Applicative
 import Control.Monad.State
+import Data.Maybe
 import Data.Map                                                 ( Map )
 import Data.Sequence                                            ( Seq )
+import Data.String
+import Data.Word
+import Text.Printf
+import System.IO.Unsafe
 import qualified Data.Map                                       as Map
 import qualified Data.Sequence                                  as Seq
 import qualified Data.Foldable                                  as Seq
@@ -39,6 +57,7 @@ import qualified LLVM.General.AST.Global                        as AST
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
+import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 #include "accelerate.h"
 
@@ -114,7 +133,14 @@ initBlockChain =
 -- generated.
 --
 createBlocks :: CodeGen [BasicBlock]
-createBlocks = state $ \s -> ( Seq.toList $ fmap makeBlock (blockChain s) , s { blockChain = initBlockChain, next = 0 } )
+createBlocks
+  = state
+  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+              blocks = makeBlock `fmap` blockChain s
+              m      = Seq.length (blockChain s)
+              n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
+          in
+          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
   where
     makeBlock Block{..} =
       let err   = INTERNAL_ERROR(error) "createBlocks" $ "Block has no terminator (" ++ show blockLabel ++ ")"
@@ -182,12 +208,12 @@ phi' t incoming = do
   phi block crit t incoming
 
 
--- | Unconditional branch
+-- | Unconditional branch. Return the name of the block that was branched from.
 --
 br :: Block -> CodeGen Block
 br target = terminate $ Do (Br (blockLabel target) [])
 
--- | Conditional branch
+-- | Conditional branch. Return the name of the block that was branched from.
 --
 cbr :: Operand -> Block -> Block -> CodeGen Block
 cbr cond t f = terminate $ Do (CondBr cond (blockLabel t) (blockLabel f) [])
@@ -218,8 +244,30 @@ declare g =
 -- ===========
 
 -- | Create a new basic block, but don't yet add it to the block chain. You need
--- to call setBlock to append it to the chain, so that new instructions are then
--- added to this block.
+-- to call 'setBlock' to append it to the chain, so that subsequent instructions
+-- are added to this block.
+--
+-- Note: [Basic blocks]
+--
+-- The names of basic blocks are generated based on the base name provided to
+-- the 'newBlock' function, as well as the current state (length) of the block
+-- stream. By not immediately adding new blocks to the stream, we have the
+-- advantage that:
+--
+--   1. Instructions are generated "in order", and are always appended to the
+--      stream. There is no need to search the stream for a block of the right
+--      name.
+--
+--   2. Blocks are named in groups, which helps readability. For example, the
+--      blocks for the then and else branches of a conditional, created at the
+--      same time, will be named similarly: 'if4.then' and 'if4.else', etc.
+--
+-- However, this leads to a slight awkwardness when walking the AST. Since a new
+-- naming group scheme is only applied *after* a call to 'setBlock',
+-- encountering (say) nested conditionals in the walk will generate logically
+-- distinct blocks that happen to have the same name. This means that
+-- instructions might be added to the wrong blocks, or the first set of blocks
+-- will be emitted empty and/or without a terminator.
 --
 newBlock :: String -> CodeGen Block
 newBlock nm =
@@ -230,22 +278,22 @@ newBlock nm =
     in
     ( next, s )
 
--- | Same as 'newBlock', but the given string is appended to the name of the
--- currently active block.
---
-newSubBlock :: String -> CodeGen Block
-newSubBlock ext = do
-  chain <- gets blockChain
-  case Seq.viewr chain of
-    _ Seq.:> b | Name base <- blockLabel b -> newBlock $ base ++ ('.':ext)
-    _                                      -> INTERNAL_ERROR(error) "newSubBlock" "empty block chain"
-
 -- | Add this block to the block stream. Any instructions pushed onto the stream
 -- by 'instr' and friends will now apply to this block.
 --
 setBlock :: Block -> CodeGen ()
 setBlock next =
   modify $ \s -> s { blockChain = blockChain s Seq.|> next }
+
+-- | Generate a new block and branch unconditionally to it. This is used to
+-- ensure a block group is initialised before recursively walking the AST. See
+-- note: [Basic blocks].
+--
+beginGroup :: String -> CodeGen ()
+beginGroup nm = do
+  next <- newBlock (nm ++ ".entry")
+  _    <- br next
+  setBlock next
 
 
 -- Metadata
@@ -285,4 +333,13 @@ createMetadata md = build (Map.assocs md) (Seq.empty, Seq.empty)
         in
         (name, nodes)
 
+
+-- Debug
+-- =====
+
+{-# INLINE trace #-}
+trace :: String -> a -> a
+trace msg next = unsafePerformIO $ do
+  Debug.message Debug.dump_llvm ("llvm: " ++ msg)
+  return next
 
