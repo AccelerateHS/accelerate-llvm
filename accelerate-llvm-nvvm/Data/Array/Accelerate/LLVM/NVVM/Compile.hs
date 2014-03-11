@@ -49,6 +49,7 @@ import qualified Foreign.LibNVVM                                as NVVM
 #endif
 
 -- standard library
+import Data.ByteString                                          ( ByteString )
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
@@ -102,11 +103,11 @@ compileForNVPTX acc aenv = do
 --    standard optimisations.
 --
 compileModule :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
-compileModule dev _name mdl =
+compileModule dev name mdl =
 #ifdef ACCELERATE_USE_LIBNVVM
-  compileModuleNVVM dev _name mdl
+  compileModuleNVVM dev name mdl
 #else
-  compileModuleNVPTX dev mdl
+  compileModuleNVPTX dev name mdl
 #endif
 
 #ifdef ACCELERATE_USE_LIBNVVM
@@ -115,26 +116,25 @@ compileModule dev _name mdl =
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
 compileModuleNVVM dev name mdl = do
   -- Lower the module to bitcode and have libNVVM compile to PTX
-  let CUDA.Compute m n   = CUDA.computeCapability dev
-  ll                    <- LLVM.moduleString mdl
-  NVVM.Result msg r     <- NVVM.compileModule (B.pack ll) name [printf "-arch=compute_%d%d" m n]
+  let arch    = CUDA.computeCapability dev
+      verbose = if Debug.mode Debug.debug then [ NVVM.GenerateDebugInfo ] else []
 
-  -- Check errors, do some debug prints
-  case r of
-    Left err    -> INTERNAL_ERROR(error) "compile" (printf "%s: %s" (show err) (B.unpack msg))
-    Right ptx   -> do
-      Debug.message Debug.dump_llvm =<< LLVM.moduleString mdl
-      Debug.when Debug.dump_ptx $ do
-        Debug.message Debug.dump_ptx (B.unpack ptx)
-        Debug.message Debug.verbose  (B.unpack msg)
-      --
-      CUDA.loadData ptx
+  ll    <- LLVM.moduleString mdl        -- no LLVM.moduleBitcode in llvm-general-3.2.*
+  ptx   <- NVVM.compileModule (B.pack ll) name (Target arch : verbose)
+
+  -- Debugging
+  Debug.message Debug.dump_llvm ll
+  Debug.when Debug.dump_ptx $ do
+    Debug.message Debug.verbose (B.unpack (NVVM.nvvmLog ptx))
+
+  -- Link into a new CUDA module in the current context
+  linkPTX name (NVVM.nvvmResult ptx)
 
 #else
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO CUDA.Module
-compileModuleNVPTX dev mdl =
+compileModuleNVPTX :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
+compileModuleNVPTX dev name mdl =
   withNVVMTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
@@ -145,15 +145,37 @@ compileModuleNVPTX dev mdl =
       runError $ LLVM.verify mdl
       void     $ LLVM.runPassManager pm mdl
 
-      -- Dump the module to target assembly (PTX)
+      -- Lower the LLVM module into target assembly (PTX)
       ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
-      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
-      Debug.message Debug.dump_ptx ptx
 
-      -- Load to a CUDA module
-      jit    <- CUDA.loadDataEx (B.pack ptx) [CUDA.Target (CUDA.computeCapability dev)]
-      return $! CUDA.jitModule jit
+      -- debug printout
+      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+
+      -- Link into a new CUDA module in the current context
+      linkPTX name (B.pack ptx)
 #endif
+
+-- | Load the given CUDA PTX into a new module that is linked into the current
+-- context.
+--
+linkPTX :: String -> ByteString -> IO CUDA.Module
+linkPTX name ptx = do
+  let v         = if Debug.mode Debug.verbose then [ CUDA.Verbose ]                                  else []
+      d         = if Debug.mode Debug.debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
+      flags     = concat [v,d]
+  --
+  jit   <- CUDA.loadDataEx ptx flags
+
+  Debug.when Debug.dump_ptx $ do
+    Debug.message Debug.dump_ptx (B.unpack ptx)
+    Debug.message Debug.verbose $
+      printf "compiled entry function \"%s\" in %s\n%s"
+             name
+             (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
+             (B.unpack (CUDA.jitInfoLog jit))
+
+  return $! CUDA.jitModule jit
+
 
 -- | Extract the named function from the module and package into a Kernel
 -- object, which includes meta-information on resource usage.
@@ -187,7 +209,7 @@ linkFunction acc dev mdl name = do
                       (CUDA.activeWarps occ)
                       (CUDA.activeThreadBlocks occ)
 
-  Debug.message Debug.dump_ptx (printf "%s\n     ... %s" msg1 msg2)
+  Debug.message Debug.dump_ptx (printf "%s\n  ... %s" msg1 msg2)
   return $ Kernel f occ smem cta blocks name
 
 

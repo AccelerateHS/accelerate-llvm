@@ -61,7 +61,7 @@ __syncthreads =
 
 -- The total number of elements in the given array. The first argument is a
 -- dummy to fix the types. Note that the output operand is truncated to a 32-bit
--- int.
+-- integer.
 --
 shapeSize :: Shape sh => Array sh e -> Name -> CodeGen Operand
 shapeSize arr base =

@@ -62,6 +62,7 @@ data Flags = Flags
   , _dump_gang          :: !Bool        -- print information about the gang
 
     -- general options
+  , _debug              :: !Bool        -- generate debugging symbols
   , _verbose            :: !Bool        -- additional status messages
   , _flush_cache        :: !Bool        -- delete the persistent cache directory
   }
@@ -73,6 +74,7 @@ flags =
   , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated LLVM"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
   , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
+  , Option [] ["ddebug"]        (NoArg (set debug True))        "generate debugging symbols"
   , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
   , Option [] ["fflush-cache"]  (NoArg (set flush_cache True))  "delete the persistent cache directory"
   ]
@@ -91,6 +93,7 @@ initialise = parse `fmap` getArgs
       , _dump_llvm      = False
       , _dump_exec      = False
       , _dump_gang      = False
+      , _debug          = False
       , _verbose        = False
       , _flush_cache    = False
       }
@@ -100,13 +103,14 @@ initialise = parse `fmap` getArgs
 -- Haskell. Since llvm-general binds to a C++ library, we can't load it into
 -- ghci expect in ghc-7.8.
 --
-dump_gc, dump_ptx, dump_llvm, dump_exec, dump_gang, verbose, flush_cache :: Flags :-> Bool
+dump_gc, dump_ptx, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
 dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
 dump_ptx        = lens _dump_ptx  (\f x -> x { _dump_ptx  = f (_dump_ptx x) })
 dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
 dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })
 dump_gang       = lens _dump_gang (\f x -> x { _dump_gang = f (_dump_gang x) })
 
+debug           = lens _debug       (\f x -> x { _debug       = f (_debug x) })
 verbose         = lens _verbose     (\f x -> x { _verbose     = f (_verbose x) })
 flush_cache     = lens _flush_cache (\f x -> x { _flush_cache = f (_flush_cache x) })
 
