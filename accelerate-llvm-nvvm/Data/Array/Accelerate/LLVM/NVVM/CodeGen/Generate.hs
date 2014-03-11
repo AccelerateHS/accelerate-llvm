@@ -15,10 +15,10 @@ module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Generate
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Loop
 
 -- standard library
 import Prelude                                                  hiding ( fromIntegral )
@@ -50,32 +51,14 @@ mkGenerate _dev aenv apply =
   in
   makeKernel "generate" (paramOut ++ paramEnv) $ do
 
-    loop        <- newBlock "loop.top"
-    exit        <- newBlock "loop.exit"
+    start <- return (constOp $ integral int32 0)
+    end   <- shapeSize (undefined::Array sh b) "out"
 
-    -- loop header
-    -- -----------
-    n           <- shapeSize (undefined::Array sh b) "out"
-    step        <- gridSize
-    tid         <- threadIdx
-    c           <- lt int32 tid n
-    top         <- cbr c loop exit
+    imapFromTo start end $ \i -> do
+      ii  <- fromIntegral int32 int i           -- keep the loop counter as i32, but do calculations in Int
+      ix  <- indexOfInt (map local shOut) ii    -- convert to multidimensional index
+      r   <- apply ix                           -- apply generator function
+      writeArray arrOut i r                     -- write result
 
-    -- main loop
-    -- ---------
-    setBlock loop
-    indv        <- freshName                            -- induction variable
-    let i       = local indv
-    ii          <- fromIntegral int32 int i             -- keep the loop counter as i32, but do calculations in Int
-    ix          <- indexOfInt (map local shOut) ii      -- convert to multidimensional index
-    r           <- apply ix                             -- apply generator function
-    writeArray arrOut i r                               -- write result
-
-    i'          <- add int32 i step
-    c'          <- lt int32 i' n
-    bot         <- cbr c' loop exit
-    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (tid,top)]
-
-    setBlock exit
     return_
 

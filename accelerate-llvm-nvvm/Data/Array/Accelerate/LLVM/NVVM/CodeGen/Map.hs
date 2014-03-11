@@ -17,10 +17,9 @@ module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -29,6 +28,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Loop
 
 -- standard library
 import Prelude                                                  hiding ( fromIntegral )
@@ -51,40 +51,13 @@ mkMap _nvvm aenv apply IRDelayed{..} =
   in
   makeKernel "map" (paramOut ++ paramEnv) $ do
 
-    loop      <- newBlock "loop.top"
-    exit      <- newBlock "loop.exit"
+    start <- return (constOp $ integral int32 0)
+    end   <- shapeSize (undefined::Array sh b) "out"
 
-    -- setup main loop
-    -- ---------------
-    --
-    -- Threads process multiple elements, striding by array by the grid size.
-    -- This gives optimal memory coalescing (at least for the case when
-    -- delayedLinearIndex is direct indexing) and amortises the cost of
-    -- launching the thread block.
-    --
-    n           <- shapeSize (undefined::Array sh b) "out"
-    step        <- gridSize
+    imapFromTo start end $ \i -> do
+      xs <- delayedLinearIndex [i]
+      ys <- apply xs
+      writeArray arrOut i ys
 
-    tid         <- threadIdx
-    n'          <- fromIntegral int int32 n
-    c           <- lt int32 tid n'
-    top         <- cbr c loop exit
-
-    -- main loop
-    -- ---------
-    setBlock loop
-    indv        <- freshName
-    let i        = local indv
-
-    xs          <- delayedLinearIndex [i]
-    ys          <- apply xs
-    writeArray arrOut i ys
-
-    i'          <- add int32 i step
-    c'          <- lt int32 i' n'
-    bot         <- cbr c' loop exit
-    _           <- phi loop indv (typeOf (int32 :: IntegralType Int32)) [(i',bot), (tid,top)]
-
-    setBlock exit
     return_
 
