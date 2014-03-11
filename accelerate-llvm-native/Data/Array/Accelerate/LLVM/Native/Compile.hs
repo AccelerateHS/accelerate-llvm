@@ -62,10 +62,10 @@ compileForNativeTarget acc aenv = do
   Debug.when dump_llvm $ do
     ctx     <- asks llvmContext
     runError $ do
-      LLVM.withModuleFromAST ctx (unModule ast) $ \mdl -> do
-        runError (LLVM.verify mdl)
+      LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
         LLVM.withPassManager pss                $ \pm  -> do
-          void $ LLVM.runPassManager pm mdl
+          runError $ LLVM.verify mdl
+          void     $ LLVM.runPassManager pm mdl
 #if MIN_VERSION_llvm_general(3,3,0)
           Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
 #else

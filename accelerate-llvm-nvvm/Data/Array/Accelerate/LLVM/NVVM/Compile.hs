@@ -20,6 +20,7 @@ module Data.Array.Accelerate.LLVM.NVVM.Compile (
 -- llvm-general
 import LLVM.General.AST                                         hiding ( Module )
 import LLVM.General.AST.Global
+import qualified LLVM.General.Analysis                          as LLVM
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
 
@@ -34,6 +35,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.NVVM.Target
+import Data.Array.Accelerate.LLVM.NVVM.Compile.Link
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen                  ( )
 import Data.Array.Accelerate.LLVM.NVVM.Analysis.Launch
 
@@ -56,9 +58,7 @@ import qualified Data.ByteString.Char8                          as B
 
 import GHC.Conc                                                 ( par )
 
-#ifdef ACCELERATE_USE_LIBNVVM
 #include "accelerate.h"
-#endif
 
 
 instance Compile NVVM where
@@ -78,16 +78,16 @@ compileForNVPTX acc aenv = do
   ctx    <- asks llvmContext
   let Module ast = llvmOfAcc nvvm acc aenv
       dev        = nvvmDeviceProperties nvvm
+      name       = moduleName ast
+      globals    = globalFunctions (moduleDefinitions ast)
 
   -- We use 'unsafePerformIO' here to leverage Haskell's non-strict semantics,
   -- so that we only block on module generation once the function is truly
   -- needed during the execution phase.
   --
   let exe = unsafePerformIO $ do
-              ptx  <- either error return =<< runErrorT
-                        (LLVM.withModuleFromAST ctx ast (compileModule dev (moduleName ast)))
-              --
-              funs <- sequence [ linkFunction acc dev ptx f | f <- globalFunctions (moduleDefinitions ast) ]
+              ptx  <- withLibdevice dev ctx ast (compileModule dev name)
+              funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
               return (NVVMR funs ptx)
 
   exe `par` return exe
@@ -138,17 +138,21 @@ compileModuleNVPTX dev mdl =
   withNVVMTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
-    let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+        runError e = either (INTERNAL_ERROR(error) "compileModuleNVPTX") id `fmap` runErrorT e
+
     LLVM.withPassManager pss $ \pm -> do
-      void $ LLVM.runPassManager pm mdl
+      runError $ LLVM.verify mdl
+      void     $ LLVM.runPassManager pm mdl
 
       -- Dump the module to target assembly (PTX)
-      ptx <- either error id `fmap` runErrorT (LLVM.moduleTargetAssembly nvptx mdl)
+      ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
       Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
       Debug.message Debug.dump_ptx ptx
 
       -- Load to a CUDA module
-      CUDA.loadData (B.pack ptx)
+      jit    <- CUDA.loadDataEx (B.pack ptx) [CUDA.Target (CUDA.computeCapability dev)]
+      return $! CUDA.jitModule jit
 #endif
 
 -- | Extract the named function from the module and package into a Kernel
