@@ -106,26 +106,24 @@ instance Hashable Name where
 -- the list of supported parameters ever changes, we may need to re-evaluate
 -- this implementation.
 --
-
 withLibdevice :: DeviceProperties -> Context -> Module -> (LLVM.Module -> IO a) -> IO a
 withLibdevice dev ctx (analyse -> (externs, ast)) next =
   case Set.null externs of
     True        -> runError $ LLVM.withModuleFromAST ctx ast next
     False       ->
-      let arch = computeCapability dev
-      in do
-      Debug.message Debug.dump_llvm $
-        printf "llvm: linking with libdevice: %s"
-               (intercalate ", " (map (\(Name s) -> s) (Set.toList externs)))
-
-      runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  -> do
-      runError $ LLVM.withModuleFromAST ctx __nvvm_reflect                         $ \refl -> do
+      runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  ->
+      runError $ LLVM.withModuleFromAST ctx __nvvm_reflect                         $ \refl ->
       runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
         runError $ LLVM.linkModules False libd refl
         runError $ LLVM.linkModules False libd mdl
+        Debug.message Debug.dump_llvm msg
         next libd
   where
-    runError e = either (INTERNAL_ERROR(error) "withLibdevice") id `fmap` runErrorT e
+    arch        = computeCapability dev
+    runError e  = either (INTERNAL_ERROR(error) "withLibdevice") id `fmap` runErrorT e
+
+    msg         = printf "llvm: linking with libdevice: %s"
+                $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))
 
     __nvvm_reflect =
       let i32   = typeOf (integralType :: IntegralType Int32)
