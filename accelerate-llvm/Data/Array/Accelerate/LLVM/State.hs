@@ -18,6 +18,7 @@ import qualified LLVM.General.Context                   as LLVM
 
 -- library
 import Control.Applicative                              ( Applicative )
+import Control.Concurrent                               ( forkIO, threadDelay )
 import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
@@ -26,23 +27,22 @@ import Control.Monad.Trans                              ( MonadIO )
 -- Execution state
 -- ===============
 
--- | The LLVM monad, for executing array computations
+-- | The LLVM monad, for executing array computations. This consists of a stack
+-- for the LLVM execution context as well as the per-execution target specific
+-- state 'target'.
 --
-newtype LLVM t a = LLVM { runLLVM :: ReaderT Context (StateT (State t) IO) a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadReader Context, MonadState (State t))
+newtype LLVM target a = LLVM { runLLVM :: ReaderT LLVM.Context (StateT target IO) a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader LLVM.Context, MonadState target)
 
--- | The state for executing accelerate array computations using LLVM. This
--- consists of a stack of (read only) device properties and execution context,
--- as well as mutable state for device memory and kernel object code.
+-- | Extract the execution state: 'gets llvmTarget'
 --
-data State t = State {
-    -- memory table, kernel table, etc.
-    llvmTarget          :: t
-  }
+llvmTarget :: t -> t
+llvmTarget = id
 
-data Context = Context {
-    llvmContext         :: LLVM.Context
-  }
+-- | Extract the LLVM context: 'gets llvmContext'
+--
+llvmContext :: LLVM.Context -> LLVM.Context
+llvmContext = id
 
 
 -- | Evaluate the given target with an LLVM context
@@ -50,5 +50,5 @@ data Context = Context {
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
   LLVM.withContext $ \ctx ->
-    evalStateT (runReaderT (runLLVM acc) (Context ctx)) (State target)
+    evalStateT (runReaderT (runLLVM acc) ctx) target
 
