@@ -37,7 +37,9 @@ create = do
 --
 {-# INLINEABLE destroy #-}
 destroy :: Event -> IO ()
-destroy = Event.destroy
+destroy e = do
+  message $ "destroy " ++ showEvent e
+  Event.destroy e
 
 -- | Create a new event marker that will be filled once execution in the
 -- specified stream has completed all previously submitted work.
@@ -46,7 +48,7 @@ destroy = Event.destroy
 waypoint :: Stream -> IO Event
 waypoint stream = do
   event <- create
-  message $ "waypoint " ++ showEvent event ++ " in " ++ showStream stream
+  message $ "add waypoint " ++ showEvent event ++ " in stream " ++ showStream stream
   Event.record event (Just stream)
   return event
 
@@ -56,14 +58,16 @@ waypoint stream = do
 {-# INLINEABLE after #-}
 after :: Event -> Stream -> IO ()
 after event stream = do
-  message $ "after " ++ showEvent event ++ " in " ++ showStream stream
+  message $ "after " ++ showEvent event ++ " in stream " ++ showStream stream
   Event.wait event (Just stream) []
 
 -- | Block the calling thread until the event is recorded
 --
 {-# INLINEABLE block #-}
 block :: Event -> IO ()
-block = Event.block
+block e = do
+  message $ "blocked on event " ++ showEvent e
+  Event.block e
 
 
 -- Debug
