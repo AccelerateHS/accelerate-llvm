@@ -56,6 +56,7 @@ showFFloatSIBase p b n
 data Flags = Flags
   {
     _dump_gc            :: !Bool        -- garbage collection & memory management
+  , _dump_cc            :: !Bool        -- dump compilation trace
   , _dump_ptx           :: !Bool        -- dump generated PTX code
   , _dump_llvm          :: !Bool        -- dump generated LLVM code
   , _dump_exec          :: !Bool        -- kernel execution
@@ -70,6 +71,7 @@ data Flags = Flags
 flags :: [OptDescr (Flags -> Flags)]
 flags =
   [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
+  , Option [] ["ddump-cc"]      (NoArg (set dump_cc True))      "print compilation phase trace"
   , Option [] ["ddump-ptx"]     (NoArg (set dump_ptx True))     "print generated PTX"
   , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated LLVM"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
@@ -89,6 +91,7 @@ initialise = parse `fmap` getArgs
 
     defaults      = Flags {
         _dump_gc        = False
+      , _dump_cc        = False
       , _dump_ptx       = False
       , _dump_llvm      = False
       , _dump_exec      = False
@@ -103,8 +106,9 @@ initialise = parse `fmap` getArgs
 -- Haskell. Since llvm-general binds to a C++ library, we can't load it into
 -- ghci expect in ghc-7.8.
 --
-dump_gc, dump_ptx, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
+dump_gc, dump_cc, dump_ptx, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
 dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
+dump_cc         = lens _dump_cc   (\f x -> x { _dump_cc   = f (_dump_cc x) })
 dump_ptx        = lens _dump_ptx  (\f x -> x { _dump_ptx  = f (_dump_ptx x) })
 dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
 dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })

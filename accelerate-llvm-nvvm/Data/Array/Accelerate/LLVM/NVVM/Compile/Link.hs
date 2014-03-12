@@ -116,13 +116,13 @@ withLibdevice dev ctx (analyse -> (externs, ast)) next =
       runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
         runError $ LLVM.linkModules False libd refl
         runError $ LLVM.linkModules False libd mdl
-        Debug.message Debug.dump_llvm msg
+        Debug.message Debug.dump_cc msg
         next libd
   where
     arch        = computeCapability dev
     runError e  = either (INTERNAL_ERROR(error) "withLibdevice") id `fmap` runErrorT e
 
-    msg         = printf "llvm: linking with libdevice: %s"
+    msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))
 
     __nvvm_reflect =

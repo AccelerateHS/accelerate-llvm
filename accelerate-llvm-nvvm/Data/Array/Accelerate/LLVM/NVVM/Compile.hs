@@ -123,9 +123,9 @@ compileModuleNVVM dev name mdl = do
   ptx   <- NVVM.compileModule (B.pack ll) name (Target arch : verbose)
 
   -- Debugging
-  Debug.message Debug.dump_llvm ll
-  Debug.when Debug.dump_ptx $ do
-    Debug.message Debug.verbose (B.unpack (NVVM.nvvmLog ptx))
+  Debug.when Debug.dump_llvm $ do
+    Debug.message Debug.verbose ll
+    Debug.message Debug.dump_llvm $ "llvm: " ++ B.unpack (NVVM.nvvmLog ptx)
 
   -- Link into a new CUDA module in the current context
   linkPTX name (NVVM.nvvmResult ptx)
@@ -149,7 +149,8 @@ compileModuleNVPTX dev name mdl =
       ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
 
       -- debug printout
-      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+      Debug.when Debug.dump_llvm $
+        Debug.message Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
 
       -- Link into a new CUDA module in the current context
       linkPTX name (B.pack ptx)
@@ -167,9 +168,9 @@ linkPTX name ptx = do
   jit   <- CUDA.loadDataEx ptx flags
 
   Debug.when Debug.dump_ptx $ do
-    Debug.message Debug.dump_ptx (B.unpack ptx)
-    Debug.message Debug.verbose $
-      printf "compiled entry function \"%s\" in %s\n%s"
+    Debug.message Debug.verbose (B.unpack ptx)
+    Debug.message Debug.dump_ptx $
+      printf "ptx: compiled entry function \"%s\" in %s\n%s"
              name
              (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
              (B.unpack (CUDA.jitInfoLog jit))
@@ -209,7 +210,7 @@ linkFunction acc dev mdl name = do
                       (CUDA.activeWarps occ)
                       (CUDA.activeThreadBlocks occ)
 
-  Debug.message Debug.dump_ptx (printf "%s\n  ... %s" msg1 msg2)
+  Debug.message Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
   return $ Kernel f occ smem cta blocks name
 
 
