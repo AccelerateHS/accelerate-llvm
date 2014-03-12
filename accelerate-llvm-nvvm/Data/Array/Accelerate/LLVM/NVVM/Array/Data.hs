@@ -56,8 +56,8 @@ instance Remote NVVM where
 
   {-# INLINEABLE copyToPeer #-}
   copyToPeer peer arrs = do
-    NVVM dstCtx _ dstMT _       <- return peer
-    NVVM srcCtx _ srcMT _       <- gets llvmTarget
+    NVVM dstCtx dstMT _ <- return peer
+    NVVM srcCtx srcMT _ <- gets llvmTarget
 
     liftIO . unless (srcCtx == dstCtx)
       $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer srcCtx srcMT dstCtx dstMT) arr (R.size sh)) arrs

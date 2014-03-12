@@ -1,5 +1,6 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE MagicHash    #-}
+{-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE MagicHash       #-}
+{-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Execute.Stream
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -17,25 +18,20 @@ module Data.Array.Accelerate.LLVM.NVVM.Execute.Stream (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.NVVM.Context                  ( Context(..) )
 import qualified Data.Array.Accelerate.LLVM.NVVM.Execute.Event  as Event
 import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
 -- cuda
 import Foreign.CUDA.Driver.Event                                ( Event(..) )
 import Foreign.CUDA.Driver.Stream                               ( Stream(..) )
-import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Stream                     as Stream
 
 -- standard library
 import Control.Concurrent.MVar
-import Control.Exception
 import Control.Monad.Trans
 import Data.Sequence                                            ( Seq )
-import qualified Data.Foldable                                  as Seq ( toList )
 import qualified Data.Sequence                                  as Seq
-
-import GHC.Base
-import GHC.Ptr
 
 
 -- Reservoir
@@ -44,6 +40,9 @@ import GHC.Ptr
 -- The reservoir is a place to store CUDA execution streams that are currently
 -- inactive. When a new stream is requested one is provided from the reservoir
 -- if available, otherwise a fresh execution stream is created.
+--
+-- TLM: In a multi-threaded multi-device environment, the Reservoir might need
+--      to be augmented to explicitly push/pop the surrounding any operation.
 --
 type Reservoir  = MVar (Seq Stream)
 
@@ -59,7 +58,7 @@ type Reservoir  = MVar (Seq Stream)
 {-# INLINEABLE streaming #-}
 streaming
     :: MonadIO m
-    => CUDA.Context
+    => Context
     -> Reservoir
     -> (Stream -> m a)
     -> (Event -> a -> m b)
@@ -80,39 +79,52 @@ streaming !ctx !rsv !action !after = do
 -- | Generate a new empty reservoir. It is not necessary to pre-populate it with
 -- any streams because stream creation does not cause a device synchronisation.
 --
-new :: CUDA.Context -> IO Reservoir
-new !ctx = do
-  ref    <- newMVar ( Seq.empty )
-  _      <- mkWeakMVar ref (flush ctx ref)
-  return ref
+-- Additionally, we do not need to finalise any of the streams. A reservoir is
+-- tied to a specific execution context, so when the reservoir dies it is
+-- because the NVVM context and contained CUDA context have died, so there is
+-- nothing more to do.
+--
+new :: Context -> IO Reservoir
+new _ctx = newMVar ( Seq.empty )
 
-flush :: CUDA.Context -> Reservoir -> IO ()
-flush !ctx !ref =
-  trace "flush reservoir" $
-  withMVar ref $ \rsv ->
-    let delete st = trace ("free " ++ show st) (Stream.destroy st)
-    in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
-
+{--
+flush :: Context -> Reservoir -> IO ()
+flush !Context{..} !ref = do
+  mc <- deRefWeak weakContext
+  case mc of
+    Nothing     -> message "delete reservoir/dead context"
+    Just ctx    -> do
+      message "flush reservoir"
+      withMVar ref $ \rsv ->
+        let delete st = trace ("free " ++ show st) (Stream.destroy st)
+        in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
+--}
 
 -- | Create a CUDA execution stream. If an inactive stream is available for use,
 -- use that, otherwise generate a fresh stream.
 --
 {-# INLINEABLE create #-}
-create :: CUDA.Context -> Reservoir -> IO Stream
+create :: Context -> Reservoir -> IO Stream
 create _ctx !ref = modifyMVar ref $ \rsv ->
   case Seq.viewl rsv of
-    s Seq.:< ss -> return (ss, s)
-    Seq.EmptyL  -> do   s <- Stream.create []
-                        message ("new " ++ showStream s)
-                        return (Seq.empty, s)
+    s Seq.:< ss -> do
+      message ("reuse " ++ showStream s)
+      return (ss, s)
+
+    Seq.EmptyL  -> do
+      s <- Stream.create []
+      message ("new " ++ showStream s)
+      return (Seq.empty, s)
 
 
 -- | Merge a stream back into the reservoir. This must only be done once all
 -- pending operations in the stream have completed.
 --
 {-# INLINEABLE destroy #-}
-destroy :: CUDA.Context -> Reservoir -> Stream -> IO ()
+destroy :: Context -> Reservoir -> Stream -> IO ()
 destroy _ctx !ref !stream = do
+  message ("stash stream " ++ showStream stream)
+
   -- Wait for all preceding operations submitted to the stream to complete.
   --
   -- Note: Placing the block here seems to force _all_ streams to block, or at

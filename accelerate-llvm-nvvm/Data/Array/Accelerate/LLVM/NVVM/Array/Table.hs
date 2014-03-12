@@ -25,6 +25,8 @@ import Data.Array.Accelerate.Array.Data
 import qualified Data.Array.Accelerate.LLVM.Array.Table         as MT
 import qualified Data.Array.Accelerate.LLVM.NVVM.Debug          as Debug
 
+import Data.Array.Accelerate.LLVM.NVVM.Context                  ( Context(..) )
+
 -- CUDA
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -35,6 +37,7 @@ import Control.Exception
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
+import System.Mem.Weak
 
 
 -- Memory management for the NVVM backend utilises the memory table method
@@ -45,7 +48,7 @@ type MemoryTable = MT.MemoryTable CUDA.DevicePtr
 -- | Create a new NVVM memory table. This is specific to a given NVVM target, as
 -- devices arrays are unique to a CUDA context.
 --
-new :: CUDA.Context -> IO MemoryTable
+new :: Context -> IO MemoryTable
 new !ctx = MT.new (freeRemote ctx)
 
 
@@ -64,7 +67,7 @@ lookup = MT.lookup
 --
 malloc
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
-    => CUDA.Context
+    => Context
     -> MemoryTable
     -> ArrayData e
     -> Int
@@ -73,7 +76,7 @@ malloc !ctx !mt = MT.malloc (freeRemote ctx) (mallocRemote ctx mt) mt
 
 mallocRemote
     :: Storable a
-    => CUDA.Context
+    => Context
     -> MemoryTable
     -> Int
     -> IO (CUDA.DevicePtr a)
@@ -88,16 +91,19 @@ mallocRemote !ctx !mt !n =
 -- being used concurrently, we must instantiate the specific context this array
 -- exists in before attempting the deallocation.
 --
-freeRemote :: CUDA.Context -> CUDA.DevicePtr a -> IO ()
-freeRemote !ctx !ptr =
-  bracket_ (CUDA.push ctx) CUDA.pop (CUDA.free ptr)
+freeRemote :: Context -> CUDA.DevicePtr a -> IO ()
+freeRemote !Context{..} !ptr = do
+  mc <- deRefWeak weakContext
+  case mc of
+    Nothing     -> message "free/dead context"
+    Just ctx    -> bracket_ (CUDA.push ctx) CUDA.pop (CUDA.free ptr)
 
 
 -- | Cleanup any stale device memory.
 --
-cleanup :: CUDA.Context -> MemoryTable -> IO ()
+cleanup :: Context -> MemoryTable -> IO ()
 cleanup ctx mt = do
-  message "nvvm/table clean"
+  message "nvvm table clean"
   (free,total)  <- CUDA.getMemInfo
   MT.cleanup (freeRemote ctx) mt
   Debug.when Debug.dump_gc $ do

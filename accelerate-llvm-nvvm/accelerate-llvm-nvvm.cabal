@@ -62,6 +62,7 @@ Library
     Data.Array.Accelerate.LLVM.NVVM.Array.Data
     Data.Array.Accelerate.LLVM.NVVM.Array.Prim
     Data.Array.Accelerate.LLVM.NVVM.Array.Table
+    Data.Array.Accelerate.LLVM.NVVM.Context
     Data.Array.Accelerate.LLVM.NVVM.Debug
     Data.Array.Accelerate.LLVM.NVVM.State
     Data.Array.Accelerate.LLVM.NVVM.Target

@@ -27,12 +27,13 @@ import qualified LLVM.General.CodeGenOpt                        as CGO
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
+import Data.Array.Accelerate.LLVM.NVVM.Context                  ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.NVVM.Array.Table              ( MemoryTable )
 import Data.Array.Accelerate.LLVM.NVVM.Execute.Stream           ( Reservoir )
 
 -- CUDA
-import Foreign.CUDA.Driver                                      as CUDA
-import Foreign.CUDA.Analysis                                    as CUDA
+import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Analysis                          as CUDA
 
 -- standard library
 import Control.Monad.Error
@@ -44,11 +45,17 @@ import qualified Data.Set                                       as Set
 #include "accelerate.h"
 
 
--- | The NVVM/PTX execution target for NVIDIA GPUs
+-- | The NVVM/PTX execution target for NVIDIA GPUs.
+--
+-- The execution target carries state specific for the current execution
+-- context. The data here --- device memory and execution streams --- are
+-- implicitly tied to this CUDA execution context.
+--
+-- Don't store anything here that is independent of the context, for example
+-- state related to [persistent] kernel caching should _not_ go here.
 --
 data NVVM = NVVM {
-    nvvmContext                 :: {-# UNPACK #-} !CUDA.Context
-  , nvvmDeviceProperties        :: {-# UNPACK #-} !CUDA.DeviceProperties
+    nvvmContext                 :: {-# UNPACK #-} !Context
   , nvvmMemoryTable             :: {-# UNPACK #-} !MemoryTable
   , nvvmStreamReservoir         :: {-# UNPACK #-} !Reservoir
   }
@@ -64,10 +71,17 @@ data Kernel = Kernel {
 
 instance Target NVVM where
   data ExecutableR NVVM = NVVMR { nvvmKernel :: [Kernel]
-                                , nvvmModule :: CUDA.Module
+                                , nvvmModule :: {-# UNPACK #-} !CUDA.Module
                                 }
   targetTriple _     = Just nvvmTargetTriple
   targetDataLayout _ = Just nvvmDataLayout
+
+
+-- | Extract the properties of the device the current NVVM execution state is
+-- executing on.
+--
+nvvmDeviceProperties :: NVVM -> CUDA.DeviceProperties
+nvvmDeviceProperties = deviceProperties . nvvmContext
 
 
 -- | A description of the various data layout properties that may be used during
@@ -111,10 +125,13 @@ nvvmTargetTriple =
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
 --
-withNVVMTargetMachine :: DeviceProperties -> (TargetMachine -> IO a) -> IO a
+withNVVMTargetMachine
+    :: CUDA.DeviceProperties
+    -> (TargetMachine -> IO a)
+    -> IO a
 withNVVMTargetMachine dev go =
-  let Compute m n = computeCapability dev
-      sm          = printf "sm_%d%d" m n
+  let CUDA.Compute m n = CUDA.computeCapability dev
+      sm               = printf "sm_%d%d" m n
   in
   withTargetOptions $ \options -> do
     withTargetMachine
