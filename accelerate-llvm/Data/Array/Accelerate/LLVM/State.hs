@@ -45,9 +45,10 @@ data Context = Context {
   }
 
 
+-- | Evaluate the given target with an LLVM context
+--
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
   LLVM.withContext $ \ctx ->
     evalStateT (runReaderT (runLLVM acc) (Context ctx)) (State target)
-
 
