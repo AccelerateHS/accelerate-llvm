@@ -57,8 +57,6 @@ import Text.Printf
 import System.IO.Unsafe
 import qualified Data.ByteString.Char8                          as B
 
-import GHC.Conc                                                 ( par )
-
 #include "accelerate.h"
 
 
@@ -82,16 +80,10 @@ compileForNVPTX acc aenv = do
       name       = moduleName ast
       globals    = globalFunctions (moduleDefinitions ast)
 
-  -- We use 'unsafePerformIO' here to leverage Haskell's non-strict semantics,
-  -- so that we only block on module generation once the function is truly
-  -- needed during the execution phase.
-  --
-  let exe = unsafePerformIO $ do
-              ptx  <- withLibdevice dev ctx ast (compileModule dev name)
-              funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
-              return (NVVMR funs ptx)
-
-  exe `par` return exe
+  liftIO $ do
+    ptx  <- withLibdevice dev ctx ast (compileModule dev name)
+    funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
+    return $! NVVMR funs ptx
 
 
 -- | Compile the LLVM module to produce a CUDA module.
