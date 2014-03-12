@@ -47,6 +47,7 @@ import GHC.Weak                                                 ( Weak(..) )
 
 -- | Execute an NVVM computation
 --
+{-# NOINLINE evalNVVM #-}
 evalNVVM :: NVVM -> LLVM NVVM a -> IO a
 evalNVVM nvvm acc =
   runInBoundThread (bracket_ setup teardown action)
