@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Execute.Event
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -47,8 +46,8 @@ destroy = Event.destroy
 waypoint :: Stream -> IO Event
 waypoint stream = do
   event <- create
-  Event.record event (Just stream)
   message $ "waypoint " ++ showEvent event ++ " in " ++ showStream stream
+  Event.record event (Just stream)
   return event
 
 -- | Make all future work submitted to the given stream wait until the event
@@ -73,9 +72,7 @@ block = Event.block
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-#ifdef ACCELERATE_DEBUG
   Debug.when Debug.verbose $ Debug.message Debug.dump_exec ("event: " ++ msg)
-#endif
   next
 
 {-# INLINE message #-}

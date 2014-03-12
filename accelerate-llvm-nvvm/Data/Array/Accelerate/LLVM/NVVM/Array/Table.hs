@@ -97,6 +97,7 @@ freeRemote !ctx !ptr =
 --
 cleanup :: CUDA.Context -> MemoryTable -> IO ()
 cleanup ctx mt = do
+  message "nvvm/table clean"
   (free,total)  <- CUDA.getMemInfo
   MT.cleanup (freeRemote ctx) mt
   Debug.when Debug.dump_gc $ do

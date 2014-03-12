@@ -230,6 +230,8 @@ delete
     -> Int
     -> IO ()
 delete freeRemote !weak_mt !weak_nrs !key !remote !bytes = do
+  message ("delete: " ++ show key)
+
   -- First check if the memory table is still active. If it is, we first need to
   -- remove this entry from the table.
   mmt   <- deRefWeak weak_mt
@@ -257,6 +259,7 @@ cleanup
 cleanup freeRemote !MemoryTable{..} = do
   let Nursery nursery _ = memoryNursery
   --
+  message "table clean"
   Nursery.cleanup freeRemote nursery
   performGC
   mr    <- deRefWeak weakTable

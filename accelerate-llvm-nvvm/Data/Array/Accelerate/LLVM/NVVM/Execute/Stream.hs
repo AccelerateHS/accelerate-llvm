@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP          #-}
 {-# LANGUAGE MagicHash    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Execute.Stream
@@ -89,10 +88,10 @@ new !ctx = do
 
 flush :: CUDA.Context -> Reservoir -> IO ()
 flush !ctx !ref =
+  trace "flush reservoir" $
   withMVar ref $ \rsv ->
-    trace "flush reservoir" $
-      let delete st = trace ("free " ++ show st) (Stream.destroy st)
-      in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
+    let delete st = trace ("free " ++ show st) (Stream.destroy st)
+    in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
 
 
 -- | Create a CUDA execution stream. If an inactive stream is available for use,
@@ -140,9 +139,7 @@ destroy _ctx !ref !stream = do
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-#ifdef ACCELERATE_DEBUG
   Debug.when Debug.verbose $ Debug.message Debug.dump_exec ("stream: " ++ msg)
-#endif
   next
 
 {-# INLINE message #-}
@@ -151,9 +148,5 @@ message s = s `trace` return ()
 
 {-# INLINE showStream #-}
 showStream :: Stream -> String
-showStream (Stream (Ptr a#)) =
-  let !i = I# (addr2Int# a#)
-      !n = 128  -- XXX: dodgy hack
-  in
-  '#' : show (i `quotInt` n + 1)
+showStream (Stream s) = show s
 

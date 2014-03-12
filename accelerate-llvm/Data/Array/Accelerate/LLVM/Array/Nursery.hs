@@ -13,7 +13,6 @@
 module Data.Array.Accelerate.LLVM.Array.Nursery
   where
 
-
 -- standard library
 import Prelude                                                  hiding ( lookup )
 import Control.Concurrent.MVar
@@ -23,6 +22,9 @@ import System.Mem.Weak
 import qualified Data.Sequence                                  as Seq
 import qualified Data.Traversable                               as Seq
 import qualified Data.IntMap.Strict                             as IM
+
+-- accelerate
+import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 
 -- | The nursery is primarily designed as a place to store device memory arrays
@@ -47,6 +49,7 @@ type NRS a      = MVar ( IntMap (Seq a) )
 {-# INLINEABLE new #-}
 new :: forall a. (a -> IO ()) -> IO (Nursery a)
 new delete = do
+  message "initialise nursery"
   ref   <- newMVar ( IM.empty )
   weak  <- mkWeakMVar ref (cleanup delete ref)
   return $! Nursery ref weak
@@ -82,7 +85,20 @@ insert !key !val !ref =
 --
 {-# INLINEABLE cleanup #-}
 cleanup :: forall a. (a -> IO ()) -> NRS a -> IO ()
-cleanup delete !ref =
+cleanup delete !ref = do
+  message "nursery clean"
   modifyMVar_ ref (\nrs -> do mapM_ (Seq.mapM delete) (IM.elems nrs)
                               return IM.empty)
+
+
+-- Debug
+-- -----
+
+{-# INLINE trace #-}
+trace :: String -> IO a -> IO a
+trace msg next = Debug.message Debug.dump_gc ("gc: " ++ msg) >> next
+
+{-# INLINE message #-}
+message :: String -> IO ()
+message s = s `trace` return ()
 

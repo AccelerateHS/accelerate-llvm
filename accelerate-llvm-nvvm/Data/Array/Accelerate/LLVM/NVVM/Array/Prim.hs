@@ -37,9 +37,10 @@ import Prelude                                                  hiding ( lookup 
 import Control.Monad
 import Data.Maybe
 import Data.Typeable
+import Foreign.Marshal.Alloc                                    ( alloca )
 import Foreign.Ptr
 import Foreign.Storable
-import Foreign.Marshal.Alloc                                    ( alloca )
+import Text.Printf
 
 #include "accelerate.h"
 
@@ -208,9 +209,11 @@ message s = s `trace` return ()
 transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
   = let showRate x t         = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-        msg gpuTime wallTime = "gc: " ++ name ++ ": "
-                                      ++ showBytes bytes ++ " @ " ++ showRate bytes wallTime ++ ", "
-                                      ++ Debug.elapsed gpuTime wallTime
+        msg gpuTime wallTime = printf "gc: %s: %s bytes @ %s, %s"
+                                  name
+                                  (showBytes bytes)
+                                  (showRate bytes wallTime)
+                                  (Debug.elapsed gpuTime wallTime)
     in
     Debug.timed Debug.dump_gc msg stream action
 
