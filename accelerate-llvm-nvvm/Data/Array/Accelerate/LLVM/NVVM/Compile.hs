@@ -54,7 +54,6 @@ import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
 import Text.Printf
-import System.IO.Unsafe
 import qualified Data.ByteString.Char8                          as B
 
 #include "accelerate.h"
@@ -159,9 +158,9 @@ linkPTX name ptx = do
   --
   jit   <- CUDA.loadDataEx ptx flags
 
-  Debug.when Debug.dump_ptx $ do
+  Debug.when Debug.dump_asm $ do
     Debug.message Debug.verbose (B.unpack ptx)
-    Debug.message Debug.dump_ptx $
+    Debug.message Debug.dump_asm $
       printf "ptx: compiled entry function \"%s\" in %s\n%s"
              name
              (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")

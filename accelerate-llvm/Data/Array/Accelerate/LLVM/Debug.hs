@@ -57,7 +57,7 @@ data Flags = Flags
   {
     _dump_gc            :: !Bool        -- garbage collection & memory management
   , _dump_cc            :: !Bool        -- dump compilation trace
-  , _dump_ptx           :: !Bool        -- dump generated PTX code
+  , _dump_asm           :: !Bool        -- dump generated target-specific assembly
   , _dump_llvm          :: !Bool        -- dump generated LLVM code
   , _dump_exec          :: !Bool        -- kernel execution
   , _dump_gang          :: !Bool        -- print information about the gang
@@ -72,7 +72,7 @@ flags :: [OptDescr (Flags -> Flags)]
 flags =
   [ Option [] ["ddump-gc"]      (NoArg (set dump_gc True))      "print device memory management trace"
   , Option [] ["ddump-cc"]      (NoArg (set dump_cc True))      "print compilation phase trace"
-  , Option [] ["ddump-ptx"]     (NoArg (set dump_ptx True))     "print generated PTX"
+  , Option [] ["ddump-asm"]     (NoArg (set dump_asm True))     "print generated target-specific assembly"
   , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated LLVM"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
   , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
@@ -92,7 +92,7 @@ initialise = parse `fmap` getArgs
     defaults      = Flags {
         _dump_gc        = False
       , _dump_cc        = False
-      , _dump_ptx       = False
+      , _dump_asm       = False
       , _dump_llvm      = False
       , _dump_exec      = False
       , _dump_gang      = False
@@ -106,10 +106,10 @@ initialise = parse `fmap` getArgs
 -- Haskell. Since llvm-general binds to a C++ library, we can't load it into
 -- ghci expect in ghc-7.8.
 --
-dump_gc, dump_cc, dump_ptx, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
+dump_gc, dump_cc, dump_asm, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
 dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
 dump_cc         = lens _dump_cc   (\f x -> x { _dump_cc   = f (_dump_cc x) })
-dump_ptx        = lens _dump_ptx  (\f x -> x { _dump_ptx  = f (_dump_ptx x) })
+dump_asm        = lens _dump_asm  (\f x -> x { _dump_asm  = f (_dump_asm x) })
 dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
 dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })
 dump_gang       = lens _dump_gang (\f x -> x { _dump_gang = f (_dump_gang x) })
