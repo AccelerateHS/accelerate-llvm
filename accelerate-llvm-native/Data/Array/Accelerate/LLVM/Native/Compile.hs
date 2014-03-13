@@ -36,6 +36,7 @@ import Control.Monad.Error
 import qualified LLVM.General.Analysis                          as LLVM
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
+import qualified LLVM.General.Target                            as LLVM
 import Data.Array.Accelerate.LLVM.Native.Debug                  as Debug
 import Control.Monad.Reader
 
@@ -59,7 +60,8 @@ compileForNativeTarget acc aenv = do
       runError e  = liftIO $ either (INTERNAL_ERROR(error) "compile") id `fmap` runErrorT e
       pss         = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
 
-  Debug.when dump_llvm $ do
+  -- Only in verbose mode do we dump the LLVM or target ASM to the screen
+  Debug.when Debug.verbose $ do
     ctx     <- asks llvmContext
     runError $ do
       LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
@@ -68,8 +70,13 @@ compileForNativeTarget acc aenv = do
           void     $ LLVM.runPassManager pm mdl
 #if MIN_VERSION_llvm_general(3,3,0)
           Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+
+          runError $ LLVM.withDefaultTargetMachine $ \tm ->
+            Debug.message dump_asm =<< runError (LLVM.moduleTargetAssembly tm mdl)
 #else
           Debug.message dump_llvm =<< LLVM.moduleString mdl
+          -- XXX: Only interface to access the assembly in llvm-general-3.2.* is
+          --      via dumping to file. derp.
 #endif
 #endif
   return $ NativeR (unModule ast)
