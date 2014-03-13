@@ -211,8 +211,9 @@ insert
 insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
   let !key                      = makeHostArray adata
       Nursery _ !weakNursery    = memoryNursery
+      finalise                  = Just $ delete freeRemote weakTable weakNursery key ptr bytes
   in do
-    remote      <- RemoteArray `fmap` mkWeak adata ptr (Just $ delete freeRemote weakTable weakNursery key ptr bytes)
+    remote      <- RemoteArray `fmap` mkWeak adata ptr finalise
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable (return . IM.insert key remote)
 
