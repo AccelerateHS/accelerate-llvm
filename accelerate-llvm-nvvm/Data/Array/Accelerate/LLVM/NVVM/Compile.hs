@@ -109,9 +109,14 @@ compileModuleNVVM dev name mdl = do
   -- Lower the module to bitcode and have libNVVM compile to PTX
   let arch    = CUDA.computeCapability dev
       verbose = if Debug.mode Debug.debug then [ NVVM.GenerateDebugInfo ] else []
+#ifdef ACCELERATE_INTERNAL_CHECKS
+      verify  = True
+#else
+      verify  = False
+#endif
 
   ll    <- LLVM.moduleString mdl        -- no LLVM.moduleBitcode in llvm-general-3.2.*
-  ptx   <- NVVM.compileModule (B.pack ll) name (Target arch : verbose)
+  ptx   <- NVVM.compileModule name (B.pack ll) (NVVM.Target arch : verbose) verify
 
   -- Debugging
   Debug.when Debug.dump_llvm $ do
