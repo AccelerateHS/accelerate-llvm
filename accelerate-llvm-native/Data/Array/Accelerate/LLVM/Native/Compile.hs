@@ -77,6 +77,13 @@ compileForNativeTarget acc aenv = do
           Debug.message dump_llvm =<< LLVM.moduleString mdl
           -- XXX: Only interface to access the assembly in llvm-general-3.2.* is
           --      via dumping to file. derp.
+          --
+          -- tmp     <- getTemporaryDirectiroy
+          -- (asm,_) <- openTempFile tmp "foo.asm"
+          -- runError $ writeAssemblyToFile tm asm
+          --      ...
+          -- removeFile name
+          --
 #endif
 #endif
   return $ NativeR (unModule ast)
