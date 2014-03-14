@@ -205,8 +205,17 @@ linkFunction acc dev mdl name = do
   return $ Kernel f occ smem cta blocks name
 
 
--- | Extract the names of the global function definitions from the module. These
--- correspond to the __global__ entry functions.
+-- | Extract the names of the function definitions from the module.
+--
+-- Note: [Extracting global function names]
+--
+-- It is important to run this on the module given to us by code generation.
+-- After combining modules with 'libdevice', extra function definitions,
+-- corresponding to basic maths operations, will be added to the module. These
+-- functions will not be callable as __global__ functions.
+--
+-- The list of names will be exported in the order that they appear in the
+-- module.
 --
 globalFunctions :: [Definition] -> [String]
 globalFunctions defs =
