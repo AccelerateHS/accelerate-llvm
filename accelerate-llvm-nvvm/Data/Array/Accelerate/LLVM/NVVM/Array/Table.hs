@@ -102,7 +102,7 @@ freeRemote !Context{..} !ptr = do
 -- | Cleanup any stale device memory.
 --
 cleanup :: Context -> MemoryTable -> IO ()
-cleanup ctx mt = do
+cleanup !ctx !mt = do
   message "nvvm table clean"
   (free,total)  <- CUDA.getMemInfo
   MT.cleanup (freeRemote ctx) mt

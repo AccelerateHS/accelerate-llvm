@@ -5,6 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnboxedTuples       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Table
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -44,6 +45,7 @@ import qualified Data.IntMap.Strict                             as IM
 
 import GHC.Base
 import GHC.Ptr
+import GHC.Weak
 
 #include "accelerate.h"
 
@@ -112,8 +114,8 @@ lookup :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable b)
        -> ArrayData e
        -> IO (Maybe (c b))
 lookup MemoryTable{..} !adata = do
-  let !key      =  makeHostArray adata
-  mw            <- withMVar memoryTable (\mt -> return (IM.lookup key mt))
+  key <- makeHostArray adata
+  mw  <- withMVar memoryTable (\mt -> return (IM.lookup key mt))
   case mw of
     Nothing
       -> trace ("lookup/not found: " ++ show key) $ return Nothing
@@ -141,8 +143,8 @@ lookup MemoryTable{..} !adata = do
               -- message.
               --
               Nothing
-                -> let !key' = makeHostArray adata
-                   in  INTERNAL_ERROR(error) "memory table/lookup" ("dead weak pointer: " ++ show key')
+                -> do key' <- makeHostArray adata
+                      INTERNAL_ERROR(error) "memory table/lookup" ("dead weak pointer: " ++ show key')
 
 
 -- | Convert the host array data into a memory table key
@@ -151,10 +153,24 @@ lookup MemoryTable{..} !adata = do
 makeHostArray
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
     => ArrayData e
-    -> HostArray
+    -> IO HostArray
 makeHostArray !adata =
   case ptrsOfArrayData adata of
-    Ptr a# -> I# (addr2Int# a#)
+    Ptr a# -> return $! I# (addr2Int# a#)
+
+
+-- | Make a weak pointer to array data
+--
+{-# INLINEABLE makeWeakArrayData #-}
+makeWeakArrayData
+    :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
+    => ArrayData e
+    -> c a
+    -> IO ()
+    -> IO (Weak (c a))
+makeWeakArrayData adata v f =
+  case ptrsOfArrayData adata of
+    Ptr a# -> IO $ \s -> case mkWeak# a# v f s of (# s', w #) -> (# s', Weak w #)
 
 
 -- | Allocate a new remote array and associate it with the given host side
@@ -209,11 +225,11 @@ insert
     -> Int
     -> IO ()
 insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
-  let !key                      = makeHostArray adata
-      Nursery _ !weakNursery    = memoryNursery
-      finalise                  = Just $ delete freeRemote weakTable weakNursery key ptr bytes
+  let Nursery _ !weakNursery    = memoryNursery
+      finalise key              = delete freeRemote weakTable weakNursery key ptr bytes
   in do
-    remote      <- RemoteArray `fmap` mkWeak adata ptr finalise
+    key    <- makeHostArray adata
+    remote <- RemoteArray `fmap` makeWeakArrayData adata ptr (finalise key)
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable $ \mt ->
       let f Nothing  = Just remote
