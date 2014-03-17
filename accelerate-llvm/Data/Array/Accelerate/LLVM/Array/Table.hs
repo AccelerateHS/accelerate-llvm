@@ -215,7 +215,11 @@ insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
   in do
     remote      <- RemoteArray `fmap` mkWeak adata ptr finalise
     message ("insert: " ++ show key)
-    modifyMVar_ memoryTable (return . IM.insert key remote)
+    modifyMVar_ memoryTable $ \mt ->
+      let f Nothing  = Just remote
+          f (Just _) = INTERNAL_ERROR(error) "insert" "duplicate key"
+      in
+      return $! IM.alter f key mt
 
 
 -- | Remove an entry from the memory table. This might stash the memory into the
