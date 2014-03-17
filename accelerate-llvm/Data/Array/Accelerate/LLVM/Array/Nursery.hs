@@ -59,7 +59,7 @@ new delete = do
 --
 {-# INLINEABLE lookup #-}
 lookup :: Int -> Nursery a -> IO (Maybe a)
-lookup key (Nursery !ref !_) =
+lookup !key (Nursery !ref !_) =
   modifyMVar ref $ \nrs ->
     let (mv, nrs')      = IM.updateLookupWithKey f key nrs
         f _ s           = case Seq.viewl s of
