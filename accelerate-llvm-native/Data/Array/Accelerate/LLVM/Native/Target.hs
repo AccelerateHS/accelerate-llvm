@@ -19,8 +19,9 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 ) where
 
 -- llvm-general
-import qualified LLVM.General.AST                               as AST
 import LLVM.General.Target                                      hiding ( Target )
+import LLVM.General.AST                                         ( Module )
+import LLVM.General.AST.DataLayout                              ( DataLayout )
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target
@@ -29,17 +30,26 @@ import Data.Array.Accelerate.LLVM.Target
 import Control.Monad.Error
 import System.IO.Unsafe
 
+#include "accelerate.h"
+
 
 -- | Native machine code JIT execution target
 --
 data Native = Native
 
 instance Target Native where
-  data ExecutableR Native = NativeR { executableR :: AST.Module }
+  data ExecutableR Native = NativeR { executableR :: Module }
 --  data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
 
-  {-# NOINLINE targetTriple #-}
-  targetTriple _ = Just $ unsafePerformIO
+  targetTriple     _ = Just nativeTargetTriple
+  targetDataLayout _ = Just nativeDataLayout
+
+
+-- | String that describes the native target
+--
+{-# NOINLINE nativeTargetTriple #-}
+nativeTargetTriple :: String
+nativeTargetTriple = unsafePerformIO $
 #if MIN_VERSION_llvm_general(3,3,0)
     -- A target triple suitable for loading code into the current process
     getProcessTargetTriple
@@ -48,7 +58,22 @@ instance Target Native where
     getDefaultTargetTriple
 #endif
 
-  {-# NOINLINE targetDataLayout #-}
-  targetDataLayout _ = unsafePerformIO $
-    either error Just `fmap` (runErrorT $ withDefaultTargetMachine getTargetMachineDataLayout)
+-- | A description of the various data layout properties that may be used during
+-- optimisation.
+--
+{-# NOINLINE nativeDataLayout #-}
+nativeDataLayout :: DataLayout
+nativeDataLayout
+  = unsafePerformIO
+  $ fmap (either (INTERNAL_ERROR(error) "nativeDataLayout") id)
+  $ runErrorT (withDefaultTargetMachine getTargetMachineDataLayout)
+
+
+-- | Bracket the creation and destruction of a target machine for the native
+-- backend running on this host.
+--
+withNativeTargetMachine
+    :: (TargetMachine -> IO a)
+    -> ErrorT String IO a
+withNativeTargetMachine = withDefaultTargetMachine
 

@@ -12,9 +12,19 @@
 
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
-  module Data.Array.Accelerate.LLVM.Compile
+  module Data.Array.Accelerate.LLVM.Compile,
+  withOptimisedModuleFromAST,
 
 ) where
+
+-- llvm-general
+import LLVM.General.AST                                         hiding ( Module )
+import LLVM.General.Module                                      as LLVM
+import LLVM.General.Context
+import LLVM.General.PassManager
+import LLVM.General.Target
+import LLVM.General.Transforms
+import qualified LLVM.General.AST                               as AST
 
 -- accelerate
 import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
@@ -27,21 +37,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
 
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
+import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
 import Control.Monad.Error
-
--- extra modules needed for dumping the LLVM code
-#ifdef ACCELERATE_DEBUG
-import qualified LLVM.General.Analysis                          as LLVM
-import qualified LLVM.General.Module                            as LLVM
-import qualified LLVM.General.PassManager                       as LLVM
-import qualified LLVM.General.Target                            as LLVM
-import Data.Array.Accelerate.LLVM.Native.Debug                  as Debug
 import Control.Monad.Reader
+import Data.Maybe
 
 #include "accelerate.h"
-#endif
 
 
 instance Compile Native where
@@ -55,85 +58,140 @@ instance Compile Native where
 --
 compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
 compileForNativeTarget acc aenv = do
-  let ast = llvmOfAcc Native acc aenv
-#ifdef ACCELERATE_DEBUG
-      runError e  = liftIO $ either (INTERNAL_ERROR(error) "compile") id `fmap` runErrorT e
-      pss         = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+  let Module ast = llvmOfAcc Native acc aenv
 
   -- Only in verbose mode do we dump the LLVM or target ASM to the screen
   Debug.when Debug.verbose $ do
-    ctx     <- asks llvmContext
-    runError $ do
-      LLVM.withModuleFromAST ctx (unModule ast) $ \mdl ->
-        LLVM.withPassManager pss                $ \pm  -> do
-          runError $ LLVM.verify mdl
-          void     $ LLVM.runPassManager pm mdl
+    ctx <- asks llvmContext
+    liftIO $ withOptimisedModuleFromAST ctx ast $ \mdl -> do
+      let runError = either (INTERNAL_ERROR(error) "compileForNativeTarget") return <=< runErrorT
+
 #if MIN_VERSION_llvm_general(3,3,0)
-          Debug.message dump_llvm =<< LLVM.moduleLLVMAssembly mdl
+      Debug.message Debug.dump_llvm =<< LLVM.moduleLLVMAssembly mdl
 
-          runError $ LLVM.withDefaultTargetMachine $ \tm ->
-            Debug.message dump_asm =<< runError (LLVM.moduleTargetAssembly tm mdl)
+      runError $ withNativeTargetMachine $ \tm ->
+        Debug.message Debug.dump_asm =<< runError (moduleTargetAssembly tm mdl)
 #else
-          Debug.message dump_llvm =<< LLVM.moduleString mdl
-          -- XXX: Only interface to access the assembly in llvm-general-3.2.* is
-          --      via dumping to file. derp.
-          --
-          -- tmp     <- getTemporaryDirectiroy
-          -- (asm,_) <- openTempFile tmp "foo.asm"
-          -- runError $ writeAssemblyToFile tm asm
-          --      ...
-          -- removeFile name
-          --
+      Debug.message Debug.dump_llvm =<< LLVM.moduleString mdl
+      -- XXX: Only interface to access the assembly in llvm-general-3.2.* is
+      --      via dumping to file. derp.
+      --
+      -- tmp     <- getTemporaryDirectiroy
+      -- (asm,_) <- openTempFile tmp "foo.asm"
+      -- runError $ writeAssemblyToFile tm asm
+      --      ...
+      -- removeFile name
+      --
 #endif
-#endif
-  return $ NativeR (unModule ast)
+  return $ NativeR ast
 
 
-{--
--- | Compile an LLVM module to native target, and return function pointers to
--- the named functions within the module.
+-- Combined lowering and optimisation of a Haskell LLVM AST into C++ objects.
+-- This runs the optimisation passes such that LLVM has the necessary
+-- information to automatically vectorize loops whenever it deems beneficial.
+---
+withOptimisedModuleFromAST :: Context -> AST.Module -> (LLVM.Module -> IO a) -> IO a
+withOptimisedModuleFromAST ctx ast next =
+  runError $ withModuleFromAST ctx ast $ \mdl     ->
+  runError $ withNativeTargetMachine   $ \machine ->
+    withTargetLibraryInfo triple       $ \libinfo -> do
+
+      let p1 = PassSetSpec prepass datalayout (Just libinfo) (Just machine)
+          p2 = PassSetSpec optpass datalayout (Just libinfo) (Just machine)
+
+      _ <- withPassManager p1 $ \pm -> runPassManager pm mdl
+      _ <- withPassManager p2 $ \pm -> runPassManager pm mdl
+
+      next mdl
+  where
+    runError    = either (INTERNAL_ERROR(error) "withOptimisedModuleFromAST") return <=< runErrorT
+
+    triple      = fromMaybe "" (moduleTargetTriple ast)
+    datalayout  = moduleDataLayout ast
+
+
+-- The first gentle optimisation pass. I think this is usually done when loading
+-- the module?
 --
-compileForMCJIT :: Module -> [Name] -> LLVM [FunPtr ()]
-compileForMCJIT mdl f = do
-  ctx <- asks llvmContext
-  liftIO $ withMCJIT ctx opt code fptr fins $ \jit ->
-      withModuleInEngine jit mdl $ \exe ->
-        forM f $ fmap check . getFunction exe
-  where
-    opt  = Just 3        -- optimisation level
-    code = Nothing       -- code model (default)
-    fptr = Nothing       -- disable frame pointer elimination?
-    fins = Just True     -- use fast instruction selection?
+-- This is the first section of output running 'opt -O3 -debug-pass=Arguments'
+--
+-- Pass Arguments:
+--  -datalayout -notti -basictti -x86tti -no-aa -tbaa -targetlibinfo -basicaa
+--  -preverify -domtree -verify -simplifycfg -domtree -sroa -early-cse
+--  -lower-expect
+--
+prepass :: [Pass]
+prepass =
+  [ SimplifyControlFlowGraph
+  , ScalarReplacementOfAggregates { requiresDominatorTree = True }
+  , EarlyCommonSubexpressionElimination
+  , LowerExpectIntrinsic
+  ]
 
-    check Nothing  = INTERNAL_ERROR(error) "compileForMCJIT" "unknown function"
-    check (Just p) = p
---}
-{--
-  ctx <- asks llvmContext
+-- The main optimisation pipeline. This mostly matches the process of running
+-- 'opt -O3 -debug-pass=Arguments'. We are missing dead argument elimination and
+-- in particular, slp-vectorizer (super-word level parallelism).
+--
+-- Pass Arguments:
+--   -targetlibinfo -datalayout -notti -basictti -x86tti -no-aa -tbaa -basicaa
+--   -globalopt -ipsccp -deadargelim -instcombine -simplifycfg -basiccg -prune-eh
+--   -inline-cost -inline -functionattrs -argpromotion -sroa -domtree -early-cse
+--   -lazy-value-info -jump-threading -correlated-propagation -simplifycfg
+--   -instcombine -tailcallelim -simplifycfg -reassociate -domtree -loops
+--   -loop-simplify -lcssa -loop-rotate -licm -lcssa -loop-unswitch -instcombine
+--   -scalar-evolution -loop-simplify -lcssa -indvars -loop-idiom -loop-deletion
+--   -loop-unroll -memdep -gvn -memdep -memcpyopt -sccp -instcombine
+--   -lazy-value-info -jump-threading -correlated-propagation -domtree -memdep -dse
+--   -loops -scalar-evolution -slp-vectorizer -adce -simplifycfg -instcombine
+--   -barrier -domtree -loops -loop-simplify -lcssa -scalar-evolution
+--   -loop-simplify -lcssa -loop-vectorize -instcombine -simplifycfg
+--   -strip-dead-prototypes -globaldce -constmerge -preverify -domtree -verify
+--
+optpass :: [Pass]
+optpass =
+  [
+    InterproceduralSparseConditionalConstantPropagation                 -- ipsccp
+  , InstructionCombining
+  , SimplifyControlFlowGraph
+  , PruneExceptionHandling
+  , FunctionInlining { functionInliningThreshold = 275 }                -- -O2 => 275
+  , FunctionAttributes
+  , ArgumentPromotion                                                   -- not needed?
+  , ScalarReplacementOfAggregates { requiresDominatorTree = True }      -- false?
+  , EarlyCommonSubexpressionElimination
+  , JumpThreading
+  , CorrelatedValuePropagation
+  , SimplifyControlFlowGraph
+  , InstructionCombining
+  , TailCallElimination
+  , SimplifyControlFlowGraph
+  , Reassociate
+  , LoopRotate
+  , LoopInvariantCodeMotion
+  , LoopClosedSingleStaticAssignment
+  , LoopUnswitch { optimizeForSize = False }
+  , LoopInstructionSimplify
+  , InstructionCombining
+  , InductionVariableSimplify
+  , LoopIdiom
+  , LoopDeletion
+  , LoopUnroll { loopUnrollThreshold = Nothing
+               , count               = Nothing
+               , allowPartial        = Nothing }
+  , GlobalValueNumbering { noLoads = False }                             -- loads??
+  , SparseConditionalConstantPropagation
+  , InstructionCombining
+  , JumpThreading
+  , CorrelatedValuePropagation
+  , DeadStoreElimination
+  , defaultVectorizeBasicBlocks                                         -- instead of slp-vectorizer?
+  , AggressiveDeadCodeElimination
+  , SimplifyControlFlowGraph
+  , InstructionCombining
+  , LoopVectorize
+  , InstructionCombining
+  , SimplifyControlFlowGraph
+  , GlobalDeadCodeElimination
+  , ConstantMerge
+  ]
 
-  -- Run code generation on the array program
-  let ast = llvmOfAcc acc aenv :: CG.Module arch aenv a
-
-  -- Lower the Haskell AST into C++ objects. Run verification and optimisation.
-  mdl <- runError $ withModuleFromAST ctx (unModule ast) return
-  when check $ runError (verify mdl)
-  liftIO     $ withPassManager opt (\pm -> void $ runPassManager pm mdl)
-
-  -- Compile the C++ module into something this target expects
-  compileForTarget mdl (kernelsOf ast)
-  where
-    opt         = defaultCuratedPassSetSpec { optLevel = Just 3 }
-    runError e  = liftIO $ either (INTERNAL_ERROR(error) "build") id `fmap` runErrorT e
-
-    kernelsOf (CG.Module m)     = mapMaybe extract (AST.moduleDefinitions m)
-
-    extract (AST.GlobalDefinition AST.Function{..})
-      | not (null basicBlocks)  = Just name
-    extract _                   = Nothing
-
-#if defined(ACCELERATE_DEBUG) || defined(ACCELERATE_INTERNAL_CHECKS)
-    check = True
-#else
-    check = False
-#endif
---}

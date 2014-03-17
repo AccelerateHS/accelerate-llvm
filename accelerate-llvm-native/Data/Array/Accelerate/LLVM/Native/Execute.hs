@@ -20,8 +20,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- llvm-general
-import LLVM.General.Module
-import LLVM.General.PassManager
 import LLVM.General.ExecutionEngine
 import LLVM.General.AST.Name
 import qualified LLVM.General.AST                               as AST
@@ -41,6 +39,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
+import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 import Data.Array.Accelerate.LLVM.Native.Execute.Gang
@@ -50,7 +49,6 @@ import Data.Array.Accelerate.LLVM.Native.Target
 -- library
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
-import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Reader
 
@@ -366,22 +364,17 @@ link exe main run =
 
 
 compile :: ExecutableR Native -> (ExecutableModule MCJIT -> IO a) -> LLVM Native a
-compile (NativeR ast) cont = do
+compile (NativeR ast) next = do
   ctx   <- asks llvmContext
-  liftIO . runError $
-    withModuleFromAST ctx ast            $ \mdl   ->
+  liftIO $
+    withOptimisedModuleFromAST ctx ast   $ \mdl   ->
     withMCJIT ctx opt model ptrelim fast $ \mcjit ->
-    withPassManager passes               $ \pm    -> do
-      void $ runPassManager pm mdl
-      withModuleInEngine mcjit mdl       $ \ee    ->
-        cont ee
+    withModuleInEngine mcjit mdl next
   where
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
     ptrelim     = Nothing       -- True to disable frame pointer elimination
     fast        = Just True     -- True to enable fast instruction selection
-    passes      = defaultCuratedPassSetSpec { optLevel = Just 3 }
-    runError e  = either (INTERNAL_ERROR(error) "execute") id `fmap` runErrorT e
 
 
 #if !MIN_VERSION_llvm_general(3,3,0)

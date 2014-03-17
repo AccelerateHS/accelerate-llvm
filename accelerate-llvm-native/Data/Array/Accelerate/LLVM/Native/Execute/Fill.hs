@@ -49,6 +49,9 @@ fillP len fill
     -- Decide now to split the work across the threads. If the length of the
     -- vector doesn't divide evenly among the threads, then the first few get an
     -- extra element.
+    --
+    -- TLM: Update calculations so that chunks align with the SIMD vector width.
+    --
     workers             = gangSize theGang
     chunkLen            = len `quotInt` workers
     chunkLeftover       = len `remInt`  workers
