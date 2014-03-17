@@ -1,0 +1,28 @@
+#!/bin/bash
+
+GHC=`which ghc`
+VER=`$GHC --numeric-version`
+GHC_CORE=`which -a ghc-core | grep -v "\./ghc-core"`
+
+# We usually don't want to see type casts or generated assembly.
+#
+GHC_CORE_FLAGS="$GHC_CORE_FLAGS
+    --no-cast
+    --no-asm"
+
+# Assume we are using a cabal sandbox in the root directory. If you have
+# installed elsewhere or globally, change or delete the 'package-db' line.
+#
+GHC_FLAGS="$GHC_FLAGS
+    -odir dist -hidir dist
+    -DACCELERATE_BOUNDS_CHECKS
+    -DACCELERATE_INTERNAL_CHECKS
+    -DACCELERATE_DEBUG
+    -iaccelerate-llvm
+    -iaccelerate-llvm-native
+    -iaccelerate-llvm-nvvm
+    -package-db .cabal-sandbox/x86_64-osx-ghc-$VER-packages.conf.d
+    -Iaccelerate-llvm/include -optP-include -optPaccelerate-llvm/dist/build/autogen/cabal_macros.h"
+
+$GHC_CORE $GHC_CORE_FLAGS -- $GHC_FLAGS $@
+
