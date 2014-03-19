@@ -21,9 +21,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile (
 import LLVM.General.AST                                         hiding ( Module )
 import LLVM.General.Module                                      as LLVM
 import LLVM.General.Context
-import LLVM.General.PassManager
 import LLVM.General.Target
-import LLVM.General.Transforms
 import qualified LLVM.General.AST                               as AST
 
 -- accelerate
@@ -34,6 +32,8 @@ import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
+
+import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
@@ -95,103 +95,12 @@ withOptimisedModuleFromAST ctx ast next =
   runError $ withModuleFromAST ctx ast $ \mdl     ->
   runError $ withNativeTargetMachine   $ \machine ->
     withTargetLibraryInfo triple       $ \libinfo -> do
-
-      let p1 = PassSetSpec prepass datalayout (Just libinfo) (Just machine)
-          p2 = PassSetSpec optpass datalayout (Just libinfo) (Just machine)
-
-      _ <- withPassManager p1 $ \pm -> runPassManager pm mdl
-      _ <- withPassManager p2 $ \pm -> runPassManager pm mdl
-
+      optimiseModule datalayout (Just machine) (Just libinfo) mdl
       next mdl
   where
     runError    = either (INTERNAL_ERROR(error) "withOptimisedModuleFromAST") return <=< runErrorT
-
     triple      = fromMaybe "" (moduleTargetTriple ast)
     datalayout  = moduleDataLayout ast
 
 
--- The first gentle optimisation pass. I think this is usually done when loading
--- the module?
---
--- This is the first section of output running 'opt -O3 -debug-pass=Arguments'
---
--- Pass Arguments:
---  -datalayout -notti -basictti -x86tti -no-aa -tbaa -targetlibinfo -basicaa
---  -preverify -domtree -verify -simplifycfg -domtree -sroa -early-cse
---  -lower-expect
---
-prepass :: [Pass]
-prepass =
-  [ SimplifyControlFlowGraph
-  , ScalarReplacementOfAggregates { requiresDominatorTree = True }
-  , EarlyCommonSubexpressionElimination
-  , LowerExpectIntrinsic
-  ]
-
--- The main optimisation pipeline. This mostly matches the process of running
--- 'opt -O3 -debug-pass=Arguments'. We are missing dead argument elimination and
--- in particular, slp-vectorizer (super-word level parallelism).
---
--- Pass Arguments:
---   -targetlibinfo -datalayout -notti -basictti -x86tti -no-aa -tbaa -basicaa
---   -globalopt -ipsccp -deadargelim -instcombine -simplifycfg -basiccg -prune-eh
---   -inline-cost -inline -functionattrs -argpromotion -sroa -domtree -early-cse
---   -lazy-value-info -jump-threading -correlated-propagation -simplifycfg
---   -instcombine -tailcallelim -simplifycfg -reassociate -domtree -loops
---   -loop-simplify -lcssa -loop-rotate -licm -lcssa -loop-unswitch -instcombine
---   -scalar-evolution -loop-simplify -lcssa -indvars -loop-idiom -loop-deletion
---   -loop-unroll -memdep -gvn -memdep -memcpyopt -sccp -instcombine
---   -lazy-value-info -jump-threading -correlated-propagation -domtree -memdep -dse
---   -loops -scalar-evolution -slp-vectorizer -adce -simplifycfg -instcombine
---   -barrier -domtree -loops -loop-simplify -lcssa -scalar-evolution
---   -loop-simplify -lcssa -loop-vectorize -instcombine -simplifycfg
---   -strip-dead-prototypes -globaldce -constmerge -preverify -domtree -verify
---
-optpass :: [Pass]
-optpass =
-  [
-    InterproceduralSparseConditionalConstantPropagation                 -- ipsccp
-  , InstructionCombining
-  , SimplifyControlFlowGraph
-  , PruneExceptionHandling
-  , FunctionInlining { functionInliningThreshold = 275 }                -- -O2 => 275
-  , FunctionAttributes
-  , ArgumentPromotion                                                   -- not needed?
-  , ScalarReplacementOfAggregates { requiresDominatorTree = True }      -- false?
-  , EarlyCommonSubexpressionElimination
-  , JumpThreading
-  , CorrelatedValuePropagation
-  , SimplifyControlFlowGraph
-  , InstructionCombining
-  , TailCallElimination
-  , SimplifyControlFlowGraph
-  , Reassociate
-  , LoopRotate
-  , LoopInvariantCodeMotion
-  , LoopClosedSingleStaticAssignment
-  , LoopUnswitch { optimizeForSize = False }
-  , LoopInstructionSimplify
-  , InstructionCombining
-  , InductionVariableSimplify
-  , LoopIdiom
-  , LoopDeletion
-  , LoopUnroll { loopUnrollThreshold = Nothing
-               , count               = Nothing
-               , allowPartial        = Nothing }
-  , GlobalValueNumbering { noLoads = False }                             -- loads??
-  , SparseConditionalConstantPropagation
-  , InstructionCombining
-  , JumpThreading
-  , CorrelatedValuePropagation
-  , DeadStoreElimination
-  , defaultVectorizeBasicBlocks                                         -- instead of slp-vectorizer?
-  , AggressiveDeadCodeElimination
-  , SimplifyControlFlowGraph
-  , InstructionCombining
-  , LoopVectorize
-  , InstructionCombining
-  , SimplifyControlFlowGraph
-  , GlobalDeadCodeElimination
-  , ConstantMerge
-  ]
 
