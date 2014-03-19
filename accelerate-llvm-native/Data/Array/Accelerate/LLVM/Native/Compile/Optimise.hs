@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 -- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
@@ -28,16 +29,24 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Text.Printf
 
 
+-- | Run the standard optimisations on the given module when targeting a
+-- specific machine and data layout. Specifically, this will run the
+-- optimisation passes such that LLVM has the necessary information to
+-- automatically vectorise loops (whenever it deems beneficial to do so).
+--
 optimiseModule
     :: Maybe DataLayout
     -> Maybe TargetMachine
     -> Maybe TargetLibraryInfo
     -> Module
     -> IO ()
-optimiseModule datalayout machine libinfo mdl =
+optimiseModule datalayout machine libinfo mdl = do
+#if !MIN_VERSION_llvm_general(3,3,0)
+  machine <- maybe (return Nothing) (\m -> Just `fmap` getTargetLowering m) machine
+#endif
+
   let p1 = PassSetSpec prepass datalayout libinfo machine
       p2 = PassSetSpec optpass datalayout libinfo machine
-  in do
 
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
   b2 <- withPassManager p2 $ \pm -> runPassManager pm mdl
