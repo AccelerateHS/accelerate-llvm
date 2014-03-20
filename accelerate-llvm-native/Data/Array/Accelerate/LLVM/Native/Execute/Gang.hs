@@ -108,10 +108,14 @@ forkGang n
         -- Create the vars we'll use to signal that threads are done.
         mvsDone         <- replicateM n newEmptyMVar
 
-        -- Add finalisers so we can shut the workers down cleanly if they
-        -- become unreachable.
-        zipWithM_ (\varReq varDone
-                        -> mkWeakMVar varReq (finaliseWorker varReq varDone))
+        -- Add finalisers so we can shut the workers down cleanly if they become
+        -- unreachable. It is very racy as to which MVar is finalised first. If
+        -- we don't put the finaliser on both MVars required by the finaliser,
+        -- and the wrong one is GC'd first, the thread never receives the
+        -- shutdown signal.
+        zipWithM_ (\varReq varDone -> do
+                          mkWeakMVar varReq  (finaliseWorker varReq varDone)
+                          mkWeakMVar varDone (finaliseWorker varReq varDone))
                 mvsRequest
                 mvsDone
 

@@ -112,7 +112,12 @@ startFunction withFunctions = do
   varFun  <- newEmptyMVar
   varReq  <- newEmptyMVar
   varDone <- newEmptyMVar
-  _       <- mkWeakMVar varReq (finaliseFunction varReq varDone)
+
+  -- The finaliser requires access to both varReq and varDone, but which is GC'd
+  -- first is very racey. If we don't put the finaliser on both, and other MVar
+  -- is GC'd first, the function will never get the shutdown request.
+  _       <- mkWeakMVar varReq  (finaliseFunction varReq varDone)
+  _       <- mkWeakMVar varDone (finaliseFunction varReq varDone)
 
   _       <- forkIO $ withFunctions $ \f -> do
     putMVar varFun f
