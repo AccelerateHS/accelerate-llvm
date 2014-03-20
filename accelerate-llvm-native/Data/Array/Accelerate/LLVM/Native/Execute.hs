@@ -217,20 +217,19 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
       = do executeOpWith sz sh
 
       -- Parallel reduction
-      | otherwise
+      | NativeR k <- kernel
       = do  let chunks  = gangSize theGang
                 tmp     = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
                 out     = allocateArray sh
                 n       = sz `min` chunks
             --
-            liftIO $ case kernel of
-              NativeR k -> do
-                executeNamedFunction k "fold1"   $ \f ->
-                  fillP (size sh * sz) $ \start end tid ->
-                    callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
+            liftIO $ do
+              executeNamedFunction k "fold1"   $ \f ->
+                fillP (size sh * sz) $ \start end tid ->
+                  callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
 
-                executeNamedFunction k "foldAll" $ \f ->
-                  callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
+              executeNamedFunction k "foldAll" $ \f ->
+                callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
 
             return out
 
