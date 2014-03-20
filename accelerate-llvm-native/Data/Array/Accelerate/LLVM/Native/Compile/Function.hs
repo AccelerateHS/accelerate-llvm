@@ -25,6 +25,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Control.Concurrent
 import Data.List
 import Foreign.Ptr
+import System.IO.Unsafe
 
 #include "accelerate.h"
 
@@ -123,11 +124,11 @@ startFunction withFunctions = do
     putMVar varFun f
     functionLoop varReq varDone
 
-  f       <- takeMVar varFun
-  let fun  = Function f varReq varDone
+  let fun    = unsafePerformIO $ takeMVar varFun
+      worker = Function fun varReq varDone
 
-  message $ "created worker function: " ++ show fun
-  return fun
+  message $ "created worker function: " ++ show worker
+  return worker
 
 
 -- | The worker thread blocks on the MVar waiting for a work request. On
