@@ -63,19 +63,53 @@ These are some TODOs and notes that pop into my head from time to time...
 **Native backend**
 
   * Complete coverage of skeleton operations
+    - [x] map
+    - [x] generate/zipWith
+    - [x] backpermute/transform
+    - [x] slice/replicate
+    - [x] reshape
+    - [x] fold (multidimensional)
+    - [x] foldAll (parallel optimisation)
+    - [ ] scanl, scanr
+    - [ ] scanl1, scanr1
+    - [ ] scanl', scanr'
+    - [ ] foldSeg
+    - [ ] permute
+    - [ ] stencil
+    - [ ] stencil2
+    - [ ] foreign functions
+
+  * SLP vectorization
+
 
 **NVPTX backend**
 
   * Complete coverage of skeleton operations
+    - [x] map
+    - [x] generate/zipWith
+    - [x] backpermute/transform
+    - [x] slice/replicate
+    - [x] reshape
+    - [ ] fold (multidimensional)
+    - [ ] foldAll (parallel optimisation)
+    - [ ] scanl, scanr
+    - [ ] scanl1, scanr1
+    - [ ] scanl', scanr'
+    - [ ] foldSeg
+    - [ ] permute
+    - [ ] stencil
+    - [ ] stencil2
+    - [ ] foreign functions
 
-  * Rename NVVM -> NVPTX?
+  * Rename NVVM -> NVPTX? (or something else)
+
 
 **Thread safety**
 
   * There is a bunch of behind-the-scenes state going on. This is all wrapped in
     MVars, but I'm still not certain if it is all correct. There is a line in
     the MVar documentation that says 'modifyMVar' is "only atomic if there are
-    no other producers for this MVar", which is a little worrying...
+    no other producers for this MVar". I'm not sure what they mean by producers.
 
   * IORef might be a (faster?) lighter-weight alternative to using MVar.
 
