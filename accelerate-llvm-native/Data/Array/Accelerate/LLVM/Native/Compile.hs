@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile (
 -- llvm-general
 import LLVM.General.AST                                         hiding ( Module )
 import LLVM.General.Module                                      as LLVM
+import LLVM.General.Context
 import LLVM.General.Target
 import LLVM.General.ExecutionEngine
 
@@ -72,8 +73,12 @@ compileForNativeTarget acc aenv = do
   --
   -- See note: [Executing JIT-compiled functions]
   --
-  ctx <- asks llvmContext
+  -- Don't use the existing context stored in the LLVM state, as that would
+  -- sometimes lead to a segfault. Instead, the worker thread runs in a new
+  -- 'withContext'.
+  --
   fun <- liftIO . startFunction $ \loop ->
+    withContext                          $ \ctx     ->
     runError $ withModuleFromAST ctx ast $ \mdl     ->
     runError $ withNativeTargetMachine   $ \machine ->
       withTargetLibraryInfo triple       $ \libinfo -> do
