@@ -20,11 +20,11 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 
 -- llvm-general
 import LLVM.General.Target                                      hiding ( Target )
-import LLVM.General.AST                                         ( Module )
 import LLVM.General.AST.DataLayout                              ( DataLayout )
 
 -- accelerate
-import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
+import Data.Array.Accelerate.LLVM.Native.Compile.Function       ( Function )
 
 -- standard library
 import Control.Monad.Error
@@ -38,8 +38,7 @@ import System.IO.Unsafe
 data Native = Native
 
 instance Target Native where
-  data ExecutableR Native = NativeR { executableR :: Module }
---  data ExecutableR Native = NativeR { executableR :: [FunPtr ()] }
+  data ExecutableR Native = NativeR { executableR :: Function }
 
   targetTriple     _ = Just nativeTargetTriple
   targetDataLayout _ = Just nativeDataLayout

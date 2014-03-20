@@ -19,11 +19,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
 ) where
 
--- llvm-general
-import LLVM.General.ExecutionEngine
-import LLVM.General.AST.Name
-import qualified LLVM.General.AST                               as AST
-
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
@@ -39,7 +34,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Compile
+import Data.Array.Accelerate.LLVM.Native.Compile.Function
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Fill
 import Data.Array.Accelerate.LLVM.Native.Execute.Gang
@@ -50,9 +45,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad.Error
-import Control.Monad.Reader
 
-import Foreign.Ptr
 import Foreign.LibFFI                                           as FFI
 
 #if !MIN_VERSION_llvm_general(3,3,0)
@@ -230,11 +223,13 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
                 out     = allocateArray sh
                 n       = sz `min` chunks
             --
-            compile kernel $ \ee -> do
-              link ee "fold1" $ \f ->
-                fillP (size sh * sz) $ \start end tid ->
-                  callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
-              link ee "foldAll" $ \f ->
+            liftIO $ case kernel of
+              NativeR k -> do
+                executeNamedFunction k "fold1"   $ \f ->
+                  fillP (size sh * sz) $ \start end tid ->
+                    callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
+
+                executeNamedFunction k "foldAll" $ \f ->
                   callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
 
             return out
@@ -350,48 +345,8 @@ execute
     -> Int
     -> args
     -> LLVM Native ()
-execute kernel@(NativeR ast) gamma aenv n args =
-  let main = Name (AST.moduleName ast) in
-  compile kernel $ \ee ->
-  link ee main   $ \f  ->
-  fillP n        $ \start end _ ->
+execute (NativeR main) gamma aenv n args = liftIO $
+  executeFunction main $ \f ->
+  fillP n              $ \start end _ ->
     callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
-
-
-link :: ExecutableModule MCJIT -> Name -> (FunPtr () -> IO a) -> IO a
-link exe main run =
-  maybe (INTERNAL_ERROR(error) "link" "function not found") run =<< getFunction exe main
-
-
-compile :: ExecutableR Native -> (ExecutableModule MCJIT -> IO a) -> LLVM Native a
-compile (NativeR ast) next = do
-  ctx   <- asks llvmContext
-  liftIO $
-    withOptimisedModuleFromAST ctx ast   $ \mdl   ->
-    withMCJIT ctx opt model ptrelim fast $ \mcjit ->
-    withModuleInEngine mcjit mdl next
-  where
-    opt         = Just 3        -- optimisation level
-    model       = Nothing       -- code model?
-    ptrelim     = Nothing       -- True to disable frame pointer elimination
-    fast        = Just True     -- True to enable fast instruction selection
-
-
-#if !MIN_VERSION_llvm_general(3,3,0)
--- Shims to support the older LLVM-3.2, which are required if the user is using
--- libNVVM to optimise NVPTX code.
---
-type MCJIT = JIT
-
-withMCJIT
-    :: LLVM.Context
-    -> Maybe Word
-    -> model
-    -> fpe
-    -> fis
-    -> (MCJIT -> IO a)
-    -> IO a
-withMCJIT ctx opt _ _ _ action =
-  withJIT ctx (fromMaybe 0 opt) action
-#endif
 
