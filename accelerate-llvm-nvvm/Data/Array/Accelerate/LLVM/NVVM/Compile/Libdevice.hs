@@ -116,7 +116,7 @@ nvvmReflectPass_mdl =
 nvvmReflectPass_bc :: (String, ByteString)
 nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
   withContext $ \ctx -> do
-  runError    $ withModuleFromAST ctx nvvmReflectPass_mdl (return . B8.pack <=< moduleLLVMAssembly)
+    runError  $ withModuleFromAST ctx nvvmReflectPass_mdl (return . B8.pack <=< moduleLLVMAssembly)
   where
     name     = "__nvvm_reflect"
     runError = either (INTERNAL_ERROR(error) "nvvmReflectPass") return <=< runErrorT
