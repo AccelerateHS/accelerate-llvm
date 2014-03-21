@@ -18,8 +18,10 @@ module Data.Array.Accelerate.LLVM.NVVM.Compile (
 ) where
 
 -- llvm-general
+import LLVM.General.Context                                     ( Context )
 import LLVM.General.AST                                         hiding ( Module )
 import LLVM.General.AST.Global
+import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.Analysis                          as LLVM
 import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
@@ -76,11 +78,10 @@ compileForNVPTX acc aenv = do
   ctx    <- asks llvmContext
   let Module ast = llvmOfAcc nvvm acc aenv
       dev        = nvvmDeviceProperties nvvm
-      name       = moduleName ast
       globals    = globalFunctions (moduleDefinitions ast)
 
   liftIO $ do
-    ptx  <- withLibdevice dev ctx ast (compileModule dev name)
+    ptx  <- compileModule dev ctx ast
     funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
     return $! NVVMR funs ptx
 
@@ -93,22 +94,26 @@ compileForNVPTX acc aenv = do
 --    * If we are just using the llvm ptx backend, we still need to run the
 --    standard optimisations.
 --
-compileModule :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
-compileModule dev name mdl =
+compileModule :: CUDA.DeviceProperties -> Context -> AST.Module -> IO CUDA.Module
+compileModule dev ctx ast =
+  let name      = moduleName ast in
 #ifdef ACCELERATE_USE_LIBNVVM
-  compileModuleNVVM dev name mdl
+  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev name)
 #else
-  compileModuleNVPTX dev name mdl
+  withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev name)
 #endif
+
 
 #ifdef ACCELERATE_USE_LIBNVVM
 -- Compiling the module with libNVVM implicitly uses LLVM-3.2.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
-compileModuleNVVM dev name mdl = do
+compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO CUDA.Module
+compileModuleNVVM dev name libdevice mdl = do
   -- Lower the module to bitcode and have libNVVM compile to PTX
-  let arch    = CUDA.computeCapability dev
-      verbose = if Debug.mode Debug.debug then [ NVVM.GenerateDebugInfo ] else []
+  let arch      = CUDA.computeCapability dev
+      verbose   = if Debug.mode Debug.debug then [ NVVM.GenerateDebugInfo ] else []
+      flags     = NVVM.Target arch : verbose
+
 #ifdef ACCELERATE_INTERNAL_CHECKS
       verify  = True
 #else
@@ -116,7 +121,7 @@ compileModuleNVVM dev name mdl = do
 #endif
 
   ll    <- LLVM.moduleString mdl        -- no LLVM.moduleBitcode in llvm-general-3.2.*
-  ptx   <- NVVM.compileModule name (B.pack ll) (NVVM.Target arch : verbose) verify
+  ptx   <- NVVM.compileModules ((name,B.pack ll):libdevice) flags verify
 
   -- Debugging
   Debug.when Debug.dump_llvm $ do

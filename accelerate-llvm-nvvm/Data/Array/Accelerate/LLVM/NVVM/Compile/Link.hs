@@ -15,7 +15,8 @@
 
 module Data.Array.Accelerate.LLVM.NVVM.Compile.Link (
 
-  withLibdevice
+  withLibdeviceNVVM,
+  withLibdeviceNVPTX,
 
 ) where
 
@@ -42,6 +43,7 @@ import Foreign.CUDA.Analysis
 
 -- standard library
 import Control.Monad.Error
+import Data.ByteString                                          ( ByteString )
 import Data.HashSet                                             ( HashSet )
 import Data.List
 import Data.Monoid
@@ -74,8 +76,13 @@ import qualified Data.HashSet                                   as Set
 --
 --   6. Run the standard optimisation pipeline
 --
-withLibdevice :: DeviceProperties -> Context -> Module -> (LLVM.Module -> IO a) -> IO a
-withLibdevice dev ctx (analyse -> (externs, ast)) next =
+withLibdeviceNVPTX
+    :: DeviceProperties
+    -> Context
+    -> Module
+    -> (LLVM.Module -> IO a)
+    -> IO a
+withLibdeviceNVPTX dev ctx (analyse -> (externs, ast)) next =
   case Set.null externs of
     True        -> runError $ LLVM.withModuleFromAST ctx ast next
     False       ->
@@ -88,7 +95,38 @@ withLibdevice dev ctx (analyse -> (externs, ast)) next =
         next libd
   where
     arch        = computeCapability dev
-    runError e  = either (INTERNAL_ERROR(error) "withLibdeviceNVPTX") id `fmap` runErrorT e
+    runError    = either (INTERNAL_ERROR(error) "withLibdeviceNVPTX") return <=< runErrorT
+
+    msg         = printf "cc: linking with libdevice: %s"
+                $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))
+
+
+-- | Lower an LLVM AST to C++ objects and prepare it for linking against
+-- libdevice using the libnvvm bindings, iff any libdevice functions are
+-- referenced from the base module.
+--
+-- Note that due to limitations in the llvm-general-3.2.* API, which we are
+-- required to use due to limitations with libnvvm, unused functions from
+-- libdevice are NOT internalised.
+--
+withLibdeviceNVVM
+    :: DeviceProperties
+    -> Context
+    -> Module
+    -> ([(String, ByteString)] -> LLVM.Module -> IO a)
+    -> IO a
+withLibdeviceNVVM dev ctx (analyse -> (externs, ast)) next =
+  runError $ LLVM.withModuleFromAST ctx ast $ \mdl -> do
+    when withlib $ Debug.message Debug.dump_cc msg
+    next lib mdl
+
+  where
+    withlib             = not (Set.null externs)
+    lib | withlib       = [ nvvmReflect, libdevice arch ]
+        | otherwise     = []
+
+    arch        = computeCapability dev
+    runError    = either (INTERNAL_ERROR(error) "withLibdeviceNVPTX") return <=< runErrorT
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))
