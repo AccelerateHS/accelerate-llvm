@@ -76,6 +76,7 @@ Library
 
     Data.Array.Accelerate.LLVM.NVVM.Compile
     Data.Array.Accelerate.LLVM.NVVM.Compile.Link
+    Data.Array.Accelerate.LLVM.NVVM.Compile.Libdevice
 
     Data.Array.Accelerate.LLVM.NVVM.Execute
     Data.Array.Accelerate.LLVM.NVVM.Execute.Environment
