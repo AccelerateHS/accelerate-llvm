@@ -114,8 +114,8 @@ forkGang n
         -- and the wrong one is GC'd first, the thread never receives the
         -- shutdown signal.
         zipWithM_ (\varReq varDone -> do
-                          mkWeakMVar varReq  (finaliseWorker varReq varDone)
-                          mkWeakMVar varDone (finaliseWorker varReq varDone))
+                          void $ mkWeakMVar varReq  (finaliseWorker varReq varDone)
+                          void $ mkWeakMVar varDone (finaliseWorker varReq varDone))
                 mvsRequest
                 mvsDone
 
