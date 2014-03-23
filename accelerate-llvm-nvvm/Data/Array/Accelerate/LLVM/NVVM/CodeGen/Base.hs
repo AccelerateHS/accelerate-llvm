@@ -63,10 +63,11 @@ __syncthreads =
 -- dummy to fix the types. Note that the output operand is truncated to a 32-bit
 -- integer.
 --
-shapeSize :: Shape sh => Array sh e -> Name -> CodeGen Operand
-shapeSize arr base =
-  let sh = arrayShape arr base
-  in  trunc int32 =<< foldM (mul int) (constOp $ num int 1) (map local sh)
+shapeSize :: Rvalue a => [a] -> CodeGen Operand
+shapeSize []     = return $ constOp (num int32 1)
+shapeSize [x]    = trunc int32 (rvalue x)
+shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
+
 
 -- The size of the thread grid.
 --

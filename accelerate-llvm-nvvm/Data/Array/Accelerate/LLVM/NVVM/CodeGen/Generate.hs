@@ -52,7 +52,7 @@ mkGenerate _dev aenv apply =
   makeKernel "generate" (paramOut ++ paramEnv) $ do
 
     start <- return (constOp $ integral int32 0)
-    end   <- shapeSize (undefined::Array sh b) "out"
+    end   <- shapeSize shOut
 
     imapFromTo start end $ \i -> do
       ii  <- fromIntegral int32 int i           -- keep the loop counter as i32, but do calculations in Int

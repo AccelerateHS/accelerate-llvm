@@ -56,7 +56,7 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
   makeKernel "transform" (paramOut ++ paramEnv) $ do
 
     start <- return (constOp $ integral int32 0)
-    end   <- shapeSize (undefined::Array sh b) "out"
+    end   <- shapeSize shOut
 
     imapFromTo start end $ \i -> do
       ii  <- fromIntegral int32 int i           -- loop counter is i32, calculation is in Int

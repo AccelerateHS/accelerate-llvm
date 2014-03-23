@@ -45,14 +45,15 @@ mkMap :: forall t aenv sh a b. Elt b
       -> CodeGen [Kernel t aenv (Array sh b)]
 mkMap _nvvm aenv apply IRDelayed{..} =
   let
-      arrOut      = arrayData  (undefined::Array sh b) "out"
-      paramOut    = arrayParam (undefined::Array sh b) "out"
-      paramEnv    = envParam aenv
+      arrOut    = arrayData  (undefined::Array sh b) "out"
+      shOut     = arrayShape (undefined::Array sh b) "out"
+      paramOut  = arrayParam (undefined::Array sh b) "out"
+      paramEnv  = envParam aenv
   in
   makeKernel "map" (paramOut ++ paramEnv) $ do
 
     start <- return (constOp $ integral int32 0)
-    end   <- shapeSize (undefined::Array sh b) "out"
+    end   <- shapeSize shOut
 
     imapFromTo start end $ \i -> do
       xs <- delayedLinearIndex [i]
