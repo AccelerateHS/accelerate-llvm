@@ -69,6 +69,18 @@ local = LocalReference
 global :: Name -> Operand
 global = ConstantOperand . GlobalReference
 
+class Rvalue a where
+  rvalue :: a -> Operand
+
+instance Rvalue Name where
+  rvalue = local
+
+instance Rvalue Operand where
+  rvalue = id
+
+instance Rvalue Constant where
+  rvalue = ConstantOperand
+
 
 -- Code generation
 -- ===============
