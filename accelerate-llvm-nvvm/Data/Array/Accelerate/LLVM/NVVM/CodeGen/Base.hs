@@ -14,12 +14,13 @@ module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
 -- llvm-general
 import LLVM.General.AST
+import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.Global                                  as G
 import LLVM.General.AST.CallingConvention
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape )
+import Data.Array.Accelerate.Array.Sugar                        ( Elt, eltType )
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -57,6 +58,48 @@ __syncthreads =
   in do
     declare decl
     do_ $ Call True C [] (Right (global fn)) [] attrs []
+
+
+-- External declaration in shared memory address space. This is used to access
+-- memory allocated dynamically by the CUDA driver. This results in the
+-- following global declaration:
+--
+-- > @__shared__ = external addrspace(3) global [0 x i8]
+--
+initialiseSharedMemory :: CodeGen ()
+initialiseSharedMemory =
+  declare $ globalVariableDefaults
+    { addrSpace = AddrSpace 3
+    , G.type'   = ArrayType 0 (IntegerType 8)
+    , G.name    = "__shared__"
+    }
+
+
+-- Generate names for dynamically allocated __shared__ memory.
+--
+sharedMem
+    :: Elt e
+    => e                        -- dummy to fix the type of the shared array
+    -> Operand                  -- how many elements of shared memory to reserve for each type
+    -> CodeGen [Name]
+sharedMem dummy nelt =
+  let ty        = llvmOfTupleType (eltType dummy)
+      offset    = constOp (num int32 0) : repeat nelt
+
+      shared1 :: Operand -> Operand -> Type -> CodeGen Operand
+      shared1 a i t = do
+        p <- instr $ GetElementPtr False a [i] []
+        s <- instr $ BitCast p (PointerType t (AddrSpace 3)) []
+        return s
+
+      shared _ _      []     = return []
+      shared _ []     _      = return []
+      shared a (i:is) (t:ts) = do
+        a'@(LocalReference n)   <- shared1 a  i  t
+        ns                      <- shared  a' is ts
+        return (n:ns)
+  in
+  shared (global "__shared__") offset ty
 
 
 -- The total number of elements in the given array. The first argument is a
