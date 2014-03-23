@@ -52,11 +52,11 @@ specialPTXReg reg =
 __syncthreads :: CodeGen ()
 __syncthreads =
   let fn        = "llvm.nvvm.barrier0"
-      attrs     = [NoUnwind, ReadOnly]
+      attrs     = [NoUnwind]
       decl      = functionDefaults { name = fn, returnType = VoidType, G.functionAttributes = attrs }
   in do
     declare decl
-    do_ $ Call False C [] (Right (global fn)) [] attrs []
+    do_ $ Call True C [] (Right (global fn)) [] attrs []
 
 
 -- The total number of elements in the given array. The first argument is a
