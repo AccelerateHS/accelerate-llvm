@@ -412,19 +412,31 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 -- TODO: attach metedata node "!invariant.load" ?
 --
 readArray :: [Name] -> Operand -> CodeGen [Operand]
-readArray arr i =
+readArray = readArray' False
+
+readVolatileArray :: [Name] -> Operand -> CodeGen [Operand]
+readVolatileArray = readArray' True
+
+readArray' :: Bool -> [Name] -> Operand -> CodeGen [Operand]
+readArray' volatile arr i =
   forM arr $ \a -> do
     p <- instr $ GetElementPtr False (local a) [i] []
-    v <- instr $ Load False p Nothing 0 []
+    v <- instr $ Load volatile p Nothing 0 []
     return v
 
 -- Write elements into an array.
 --
 writeArray :: [Name] -> Operand -> [Operand] -> CodeGen ()
-writeArray arr i val =
+writeArray = writeArray' False
+
+writeVolatileArray :: [Name] -> Operand -> [Operand] -> CodeGen ()
+writeVolatileArray = writeArray' True
+
+writeArray' :: Bool -> [Name] -> Operand -> [Operand] -> CodeGen ()
+writeArray' volatile arr i val =
   zipWithM_ (\a v -> do
     p <- instr $ GetElementPtr False (local a) [i] []
-    do_        $ Store False p v Nothing 0 []) arr val
+    do_        $ Store volatile p v Nothing 0 []) arr val
 
 -- Convert a multidimensional array index into a linear index
 --
