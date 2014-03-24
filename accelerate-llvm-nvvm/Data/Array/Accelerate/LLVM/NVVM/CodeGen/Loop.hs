@@ -53,3 +53,23 @@ imapFromTo start end body = do
            (\ix -> add int32 ix step)
            body
 
+
+-- | Iterate with an accumulator between the start and end index, executing the
+-- given function at each.
+--
+iterFromTo
+    :: Operand
+    -> Operand
+    -> [Type]
+    -> [Operand]
+    -> (Operand -> [Operand] -> CodeGen [Operand])
+    -> CodeGen [Operand]
+iterFromTo start end tacc acc body = do
+  step  <- gridSize
+
+  Loop.iter (typeOf (int32 :: IntegralType Int32))
+            start
+            (\i -> lt int i end)
+            (\i -> add int i step)
+            tacc acc body
+

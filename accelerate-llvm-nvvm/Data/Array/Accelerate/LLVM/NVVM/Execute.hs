@@ -133,6 +133,10 @@ executeOpenAcc (ExecAcc nvvm gamma pacc) aenv stream =
     Backpermute sh _ _          -> executeOp =<< travE sh
     Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
 
+    -- Consumers
+    Fold _ _ a                  -> foldOp  =<< extent a
+    Fold1 _ a                   -> fold1Op =<< extent a
+
     -- Removed by fusion
     Replicate{}                 -> fusionError
     Slice{}                     -> fusionError
@@ -178,11 +182,11 @@ executeOpenAcc (ExecAcc nvvm gamma pacc) aenv stream =
     --
     executeOp :: (Shape sh, Elt e) => sh -> LLVM NVVM (Array sh e)
     executeOp sh = do
-      let kernel = case nvvm of
-                     NVVMR{..} | k:_ <- nvvmKernel -> k
-                     _                             -> INTERNAL_ERROR(error) "executeOp" "kernel not found"
+      let kernel = case nvvmKernel nvvm of
+                      k:_ -> k
+                      _   -> INTERNAL_ERROR(error) "executeOp" "kernel not found"
       --
-      out       <- allocateArray sh
+      out <- allocateArray sh
       execute kernel gamma aenv stream (size sh) out
       return out
 
@@ -194,6 +198,71 @@ executeOpenAcc (ExecAcc nvvm gamma pacc) aenv stream =
       = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
       $ Array (fromElt sh) adata
 
+    -- Executing fold operations depend on whether we are recursively collapsing
+    -- to a single value using multiple thread blocks, or a multidimensional
+    -- single-pass reduction where there is one block per inner dimension.
+    --
+    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM NVVM (Array sh e)
+    fold1Op sh@(_ :. sz)
+      = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+      $ foldCore sh
+
+    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM NVVM (Array sh e)
+    foldOp (sh :. sz)
+      = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
+
+    foldCore :: (Shape sh, Elt e) => (sh :. Int) -> LLVM NVVM (Array sh e)
+    foldCore sh'@(sh :. _)
+      | dim sh > 0      = executeOp sh
+      | otherwise       = foldAllOp sh'
+
+    -- NOTE: [Marshalling foldAll output array]
+    --
+    -- As far as the overall foldAll kernel is concerned, the type of the output
+    -- array is a singleton array. This means that when the code is generated
+    -- for the kernel function parameters, there is no shape argument associated
+    -- with this parameter. However, foldAll is a multi-step algorithm where the
+    -- _intermediate_ output array is actually a _vector_.
+    --
+    -- When marshalling the output array to the kernel invocation, it is thus
+    -- important to only marshal the array data component. Marshalling the
+    -- entire Array structure (as output from 'allocateArray') will also marshal
+    -- the shape component. Since the kernel is not set up to accept the shape
+    -- argument, these will overwrite subsequent kernel parameters --- disaster!
+    --
+    foldAllOp :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM NVVM (Array sh e)
+    foldAllOp sh'
+      | k1:{- k2:-} _ <- nvvmKernel nvvm
+      = let
+            foldIntro :: (sh :. Int) -> LLVM NVVM (Array sh e)
+            foldIntro (sh:.sz) = do
+              let numElements   = size sh * sz
+                  numBlocks     = (kernelThreadBlocks k1) numElements
+
+              out@(Array _ adata) <- allocateArray (sh :. numBlocks)
+              execute k1 gamma aenv stream numElements adata
+              foldRec out
+
+            foldRec :: Array (sh :. Int) e -> LLVM NVVM (Array sh e)
+            foldRec arr@(Array (sh,sz) adata) =
+              let numElements   = R.size sh * sz
+--                  numBlocks     = (kernelThreadBlocks k2) numElements
+              in if sz <= 1
+                    then do
+                      -- We have recursed to a single block already
+                      return $! Array sh adata
+
+                    else do
+                      error "TODO: multi-block foldAll"
+                      -- Keep cooperatively reducing the output
+--                      out <- allocateArray (toElt sh :. numBlocks)
+--                      execute k2 gamma aenv stream numElements (out,arr)        --XXX: same as above RE. out?
+--                      foldRec out
+        in
+        foldIntro sh'
+
+      | otherwise
+      = INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
 
 
 -- Scalar expression evaluation

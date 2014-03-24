@@ -15,17 +15,17 @@ module Data.Array.Accelerate.LLVM.NVVM.CodeGen
 -- accelerate
 import Data.Array.Accelerate.LLVM.CodeGen
 
---import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Fold
-import Data.Array.Accelerate.LLVM.NVVM.Target
+import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Map
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Transform
+import Data.Array.Accelerate.LLVM.NVVM.Target
 
 
 instance Skeleton NVVM where
   map           = mkMap
   generate      = mkGenerate
   transform     = mkTransform
---  fold          = mkFold
+  fold          = mkFold
 --  fold1         = mkFold1
 

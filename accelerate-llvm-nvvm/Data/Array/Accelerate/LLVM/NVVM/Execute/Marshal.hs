@@ -121,7 +121,7 @@ instance (Shape sh, Elt e) => Marshalable (Array sh e) where
 
 instance (Marshalable a, Marshalable b) => Marshalable (a, b) where
   marshal' s (a, b) =
-    return DL.append `ap` marshal' s a`ap` marshal' s b
+    DL.concat `fmap` sequence [marshal' s a, marshal' s b]
 
 instance (Marshalable a, Marshalable b, Marshalable c) => Marshalable (a, b, c) where
   marshal' s (a, b, c) =
