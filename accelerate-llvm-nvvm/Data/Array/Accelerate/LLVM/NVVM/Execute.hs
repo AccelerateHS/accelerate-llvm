@@ -216,48 +216,37 @@ executeOpenAcc (ExecAcc nvvm gamma pacc) aenv stream =
       | dim sh > 0      = executeOp sh
       | otherwise       = foldAllOp sh'
 
-    -- NOTE: [Marshalling foldAll output array]
-    --
-    -- As far as the overall foldAll kernel is concerned, the type of the output
-    -- array is a singleton array. This means that when the code is generated
-    -- for the kernel function parameters, there is no shape argument associated
-    -- with this parameter. However, foldAll is a multi-step algorithm where the
-    -- _intermediate_ output array is actually a _vector_.
-    --
-    -- When marshalling the output array to the kernel invocation, it is thus
-    -- important to only marshal the array data component. Marshalling the
-    -- entire Array structure (as output from 'allocateArray') will also marshal
-    -- the shape component. Since the kernel is not set up to accept the shape
-    -- argument, these will overwrite subsequent kernel parameters --- disaster!
+    -- See note: [Marshalling foldAll output arrays]
     --
     foldAllOp :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM NVVM (Array sh e)
     foldAllOp sh'
-      | k1:{- k2:-} _ <- nvvmKernel nvvm
+      | k1:k2:_ <- nvvmKernel nvvm
       = let
             foldIntro :: (sh :. Int) -> LLVM NVVM (Array sh e)
             foldIntro (sh:.sz) = do
               let numElements   = size sh * sz
                   numBlocks     = (kernelThreadBlocks k1) numElements
 
-              out@(Array _ adata) <- allocateArray (sh :. numBlocks)
-              execute k1 gamma aenv stream numElements adata
+              out <- allocateArray (sh :. numBlocks)
+              execute k1 gamma aenv stream numElements out
               foldRec out
 
             foldRec :: Array (sh :. Int) e -> LLVM NVVM (Array sh e)
-            foldRec arr@(Array (sh,sz) adata) =
+            foldRec out@(Array (sh,sz) adata) =
               let numElements   = R.size sh * sz
---                  numBlocks     = (kernelThreadBlocks k2) numElements
+                  numBlocks     = (kernelThreadBlocks k2) numElements
               in if sz <= 1
                     then do
-                      -- We have recursed to a single block already
+                      -- We have recursed to a single block already. Trim the
+                      -- intermediate working vector to the final scalar array.
                       return $! Array sh adata
 
                     else do
-                      error "TODO: multi-block foldAll"
-                      -- Keep cooperatively reducing the output
---                      out <- allocateArray (toElt sh :. numBlocks)
---                      execute k2 gamma aenv stream numElements (out,arr)        --XXX: same as above RE. out?
---                      foldRec out
+                      -- Keep cooperatively reducing the output array in-place.
+                      -- Note that we must continue to update the tracked size
+                      -- so the recursion knows when to stop.
+                      execute k2 gamma aenv stream numElements out
+                      foldRec $! Array (sh,numBlocks) adata
         in
         foldIntro sh'
 

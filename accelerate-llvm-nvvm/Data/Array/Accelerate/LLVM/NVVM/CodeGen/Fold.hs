@@ -96,15 +96,55 @@ mkFoldAll'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFoldAll' (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+mkFoldAll' nvvm aenv combine seed arr =
   let
-      arrOut            = arrayData  (undefined::Array sh e) "out"
-      paramOut          = arrayParam (undefined::Array sh e) "out"
-      paramEnv          = envParam aenv
+      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
+      shOut             = arrayShape (undefined::Array DIM1 e) "out"
+      rec               = IRDelayed
+        { delayedExtent      = return (map rvalue shOut)        -- See note: [Marshalling foldAll output arrays]
+        , delayedIndex       = error "mkFoldAll: delayedIndex"
+        , delayedLinearIndex = \[i] -> readArray arrOut i
+        }
+  in do
+  [k1] <- mkFoldAllCore "foldAllIntro" nvvm aenv combine seed arr
+  [k2] <- mkFoldAllCore "foldAllRec"   nvvm aenv combine seed rec
 
+  return [k1,k2]
+
+
+-- The generates the exclusive 'foldAll' kernel, for both the introduction
+-- (including fused producers) and recursive reduction steps.
+--
+-- Note: [Marshalling foldAll output arrays]
+--
+-- As far as the overall 'foldAll' kernel is concerned, the type of the output
+-- array is a singleton array. However, for the multi-step algorithm we actually
+-- want the _intermediate_ output array to be a _vector_. This allows the
+-- recursive step to track how many iterations remain through the use of
+-- 'delayedExtent', so that the reduction can determine whether or not to
+-- include the seed element.
+--
+-- Treating the type of the intermediate array as a vector as opposed to a
+-- scalar means that a shape component for the array will be generated for the
+-- function parameters.
+--
+mkFoldAllCore
+    :: forall t aenv sh e. (Shape sh, Elt e)
+    => Name
+    -> NVVM
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRExp     aenv e
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel t aenv (Array sh e)]
+mkFoldAllCore name (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+  let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
+      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
+      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv          = envParam aenv
   in
-  makeKernel "foldAll" (paramOut ++ paramEnv) $ do
+  makeKernel name (paramOut ++ paramEnv) $ do
     initialiseSharedMemory
 
     tid         <- threadIdx
@@ -147,14 +187,14 @@ mkFoldAll' (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
     --
     setBlock main
     reduce      <- newBlock "reduceBlockSeq"
-    c3          <- lt int32 tid end
+    i           <- globalThreadIdx
+    c3          <- lt int32 i end
     _           <- cbr c3 reduce exit
 
     setBlock reduce
-    start       <- add int32 tid step
-    xs          <- delayedLinearIndex [tid]
-    ys          <- iterFromTo start end arrTy xs $ \i acc -> do
-                      xs' <- delayedLinearIndex [i]
+    xs          <- delayedLinearIndex [i]
+    ys          <- iterFromTo step end arrTy xs $ \i' acc -> do
+                      xs' <- delayedLinearIndex [i']
                       combine xs' acc
 
     writeVolatileArray sdata tid ys
