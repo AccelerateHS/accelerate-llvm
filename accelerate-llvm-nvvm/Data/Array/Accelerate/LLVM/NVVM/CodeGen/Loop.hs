@@ -26,7 +26,11 @@ import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 
 
 -- | A standard loop where the CUDA threads cooperatively step over an index
--- space from the start to end indices.
+-- space from the start to end indices. The threads stride the array in a way
+-- that maintains memory coalescing.
+--
+-- The start and array indices are given as natural array indexes, and the
+-- thread specific indices are calculated by the loop.
 --
 -- > for ( int32 i = blockDim.x * blockIdx.x + threadIdx.x + start
 -- >     ; i <  end
@@ -39,13 +43,8 @@ imapFromTo
     -> CodeGen ()
 imapFromTo start end body = do
   step  <- gridSize
-  tid   <- threadIdx
-  cta   <- blockIdx
-  ntid  <- blockDim
-
-  x     <- mul int32 ntid cta
-  y     <- add int32 tid x
-  z     <- add int32 start y
+  tid   <- globalThreadIdx
+  z     <- add int32 tid start
 
   Loop.for (typeOf (int32 :: IntegralType Int32))
            z
@@ -55,7 +54,15 @@ imapFromTo start end body = do
 
 
 -- | Iterate with an accumulator between the start and end index, executing the
--- given function at each.
+-- given function at each. The threads stride the array in a way that maintains
+-- memory coalescing.
+--
+-- The start and end indices are given as natural array indices, and the
+-- thread-specific indices are calculated by the loop.
+--
+-- > for ( int32 i = blockDim.x * blockIdx.x + threadIdx.x + start
+-- >     ; x < end
+-- >     ; x += blockDim.x * gridDim.x )
 --
 iterFromTo
     :: Operand
@@ -66,9 +73,11 @@ iterFromTo
     -> CodeGen [Operand]
 iterFromTo start end tacc acc body = do
   step  <- gridSize
+  tid   <- globalThreadIdx
+  z     <- add int32 tid start
 
   Loop.iter (typeOf (int32 :: IntegralType Int32))
-            start
+            z
             (\i -> lt int i end)
             (\i -> add int i step)
             tacc acc body

@@ -48,6 +48,32 @@ specialPTXReg reg =
   call reg (typeOf (int32 :: IntegralType Int32)) [] [NoUnwind, ReadNone]
 
 
+-- The size of the thread grid
+--
+-- > gridDim.x * blockDim.x
+--
+gridSize :: CodeGen Operand
+gridSize = do
+  ncta  <- gridDim
+  nt    <- blockDim
+  mul int32 ncta nt
+
+
+-- The global thread index
+--
+-- > blockDim.x * blockIdx.x + threadIdx.x
+--
+globalThreadIdx :: CodeGen Operand
+globalThreadIdx = do
+  ntid  <- blockDim
+  ctaid <- blockIdx
+  tid   <- threadIdx
+
+  u     <- mul int32 ntid ctaid
+  v     <- add int32 tid u
+  return v
+
+
 -- Thread barriers
 --
 __syncthreads :: CodeGen ()
@@ -111,14 +137,6 @@ shapeSize []     = return $ constOp (num int32 1)
 shapeSize [x]    = trunc int32 (rvalue x)
 shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
 
-
--- The size of the thread grid.
---
-gridSize :: CodeGen Operand
-gridSize = do
-  ncta  <- gridDim
-  nt    <- blockDim
-  mul int32 ncta nt
 
 -- Create a complete kernel function by running the code generation sequence
 -- specified at the final parameter. The function is annotated as being a
