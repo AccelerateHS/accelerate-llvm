@@ -139,18 +139,23 @@ compileModuleNVPTX dev name mdl =
   withNVVMTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
-    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
+    --
+    -- NOTE: Currently we require keeping this at level 2, otherwise incorrect
+    --       code is generated for multidimensional folds.
+    --
+    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 2 }
         runError e = either (INTERNAL_ERROR(error) "compileModuleNVPTX") id `fmap` runErrorT e
 
     LLVM.withPassManager pss $ \pm -> do
       runError $ LLVM.verify mdl
-      void     $ LLVM.runPassManager pm mdl
+      b1      <- LLVM.runPassManager pm mdl
 
       -- Lower the LLVM module into target assembly (PTX)
       ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
 
       -- debug printout
-      Debug.when Debug.dump_llvm $
+      Debug.when Debug.dump_llvm $ do
+        Debug.message Debug.dump_llvm $ printf "llvm: optimisation did work? %s" (show b1)
         Debug.message Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
 
       -- Link into a new CUDA module in the current context
