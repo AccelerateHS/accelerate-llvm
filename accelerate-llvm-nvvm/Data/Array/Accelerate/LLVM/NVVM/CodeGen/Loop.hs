@@ -36,6 +36,10 @@ import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
 -- >     ; i <  end
 -- >     ; i += blockDim.x * gridDim.x )
 --
+-- TODO: This assumes that the starting offset retains alignment to the warp
+--       boundary. This might not always be the case, so provide a version that
+--       explicitly aligns reads to the warp boundary.
+--
 imapFromTo
     :: Operand                  -- start
     -> Operand                  -- end
@@ -63,6 +67,11 @@ imapFromTo start end body = do
 -- > for ( int32 i = blockDim.x * blockIdx.x + threadIdx.x + start
 -- >     ; x < end
 -- >     ; x += blockDim.x * gridDim.x )
+--
+-- TODO: This assumes that the starting offset retains alignment to the warp
+--       boundary. This might not always be the case, so provide a version that
+--       explicitly aligns reads on the warp boundary (e.g. the segmented
+--       reduction in the accelerate-cuda package).
 --
 iterFromTo
     :: Operand

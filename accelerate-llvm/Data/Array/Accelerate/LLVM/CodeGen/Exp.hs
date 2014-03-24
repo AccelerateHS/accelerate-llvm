@@ -262,7 +262,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
 
     -- Restrict indices based on a slice specification. In the SliceAll case we
     -- elide the presence of IndexAny from the head of slx, as this is not
-    -- represented in by any C term (Any ~ [])
+    -- represented (we use Any ~ [])
     --
     indexSlice :: SliceIndex (EltRepr slix) sl co (EltRepr sh)
                -> DelayedOpenExp env aenv slix
