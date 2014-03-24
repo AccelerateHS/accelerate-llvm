@@ -36,12 +36,12 @@ import Control.Monad
 
 -- Standard CUDA thread and grid identifiers
 --
-blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen Operand
+blockDim, gridDim, threadIdx, blockIdx :: CodeGen Operand
 blockDim  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
 gridDim   = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
 threadIdx = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
-warpSize  = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+-- warpSize  = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
 specialPTXReg :: Name -> CodeGen Operand
 specialPTXReg reg =
