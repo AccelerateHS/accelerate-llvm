@@ -32,13 +32,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
+import Data.Array.Accelerate.LLVM.CodeGen.Loop                  as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.NVVM.Target                   ( NVVM, nvvmDeviceProperties )
 import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Loop
+import Data.Array.Accelerate.LLVM.NVVM.CodeGen.Loop             as Loop
 
 -- CUDA
 import Foreign.CUDA.Analysis.Device                             ( DeviceProperties )
@@ -63,11 +64,167 @@ mkFold nvvm aenv f z a
   -- Either (1) multidimensional fold; or
   --        (2) only using one CPU, so just execute sequentially
   | expDim (undefined::Exp aenv sh) > 0
-  = error "todo: mkFold'" -- mkFold' aenv f z a
+  = mkFold' nvvm aenv f z a
 
   -- Parallel foldAll
   | otherwise
   = mkFoldAll' nvvm aenv f z a
+
+
+-- Multidimensional reduction
+-- --------------------------
+
+-- Reduce a multidimensional array along the innermost dimension.
+--
+mkFold'
+    :: (Shape sh, Elt e)
+    => NVVM
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRExp     aenv e
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel t aenv (Array sh e)]
+mkFold' nvvm aenv f z a = do
+  [k1] <- mkFold'warp  nvvm aenv f z a
+--  [k2] <- mkFold'block nvvm aenv f z a
+
+  return [k1 {-,k2-}]
+
+
+-- Reduce a multidimensional array along the innermost dimension. Each thread
+-- block reduces along one innermost dimension index. This means that the kernel
+-- is somewhat biased towards arrays that are long and squat, having a large
+-- number of elements along each innermost dimension, more so than number of
+-- innermost indices to reduce over, since typically devices support far greater
+-- threads per block than there are multiprocessors with active thread blocks.
+--
+-- Thus the kernel requires that the input array have at least:
+--
+-- > (number multiprocessors * thread blocks per multiprocessor)
+--
+-- innermost indices to reduce over in order to saturate the device. However
+-- each innermost dimension should have at least as many elements as there are
+-- threads per block.
+--
+mkFold'block
+    :: forall t aenv sh e. (Shape sh, Elt e)
+    => NVVM
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRExp     aenv e
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel t aenv (Array sh e)]
+mkFold'block (nvvmDeviceProperties -> _dev) _aenv _combine _seed IRDelayed{..} =
+  error "TODO: mkFoldByBlock"
+
+
+-- Reduce a multidimensional array along the innermost dimension. Each warp
+-- reduces along one innermost dimension index. Thus the kernel requires that
+-- the input array have at least:
+--
+--  > (number multiprocessors * thread blocks per multiprocessor)
+--  >   *
+--  > (threads per block / warp size)
+--
+-- innermost indices to reduce over in order to saturate the device. However,
+-- each innermost dimension is allowed to be fairly short, of the order of the
+-- warp size, and still retain good performance.
+--
+mkFold'warp
+    :: forall t aenv sh e. (Shape sh, Elt e)
+    => NVVM
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRExp     aenv e
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel t aenv (Array sh e)]
+mkFold'warp (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+  let
+      arrTy             = llvmOfTupleType (eltType (undefined::e))
+      arrOut            = arrayData  (undefined::Array sh e) "out"
+      shOut             = arrayShape (undefined::Array sh e) "out"
+      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv          = envParam aenv
+
+      warpSize          = constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev))
+
+      indexHead         = last -- recall: snoc-list representation for shapes & indices
+
+      i32               = typeOf (int32 :: IntegralType Int32)
+  in
+  makeKernel "mkFoldByWarp" (paramOut ++ paramEnv) $ do
+    initialiseSharedMemory
+
+    ntid                <- blockDim
+    nctaid              <- gridDim
+    tid                 <- threadIdx
+    gid                 <- globalThreadIdx
+    sdata               <- sharedMem (undefined::e) ntid
+
+    threadLane          <- A.band int32 tid (constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev - 1)))
+    segmentSize         <- A.fromIntegral int int32 . indexHead =<< delayedExtent
+
+    -- If each segment has fewer than warpSize elements, than the out-of-bounds
+    -- threads can exit immediately. This means the first read read of the input
+    -- array will always succeed.
+    --
+    main                <- newBlock "main.top"
+    exit                <- newBlock "main.exit"
+    c1                  <- lt int32 threadLane segmentSize
+    _                   <- cbr c1 main exit
+
+    -- Threads in a warp cooperatively reduce a segment. This loop iterates over
+    -- the innermost index space, yielding the vector a warp should reduce.
+    --
+    setBlock main
+    numSegments         <- shapeSize shOut
+    vectorsPerBlock     <- A.quot int32 ntid warpSize
+    warpIdx             <- A.quot int32 gid warpSize
+    numWarps            <- A.mul  int32 vectorsPerBlock nctaid
+
+    Loop.for i32 warpIdx
+        (\seg -> lt  int32 seg numSegments)
+        (\seg -> add int32 seg numWarps)
+        (\seg -> do
+                    s       <- A.mul int32 seg segmentSize
+                    start   <- A.add int32 s   threadLane
+                    end     <- A.add int32 s   segmentSize
+
+                    -- Threads of the warp sequentially read elements from the
+                    -- input array and compute a local sum.
+                    i       <- A.add int32 start warpSize
+                    xs      <- delayedLinearIndex [start]
+                    ys      <- Loop.iter i32 i
+                                   (\i' -> lt  int32 i' end)
+                                   (\i' -> add int32 i' warpSize)
+                                   arrTy xs
+                                   (\i' acc -> do xs' <- delayedLinearIndex [i']
+                                                  combine xs' acc)
+
+                    -- Now cooperatively reduce the local sums to a single value
+                    writeVolatileArray sdata tid ys
+                    end'    <- A.min int32 end warpSize
+                    ys'     <- reduceWarpTree dev arrTy combine ys sdata end' threadLane tid
+
+                    -- Finally, the first thread in the wrap writes the result
+                    -- to memory
+                    ifThen  <- newBlock "finish.if.then"
+                    ifExit  <- newBlock "finish.if.exit"
+                    c2      <- eq int32 threadLane (constOp $ num int32 0)
+                    _       <- cbr c2 ifThen ifExit
+
+                    setBlock ifThen
+                    xs'     <- seed
+                    ys''    <- combine xs' ys'
+                    writeArray arrOut seg ys''
+                    _       <- br ifExit
+
+                    setBlock ifExit)
+
+    _   <- br exit
+
+    setBlock exit
+    return_
 
 
 -- Reduction to scalar
@@ -268,8 +425,8 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
 
     reduce :: [Operand] -> Int32 -> CodeGen [Operand]
     reduce xs step = do
-      _then     <- newBlock ("reduceBlockTree.then" ++ show step)
-      _exit     <- newBlock ("reduceBlockTree.exit" ++ show step)
+      ifThen    <- newBlock ("reduceBlockTree.then" ++ show step)
+      ifExit    <- newBlock ("reduceBlockTree.exit" ++ show step)
       __syncthreads
 
       if step > P.fromIntegral (CUDA.warpSize dev)
@@ -285,14 +442,14 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
         then do
           i         <- add int32 tid (constOp $ num int32 step)
           c         <- lt int32 i n
-          top       <- cbr c _then _exit
+          top       <- cbr c ifThen ifExit
 
-          setBlock _then
+          setBlock ifThen
           ys        <- readVolatileArray sdata i
           xs'       <- combine xs ys
-          bot       <- br _exit
+          bot       <- br ifExit
 
-          setBlock _exit
+          setBlock ifExit
           r         <- zipWithM phi' ty [[(t,top), (b,bot)] | t <- xs | b <- xs' ]
           __syncthreads
           writeVolatileArray sdata tid r
@@ -302,14 +459,14 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
       -- synchronise at the top to ensure all threads have written their results
       -- into shared memory.
       else do
-        c         <- lt int32 tid =<< warpSize
-        top       <- cbr c _then _exit
+        c         <- lt int32 tid (constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev)))
+        top       <- cbr c ifThen ifExit
 
-        setBlock _then
+        setBlock ifThen
         xs'       <- reduceWarpTree dev ty combine xs sdata n ix tid
-        bot       <- br _exit
+        bot       <- br ifExit
 
-        setBlock _exit
+        setBlock ifExit
         zipWithM phi' ty [[(t,top), (b,bot)] | t <- xs | b <- xs' ]
 
 
@@ -340,25 +497,25 @@ reduceWarpTree dev ty combine x0 sdata n ix tid
 
     reduce :: [Operand] -> Int32 -> CodeGen [Operand]
     reduce xs step = do
-      _then     <- newBlock ("reduceWarpTree.then" ++ show step)
-      _exit     <- newBlock ("reduceWarpTree.exit" ++ show step)
+      ifThen    <- newBlock ("reduceWarpTree.then" ++ show step)
+      ifExit    <- newBlock ("reduceWarpTree.exit" ++ show step)
 
       -- if ( ix + step < n )
       o         <- add int32 ix (constOp $ num int32 step)
       c         <- lt int32 o n
-      top       <- cbr c _then _exit
+      top       <- cbr c ifThen ifExit
 
       -- then {
       --     xs         := xs `combine` sdata [ tid + step ]
       --     sdata[tid] := xs
       -- }
-      setBlock _then
+      setBlock ifThen
       i         <- add int32 tid (constOp $ num int32 step)
       ys        <- readVolatileArray sdata i
       xs'       <- combine xs ys
       unless (step == pow2 0) $ writeVolatileArray sdata tid xs'
-      bot       <- br _exit
+      bot       <- br ifExit
 
-      setBlock _exit
+      setBlock ifExit
       zipWithM phi' ty [[(t,top), (b,bot)] | t <- xs | b <- xs' ]
 
