@@ -86,9 +86,9 @@ mkFold'
     -> CodeGen [Kernel t aenv (Array sh e)]
 mkFold' nvvm aenv f z a = do
   [k1] <- mkFold'warp  nvvm aenv f z a
---  [k2] <- mkFold'block nvvm aenv f z a
+  [k2] <- mkFold'block nvvm aenv f z a
 
-  return [k1 {-,k2-}]
+  return [k1,k2]
 
 
 -- Reduce a multidimensional array along the innermost dimension. Each thread
@@ -114,8 +114,86 @@ mkFold'block
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold'block (nvvmDeviceProperties -> _dev) _aenv _combine _seed IRDelayed{..} =
-  error "TODO: mkFoldByBlock"
+mkFold'block (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+  let
+      arrTy             = llvmOfTupleType (eltType (undefined::e))
+      arrOut            = arrayData  (undefined::Array sh e) "out"
+      shOut             = arrayShape (undefined::Array sh e) "out"
+      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv          = envParam aenv
+
+      indexHead         = last -- recall: snoc-list representation for shapes & indices
+      i32               = typeOf (int32 :: IntegralType Int32)
+  in
+  makeKernel "mkFoldByBlock" (paramOut ++ paramEnv) $ do
+    initialiseSharedMemory
+
+    ntid                <- blockDim
+    nctaid              <- gridDim
+    ctaid               <- blockIdx
+    tid                 <- threadIdx
+    sdata               <- sharedMem (undefined::e) ntid
+    segmentSize         <- A.fromIntegral int int32 . indexHead =<< delayedExtent
+
+    -- If each segment has fewer elements than the number of threads in the
+    -- block, than the out-of-bounds threads exit immediately. This means the
+    -- first read of the array will always succeed.
+    --
+    main                <- newBlock "main.top"
+    exit                <- newBlock "main.exit"
+    c1                  <- lt int32 tid segmentSize
+    _                   <- cbr c1 main exit
+
+    -- All threads in the block cooperatively reduce a segment. This loop
+    -- iterates over the innermost index space.
+    --
+    setBlock main
+    numSegments         <- shapeSize shOut
+
+    Loop.for i32 ctaid
+        (\seg -> lt  int32 seg numSegments)
+        (\seg -> add int32 seg nctaid)
+        (\seg -> do
+                    s     <- mul int32 seg segmentSize
+                    end   <- add int32 s   segmentSize
+                    start <- add int32 s   tid
+
+                    -- Threads of the block sequentially read elements from the
+                    -- input array and compute a local sum
+                    i     <- A.add int32 start ntid
+                    xs    <- delayedLinearIndex [start]
+                    ys    <- Loop.iter i32 i
+                                 (\i' -> lt  int32 i' end)
+                                 (\i' -> add int32 i' ntid)
+                                 arrTy xs
+                                 (\i' acc -> do xs' <- delayedLinearIndex [i']
+                                                combine xs' acc)
+
+                    -- Now cooperatively reduce the local sums to a single value
+                    writeVolatileArray sdata tid ys
+                    end'  <- A.min int32 end ntid
+                    ys'   <- reduceBlockTree dev arrTy combine ys sdata end' tid tid
+
+                    -- The first thread writes the result including the seed
+                    -- element back to global memory
+                    ifThen  <- newBlock "finish.if.then"
+                    ifExit  <- newBlock "finish.if.exit"
+                    c2      <- eq int32 tid (constOp $ num int32 0)
+                    _       <- cbr c2 ifThen ifExit
+
+                    setBlock ifThen
+                    xs'     <- seed
+                    ys''    <- combine xs' ys'
+                    writeArray arrOut seg ys''
+                    _       <- br ifExit
+
+                    setBlock ifExit)
+
+    _ <- br exit
+
+    setBlock exit
+    return_
+
 
 
 -- Reduce a multidimensional array along the innermost dimension. Each warp
@@ -186,12 +264,15 @@ mkFold'warp (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
         (\seg -> lt  int32 seg numSegments)
         (\seg -> add int32 seg numWarps)
         (\seg -> do
-                    s       <- A.mul int32 seg segmentSize
-                    start   <- A.add int32 s   threadLane
-                    end     <- A.add int32 s   segmentSize
+                    s       <- mul int32 seg segmentSize
+                    start   <- add int32 s   threadLane
+                    end     <- add int32 s   segmentSize
 
                     -- Threads of the warp sequentially read elements from the
                     -- input array and compute a local sum.
+                    --
+                    -- TODO: reads are not aligned to a warp boundary, so this
+                    -- may issue multiple global memory requests.
                     i       <- A.add int32 start warpSize
                     xs      <- delayedLinearIndex [start]
                     ys      <- Loop.iter i32 i
@@ -221,7 +302,7 @@ mkFold'warp (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
 
                     setBlock ifExit)
 
-    _   <- br exit
+    _ <- br exit
 
     setBlock exit
     return_
