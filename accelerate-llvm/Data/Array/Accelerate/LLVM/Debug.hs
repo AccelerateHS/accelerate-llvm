@@ -119,11 +119,13 @@ verbose         = lens _verbose     (\f x -> x { _verbose     = f (_verbose x) }
 flush_cache     = lens _flush_cache (\f x -> x { _flush_cache = f (_flush_cache x) })
 
 #ifdef ACCELERATE_DEBUG
-setFlag :: (Flags :-> Bool) -> IO ()
-setFlag f = modifyIORef options (set f True)
+setFlag, clearFlag :: (Flags :-> Bool) -> IO ()
+setFlag f   = setFlags [f]
+clearFlag f = clearFlags [f]
 
-clearFlag :: (Flags :-> Bool) -> IO ()
-clearFlag f = modifyIORef options (set f False)
+setFlags, clearFlags :: [Flags :-> Bool] -> IO ()
+setFlags f   = modifyIORef options (\opt -> foldr (flip set True)  opt f)
+clearFlags f = modifyIORef options (\opt -> foldr (flip set False) opt f)
 #endif
 
 #ifdef ACCELERATE_DEBUG
