@@ -285,7 +285,7 @@ mkFold'warp (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
                     -- Now cooperatively reduce the local sums to a single value
                     writeVolatileArray sdata tid ys
                     end'    <- A.min int32 end warpSize
-                    ys'     <- reduceWarpTree dev arrTy combine ys sdata end' threadLane tid
+                    ys'     <- reduceWarpTree True dev arrTy combine ys sdata end' threadLane tid
 
                     -- Finally, the first thread in the wrap writes the result
                     -- to memory
@@ -544,7 +544,7 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
         top       <- cbr c ifThen ifExit
 
         setBlock ifThen
-        xs'       <- reduceWarpTree dev ty combine xs sdata n ix tid
+        xs'       <- reduceWarpTree False dev ty combine xs sdata n ix tid
         bot       <- br ifExit
 
         setBlock ifExit
@@ -557,8 +557,18 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
 -- only valid elements are read (the shared memory array is not initialised with
 -- a neutral element).
 --
+-- If the number of elements to reduce is in the range [0,warpSize), then set
+-- the first argument to 'True'. This means only the bottom half of the warp
+-- needs to do any work. For example, this is the case if the warp operates
+-- independently, as in mkFold'warp.
+--
+-- If the number of elements is in the range [0,2*warpSize) set the first
+-- argument to 'False'. For example, this is the case for the cooperative thread
+-- block reduction in mkFold'block.
+--
 reduceWarpTree
-    :: DeviceProperties
+    :: Bool                         -- is the number of elements in range [0,warpSize) ?
+    -> DeviceProperties             -- properties of the target GPU
     -> [Type]                       -- type of element 'e'
     -> IRFun2 aenv (e -> e -> e)    -- combination function
     -> [Operand]                    -- this thread's initial value
@@ -567,11 +577,14 @@ reduceWarpTree
     -> Operand                      -- thread identifier, such as thread lane or threadIdx.x
     -> Operand                      -- where this thread stores its values in shared memory (threadIdx.x)
     -> CodeGen [Operand]            -- variables storing the final reduction value
-reduceWarpTree dev ty combine x0 sdata n ix tid
+reduceWarpTree half dev ty combine x0 sdata n ix tid
   = foldM reduce x0
-  $ map pow2 [v, v-1 .. 0]
+  $ map pow2 segs
   where
-    v = P.floor (P.logBase 2 (P.fromIntegral (CUDA.warpSize dev) :: Double))
+    v    = P.floor (P.logBase 2 (P.fromIntegral (CUDA.warpSize dev) :: Double))
+    segs = if half
+              then [   v-1, v-2 .. 0]
+              else [v, v-1      .. 0]
 
     pow2 :: Int32 -> Int32
     pow2 x = 2 ^ x
