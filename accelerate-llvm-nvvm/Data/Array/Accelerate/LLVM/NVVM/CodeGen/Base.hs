@@ -9,8 +9,27 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base
-  where
+module Data.Array.Accelerate.LLVM.NVVM.CodeGen.Base (
+
+  -- Thread identifiers
+  blockDim, gridDim, threadIdx, blockIdx,
+  gridSize, globalThreadIdx,
+
+  -- Shapes
+  shapeSize,
+
+  -- Barriers and synchronisation
+  __syncthreads,
+  __threadfence_block, __threadfence_grid,
+
+  -- Shared memory
+  initialiseSharedMemory,
+  sharedMem,
+
+  -- Kernel definition
+  makeKernel,
+
+) where
 
 -- llvm-general
 import LLVM.General.AST
@@ -33,6 +52,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 -- standard library
 import Control.Monad
 
+
+-- Thread identifiers
+-- ------------------
 
 -- Standard CUDA thread and grid identifiers
 --
@@ -74,17 +96,59 @@ globalThreadIdx = do
   return v
 
 
--- Thread barriers
+-- The total number of elements in the given array. The first argument is a
+-- dummy to fix the types. Note that the output operand is truncated to a 32-bit
+-- integer.
+--
+shapeSize :: Rvalue a => [a] -> CodeGen Operand
+shapeSize []     = return $ constOp (num int32 1)
+shapeSize [x]    = trunc int32 (rvalue x)
+shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
+
+
+
+-- Barriers and synchronisation
+-- ----------------------------
+
+-- Waits until all threads in the thread block have reached this point and all
+-- global and shared memory accesses made by these threads prior to
+-- __syncthreads() are visible to all threads in the block.
+--
+-- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#synchronization-functions>
 --
 __syncthreads :: CodeGen ()
-__syncthreads =
-  let fn        = "llvm.nvvm.barrier0"
-      attrs     = [NoUnwind]
-      decl      = functionDefaults { name = fn, returnType = VoidType, G.functionAttributes = attrs }
+__syncthreads = barrier "llvm.nvvm.barrier0"
+
+
+-- Ensure that all writes to shared and global memory before the call to
+-- __threadfence_block() are observed by all threads in the *block* of the
+-- calling thread as occurring before all writes to shared and global memory
+-- made by the calling thread after the call.
+--
+-- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#memory-fence-functions>
+--
+__threadfence_block :: CodeGen ()
+__threadfence_block = barrier "llvm.nvvm.membar.cta"
+
+
+-- As __threadfence_block(), but the synchronisation is for *all* thread blocks.
+-- In CUDA this is known simply as __threadfence().
+--
+__threadfence_grid :: CodeGen ()
+__threadfence_grid = barrier "llvm.nvvm.membar.gl"
+
+
+barrier :: Name -> CodeGen ()
+barrier fn =
+  let attrs = [NoUnwind]
+      decl  = functionDefaults { name = fn, returnType = VoidType, G.functionAttributes = attrs }
   in do
     declare decl
     do_ $ Call True C [] (Right (global fn)) [] attrs []
 
+
+-- Shared memory
+-- -------------
 
 -- External declaration in shared memory address space. This is used to access
 -- memory allocated dynamically by the CUDA driver. This results in the
@@ -128,15 +192,8 @@ sharedMem dummy nelt =
   shared (global "__shared__") offset ty
 
 
--- The total number of elements in the given array. The first argument is a
--- dummy to fix the types. Note that the output operand is truncated to a 32-bit
--- integer.
---
-shapeSize :: Rvalue a => [a] -> CodeGen Operand
-shapeSize []     = return $ constOp (num int32 1)
-shapeSize [x]    = trunc int32 (rvalue x)
-shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
-
+-- Global kernel definitions
+-- -------------------------
 
 -- Create a complete kernel function by running the code generation sequence
 -- specified at the final parameter. The function is annotated as being a

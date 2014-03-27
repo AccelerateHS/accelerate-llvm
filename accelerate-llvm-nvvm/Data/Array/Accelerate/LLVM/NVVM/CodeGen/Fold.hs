@@ -552,10 +552,11 @@ reduceBlockTree dev ty combine x0 sdata n ix tid
 
 
 -- Threads of a warp cooperatively reduce the elements of the named shared
--- memory array (AddrSpace 3). This procedure uses warp-synchronous programming
--- to avoid the use of __syncthreads(), but we still do a bounds check to ensure
--- only valid elements are read (the shared memory array is not initialised with
--- a neutral element).
+-- memory array (AddrSpace 3). Although threads of a warp execute in lockstep,
+-- we still require a memory barrier around access to shared memory to ensure
+-- that the store is committed. As usual, we do bounds checks at every step to
+-- ensure that only valid elements are read (the shared memory array is not
+-- initialised with a neutral element).
 --
 -- If the number of elements to reduce is in the range [0,warpSize), then set
 -- the first argument to 'True'. This means only the bottom half of the warp
@@ -594,22 +595,27 @@ reduceWarpTree half dev ty combine x0 sdata n ix tid
       ifThen    <- newBlock ("reduceWarpTree.then" ++ show step)
       ifExit    <- newBlock ("reduceWarpTree.exit" ++ show step)
 
+      -- It is important that the memory fence operations goes outside of the
+      -- branch, to ensure that it is visible by all threads in the warp.
+      __threadfence_block
+
       -- if ( ix + step < n )
       o         <- add int32 ix (constOp $ num int32 step)
       c         <- lt int32 o n
       top       <- cbr c ifThen ifExit
 
-      -- then {
-      --     xs         := xs `combine` sdata [ tid + step ]
-      --     sdata[tid] := xs
-      -- }
+      -- then xs := xs `combine` sdata [ tid + step ]
       setBlock ifThen
       i         <- add int32 tid (constOp $ num int32 step)
       ys        <- readVolatileArray sdata i
       xs'       <- combine xs ys
-      unless (step == pow2 0) $ writeVolatileArray sdata tid xs'
       bot       <- br ifExit
 
+      -- We don't need to do the fence or write to shared memory at the last
+      -- step. The final value is returned in-register.
       setBlock ifExit
-      zipWithM phi' ty [[(t,top), (b,bot)] | t <- xs | b <- xs' ]
+      res       <- zipWithM phi' ty [[(t,top), (b,bot)] | t <- xs | b <- xs' ]
+      unless (step == pow2 0) $ do __threadfence_block
+                                   writeVolatileArray sdata tid res
+      return res
 
