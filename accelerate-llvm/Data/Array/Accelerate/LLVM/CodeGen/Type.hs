@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
@@ -126,3 +127,23 @@ someFloat t f =
     TypeCFloat _  | CFloat f'  <- f -> Single f'
     TypeCDouble _ | CDouble f' <- f -> Double f'
 
+
+
+-- | The size of an LLVM type representation. Note that this does not currently
+-- handle with all types, such as function types or named type synonyms.
+--
+bitSizeOfType :: Type -> Word32
+bitSizeOfType t =
+  case t of
+    VoidType            -> 0
+    IntegerType{}       -> typeBits t                   -- Bool returns 1, but 8-bits are actually used as per data layout
+    FloatingPointType{} -> typeBits t
+    PointerType{}       -> bitSize (undefined::Int)     -- Native word size
+    VectorType{..}      -> nVectorElements * bitSizeOfType elementType
+    ArrayType{..}       -> nArrayElements' * bitSizeOfType elementType where nArrayElements' = fromIntegral nArrayElements
+    StructureType{..}
+      | isPacked        -> sum [ bitSizeOfType f | f <- elementTypes ]
+      | otherwise       -> error "bitSizeOf StructureType (with alignment)"
+    FunctionType{}      -> error "bitSizeOf FunctionType"
+    NamedTypeReference{}-> error "bitSizeOf NamedTypeReference"
+    MetadataType        -> error "bitSizeOf MetadataType"

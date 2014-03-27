@@ -532,8 +532,8 @@ reduceWarp half dev ty combine x0 sdata n ix tid
 
 shflOK :: DeviceProperties -> [Type] -> Bool
 shflOK _dev _ty = False
--- shflOK dev dummy
---   = CUDA.computeCapability dev >= CUDA.Compute 3 0 && all (`elem` [4,8]) (sizeOf ty)
+--shflOK dev ty =
+--  CUDA.computeCapability dev >= CUDA.Compute 3 0 && and [ bitSizeOfType t `elem` [32,64] | t <- ty ]
 
 
 -- Tree reduction
