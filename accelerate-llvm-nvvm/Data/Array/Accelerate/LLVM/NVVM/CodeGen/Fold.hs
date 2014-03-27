@@ -597,7 +597,12 @@ reduceWarpTree half dev ty combine x0 sdata n ix tid
 
       -- It is important that the memory fence operations goes outside of the
       -- branch, to ensure that it is visible by all threads in the warp.
-      __threadfence_block
+      --
+      -- If this step reduces [0,2*warpSize) elements, synchronise both memory
+      -- and instructions with a full __syncthreads().
+      if (step == pow2 v)
+         then __syncthreads
+         else __threadfence_block
 
       -- if ( ix + step < n )
       o         <- add int32 ix (constOp $ num int32 step)
