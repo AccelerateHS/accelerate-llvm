@@ -172,7 +172,7 @@ mkFold'block (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
                     -- Now cooperatively reduce the local sums to a single value
                     writeVolatileArray sdata tid ys
                     end'  <- A.min int32 end ntid
-                    ys'   <- reduceBlockTree dev arrTy combine ys sdata end' tid tid
+                    ys'   <- reduceBlock dev arrTy combine ys sdata end' tid tid
 
                     -- The first thread writes the result including the seed
                     -- element back to global memory
@@ -285,7 +285,7 @@ mkFold'warp (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
                     -- Now cooperatively reduce the local sums to a single value
                     writeVolatileArray sdata tid ys
                     end'    <- A.min int32 end warpSize
-                    ys'     <- reduceWarpTree True dev arrTy combine ys sdata end' threadLane tid
+                    ys'     <- reduceWarp True dev arrTy combine ys sdata end' threadLane tid
 
                     -- Finally, the first thread in the wrap writes the result
                     -- to memory
@@ -443,7 +443,7 @@ mkFoldAllCore name (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..}
     u           <- A.mul int32 ctaid ntid
     v           <- A.sub int32 end u
     end'        <- A.min int32 ntid v
-    ys'         <- reduceBlockTree dev arrTy combine ys sdata end' tid tid
+    ys'         <- reduceBlock dev arrTy combine ys sdata end' tid tid
 
     -- The first thread writes the result of this block into global memory.
     --
@@ -476,8 +476,68 @@ mkFoldAllCore name (nvvmDeviceProperties -> dev) aenv combine seed IRDelayed{..}
     return_
 
 
--- Cooperative tree reduction
--- --------------------------
+
+-- Reduction primitives
+-- ====================
+
+reduceBlock
+    :: DeviceProperties
+    -> [Type]                           -- type of element 'e'
+    -> IRFun2 aenv (e -> e -> e)        -- combination function
+    -> [Operand]                        -- this thread's initial value
+    -> [Name]                           -- shared memory array that intermediate and input values are stored in
+    -> Operand                          -- number of elements to reduce [0,n) :: Int32
+    -> Operand                          -- thread identifier, such as thread lane or threadIdx.x
+    -> Operand                          -- where this thread stores its values in shared memory (threadIdx.x)
+    -> CodeGen [Operand]                -- variables storing the final reduction value
+reduceBlock dev ty combine x0 sdata n ix tid
+  | shflOK dev ty = error "butterfly reduction"
+  | otherwise     = reduceBlockTree dev ty combine x0 sdata n ix tid
+
+
+reduceWarp
+    :: Bool                         -- is the number of elements in range [0,warpSize) ?
+    -> DeviceProperties             -- properties of the target GPU
+    -> [Type]                       -- type of element 'e'
+    -> IRFun2 aenv (e -> e -> e)    -- combination function
+    -> [Operand]                    -- this thread's initial value
+    -> [Name]                       -- shared memory array that intermediate and input values are stored in
+    -> Operand                      -- number of elements to reduce [0,n) :: Int32
+    -> Operand                      -- thread identifier, such as thread lane or threadIdx.x
+    -> Operand                      -- where this thread stores its values in shared memory (threadIdx.x)
+    -> CodeGen [Operand]            -- variables storing the final reduction value
+reduceWarp half dev ty combine x0 sdata n ix tid
+  | shflOK dev ty = error "butterfly reduction"
+  | otherwise     = reduceWarpTree half dev ty combine x0 sdata n ix tid
+
+
+-- Butterfly reduction
+-- -------------------
+
+-- Since warp synchronous programming is not supported on current hardware, we
+-- require thread and memory synchronisation operations whenever we communicate
+-- via shared memory, even at sub-warp granularity.
+--
+-- The Kepler architecture (compute 3.0) introduced warp shuffle instructions,
+-- which permit the exchange of variables between threads within a warp without
+-- the use of shared memory. Thus, this might improve reduction performance on
+-- architectures which support it, since the instruction should have higher
+-- throughput than access to shared memory (32ops/clock/multiprocessor) and
+-- requires only a single synchronisation for every 64 warps (2048 threads in a
+-- block), in order to communicate the partial result of each warp via shared
+-- memory.
+--
+-- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#warp-shuffle-functions>
+--
+
+shflOK :: DeviceProperties -> [Type] -> Bool
+shflOK _dev _ty = False
+-- shflOK dev dummy
+--   = CUDA.computeCapability dev >= CUDA.Compute 3 0 && all (`elem` [4,8]) (sizeOf ty)
+
+
+-- Tree reduction
+-- --------------
 
 -- Threads of a block cooperatively reduce the elements of a shared memory array
 -- (AddrSpace 3). This does bounds checks at every step to ensure that
