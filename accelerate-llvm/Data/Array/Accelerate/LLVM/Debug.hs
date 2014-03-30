@@ -61,6 +61,7 @@ data Flags = Flags
   , _dump_llvm          :: !Bool        -- dump generated LLVM code
   , _dump_exec          :: !Bool        -- kernel execution
   , _dump_gang          :: !Bool        -- print information about the gang
+  , _dump_sched         :: !Bool        -- print scheduling information
 
     -- general options
   , _debug              :: !Bool        -- generate debugging symbols
@@ -76,6 +77,7 @@ flags =
   , Option [] ["ddump-llvm"]    (NoArg (set dump_llvm True))    "print generated LLVM"
   , Option [] ["ddump-exec"]    (NoArg (set dump_exec True))    "print kernel execution trace"
   , Option [] ["ddump-gang"]    (NoArg (set dump_gang True))    "print thread gang information"
+  , Option [] ["ddump-sched"]   (NoArg (set dump_sched True))   "print thread scheduling information"
   , Option [] ["ddebug"]        (NoArg (set debug True))        "generate debugging symbols"
   , Option [] ["dverbose"]      (NoArg (set verbose True))      "print additional information"
   , Option [] ["fflush-cache"]  (NoArg (set flush_cache True))  "delete the persistent cache directory"
@@ -96,6 +98,7 @@ initialise = parse `fmap` getArgs
       , _dump_llvm      = False
       , _dump_exec      = False
       , _dump_gang      = False
+      , _dump_sched     = False
       , _debug          = False
       , _verbose        = False
       , _flush_cache    = False
@@ -106,14 +109,16 @@ initialise = parse `fmap` getArgs
 -- Haskell. Since llvm-general binds to a C++ library, we can't load it into
 -- ghci expect in ghc-7.8.
 --
-dump_gc, dump_cc, dump_asm, dump_llvm, dump_exec, dump_gang, debug, verbose, flush_cache :: Flags :-> Bool
-dump_gc         = lens _dump_gc   (\f x -> x { _dump_gc   = f (_dump_gc x) })
-dump_cc         = lens _dump_cc   (\f x -> x { _dump_cc   = f (_dump_cc x) })
-dump_asm        = lens _dump_asm  (\f x -> x { _dump_asm  = f (_dump_asm x) })
-dump_llvm       = lens _dump_llvm (\f x -> x { _dump_llvm = f (_dump_llvm x) })
-dump_exec       = lens _dump_exec (\f x -> x { _dump_exec = f (_dump_exec x) })
-dump_gang       = lens _dump_gang (\f x -> x { _dump_gang = f (_dump_gang x) })
+dump_gc, dump_cc, dump_asm, dump_llvm, dump_exec, dump_gang, dump_sched :: Flags :-> Bool
+dump_gc         = lens _dump_gc     (\f x -> x { _dump_gc     = f (_dump_gc x) })
+dump_cc         = lens _dump_cc     (\f x -> x { _dump_cc     = f (_dump_cc x) })
+dump_asm        = lens _dump_asm    (\f x -> x { _dump_asm    = f (_dump_asm x) })
+dump_llvm       = lens _dump_llvm   (\f x -> x { _dump_llvm   = f (_dump_llvm x) })
+dump_exec       = lens _dump_exec   (\f x -> x { _dump_exec   = f (_dump_exec x) })
+dump_gang       = lens _dump_gang   (\f x -> x { _dump_gang   = f (_dump_gang x) })
+dump_sched      = lens _dump_sched  (\f x -> x { _dump_sched  = f (_dump_sched x) })
 
+debug, verbose, flush_cache :: Flags :-> Bool
 debug           = lens _debug       (\f x -> x { _debug       = f (_debug x) })
 verbose         = lens _verbose     (\f x -> x { _verbose     = f (_verbose x) })
 flush_cache     = lens _flush_cache (\f x -> x { _flush_cache = f (_flush_cache x) })
