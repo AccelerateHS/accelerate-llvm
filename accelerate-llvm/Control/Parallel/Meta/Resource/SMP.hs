@@ -55,13 +55,20 @@ mkResource retries gang =
 -- work search function. Steals from workers in this gang are considered cheap
 -- and uniform.
 --
+-- Note: [Number of retries in SMP resource]
+--
+-- A large number of retries in the work search will prevent the search function
+-- from traversing the resource stack. This can result in spamming of stealing
+-- actions. In particular, the exponential backoff resource usually placed at
+-- the bottom of the stack may never be reached. Thus a balance is required
+-- between number of times to traverse each level and number of times to
+-- traverse the entire resource stack.
+--
 mkWorkSearch :: Int -> Gang -> WorkSearch
 mkWorkSearch retries gang =
   let search !me _ =
-        let !numcaps    = V.length gang
-            !attempts   = numcaps * retries
-            !myId       = workerId me
-            random      = uniformR (0, numcaps-1) (rngState me)
+        let myId        = workerId me
+            random      = uniformR (0, V.length gang - 1) (rngState me)
 
             loop 0      = do
               message myId "work search failed"
@@ -81,7 +88,7 @@ mkWorkSearch retries gang =
         in do
           self <- tryPopL (workpool me)
           case self of
-            Nothing -> loop attempts
+            Nothing -> loop retries
             _       -> do message myId "steal from self"
                           writeIORef (consecutiveFailures me) 0
                           return self
