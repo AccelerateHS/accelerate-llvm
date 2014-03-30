@@ -1,0 +1,98 @@
+{-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE RecordWildCards #-}
+-- |
+-- Module      : Control.Parallel.Meta.Resource.SMP
+-- Copyright   : [2013] Trevor L. McDonell, Sean Lee, Vinod Grover
+-- License     : BSD3
+--
+-- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>
+-- Stability   : experimental
+-- Portability : non-portable (GHC extensions)
+--
+-- This module implements a resource for SMP parallelism. It is suitable as a
+-- base for combining a bunch of resources that can steal cheaply from each
+-- other.
+--
+-- Inspired by the meta-par package. This package has a BSD license.
+-- <http://hackage.haskell.org/package/meta-par>
+--
+
+module Control.Parallel.Meta.Resource.SMP (
+
+  mkResource,
+  mkWorkSearch,
+
+) where
+
+-- accelerate
+import Control.Parallel.Meta
+import Control.Parallel.Meta.Worker
+
+import qualified Data.Array.Accelerate.LLVM.Debug       as Debug
+
+-- standard library
+import Data.Concurrent.Deque.Class
+import Data.IORef
+import Data.Monoid
+import System.Random.MWC
+import Text.Printf
+import qualified Data.Vector                            as V
+
+
+-- | Create an SMP (symmetric multiprocessor) resource where all underlying
+-- workers have uniform access to shared resources such as memory. Thus workers
+-- at this level can steal cheaply from each other.
+--
+mkResource
+    :: Int              -- ^ number of steal attempts per 'WorkSearch'
+    -> Gang             -- ^ the workers that will steal amongst each other
+    -> Resource
+mkResource retries gang =
+  Resource mempty (mkWorkSearch retries gang)
+
+
+-- | Given a set of workers and a number of steal attempts per worker, return a
+-- work search function. Steals from workers in this gang are considered cheap
+-- and uniform.
+--
+mkWorkSearch :: Int -> Gang -> WorkSearch
+mkWorkSearch retries gang =
+  let search !me _ =
+        let !numcaps    = V.length gang
+            !attempts   = numcaps * retries
+            !myId       = workerId me
+            random      = uniformR (0, numcaps-1) (rngState me)
+
+            loop 0      = do
+              message myId "work search failed"
+              modifyIORef' (consecutiveFailures me) (+1) >> return Nothing
+
+            loop n      = do
+              targetId <- random
+              if targetId == myId
+                 then loop (n-1)
+                 else do
+                   mwork <- tryPopR (workpool (V.unsafeIndex gang targetId))
+                   case mwork of
+                     Nothing    -> loop (n-1)
+                     _          -> do message myId (printf "steal from %d" targetId)
+                                      writeIORef (consecutiveFailures me) 0
+                                      return mwork
+        in do
+          self <- tryPopL (workpool me)
+          case self of
+            Nothing -> loop attempts
+            _       -> do message myId "steal from self"
+                          writeIORef (consecutiveFailures me) 0
+                          return self
+  in
+  WorkSearch search
+
+
+-- Debugging
+-- ---------
+
+{-# INLINE message #-}
+message :: Int -> String -> IO ()
+message tid msg = Debug.message Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
+
