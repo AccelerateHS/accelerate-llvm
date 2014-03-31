@@ -74,6 +74,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.Fill
     Data.Array.Accelerate.LLVM.Native.Execute.Gang
+    Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
