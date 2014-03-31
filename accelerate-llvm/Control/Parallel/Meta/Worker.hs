@@ -13,7 +13,7 @@
 module Control.Parallel.Meta.Worker (
 
   Gang, Worker(..), Req(..),
-  forkGang,
+  gangSize, forkGang, gangIO,
 
 ) where
 
@@ -23,10 +23,10 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 -- standard library
 import Control.Applicative
 import Control.Concurrent
+import Control.Monad
 import Data.IORef
 import Data.Range.Range
 import Data.Vector                                              ( Vector )
-import System.Mem.Weak
 import System.Random.MWC
 import System.IO.Unsafe
 import Text.Printf
@@ -50,22 +50,18 @@ type Gang = Vector Worker
 -- | The 'Worker' is the per-worker-thread state.
 --
 -- If the worker has work that can be stolen by other processors, it is stored
--- in the 'workpool'. In the lazy binary splitting scheduler implementation
+-- in the 'workpool'. Thieves treat the workpool as a stack which can be popped
+-- on the right, where as the owner can both push and pop on the left.
 --
---
--- this is store
--- in 'stealableWork'. A worker can take this range and leave the MVar empty.
--- The chunk this worker is currently processing is stored in 'localWork'. In
--- the lazy-binary-splitting scheduler implementation, as the stealable work is
--- depleted, the worker will split its local work to make more available for
--- other processors.
---
--- This is a simplification on work stealing queues because we are only
--- partitioning a single data-parallel operation: we do not spawn additional
--- parallel work. Thus, 'stealableWork' is a singleton, not a deque.
+-- In the lazy binary splitting work stealing setup, a worker processes its
+-- range in chunks, checking the state of its workpool periodically. Whenever
+-- the queue is empty, it splits it's current workload in two so that the second
+-- half can be stolen by another processor.
 --
 data Worker = Worker {
     workerId            :: {-# UNPACK #-} !Int
+
+  -- Coordinating with the host thread
   , requestVar          :: {-# UNPACK #-} !(MVar Req)
   , resultVar           :: {-# UNPACK #-} !(MVar ())
 
@@ -104,6 +100,12 @@ freshId :: IO Int
 freshId = atomicModifyIORef uniqueSupply (\n -> let !n' = n+1 in (n', n))
 
 
+-- | O(1). Yield the number of threads in the 'Gang'.
+--
+gangSize :: Gang -> Int
+gangSize = V.length
+
+
 -- | Create a set of workers. This is a somewhat expensive function, so it is
 -- expected that it is called only occasionally (e.g. once per program
 -- execution).
@@ -120,7 +122,7 @@ forkGang n = do
 
   V.forM_ (V.indexed gang)
           (\(tid,w) -> do message (printf "fork %d on capability %d" (workerId w) tid)
-                          addFinalizer w (finaliseWorker w)
+                          void       $ mkWeakMVar (requestVar w) (finaliseWorker w)
                           forkOn tid $ gangWorker tid w)
   return gang
 
@@ -137,12 +139,24 @@ gangWorker threadId st@Worker{..} = do
 
   case req of
     ReqShutdown ->
-        putMVar resultVar ()
+        putMVar resultVar ()    -- signal that we got the shutdown order
 
     ReqDo action -> do
         action threadId         -- Run the action we were given
         putMVar resultVar ()    -- Signal that the action is complete
         gangWorker threadId st  -- Wait for more requests
+
+
+-- | Issue work requests to the gang and wait until they complete
+--
+gangIO :: Gang -> (Int -> IO ()) -> IO ()
+gangIO gang action = do
+
+  -- Send requests to the threads
+  V.mapM_ (\Worker{..} -> putMVar requestVar (ReqDo action)) gang
+
+  -- Wait for all requests to complete
+  V.mapM_ (\Worker{..} -> takeMVar resultVar) gang
 
 
 -- | The finaliser for worker threads.
@@ -162,7 +176,7 @@ gangWorker threadId st@Worker{..} = do
 --
 finaliseWorker :: Worker -> IO ()
 finaliseWorker Worker{..} = do
-  message (printf "%d shutting down" workerId)
+  message (printf "worker %d shutting down" workerId)
   putMVar requestVar ReqShutdown
   takeMVar resultVar
 
