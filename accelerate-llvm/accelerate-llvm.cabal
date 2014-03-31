@@ -70,14 +70,25 @@ Library
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util
 
+    -- Scheduler
+    Control.Parallel.Meta
+    Control.Parallel.Meta.Worker
+    Control.Parallel.Meta.Resource.Backoff
+    Control.Parallel.Meta.Resource.SMP
+    Control.Parallel.Meta.Trans.LBS
+    Data.Range.Range
+
   build-depends:
+    abstract-deque              >= 0.3,
     accelerate                  == 0.15.*,
     base                        >= 4.6 && <5.0,
     containers                  >= 0.5 && <0.6,
     fclabels                    >= 2.0,
     llvm-general                >= 3.2,
     llvm-general-pure           >= 3.2,
-    mtl                         >= 2.0
+    mtl                         >= 2.0,
+    mwc-random                  >= 0.13,
+    vector                      >= 0.10
 
   default-language:
     Haskell2010
