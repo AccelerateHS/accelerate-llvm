@@ -116,15 +116,11 @@ ptxDataLayout = DataLayout
 -- | String that describes the target host.
 --
 ptxTargetTriple :: String
-#ifdef ACCELERATE_USE_LIBNVVM
-ptxTargetTriple = "nvptx-nvidia-cl.1.0"
-#else
 ptxTargetTriple =
   case bitSize (undefined::Int) of
     32  -> "nvptx-nvidia-cuda"
     64  -> "nvptx64-nvidia-cuda"
     _   -> INTERNAL_ERROR(error) "ptxTargetTriple" "I don't know what architecture I am"
-#endif
 
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
