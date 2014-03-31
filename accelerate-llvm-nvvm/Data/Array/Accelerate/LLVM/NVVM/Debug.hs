@@ -3,7 +3,7 @@
 {-# OPTIONS -fno-warn-incomplete-patterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.NVVM.Debug
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover
+-- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>

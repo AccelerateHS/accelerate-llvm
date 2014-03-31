@@ -2,8 +2,8 @@
 {-# LANGUAGE GADTs #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Environment
--- Copyright   :
--- License     :
+-- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>
 -- Stability   : experimental
