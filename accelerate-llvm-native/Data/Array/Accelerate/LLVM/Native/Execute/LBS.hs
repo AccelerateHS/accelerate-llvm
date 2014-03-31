@@ -54,10 +54,10 @@ theGang
 -- index corresponds to a non-unit amount of work.
 --
 defaultLargePPT :: Int
-defaultLargePPT = 256
+defaultLargePPT = 2048
 
 defaultSmallPPT :: Int
-defaultSmallPPT = 4
+defaultSmallPPT = 256
 
 
 -- | Fill an array in parallel.
