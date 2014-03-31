@@ -20,13 +20,14 @@ module Control.Parallel.Meta.Trans.LBS (
 
 ) where
 
-import Data.Range.Range                                         as R
-import Data.Concurrent.Deque.Class
-import Text.Printf
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
+import Data.Concurrent.Deque.Class
+import qualified Data.Range.Range                               as R
+import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+
+import Control.Monad
+import Text.Printf
 
 
 -- | Transform the 'WorkSearch' function of the given 'Resource' to include a
@@ -54,9 +55,9 @@ mkResource ppt (Resource st ws)
 --      Place the second half onto the remaining work queue and go to (1).
 --
 mkWorkSearch
-  :: Int                -- ^ profitable parallelism threshold
-  -> WorkSearch         -- ^ the basic work search method to modify
-  -> WorkSearch
+    :: Int              -- ^ profitable parallelism threshold
+    -> WorkSearch       -- ^ the basic work search method to modify
+    -> WorkSearch
 mkWorkSearch ppt steal =
   let search !me@Worker{..} = do
 
@@ -79,40 +80,34 @@ mkWorkSearch ppt steal =
         -- This strategy avoids excessive splitting, especially in the case
         -- where this worker steals back the remainder.
         case work of
-          Nothing       -> return Nothing
-          Just r        -> do
+          Just r | not (R.null r) -> do
             let (this, rest)    = R.splitAt ppt r
-                handleRemainder =
-                  case rest of
-                    Nothing -> message workerId "work search failed"
-                    Just x  -> do
+                handleRemainder
+                  | R.null rest = return ()
+                  | otherwise   = do
                       empty <- nullQ workpool
                       if not empty
                          then do
-                           message workerId (printf "not splitting remainder %s" (showRange x))
-                           pushL workpool x
+                           message workerId (printf "not splitting remainder %s" (show rest))
+                           pushL workpool rest
 
-                         else case R.halve x of
-                           (l, Nothing) -> do message workerId (printf "singleton remainder %s" (showRange l))
-                                              pushL workpool l
-
-                           (l, Just u)  -> do message workerId (printf "splitting remainder %s -> %s, %s" (showRange x) (showRange l) (showRange u))
-                                              pushL workpool u >> pushL workpool l
+                         else do
+                           let (l,u) = R.bisect rest
+                           message workerId (printf "splitting remainder %s -> %s, %s" (show rest) (show l) (show u))
+                           unless (R.null u) $ pushL workpool u
+                           unless (R.null l) $ pushL workpool l
             --
-            message workerId (printf "got work range %s" (showRange this))
+            message workerId (printf "got work range %s" (show this))
             handleRemainder
             return (Just this)
+
+          _ -> message workerId "work search failed" >> return Nothing
   in
   WorkSearch search
 
 
 -- Debugging
 -- ---------
-
-{-# INLINE showRange #-}
-showRange :: Range -> String
-showRange (SingletonRange x)   = printf "[%d]" x
-showRange (InclusiveRange u v) = printf "[%d,%d]" u v
 
 {-# INLINE message #-}
 message :: Int -> String -> IO ()

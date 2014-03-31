@@ -12,71 +12,98 @@ module Data.Range.Range
   where
 
 import Prelude                                  hiding ( take, splitAt )
+import Text.Printf
 import GHC.Base                                 ( quotInt )
 
 
--- | A simple range data type. The intervals is inclusive.
+-- | A simple range data type with inclusive ends.
 --
 data Range
-  = SingletonRange {-# UNPACK #-} !Int
-  | InclusiveRange {-# UNPACK #-} !Int {-# UNPACK #-} !Int
-  deriving (Eq, Show)
+  = Empty
+  | Inclusive {-# UNPACK #-} !Int {-# UNPACK #-} !Int
+  deriving Eq
 
+instance Show Range where
+  show Empty           = "empty"
+  show (Inclusive u v) = printf "[%d...%d]" u v
+
+
+-- | An empty interval
+{-# INLINE empty #-}
+empty :: Range
+empty = Empty
+
+-- | Check if an interval is empty
+--
+{-# INLINE null #-}
+null :: Range -> Bool
+null Empty = True
+null _     = False
+
+-- | A singleton point
+--
+{-# INLINE singleton #-}
 singleton :: Int -> Range
-singleton = SingletonRange
+singleton a = Inclusive a a
 
-inclusive :: Int -> Int -> Range
-inclusive u v
-  | v < u       = error "invalid inclusive range"
-  | u == v      = singleton u
-  | otherwise   = InclusiveRange u v
+-- | An inclusive range
+{-# INLINE (...) #-}
+(...) :: Int -> Int -> Range
+u ... v
+  | u <= v      = Inclusive u v
+  | otherwise   = Empty
+infix 3 ...
 
 
 -- | The number of elements defined by the range interval
 --
+{-# INLINE size #-}
 size :: Range -> Int
-size r =
-  case r of
-    SingletonRange _    -> 1
-    InclusiveRange u v  -> v - u + 1
+size range =
+  case range of
+    Empty         -> 0
+    Inclusive u v -> v - u + 1
+
 
 -- | Split an interval into two roughly equally sized ranges. If the interval is
 -- odd then the first interval gets the extra element.
 --
-halve :: Range -> (Range, Maybe Range)
-halve range =
+{-# INLINE bisect #-}
+bisect :: Range -> (Range, Range)
+bisect range =
   case range of
-    SingletonRange _    -> (range, Nothing)
-    InclusiveRange u v  ->
+    Empty         -> (empty, empty)
+    Inclusive u v ->
       let n = size range
           m = (n + 1) `quotInt` 2
 
-          x = inclusive u (u+m-1)
-          y = if n - m > 0
-               then Just (inclusive m v)
-               else Nothing
+          x             = u   ... u+m-1
+          y | n - m > 0 = u+m ... v
+            | otherwise = empty
       in
-      (x,y)
+      (x, y)
 
 
--- | Return the first @n@ elements of the range, or the range itself if @n >
--- size@
+-- | Return the first @n@ elements of the range, or the range itself if
+-- @n > size@.
 --
+{-# INLINE take #-}
 take :: Int -> Range -> Range
-take n r =
-  case r of
-    SingletonRange{}    -> r
-    InclusiveRange u v  -> inclusive u (u + (min (n-1) v))
+take n range =
+  case range of
+    Empty         -> empty
+    Inclusive u v -> u ... u + (min (n-1) v)
+
 
 -- | A tuple where the first element is the first @n@ elements of the range, and
 -- the second is the remainder of the list (if any).
 --
-splitAt :: Int -> Range -> (Range, Maybe Range)
-splitAt n r =
-  case r of
-    SingletonRange{}    -> (r, Nothing)
-    InclusiveRange u v
-      | size r <= n     -> (r, Nothing)
-      | otherwise       -> ( inclusive u (u+n-1)
-                           , Just $ inclusive (u+n) v)
+{-# INLINE splitAt #-}
+splitAt :: Int -> Range -> (Range, Range)
+splitAt n range =
+  case range of
+    Empty               -> (empty, empty)
+    Inclusive u v
+      | size range <= n -> (range, empty)
+      | otherwise       -> (u ... u+n-1, u+n ... v)
 
