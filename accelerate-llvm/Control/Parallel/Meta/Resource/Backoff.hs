@@ -55,10 +55,10 @@ defaultWorkSearch = mkWorkSearch 100 10000
 -- point it will always sleep for the maximum time (10ms)
 --
 mkWorkSearch :: Int -> Int -> WorkSearch
-mkWorkSearch _        0       = WorkSearch $ \_ _ -> return Nothing
+mkWorkSearch _        0       = WorkSearch $ \_ -> return Nothing
 mkWorkSearch shortest longest = WorkSearch backoff
   where
-    backoff Worker{..} _ = do
+    backoff Worker{..} = do
       failed   <- readIORef consecutiveFailures
       let sleep = min longest (2 ^ failed)
       if sleep >= shortest

@@ -12,22 +12,20 @@ module Control.Parallel.Meta
   where
 
 import Data.Monoid
-import Data.IORef
-
 import Data.Range.Range
 import Control.Parallel.Meta.Worker
 
 
 -- | The 'Startup' component of a 'Resource' is a callback that implements
--- initialisation behaviour. For example, in a multicore system, 'Startup' may
--- spawn a thread onto each CPU.
+-- initialisation behaviour. For example, it might contact remote hosts, spawn
+-- threads, or initialise hardware such as GPUs.
 --
 data Startup = Startup {
-  runStartup :: WorkSearch -> IORef Gang -> IO () }
+  runStartup :: Gang -> IO () }
 
 instance Monoid Startup where
-  mempty                            = Startup $ \_ _  -> return ()
-  Startup st1 `mappend` Startup st2 = Startup $ \ws g -> st1 ws g >> st2 ws g
+  mempty                            = Startup $ \_ -> return ()
+  Startup st1 `mappend` Startup st2 = Startup $ \g -> st1 g >> st2 g
 
 
 -- | The 'WorkSearch' component of a 'Resource' is a callback that responds to
@@ -36,15 +34,15 @@ instance Monoid Startup where
 -- program.
 --
 data WorkSearch = WorkSearch {
-  runWorkSearch :: Worker -> IORef Gang -> IO (Maybe Range) }
+  runWorkSearch :: Worker -> IO (Maybe Range) }
 
 instance Monoid WorkSearch where
-  mempty                                  = WorkSearch $ \_ _ -> return Nothing
+  mempty                                  = WorkSearch $ \_ -> return Nothing
   WorkSearch ws1 `mappend` WorkSearch ws2 =
-    WorkSearch $ \st gang -> do
-        mwork <- ws1 st gang
+    WorkSearch $ \st -> do
+        mwork <- ws1 st
         case mwork of
-          Nothing -> ws2 st gang
+          Nothing -> ws2 st
           _       -> return mwork
 
 

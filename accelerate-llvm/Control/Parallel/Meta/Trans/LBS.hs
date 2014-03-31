@@ -46,13 +46,13 @@ mkWorkSearch
   -> WorkSearch         -- ^ the basic work search method to modify
   -> WorkSearch
 mkWorkSearch ppt steal =
-  let search !me@Worker{..} gang = do
+  let search !me@Worker{..} = do
 
         -- Look for some work to do. If there is work on the local queue, take
         -- that first before trying to steal from the neighbours.
         self <- tryPopL workpool
         work <- case self of
-                  Nothing -> runWorkSearch steal me gang
+                  Nothing -> runWorkSearch steal me
                   Just _  -> return self
 
         -- Once we have some work, take the first ppt elements (which we will

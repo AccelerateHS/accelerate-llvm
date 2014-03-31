@@ -66,7 +66,7 @@ mkResource retries gang =
 --
 mkWorkSearch :: Int -> Gang -> WorkSearch
 mkWorkSearch retries gang =
-  let search !me _ =
+  let search !me =
         let myId        = workerId me
             random      = uniformR (0, V.length gang - 1) (rngState me)
 
