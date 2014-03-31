@@ -36,10 +36,16 @@ import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Compile.Function
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
-import Data.Array.Accelerate.LLVM.Native.Execute.Fill
-import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Target
+
+-- Use chunked evaluation
+-- import Data.Array.Accelerate.LLVM.Native.Execute.Fill
+-- import Data.Array.Accelerate.LLVM.Native.Execute.Gang
+
+-- Use work-stealing scheduler
+import Control.Parallel.Meta.Worker
+import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Prelude                                                  hiding ( exp )
@@ -214,7 +220,15 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
       -- Either (1) multidimensional reduction; or
       --        (2) sequential reduction
       | dim sh > 0 || gangSize theGang == 1
-      = do executeOpWith sz sh
+      , NativeR k <- kernel
+      = do  let out     = allocateArray sh
+            --
+            liftIO $ do
+              executeFunction k                 $ \f ->
+                fillP defaultSmallPPT (size sh) $ \start end _ ->
+                  callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
+
+            return out
 
       -- Parallel reduction
       | NativeR k <- kernel
@@ -224,8 +238,8 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
                 n       = sz `min` chunks
             --
             liftIO $ do
-              executeNamedFunction k "fold1"   $ \f ->
-                fillP (size sh * sz) $ \start end tid ->
+              executeNamedFunction k "fold1"         $ \f ->
+                fillP defaultLargePPT (size sh * sz) $ \start end tid ->
                   callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
 
               executeNamedFunction k "foldAll" $ \f ->
@@ -345,7 +359,7 @@ execute
     -> args
     -> LLVM Native ()
 execute (NativeR main) gamma aenv n args = liftIO $
-  executeFunction main $ \f ->
-  fillP n              $ \start end _ ->
+  executeFunction main    $ \f ->
+  fillP defaultLargePPT n $ \start end _ ->
     callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
 
