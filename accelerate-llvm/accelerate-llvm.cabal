@@ -43,6 +43,10 @@ Flag internal-checks
   Default:              True
   Description:          Enable internal consistency checks
 
+Flag chase-lev
+  Default:              True
+  Description:          Use a Chase-Lev deque for work stealing
+
 
 -- Build configuration
 -- -------------------
@@ -95,6 +99,10 @@ Library
 
   include-dirs:                 include
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
+
+  if flag(chase-lev)
+    cpp-options:                -DCHASELEV_DEQUE
+    build-depends:              chaselev-deque >= 0.5
 
   if flag(debug)
     cpp-options:                -DACCELERATE_DEBUG

@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Control.Parallel.Meta.Worker
@@ -33,8 +34,11 @@ import Text.Printf
 import qualified Data.Vector                                    as V
 
 import Data.Concurrent.Deque.Class
+#ifdef CHASELEV_DEQUE
 import Data.Concurrent.Deque.ChaseLev.DequeInstance             ()
--- import Data.Concurrent.Deque.Reference.DequeInstance            ()
+#else
+import Data.Concurrent.Deque.Reference.DequeInstance            ()
+#endif
 
 
 -- | The 'Gang' structure tracks the state of all workers in the program. It
