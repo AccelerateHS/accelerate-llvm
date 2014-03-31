@@ -95,7 +95,7 @@ mkWorkSearch ppt steal =
                            let (l,u) = R.bisect rest
                            message workerId (printf "splitting remainder %s -> %s, %s" (show rest) (show l) (show u))
                            unless (R.null u) $ pushL workpool u
-                           unless (R.null l) $ pushL workpool l
+                           pushL workpool l
             --
             message workerId (printf "got work range %s" (show this))
             handleRemainder
