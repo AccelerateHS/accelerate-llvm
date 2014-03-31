@@ -20,7 +20,7 @@ GHC_FLAGS="$GHC_FLAGS
     -DACCELERATE_DEBUG
     -iaccelerate-llvm
     -iaccelerate-llvm-native
-    -iaccelerate-llvm-nvvm
+    -iaccelerate-llvm-ptx
     -package-db .cabal-sandbox/x86_64-osx-ghc-$VER-packages.conf.d
     -Iaccelerate-llvm/include -optP-include -optPaccelerate-llvm/dist/build/autogen/cabal_macros.h"
 

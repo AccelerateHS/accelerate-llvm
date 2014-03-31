@@ -1,0 +1,139 @@
+name:                   accelerate-llvm-ptx
+version:                0.15.0.0
+cabal-version:          >= 1.10
+tested-with:            GHC == 7.6.*
+build-type:             Simple
+
+synopsis:               Accelerate backend generating LLVM
+description:
+    This library implements a backend for the /Accelerate/ language which
+    generates LLVM-IR targeting CUDA capable GPUs. For further information,
+    refer to the main /Accelerate/ package:
+    <http://hackage.haskell.org/package/accelerate>
+
+license:                BSD3
+license-file:           LICENSE
+author:                 Trevor L. McDonell
+maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
+bug-reports:            https://github.com/AccelerateHS/accelerate/issues
+category:               Compilers/Interpreters, Concurrency, Data, Parallelism
+
+extra-source-files:     include/accelerate.h
+
+
+-- Configuration flags
+-- -------------------
+
+Flag libnvvm
+  Default:              False
+  Description:          Use the libNVVM bindings to optimise generated PTX
+
+Flag debug
+  Default:              True
+  Description:
+    Enable tracing message flags. These are read from the command-line
+    arguments, which is convenient but may cause problems interacting with the
+    user program, so is not enabled by default. The available options:
+    .
+
+Flag bounds-checks
+  Default:              True
+  Description:          Enable bounds checking
+
+Flag unsafe-checks
+  Default:              True
+  Description:          Enable bounds checking in unsafe operations
+
+Flag internal-checks
+  Default:              True
+  Description:          Enable internal consistency checks
+
+
+-- Build configuration
+-- -------------------
+
+Library
+  exposed-modules:
+    Data.Array.Accelerate.LLVM.PTX
+
+  other-modules:
+    Data.Array.Accelerate.LLVM.PTX.Analysis.Device
+    Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
+    Data.Array.Accelerate.LLVM.PTX.Array.Data
+    Data.Array.Accelerate.LLVM.PTX.Array.Prim
+    Data.Array.Accelerate.LLVM.PTX.Array.Table
+    Data.Array.Accelerate.LLVM.PTX.Context
+    Data.Array.Accelerate.LLVM.PTX.Debug
+    Data.Array.Accelerate.LLVM.PTX.State
+    Data.Array.Accelerate.LLVM.PTX.Target
+
+    Data.Array.Accelerate.LLVM.PTX.CodeGen
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
+
+    Data.Array.Accelerate.LLVM.PTX.Compile
+    Data.Array.Accelerate.LLVM.PTX.Compile.Link
+    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+
+    Data.Array.Accelerate.LLVM.PTX.Execute
+    Data.Array.Accelerate.LLVM.PTX.Execute.Environment
+    Data.Array.Accelerate.LLVM.PTX.Execute.Event
+    Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
+    Data.Array.Accelerate.LLVM.PTX.Execute.Stream
+
+  build-depends:
+    accelerate                  == 0.15.*,
+    accelerate-llvm             == 0.15.*,
+    base                        >= 4.6 && <5.0,
+    bytestring                  >= 0.9,
+    containers                  >= 0.5 && <0.6,
+    cuda                        >= 0.5,
+    directory                   >= 1.0,
+    dlist                       >= 0.6,
+    fclabels                    >= 2.0,
+    filepath                    >= 1.0,
+    hashable                    >= 1.2,
+    mtl                         >= 2.0,
+    pretty                      >= 1.1,
+    time                        >= 1.4,
+    unordered-containers        >= 0.2
+
+  default-language:
+    Haskell2010
+
+  include-dirs:                 include
+  ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
+
+  if flag(libnvvm)
+    cpp-options:                -DACCELERATE_USE_LIBNVVM
+    build-depends:
+      libnvvm                   >= 1.0,
+      llvm-general              == 3.2.*,
+      llvm-general-pure         == 3.2.*
+  else
+    build-depends:
+      llvm-general              >= 3.3,
+      llvm-general-pure         >= 3.3
+
+  if flag(debug)
+    cpp-options:                -DACCELERATE_DEBUG
+
+  if flag(bounds-checks)
+    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
+
+  if flag(unsafe-checks)
+    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
+
+  if flag(internal-checks)
+    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
+
+
+source-repository head
+  type:                 git
+  location:
+
+-- vim: nospell
