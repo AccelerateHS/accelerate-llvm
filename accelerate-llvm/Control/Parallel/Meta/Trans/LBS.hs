@@ -15,6 +15,7 @@
 
 module Control.Parallel.Meta.Trans.LBS (
 
+  mkResource,
   mkWorkSearch,
 
 ) where
@@ -26,6 +27,17 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
+
+
+-- | Transform the 'WorkSearch' function of the given 'Resource' to include a
+-- lazy binary splitting work stealing scheduler.
+--
+mkResource
+    :: Int              -- ^ profitable parallelism threshold
+    -> Resource         -- ^ the resource to modify
+    -> Resource
+mkResource ppt (Resource st ws)
+  = Resource st (mkWorkSearch ppt ws)
 
 
 -- | This transforms the 'WorkSearch' function to add a lazy binary splitting
