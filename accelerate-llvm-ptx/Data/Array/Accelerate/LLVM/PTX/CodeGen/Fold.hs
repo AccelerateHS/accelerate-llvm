@@ -73,6 +73,26 @@ mkFold ptx aenv f z a
   = mkFoldAll' ptx aenv f z a
 
 
+-- Reduce an array along the innermost dimension. The innermost dimension must
+-- not be empty.
+--
+mkFold1
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
+    => PTX
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
+mkFold1 ptx aenv f a
+  -- Multidimensional fold
+  | expDim (undefined::Exp aenv sh) > 0
+  = mkFold1' ptx aenv f a
+
+  -- Parallel foldAll
+  | otherwise
+  = mkFold1All' ptx aenv f a
+
+
 -- Multidimensional reduction
 -- --------------------------
 
@@ -88,8 +108,25 @@ mkFold'
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold' ptx aenv f z a = do
-  [k1] <- mkFold'warp  ptx aenv f z a
-  [k2] <- mkFold'block ptx aenv f z a
+  [k1] <- mkFold'warp  ptx aenv f (Just z) a
+  [k2] <- mkFold'block ptx aenv f (Just z) a
+
+  return [k1,k2]
+
+
+-- Inclusive reduce of a multidimensional array along the innermost dimension.
+-- The dimensions must not be empty.
+--
+mkFold1'
+    :: (Shape sh, Elt e)
+    => PTX
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
+mkFold1' ptx aenv f a = do
+  [k1] <- mkFold'warp  ptx aenv f Nothing a
+  [k2] <- mkFold'block ptx aenv f Nothing a
 
   return [k1,k2]
 
@@ -113,11 +150,11 @@ mkFold'block
     :: forall ptx aenv sh e. (Shape sh, Elt e)
     => PTX
     -> Gamma aenv
-    -> IRFun2    aenv (e -> e -> e)
-    -> IRExp     aenv e
+    -> IRFun2 aenv (e -> e -> e)
+    -> Maybe (IRExp aenv e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
-mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
@@ -175,17 +212,22 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
                     end'  <- A.min int32 end ntid
                     ys'   <- reduceBlock dev arrTy combine ys sdata end' tid tid
 
-                    -- The first thread writes the result including the seed
-                    -- element back to global memory
+                    -- The first thread writes the result (including the seed
+                    -- element if this is an exclusive reduction) back to global
+                    -- memory.
                     ifThen  <- newBlock "finish.if.then"
                     ifExit  <- newBlock "finish.if.exit"
                     c2      <- eq int32 tid (constOp $ num int32 0)
                     _       <- cbr c2 ifThen ifExit
 
                     setBlock ifThen
-                    xs'     <- seed
-                    ys''    <- combine xs' ys'
-                    writeArray arrOut seg ys''
+                    case mseed of
+                      Nothing   -> writeArray arrOut seg ys'
+                      Just seed -> do
+                        xs'     <- seed
+                        ys''    <- combine xs' ys'
+                        writeArray arrOut seg ys''
+
                     _       <- br ifExit
 
                     setBlock ifExit)
@@ -212,11 +254,11 @@ mkFold'warp
     :: forall ptx aenv sh e. (Shape sh, Elt e)
     => PTX
     -> Gamma aenv
-    -> IRFun2    aenv (e -> e -> e)
-    -> IRExp     aenv e
+    -> IRFun2 aenv (e -> e -> e)
+    -> Maybe (IRExp aenv e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
-mkFold'warp (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
+mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
@@ -293,9 +335,13 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
                     _       <- cbr c2 ifThen ifExit
 
                     setBlock ifThen
-                    xs'     <- seed
-                    ys''    <- combine xs' ys'
-                    writeArray arrOut seg ys''
+                    case mseed of
+                      Nothing   -> writeArray arrOut seg ys'
+                      Just seed -> do
+                        xs'     <- seed
+                        ys''    <- combine xs' ys'
+                        writeArray arrOut seg ys''
+
                     _       <- br ifExit
 
                     setBlock ifExit)
