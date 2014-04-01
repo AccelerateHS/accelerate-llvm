@@ -85,13 +85,14 @@ mkWorkSearch retries gang =
                      _          -> do message myId (printf "steal from %d" targetId)
                                       writeIORef (consecutiveFailures me) 0
                                       return mwork
-        in do
-          self <- tryPopL (workpool me)
-          case self of
-            Nothing -> loop retries
-            _       -> do message myId "steal from self"
-                          writeIORef (consecutiveFailures me) 0
-                          return self
+        in
+        loop retries
+--          self <- tryPopL (workpool me)
+--          case self of
+--            Nothing -> loop retries
+--            _       -> do message myId "steal from self"
+--                          writeIORef (consecutiveFailures me) 0
+--                          return self
   in
   WorkSearch search
 
