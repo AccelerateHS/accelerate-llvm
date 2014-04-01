@@ -147,7 +147,9 @@ compileModuleNVPTX dev name mdl =
         runError e = either (INTERNAL_ERROR(error) "compileModuleNVPTX") id `fmap` runErrorT e
 
     LLVM.withPassManager pss $ \pm -> do
+#ifdef ACCELERATE_INTERNAL_CHECKS
       runError $ LLVM.verify mdl
+#endif
       b1      <- LLVM.runPassManager pm mdl
 
       -- Lower the LLVM module into target assembly (PTX)
