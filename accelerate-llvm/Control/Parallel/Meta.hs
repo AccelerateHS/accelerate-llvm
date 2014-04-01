@@ -105,7 +105,16 @@ runParIO
     -> Int
     -> (Int -> Int -> Int -> IO ())
     -> IO ()
-runParIO resource gang len action =
+runParIO resource gang len action
+  | V.length gang == 1  = seqIO resource gang len action
+  | otherwise           = parIO resource gang len action
+
+seqIO :: Resource -> Gang -> Int -> (Int -> Int -> Int -> IO ()) -> IO ()
+seqIO _ gang len action =
+  gangIO gang $ action 0 len
+
+parIO :: Resource -> Gang -> Int -> (Int -> Int -> Int -> IO ()) -> IO ()
+parIO resource gang len action =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
