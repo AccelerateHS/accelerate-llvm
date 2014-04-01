@@ -379,9 +379,13 @@ llvmOfOpenExp exp env aenv = cvtE exp env
               -> Val env
               -> CodeGen (IR env aenv sh)
     shapeSize sh env = do
-      let int = numType :: NumType Int
+      let int           = numType :: NumType Int
+          size []       = return $ constOp (num int 1)
+          size [x]      = return x
+          size (x:xs)   = foldM (A.mul int) x xs
+      --
       sh' <- cvtE sh env
-      sz  <- foldM (A.mul int) (constOp $ num int 1) sh'
+      sz  <- size sh'
       return [sz]
 
     -- Intersection of two shapes, taken as the minimum in each dimension.
