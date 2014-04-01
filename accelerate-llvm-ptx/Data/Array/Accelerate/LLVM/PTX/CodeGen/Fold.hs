@@ -199,12 +199,12 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
                     -- Threads of the block sequentially read elements from the
                     -- input array and compute a local sum
                     i     <- A.add int32 start ntid
-                    xs    <- delayedLinearIndex [start]
+                    xs    <- delayedLinearIndex =<< toInt [start]
                     ys    <- Loop.iter i32 i
                                  (\i' -> lt  int32 i' end)
                                  (\i' -> add int32 i' ntid)
                                  arrTy xs
-                                 (\i' acc -> do xs' <- delayedLinearIndex [i']
+                                 (\i' acc -> do xs' <- delayedLinearIndex =<< toInt [i']
                                                 combine xs' acc)
 
                     -- Now cooperatively reduce the local sums to a single value
@@ -314,12 +314,12 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
                     -- TODO: reads are not aligned to a warp boundary, so this
                     -- may issue multiple global memory requests.
                     i       <- A.add int32 start warpSize
-                    xs      <- delayedLinearIndex [start]
+                    xs      <- delayedLinearIndex =<< toInt [start]
                     ys      <- Loop.iter i32 i
                                    (\i' -> lt  int32 i' end)
                                    (\i' -> add int32 i' warpSize)
                                    arrTy xs
-                                   (\i' acc -> do xs' <- delayedLinearIndex [i']
+                                   (\i' acc -> do xs' <- delayedLinearIndex =<< toInt [i']
                                                   combine xs' acc)
 
                     -- Now cooperatively reduce the local sums to a single value
@@ -370,6 +370,24 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
 --      is small enough such that it can be processed by a single thread block,
 --      to produce the final (scalar) output element.
 --
+-- Note: [Indexing delayed arrays]
+--
+-- For performance considerations, the GPU code attempts to use native integers
+-- for operations such as loop counters. On the GPU, these are 32-bits wide,
+-- whereas the host system is typically a 64-bit architecture. LLVM IR is
+-- strongly typed, and will not automatically convert between the two integer
+-- widths for us; binary operations of mixed type yield a (runtime) type error.
+--
+-- When loop indices are passed to generated code, we must ensure that these are
+-- passed as the type of a Haskell (host) Int, so that it matches the type of
+-- the generated IR (arr'). However, in the recursive step we are only directly
+-- indexing the array, and so no conversion is necessary (rec).
+--
+-- The promotion to the host integer type in the first step is only necessary if
+-- the indexing function manipulates indices in some fashion. However, at this
+-- point we can not determine if this is the case, and so to be safe we must do
+-- the conversion.
+--
 mkFoldAll'
     :: forall ptx aenv sh e. (Shape sh, Elt e)    -- really have sh ~ Z
     => PTX
@@ -387,8 +405,14 @@ mkFoldAll' ptx aenv combine seed arr =
         , delayedIndex       = error "mkFoldAll: delayedIndex"
         , delayedLinearIndex = \[i] -> readArray arrOut i
         }
+
+      arr'              = IRDelayed
+        { delayedExtent      = delayedExtent arr
+        , delayedIndex       = delayedIndex arr <=< toInt       -- See note: [Indexing delayed arrays]
+        , delayedLinearIndex = delayedLinearIndex arr <=< toInt
+        }
   in do
-  [k1] <- mkFoldAllCore "foldAllIntro" ptx aenv combine seed arr
+  [k1] <- mkFoldAllCore "foldAllIntro" ptx aenv combine seed arr'
   [k2] <- mkFoldAllCore "foldAllRec"   ptx aenv combine seed rec
 
   return [k1,k2]
@@ -413,8 +437,14 @@ mkFold1All' ptx aenv combine arr =
         , delayedIndex       = error "mkFoldAll: delayedIndex"
         , delayedLinearIndex = \[i] -> readArray arrOut i
         }
+
+      arr'              = IRDelayed
+        { delayedExtent      = delayedExtent arr
+        , delayedIndex       = delayedIndex arr <=< toInt       -- See note: [Indexing delayed arrays]
+        , delayedLinearIndex = delayedLinearIndex arr <=< toInt
+        }
   in do
-  [k1] <- mkFold1AllCore "fold1AllIntro" ptx aenv combine arr
+  [k1] <- mkFold1AllCore "fold1AllIntro" ptx aenv combine arr'
   [k2] <- mkFold1AllCore "fold1AllRec"   ptx aenv combine rec
 
   return [k1,k2]

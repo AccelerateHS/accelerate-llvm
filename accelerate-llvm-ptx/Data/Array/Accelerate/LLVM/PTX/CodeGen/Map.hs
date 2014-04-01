@@ -56,7 +56,7 @@ mkMap _nvvm aenv apply IRDelayed{..} =
     end   <- shapeSize shOut
 
     imapFromTo start end $ \i -> do
-      xs <- delayedLinearIndex [i]
+      xs <- delayedLinearIndex [i]              -- TLM: safe to keep as int32?
       ys <- apply xs
       writeArray arrOut i ys
 

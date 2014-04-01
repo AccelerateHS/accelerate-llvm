@@ -15,7 +15,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   blockDim, gridDim, threadIdx, blockIdx,
   gridSize, globalThreadIdx,
 
-  -- Shapes
+  -- Shapes and indices
+  toInt,
   shapeSize,
 
   -- Barriers and synchronisation
@@ -41,7 +42,7 @@ import LLVM.General.AST.CallingConvention
 import Data.Array.Accelerate.Array.Sugar                        ( Elt, eltType )
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic            as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -104,6 +105,11 @@ shapeSize []     = return $ constOp (num int32 1)
 shapeSize [x]    = trunc int32 (rvalue x)
 shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
 
+
+-- Convert the input Int32`s to natural Int`s.
+--
+toInt :: [Operand] -> CodeGen [Operand]
+toInt = mapM (A.fromIntegral int32 int)
 
 
 -- Barriers and synchronisation
