@@ -62,18 +62,18 @@ import qualified Data.ByteString.Char8                          as B
 
 
 instance Compile PTX where
-  compileForTarget = compileForNVPTX
+  compileForTarget = compileForPTX
 
 
 -- | Compile a given module for the NVPTX backend. This produces a CUDA module
 -- as well as a list of the kernel functions in the module, together with some
 -- occupancy information.
 --
-compileForNVPTX
+compileForPTX
     :: DelayedOpenAcc aenv a
     -> Gamma aenv
     -> LLVM PTX (ExecutableR PTX)
-compileForNVPTX acc aenv = do
+compileForPTX acc aenv = do
   target <- gets llvmTarget
   ctx    <- asks llvmContext
   let Module ast = llvmOfAcc target acc aenv
