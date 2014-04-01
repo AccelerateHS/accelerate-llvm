@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   __threadfence_block, __threadfence_grid,
 
   -- Shared memory
-  initialiseSharedMemory,
   sharedMem,
 
   -- Kernel definition
@@ -188,7 +187,8 @@ sharedMem dummy nelt =
         a'@(LocalReference n)   <- shared1 a  i  t
         ns                      <- shared  a' is ts
         return (n:ns)
-  in
+  in do
+  initialiseSharedMemory
   shared (global "__shared__") offset ty
 
 

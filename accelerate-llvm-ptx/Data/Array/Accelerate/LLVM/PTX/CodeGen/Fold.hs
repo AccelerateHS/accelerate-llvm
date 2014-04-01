@@ -61,8 +61,7 @@ mkFold
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
 mkFold ptx aenv f z a
-  -- Either (1) multidimensional fold; or
-  --        (2) only using one CPU, so just execute sequentially
+  -- Multidimensional fold
   | expDim (undefined::Exp aenv sh) > 0
   = mkFold' ptx aenv f z a
 
@@ -126,8 +125,6 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
       i32               = typeOf (int32 :: IntegralType Int32)
   in
   makeKernel "mkFoldByBlock" (paramOut ++ paramEnv) $ do
-    initialiseSharedMemory
-
     ntid                <- blockDim
     nctaid              <- gridDim
     ctaid               <- blockIdx
@@ -231,8 +228,6 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
       i32               = typeOf (int32 :: IntegralType Int32)
   in
   makeKernel "mkFoldByWarp" (paramOut ++ paramEnv) $ do
-    initialiseSharedMemory
-
     ntid                <- blockDim
     nctaid              <- gridDim
     tid                 <- threadIdx
@@ -383,8 +378,6 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
       paramEnv          = envParam aenv
   in
   makeKernel name (paramOut ++ paramEnv) $ do
-    initialiseSharedMemory
-
     tid         <- threadIdx
     ntid        <- blockDim
     ctaid       <- blockIdx
