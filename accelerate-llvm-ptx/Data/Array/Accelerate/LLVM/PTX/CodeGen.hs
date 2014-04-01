@@ -27,5 +27,5 @@ instance Skeleton PTX where
   generate      = mkGenerate
   transform     = mkTransform
   fold          = mkFold
---  fold1         = mkFold1
+  fold1         = mkFold1
 

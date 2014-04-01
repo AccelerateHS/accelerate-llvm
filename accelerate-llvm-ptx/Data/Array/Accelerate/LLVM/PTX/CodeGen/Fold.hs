@@ -15,8 +15,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
-  where
+module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold (
+
+  mkFold, mkFold1,
+
+) where
 
 -- llvm-general
 import LLVM.General.AST
@@ -53,13 +56,13 @@ import Control.Monad
 -- Reduce an array along the innermost dimension
 --
 mkFold
-    :: forall t aenv sh e. (Shape sh, Elt e)
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
     => PTX
     -> Gamma aenv
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold ptx aenv f z a
   -- Multidimensional fold
   | expDim (undefined::Exp aenv sh) > 0
@@ -73,7 +76,8 @@ mkFold ptx aenv f z a
 -- Multidimensional reduction
 -- --------------------------
 
--- Reduce a multidimensional array along the innermost dimension.
+-- Exclusive reduction of a multidimensional array along the innermost
+-- dimension.
 --
 mkFold'
     :: (Shape sh, Elt e)
@@ -82,7 +86,7 @@ mkFold'
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold' ptx aenv f z a = do
   [k1] <- mkFold'warp  ptx aenv f z a
   [k2] <- mkFold'block ptx aenv f z a
@@ -106,13 +110,13 @@ mkFold' ptx aenv f z a = do
 -- threads per block.
 --
 mkFold'block
-    :: forall t aenv sh e. (Shape sh, Elt e)
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
     => PTX
     -> Gamma aenv
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
@@ -192,7 +196,6 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
     return_
 
 
-
 -- Reduce a multidimensional array along the innermost dimension. Each warp
 -- reduces along one innermost dimension index. Thus the kernel requires that
 -- the input array have at least:
@@ -206,13 +209,13 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
 -- warp size, and still retain good performance.
 --
 mkFold'warp
-    :: forall t aenv sh e. (Shape sh, Elt e)
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
     => PTX
     -> Gamma aenv
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold'warp (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
@@ -322,13 +325,13 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
 --      to produce the final (scalar) output element.
 --
 mkFoldAll'
-    :: forall t aenv sh e. (Shape sh, Elt e)    -- really have sh ~ Z
+    :: forall ptx aenv sh e. (Shape sh, Elt e)    -- really have sh ~ Z
     => PTX
     -> Gamma aenv
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFoldAll' ptx aenv combine seed arr =
   let
       arrOut            = arrayData  (undefined::Array DIM1 e) "out"
@@ -341,6 +344,32 @@ mkFoldAll' ptx aenv combine seed arr =
   in do
   [k1] <- mkFoldAllCore "foldAllIntro" ptx aenv combine seed arr
   [k2] <- mkFoldAllCore "foldAllRec"   ptx aenv combine seed rec
+
+  return [k1,k2]
+
+
+-- Reduce a non-empty array to a single element, with all threads cooperating.
+-- See also 'mkFoldAll''.
+--
+mkFold1All'
+    :: forall ptx aenv sh e. (Shape sh, Elt e)  -- really have sh ~ Z
+    => PTX
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
+mkFold1All' ptx aenv combine arr =
+  let
+      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
+      shOut             = arrayShape (undefined::Array DIM1 e) "out"
+      rec               = IRDelayed
+        { delayedExtent      = return (map rvalue shOut)        -- See note: [Marshalling foldAll output arrays]
+        , delayedIndex       = error "mkFoldAll: delayedIndex"
+        , delayedLinearIndex = \[i] -> readArray arrOut i
+        }
+  in do
+  [k1] <- mkFold1AllCore "fold1AllIntro" ptx aenv combine arr
+  [k2] <- mkFold1AllCore "fold1AllRec"   ptx aenv combine rec
 
   return [k1,k2]
 
@@ -362,14 +391,14 @@ mkFoldAll' ptx aenv combine seed arr =
 -- function parameters.
 --
 mkFoldAllCore
-    :: forall t aenv sh e. (Shape sh, Elt e)
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
     => Name
     -> PTX
     -> Gamma aenv
     -> IRFun2    aenv (e -> e -> e)
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
-    -> CodeGen [Kernel t aenv (Array sh e)]
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
@@ -468,6 +497,73 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
     setBlock exit
     return_
 
+
+-- Generate the inclusive 'fold1All' kernel, for both the introduction
+-- (including fused producers) and recursive reduction steps. See also
+-- 'mkFoldAllCore'.
+--
+mkFold1AllCore
+    :: forall ptx aenv sh e. (Shape sh, Elt e)
+    => Name
+    -> PTX
+    -> Gamma aenv
+    -> IRFun2    aenv (e -> e -> e)
+    -> IRDelayed aenv (Array (sh:.Int) e)
+    -> CodeGen [Kernel ptx aenv (Array sh e)]
+mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} =
+  let
+      arrTy             = llvmOfTupleType (eltType (undefined::e))
+      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
+      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv          = envParam aenv
+  in
+  makeKernel name (paramOut ++ paramEnv) $ do
+    tid         <- threadIdx
+    ntid        <- blockDim
+    ctaid       <- blockIdx
+    sdata       <- sharedMem (undefined::e) ntid
+
+    sh          <- delayedExtent
+    end         <- shapeSize sh
+    step        <- gridSize
+
+    -- The shape is guaranteed to be non-empty. The execution phase will raise a
+    -- runtime exception if the user calls fold1 on an empty shape.
+    --
+    main        <- newBlock "main.top"
+    exit        <- newBlock "main.exit"
+    i           <- globalThreadIdx
+    c1          <- lt int32 i end
+    _           <- cbr c1 main exit
+
+    setBlock main
+    xs          <- delayedLinearIndex [i]
+    ys          <- iterFromTo step end arrTy xs $ \i' acc -> do
+                      xs' <- delayedLinearIndex [i']
+                      combine xs' acc
+
+    writeVolatileArray sdata tid ys
+
+    -- Each thread puts its local sum into shared memory, then cooperatively
+    -- reduces the shared array to a single value.
+    --
+    u           <- A.mul int32 ctaid ntid
+    v           <- A.sub int32 end u
+    end'        <- A.min int32 ntid v
+    ys'         <- reduceBlock dev arrTy combine ys sdata end' tid tid
+
+    -- The first thread writes the result of this block back into global memory
+    --
+    finish      <- newBlock "finish"
+    c2          <- eq int32 tid (constOp (num int32 0))
+    _           <- cbr c2 finish exit
+
+    setBlock finish
+    writeArray arrOut ctaid ys'
+    _           <- br exit
+
+    setBlock exit
+    return_
 
 
 -- Reduction primitives
