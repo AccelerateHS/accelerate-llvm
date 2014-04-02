@@ -42,7 +42,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
 import Control.Monad.Error
-import Control.Monad.Reader
 import Data.Maybe
 
 #if !MIN_VERSION_llvm_general(3,3,0)

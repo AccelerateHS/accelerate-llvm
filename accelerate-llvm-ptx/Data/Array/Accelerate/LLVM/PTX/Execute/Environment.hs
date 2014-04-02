@@ -83,4 +83,3 @@ streaming first second = do
   PTX{..} <- gets llvmTarget
   Stream.streaming ptxContext ptxStreamReservoir first (\e a -> second (Async e a))
 
-
