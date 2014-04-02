@@ -123,11 +123,11 @@ parIO resource gang len action =
           loop  = do
             work <- runWorkSearch (workSearch resource) me
             case work of
-              Just (Inclusive u v) -> action u (v+1) thread >> loop
-              _                    -> return ()
+              Just (IE u v)     -> action u v thread >> loop
+              _                 -> return ()
 
       when (start < end) $ do
-        pushL (workpool me) (start ... end-1)
+        pushL (workpool me) (IE start end)
         loop
   where
     workers             = gangSize gang
