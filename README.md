@@ -46,6 +46,11 @@ TODOs
 
 These are some TODOs and notes that pop into my head from time to time...
 
+**General**
+
+  * Stability...
+
+
 **Code generation**
 
   * Implement a wrapper over llvm-general-pure so that (at least) Operands are
@@ -63,45 +68,43 @@ These are some TODOs and notes that pop into my head from time to time...
 **Native backend**
 
   * Complete coverage of skeleton operations
-    - [x] map
-    - [x] generate/zipWith
-    - [x] backpermute/transform
-    - [x] slice/replicate
-    - [x] reshape
-    - [x] fold (multidimensional)
-    - [x] foldAll (parallel optimisation)
-    - [ ] scanl, scanr
-    - [ ] scanl1, scanr1
-    - [ ] scanl', scanr'
-    - [ ] foldSeg
-    - [ ] permute
-    - [ ] stencil
-    - [ ] stencil2
-    - [ ] foreign functions
+- [x] map
+- [x] generate/zipWith
+- [x] backpermute/transform
+- [x] slice/replicate
+- [x] reshape
+- [x] fold (multidimensional)
+- [x] foldAll (parallel optimisation)
+- [ ] scanl, scanr
+- [ ] scanl1, scanr1
+- [ ] scanl', scanr'
+- [ ] foldSeg
+- [ ] permute
+- [ ] stencil
+- [ ] stencil2
+- [ ] foreign functions
 
   * SLP vectorization
 
 
-**NVPTX backend**
+**PTX backend**
 
   * Complete coverage of skeleton operations
-    - [x] map
-    - [x] generate/zipWith
-    - [x] backpermute/transform
-    - [x] slice/replicate
-    - [x] reshape
-    - [ ] fold (multidimensional)
-    - [ ] foldAll (parallel optimisation)
-    - [ ] scanl, scanr
-    - [ ] scanl1, scanr1
-    - [ ] scanl', scanr'
-    - [ ] foldSeg
-    - [ ] permute
-    - [ ] stencil
-    - [ ] stencil2
-    - [ ] foreign functions
-
-  * Rename NVVM -> NVPTX? (or something else)
+- [x] map
+- [x] generate/zipWith
+- [x] backpermute/transform
+- [x] slice/replicate
+- [x] reshape
+- [x] fold (multidimensional)
+- [x] foldAll (parallel optimisation)
+- [ ] scanl, scanr
+- [ ] scanl1, scanr1
+- [ ] scanl', scanr'
+- [ ] foldSeg
+- [ ] permute
+- [ ] stencil
+- [ ] stencil2
+- [ ] foreign functions
 
 
 **Thread safety**
