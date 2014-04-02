@@ -380,7 +380,7 @@ launch Kernel{..} stream n args =
     grid        = (kernelThreadBlocks n, 1, 1)
     smem        = kernelSharedMemBytes
 
-    fst3 (x,_,_)        = x
+    fst3 (x,_,_)         = x
     msg gpuTime wallTime =
       printf "exec: %s <<< %d, %d, %d >>> %s"
              kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed gpuTime wallTime)
