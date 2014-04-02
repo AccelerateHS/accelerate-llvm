@@ -72,7 +72,8 @@ mkWorkSearch retries gang =
 
             loop 0      = do
               message myId "work search failed"
-              modifyIORef' (consecutiveFailures me) (+1) >> return Nothing
+              modifyIORef' (consecutiveFailures me) (+1)
+              return Nothing
 
             loop n      = do
               targetId <- random
