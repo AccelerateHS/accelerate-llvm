@@ -12,12 +12,8 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 
-  newArray,
   allocateArray,
-
-  indexArray,
   useArrayAsync,
-
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
@@ -64,14 +60,12 @@ instance Remote PTX where
 
     return arrs
 
-
--- | Read a single element from the array at a given row-major index
---
-{-# INLINEABLE indexArray #-}
-indexArray :: Array sh e -> Int -> LLVM PTX e
-indexArray arr i = do
-  PTX{..} <- gets llvmTarget
-  liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable) arr i
+  -- | Read a single element from the array at a given row-major index
+  --
+  {-# INLINEABLE indexRemote #-}
+  indexRemote arr i = do
+    PTX{..} <- gets llvmTarget
+    liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable) arr i
 
 -- | Upload an existing array to the device, asynchronously
 --
@@ -80,17 +74,6 @@ useArrayAsync :: Array sh e -> Maybe CUDA.Stream -> LLVM PTX ()
 useArrayAsync arr st = do
   PTX{..} <- gets llvmTarget
   liftIO   $ runUseArray (Prim.useArrayAsync ptxContext ptxMemoryTable st) arr
-
-
--- | Create an array from its representation function, uploading the result to
--- the device.
---
-{-# INLINEABLE newArray #-}
-newArray :: (Shape sh, Elt e) => sh -> (sh -> e) -> LLVM PTX (Array sh e)
-newArray sh f = do
-  let arr = Sugar.newArray sh f
-  useArrayAsync arr Nothing
-  return arr
 
 
 -- | Allocate a new, uninitialised Accelerate array on the host and device.

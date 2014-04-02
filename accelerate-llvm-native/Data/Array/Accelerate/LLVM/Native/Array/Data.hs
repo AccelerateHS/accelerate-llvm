@@ -11,13 +11,9 @@
 
 module Data.Array.Accelerate.LLVM.Native.Array.Data (
 
-  indexArray,
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
-
-import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Array.Sugar                        ( Array(..), toElt )
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -27,10 +23,4 @@ import Data.Array.Accelerate.LLVM.Native.Target
 -- machine, and just manipulate the underlying Haskell array directly.
 --
 instance Remote Native
-
-
--- | Read a single element from the array at a given row-major index
---
-indexArray :: Array sh e -> Int -> e
-indexArray (Array _ adata) i = toElt $ unsafeIndexArrayData adata i
 

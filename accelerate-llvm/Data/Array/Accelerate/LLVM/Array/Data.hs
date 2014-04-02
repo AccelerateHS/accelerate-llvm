@@ -17,6 +17,7 @@
 module Data.Array.Accelerate.LLVM.Array.Data (
 
   Remote(..),
+  newRemote,
   runUseArray, runIndexArray,
 
   runArrays,
@@ -29,7 +30,7 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Representation               ( size )
-import Data.Array.Accelerate.Array.Sugar                        ( Arrays, ArraysR(..), Array(..), toElt, fromArr, arrays )
+import Data.Array.Accelerate.Array.Sugar                        hiding ( size )
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -64,6 +65,12 @@ class Remote arch where
   copyToPeer :: Arrays a => arch -> a -> LLVM arch a
   copyToPeer _ a = return a
 
+  -- | Read a single element from the array at a given row-major index
+  --
+  {-# INLINEABLE indexRemote #-}
+  indexRemote :: Array sh e -> Int -> LLVM arch e
+  indexRemote (Array _ adata) i = return . toElt $! unsafeIndexArrayData adata i
+
 
 -- CPP hackery to generate the cases where we dispatch to the worker function handling
 -- elementary types.
@@ -97,6 +104,22 @@ class Remote arch where
 ; dispatcher ArrayEltRcschar  = worker                                          \
 ; dispatcher ArrayEltRcuchar  = worker                                          \
 ; dispatcher _                = error "mkPrimDispatcher: not primitive"
+
+
+
+-- |Create a new array from its representation on the host, and upload it to a
+-- new remote array.
+--
+{-# INLINEABLE newRemote #-}
+newRemote
+    :: (Remote arch, Shape sh, Elt e)
+    => sh
+    -> (sh -> e)
+    -> LLVM arch (Array sh e)
+newRemote sh f = do
+  let arr = newArray sh f
+  copyToRemote arr
+  return arr
 
 
 -- |Upload an existing array from the host

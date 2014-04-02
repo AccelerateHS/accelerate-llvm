@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
-import Data.Array.Accelerate.Array.Sugar                        hiding ( newArray, allocateArray )
+import Data.Array.Accelerate.Array.Sugar                        hiding ( allocateArray )
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
@@ -112,7 +112,7 @@ executeOpenAcc (ExecAcc ptx gamma pacc) aenv stream =
 
     -- Array introduction
     Use arr                     -> return (toArr arr)
-    Unit x                      -> newArray Z . const =<< travE x
+    Unit x                      -> newRemote Z . const =<< travE x
 
     -- Environment manipulation
     Avar ix                     -> after stream (aprj ix aenv)
@@ -170,7 +170,7 @@ executeOpenAcc (ExecAcc ptx gamma pacc) aenv stream =
     awhile p f a = do
       nop <- liftIO Event.create                -- record event never called, so this is a functional no-op
       r   <- executeOpenAfun1 p aenv (Async nop a)
-      ok  <- indexArray r 0
+      ok  <- indexRemote r 0
       if ok then awhile p f =<< executeOpenAfun1 f aenv (Async nop a)
             else return a
 
@@ -292,8 +292,8 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
       ShapeSize sh              -> size  <$> travE sh
       Shape acc                 -> shape <$> travA acc
-      Index acc ix              -> join $ index      <$> travA acc <*> travE ix
-      LinearIndex acc ix        -> join $ indexArray <$> travA acc <*> travE ix
+      Index acc ix              -> join $ index       <$> travA acc <*> travE ix
+      LinearIndex acc ix        -> join $ indexRemote <$> travA acc <*> travE ix
       Foreign _ f x             -> eforeign f x
 
     -- Helpers
@@ -347,7 +347,7 @@ executeOpenExp rootExp env aenv stream = travE rootExp
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
     index :: (Shape sh, Elt e) => Array sh e -> sh -> LLVM PTX e
-    index arr ix = indexArray arr (toIndex (shape arr) ix)
+    index arr ix = indexRemote arr (toIndex (shape arr) ix)
 
 
 -- Skeleton execution
