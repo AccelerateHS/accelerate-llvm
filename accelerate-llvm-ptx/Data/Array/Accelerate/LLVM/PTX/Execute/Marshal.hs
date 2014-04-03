@@ -29,6 +29,7 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 
@@ -113,7 +114,7 @@ instance Marshalable (Gamma aenv, Aval aenv) where              -- overlaps with
     $ mapM (\(_, Idx' idx) -> marshal' stream =<< sync (aprj idx aenv)) (IM.elems gamma)
     where
       sync :: Async a -> LLVM PTX a
-      sync = liftIO . after stream
+      sync = after stream
 
 instance (Shape sh, Elt e) => Marshalable (Array sh e) where
   marshal' stream (Array sh adata) =

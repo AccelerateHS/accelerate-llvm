@@ -80,6 +80,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
 
     Data.Array.Accelerate.LLVM.PTX.Execute
+    Data.Array.Accelerate.LLVM.PTX.Execute.Async
     Data.Array.Accelerate.LLVM.PTX.Execute.Environment
     Data.Array.Accelerate.LLVM.PTX.Execute.Event
     Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
