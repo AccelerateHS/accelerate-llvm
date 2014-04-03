@@ -39,7 +39,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- library
-import Prelude                                                  hiding ( exp, map, scanl, scanr )
+import Prelude                                                  hiding ( exp, map, scanl, scanr, scanl1, scanr1 )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
 
@@ -84,7 +84,7 @@ class Remote arch => Execute arch where
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> sh:.Int
+                -> sh :. Int
                 -> LLVM arch (Array sh e)
 
   fold1         :: (Shape sh, Elt e)
@@ -92,8 +92,106 @@ class Remote arch => Execute arch where
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> sh:.Int
+                -> sh :. Int
                 -> LLVM arch (Array sh e)
+
+  foldSeg       :: (Shape sh, Elt e)
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> sh :. Int
+                -> DIM1
+                -> LLVM arch (Array (sh:.Int) e)
+
+  fold1Seg      :: (Shape sh, Elt e)
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> sh :. Int
+                -> DIM1
+                -> LLVM arch (Array (sh:.Int) e)
+
+  scanl         :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e)
+
+  scanl1        :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e)
+
+  scanl'        :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e, Scalar e)
+
+  scanr         :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e)
+
+  scanr1        :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e)
+
+  scanr'        :: Elt e
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> DIM1
+                -> LLVM arch (Vector e, Scalar e)
+
+  permute       :: (Shape sh, Shape sh', Elt e)
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> sh
+                -> Array sh' e
+                -> LLVM arch (Array sh' e)
+
+  stencil1      :: (Shape sh, Elt a, Elt b)
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> Array sh a
+                -> LLVM arch (Array sh b)
+
+  stencil2      :: (Shape sh, Elt a, Elt b, Elt c)
+                => ExecutableR arch
+                -> Gamma aenv
+                -> AvalR arch aenv
+                -> StreamR arch
+                -> Array sh a
+                -> Array sh b
+                -> LLVM arch (Array sh c)
+
+  aforeign      :: (Arrays as, Arrays bs, Foreign f)
+                => f as bs
+                -> ExecAfun arch (as -> bs)
+                -> as
+                -> LLVM arch bs
 
 
 -- Array expression evaluation
@@ -171,6 +269,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Awhile p f a                -> awhile p f =<< travA a
 
     -- Foreign function
+    Aforeign ff afun a          -> aforeign ff afun =<< travA a
 
     -- Producers
     Map _ a                     -> map kernel gamma aenv stream         =<< extent a
@@ -182,6 +281,17 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     -- Consumers
     Fold _ _ a                  -> fold  kernel gamma aenv stream =<< extent a
     Fold1 _ a                   -> fold1 kernel gamma aenv stream =<< extent a
+    FoldSeg _ _ a s             -> join $ foldSeg  kernel gamma aenv stream <$> extent a <*> extent s
+    Fold1Seg _ a s              -> join $ fold1Seg kernel gamma aenv stream <$> extent a <*> extent s
+    Scanl _ _ a                 -> scanl kernel gamma aenv stream =<< extent a
+    Scanr _ _ a                 -> scanr kernel gamma aenv stream =<< extent a
+    Scanl1 _ a                  -> scanl1 kernel gamma aenv stream =<< extent a
+    Scanr1 _ a                  -> scanr1 kernel gamma aenv stream =<< extent a
+    Scanl' _ _ a                -> scanl' kernel gamma aenv stream =<< extent a
+    Scanr' _ _ a                -> scanr' kernel gamma aenv stream =<< extent a
+    Permute _ d _ a             -> join $ permute kernel gamma aenv stream <$> extent a <*> travA d
+    Stencil _ _ a               -> stencil1 kernel gamma aenv stream =<< travA a
+    Stencil2 _ _ a _ b          -> join $ stencil2 kernel gamma aenv stream <$> travA a <*> travA b
 
     -- Removed by fusion
     Replicate{}                 -> fusionError
