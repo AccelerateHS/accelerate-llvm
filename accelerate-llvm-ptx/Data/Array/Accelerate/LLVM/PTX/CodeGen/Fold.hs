@@ -158,14 +158,15 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
-      shOut             = arrayShape (undefined::Array sh e) "out"
       paramOut          = arrayParam (undefined::Array DIM1 e) "out"
       paramEnv          = envParam aenv
+      (startSeg, lastSegment, paramGang)
+                        = gangParam
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
       i32               = typeOf (int32 :: IntegralType Int32)
   in
-  makeKernel "mkFoldByBlock" (paramOut ++ paramEnv) $ do
+  makeKernel "mkFoldByBlock" (paramGang ++ paramOut ++ paramEnv) $ do
     ntid                <- blockDim
     nctaid              <- gridDim
     ctaid               <- blockIdx
@@ -186,10 +187,10 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
     -- iterates over the innermost index space.
     --
     setBlock main
-    numSegments         <- shapeSize shOut
+    firstSegment        <- add int32 startSeg ctaid
 
-    Loop.for i32 ctaid
-        (\seg -> lt  int32 seg numSegments)
+    Loop.for i32 firstSegment
+        (\seg -> lt  int32 seg lastSegment)
         (\seg -> add int32 seg nctaid)
         (\seg -> do
                     s     <- mul int32 seg segmentSize
@@ -262,17 +263,17 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
-      shOut             = arrayShape (undefined::Array sh e) "out"
       paramOut          = arrayParam (undefined::Array DIM1 e) "out"
       paramEnv          = envParam aenv
+      (startSeg, lastSegment, paramGang)
+                        = gangParam
 
       warpSize          = constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev))
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
-
       i32               = typeOf (int32 :: IntegralType Int32)
   in
-  makeKernel "mkFoldByWarp" (paramOut ++ paramEnv) $ do
+  makeKernel "mkFoldByWarp" (paramGang ++ paramOut ++ paramEnv) $ do
     ntid                <- blockDim
     nctaid              <- gridDim
     tid                 <- threadIdx
@@ -295,13 +296,13 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
     -- the innermost index space, yielding the vector a warp should reduce.
     --
     setBlock main
-    numSegments         <- shapeSize shOut
     vectorsPerBlock     <- A.quot int32 ntid warpSize
     warpIdx             <- A.quot int32 gid warpSize
     numWarps            <- A.mul  int32 vectorsPerBlock nctaid
+    firstSegment        <- A.add  int32 startSeg warpIdx
 
-    Loop.for i32 warpIdx
-        (\seg -> lt  int32 seg numSegments)
+    Loop.for i32 firstSegment
+        (\seg -> lt  int32 seg lastSegment)
         (\seg -> add int32 seg numWarps)
         (\seg -> do
                     s       <- mul int32 seg segmentSize
@@ -477,21 +478,18 @@ mkFoldAllCore
     -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} =
   let
-      arrTy             = llvmOfTupleType (eltType (undefined::e))
-      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
-      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
-      paramEnv          = envParam aenv
+      (start, end, paramGang)   = gangParam
+      arrTy                     = llvmOfTupleType (eltType (undefined::e))
+      arrOut                    = arrayData  (undefined::Array DIM1 e) "out"
+      paramOut                  = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv                  = envParam aenv
   in
-  makeKernel name (paramOut ++ paramEnv) $ do
+  makeKernel name (paramGang ++ paramOut ++ paramEnv) $ do
     tid         <- threadIdx
     ntid        <- blockDim
     ctaid       <- blockIdx
     nctaid      <- gridDim
     sdata       <- sharedMem (undefined::e) ntid
-
-    sh          <- delayedExtent
-    end         <- shapeSize sh
-    step        <- gridSize
 
     -- If this is an exclusive reduction of an empty shape, then just initialise
     -- the output array with the seed element and exit immediately. Doing this
@@ -502,7 +500,7 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
     emptySeed   <- newBlock "empty.seed"
     main        <- newBlock "main.top"
     exit        <- newBlock "main.exit"
-    c1          <- eq int32 end (constOp (num int32 0))
+    c1          <- eq int32 start end
     _           <- cbr c1 emptyTop main
 
     setBlock emptyTop
@@ -523,13 +521,15 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
     --
     setBlock main
     reduce      <- newBlock "reduceBlockSeq"
-    i           <- globalThreadIdx
+    i           <- add int32 start =<< globalThreadIdx
     c3          <- lt int32 i end
     _           <- cbr c3 reduce exit
 
     setBlock reduce
     xs          <- delayedLinearIndex [i]
-    ys          <- iterFromTo step end arrTy xs $ \i' acc -> do
+    step        <- gridSize
+    start'      <- add int32 i step
+    ys          <- iterFromTo start' end arrTy xs $ \i' acc -> do
                       xs' <- delayedLinearIndex [i']
                       combine xs' acc
 
@@ -538,9 +538,12 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
     -- Each thread puts its local sum into shared memory, then cooperatively
     -- reduces the shared array to a single value.
     --
+    -- end' = min((end - start) - blockIdx * blockDim, blockDim)
+    --
     u           <- A.mul int32 ctaid ntid
-    v           <- A.sub int32 end u
-    end'        <- A.min int32 ntid v
+    v           <- A.sub int32 end start
+    w           <- A.sub int32 v u
+    end'        <- A.min int32 ntid w
     ys'         <- reduceBlock dev arrTy combine ys sdata end' tid tid
 
     -- The first thread writes the result of this block into global memory.
@@ -588,33 +591,32 @@ mkFold1AllCore
     -> CodeGen [Kernel ptx aenv (Array sh e)]
 mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} =
   let
-      arrTy             = llvmOfTupleType (eltType (undefined::e))
-      arrOut            = arrayData  (undefined::Array DIM1 e) "out"
-      paramOut          = arrayParam (undefined::Array DIM1 e) "out"
-      paramEnv          = envParam aenv
+      (start, end, paramGang)   = gangParam
+      arrTy                     = llvmOfTupleType (eltType (undefined::e))
+      arrOut                    = arrayData  (undefined::Array DIM1 e) "out"
+      paramOut                  = arrayParam (undefined::Array DIM1 e) "out"
+      paramEnv                  = envParam aenv
   in
-  makeKernel name (paramOut ++ paramEnv) $ do
+  makeKernel name (paramGang ++ paramOut ++ paramEnv) $ do
     tid         <- threadIdx
     ntid        <- blockDim
     ctaid       <- blockIdx
     sdata       <- sharedMem (undefined::e) ntid
-
-    sh          <- delayedExtent
-    end         <- shapeSize sh
-    step        <- gridSize
 
     -- The shape is guaranteed to be non-empty. The execution phase will raise a
     -- runtime exception if the user calls fold1 on an empty shape.
     --
     main        <- newBlock "main.top"
     exit        <- newBlock "main.exit"
-    i           <- globalThreadIdx
+    i           <- add int32 start =<< globalThreadIdx
     c1          <- lt int32 i end
     _           <- cbr c1 main exit
 
     setBlock main
     xs          <- delayedLinearIndex [i]
-    ys          <- iterFromTo step end arrTy xs $ \i' acc -> do
+    step        <- gridSize
+    start'      <- add int32 i step
+    ys          <- iterFromTo start' end arrTy xs $ \i' acc -> do
                       xs' <- delayedLinearIndex [i']
                       combine xs' acc
 
@@ -623,9 +625,12 @@ mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} =
     -- Each thread puts its local sum into shared memory, then cooperatively
     -- reduces the shared array to a single value.
     --
+    -- end' = min((end - start) - blockIdx * blockDim, blockDim)
+    --
     u           <- A.mul int32 ctaid ntid
-    v           <- A.sub int32 end u
-    end'        <- A.min int32 ntid v
+    v           <- A.sub int32 end start
+    w           <- A.sub int32 v u
+    end'        <- A.min int32 ntid w
     ys'         <- reduceBlock dev arrTy combine ys sdata end' tid tid
 
     -- The first thread writes the result of this block back into global memory

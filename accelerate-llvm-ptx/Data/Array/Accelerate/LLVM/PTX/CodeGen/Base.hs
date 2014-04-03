@@ -14,6 +14,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   -- Thread identifiers
   blockDim, gridDim, threadIdx, blockIdx,
   gridSize, globalThreadIdx,
+  gangParam,
 
   -- Shapes and indices
   toInt,
@@ -110,6 +111,21 @@ shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
 --
 toInt :: [Operand] -> CodeGen [Operand]
 toInt = mapM (A.fromIntegral int32 int)
+
+
+-- Gang coordination
+-- -----------------
+
+-- | Generate function parameters that will specify the first and last (linear)
+-- index of the array this kernel should evaluate.
+--
+gangParam :: (Operand, Operand, [Parameter])
+gangParam =
+  let t         = typeOf (numType :: NumType Int32)
+      start     = "ix.start"
+      end       = "ix.end"
+  in
+  (local start, local end, [ Parameter t start [], Parameter t end [] ] )
 
 
 -- Barriers and synchronisation

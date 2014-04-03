@@ -40,6 +40,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
+import Data.Int
 import Control.Monad.Error
 import Text.Printf
 import qualified Prelude                                        as P
@@ -89,9 +90,12 @@ simpleOp kernel gamma aenv stream sh = do
   let ptx = case ptxKernel kernel of
               k:_ -> k
               _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
+      n         = size sh
+      start     = 0              :: Int32
+      end       = fromIntegral n :: Int32
   --
   out <- allocateArray sh
-  execute ptx gamma aenv stream (size sh) out
+  execute ptx gamma aenv stream n (start,end,out)
   return out
 
 
@@ -159,17 +163,21 @@ foldAllOp kernel gamma aenv stream sh'
   = let
         foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
         foldIntro (sh:.sz) = do
-          let numElements   = size sh * sz
-              numBlocks     = (kernelThreadBlocks k1) numElements
-
+          let numElements       = size sh * sz
+              numBlocks         = (kernelThreadBlocks k1) numElements
+              start             = 0                        :: Int32
+              end               = fromIntegral numElements :: Int32
+          --
           out <- allocateArray (sh :. numBlocks)
-          execute k1 gamma aenv stream numElements out
+          execute k1 gamma aenv stream numElements (start, end, out)
           foldRec out
 
         foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
         foldRec out@(Array (sh,sz) adata) =
-          let numElements   = R.size sh * sz
-              numBlocks     = (kernelThreadBlocks k2) numElements
+          let numElements       = R.size sh * sz
+              numBlocks         = (kernelThreadBlocks k2) numElements
+              start             = 0                        :: Int32
+              end               = fromIntegral numElements :: Int32
           in if sz <= 1
                 then do
                   -- We have recursed to a single block already. Trim the
@@ -180,7 +188,7 @@ foldAllOp kernel gamma aenv stream sh'
                   -- Keep cooperatively reducing the output array in-place.
                   -- Note that we must continue to update the tracked size
                   -- so the recursion knows when to stop.
-                  execute k2 gamma aenv stream numElements out
+                  execute k2 gamma aenv stream numElements (start, end, out)
                   foldRec $! Array (sh,numBlocks) adata
     in
     foldIntro sh'

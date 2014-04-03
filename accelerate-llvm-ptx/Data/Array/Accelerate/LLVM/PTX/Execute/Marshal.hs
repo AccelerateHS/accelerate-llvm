@@ -38,6 +38,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- libraries
 import Control.Monad.State
+import Data.Int
 import Data.DList                                               ( DList )
 import Data.Typeable
 import Foreign.Ptr
@@ -143,6 +144,9 @@ instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d, Marshalabl
     DL.concat `fmap` sequence [marshal' s a, marshal' s b, marshal' s c, marshal' s d, marshal' s e, marshal' s f]
 
 instance Marshalable Int where
+  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+
+instance Marshalable Int32 where
   marshal' _ x = return $ DL.singleton (CUDA.VArg x)
 
 instance Marshalable a => Marshalable [a] where

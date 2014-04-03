@@ -19,12 +19,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -45,15 +43,12 @@ mkMap :: forall t aenv sh a b. Elt b
       -> CodeGen [Kernel t aenv (Array sh b)]
 mkMap _nvvm aenv apply IRDelayed{..} =
   let
-      arrOut    = arrayData  (undefined::Array sh b) "out"
-      shOut     = arrayShape (undefined::Array sh b) "out"
-      paramOut  = arrayParam (undefined::Array sh b) "out"
-      paramEnv  = envParam aenv
+      (start, end, paramGang)   = gangParam
+      arrOut                    = arrayData  (undefined::Array sh b) "out"
+      paramOut                  = arrayParam (undefined::Array sh b) "out"
+      paramEnv                  = envParam aenv
   in
-  makeKernel "map" (paramOut ++ paramEnv) $ do
-
-    start <- return (constOp $ integral int32 0)
-    end   <- shapeSize shOut
+  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       xs <- delayedLinearIndex [i]              -- TLM: safe to keep as int32?

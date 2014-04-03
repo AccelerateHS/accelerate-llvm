@@ -20,7 +20,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -48,15 +47,13 @@ mkTransform
     -> CodeGen [Kernel t aenv (Array sh' b)]
 mkTransform _dev aenv permute apply IRDelayed{..} =
   let
-      arrOut                      = arrayData  (undefined::Array sh' b) "out"
-      shOut                       = arrayShape (undefined::Array sh' b) "out"
-      paramOut                    = arrayParam (undefined::Array sh' b) "out"
-      paramEnv                    = envParam aenv
+      (start, end, paramGang)   = gangParam
+      arrOut                    = arrayData  (undefined::Array sh' b) "out"
+      shOut                     = arrayShape (undefined::Array sh' b) "out"
+      paramOut                  = arrayParam (undefined::Array sh' b) "out"
+      paramEnv                  = envParam aenv
   in
-  makeKernel "transform" (paramOut ++ paramEnv) $ do
-
-    start <- return (constOp $ integral int32 0)
-    end   <- shapeSize shOut
+  makeKernel "transform" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       ii  <- fromIntegral int32 int i           -- loop counter is i32, calculation is in Int
