@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -20,23 +21,16 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
-import Data.Array.Accelerate.Tuple
-import qualified Data.Array.Accelerate.Array.Representation     as R
 
-import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ()
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.LLVM.Execute
 
-import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Compile.Function
-import Data.Array.Accelerate.LLVM.Native.Execute.Environment
+import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Target
 
 -- Use chunked evaluation
@@ -48,9 +42,9 @@ import Control.Parallel.Meta.Worker
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
-import Prelude                                                  hiding ( exp )
-import Control.Applicative                                      hiding ( Const )
-import Control.Monad.Error
+import Prelude                                                  hiding ( map, scanl, scanr )
+import Control.Monad.Trans                                      ( liftIO )
+import qualified Prelude                                        as P
 
 import Foreign.LibFFI                                           as FFI
 
@@ -69,282 +63,117 @@ import qualified LLVM.General.Context                           as LLVM
 -- Computations are evaluated by traversing the AST bottom up, and for each node
 -- distinguishing between three cases:
 --
---  1. If it is a Use node, we return a reference to the array data.
---      a) Even though we execute with multiple cores, we assume a shared memory
---         multiprocessor machine.
---      b) However, if we are executing in a heterogeneous setup, this may
---         require coping data back from the GPU.
+--  1. If it is a Use node, we return a reference to the array data. Even though
+--     we execute with multiple cores, we assume a shared memory multiprocessor
+--     machine.
 --
 --  2. If it is a non-skeleton node, such as a let binding or shape conversion,
 --     then execute directly by updating the environment or similar.
 --
 --  3. If it is a skeleton node, then we need to execute the generated LLVM
---     code. This entails:
---      a) lowering the LLVM AST into C++ objects
---      b) building an executable module with MCJIT
---      c) linking the returned function pointer into the running code
---      d) evaluate the function with the thread gang.
+--     code.
 --
-executeAcc :: Arrays a => ExecAcc Native a -> LLVM Native a
-executeAcc acc = executeOpenAcc acc Aempty
-
-executeAfun1 :: (Arrays a, Arrays b) => ExecAfun Native (a -> b) -> a -> LLVM Native b
-executeAfun1 afun arrs = executeOpenAfun1 afun Aempty arrs
-
-
-executeOpenAfun1
-    :: PreOpenAfun (ExecOpenAcc Native) aenv (a -> b)
-    -> Aval aenv
-    -> a
-    -> LLVM Native b
-executeOpenAfun1 (Alam (Abody f)) aenv a = executeOpenAcc f (aenv `Apush` a)
-executeOpenAfun1 _                _    _ = error "boop!"
+instance Execute Native where
+  map           = simpleOp
+  generate      = simpleOp
+  transform     = simpleOp
+  backpermute   = simpleOp
+  fold          = foldOp
+  fold1         = fold1Op
 
 
--- Execute an open array computation
+-- Skeleton implementation
+-- -----------------------
+
+-- Execute fold operations. There are two flavours:
 --
-executeOpenAcc
-    :: forall aenv arrs.
-       ExecOpenAcc Native aenv arrs
+--   1. If we are collapsing to a single value, then the threads compute an
+--   individual partial sum, then a single thread adds the results.
+--
+--   2. If this is a multidimensional reduction, then threads reduce the
+--   inner dimensions sequentially.
+--
+fold1Op
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
     -> Aval aenv
-    -> LLVM Native arrs
-executeOpenAcc EmbedAcc{} _ =
-  INTERNAL_ERROR(error) "execute" "unexpected delayed array"
-executeOpenAcc (ExecAcc kernel gamma pacc) aenv =
-  case pacc of
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM Native (Array sh e)
+fold1Op kernel gamma aenv stream sh@(_ :. sz)
+  = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+  $ foldCore kernel gamma aenv stream sh
 
-    -- Array introduction
-    Use arr                     -> return (toArr arr)
-    Unit x                      -> newRemote Z . const =<< travE x
-
-    -- Environment manipulation
-    Avar ix                     -> return (aprj ix aenv)
-    Alet bnd body               -> travA bnd >>= \x -> executeOpenAcc body (aenv `Apush` x)
-    Apply f a                   -> travA a   >>= \x -> executeOpenAfun1 f aenv x
-    Atuple tup                  -> toTuple <$> travT tup
-    Aprj ix tup                 -> evalPrj ix . fromTuple <$> travA tup
-    Acond p t e                 -> travE p >>= \x -> if x then travA t else travA e
-    Awhile p f a                -> awhile p f =<< travA a
-
-    -- Foreign function
-    Aforeign _ff _afun _a       -> error "todo: execute Aforeign"
-
-    -- Producers
-    Map _ a                     -> executeOp =<< extent a
-    Generate sh _               -> executeOp =<< travE sh
-    Transform sh _ _ _          -> executeOp =<< travE sh
-    Backpermute sh _ _          -> executeOp =<< travE sh
-    Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
-
-    -- Consumers
-    Fold _ _ a                  -> foldOp  =<< extent a
-    Fold1 _ a                   -> fold1Op =<< extent a
-
-    -- Removed by fusion
-    Replicate _ _ _             -> fusionError
-    Slice _ _ _                 -> fusionError
-    ZipWith _ _ _               -> fusionError
-
-  where
-    fusionError = INTERNAL_ERROR(error) "execute" "unexpected fusible matter"
-
-    -- term traversals
-    travA :: ExecOpenAcc Native aenv a -> LLVM Native a
-    travA acc = executeOpenAcc acc aenv
-
-    travE :: ExecExp Native aenv t -> LLVM Native t
-    travE exp = executeExp exp aenv
-
-    travT :: Atuple (ExecOpenAcc Native aenv) t -> LLVM Native t
-    travT NilAtup        = return ()
-    travT (SnocAtup t a) = (,) <$> travT t <*> travA a
-
-    awhile :: PreOpenAfun (ExecOpenAcc Native) aenv (a -> Scalar Bool)
-           -> PreOpenAfun (ExecOpenAcc Native) aenv (a -> a)
-           -> a
-           -> LLVM Native a
-    awhile p f a = do
-      r  <- executeOpenAfun1 p aenv a
-      ok <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv a
-            else return a
-
-    -- get the extent of an embedded array
-    extent :: Shape sh => ExecOpenAcc Native aenv (Array sh e) -> LLVM Native sh
-    extent ExecAcc{}     = INTERNAL_ERROR(error) "executeOpenAcc" "expected delayed array"
-    extent (EmbedAcc sh) = travE sh
-
-    -- Skeleton implementation
-    -- -----------------------
-
-    -- Execute a skeleton that has no special requirements: thread decomposition
-    -- is based on the given shape.
-    --
-    executeOp :: (Shape sh, Elt e) => sh -> LLVM Native (Array sh e)
-    executeOp = executeOpWith ()
-
-    executeOpWith :: (Shape sh, Elt e, Marshalable args) => args -> sh -> LLVM Native (Array sh e)
-    executeOpWith args sh = do
-      let out = allocateArray sh
-      execute kernel gamma aenv (size sh) (args,out)
-      return out
-
-    -- Change the shape of an array without altering its contents. This does not
-    -- execute any kernel programs.
-    --
-    reshapeOp :: Shape sh => sh -> Array sh' e -> Array sh e
-    reshapeOp sh (Array sh' adata)
-      = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
-      $ Array (fromElt sh) adata
-
-    -- Execute fold operations. There are two flavours:
-    --
-    --   1. If we are collapsing to a single value, then the threads compute an
-    --   individual partial sum, then a single thread adds the results.
-    --
-    --   2. If this is a multidimensional reduction, then threads reduce the
-    --   inner dimensions sequentially.
-    --
-    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
-    fold1Op sh@(_ :. sz)
-      = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
-      $ foldCore sh
-
-    -- Make space for the neutral element
-    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
-    foldOp (sh :. sz)
-      = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
-
-    foldCore :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM Native (Array sh e)
-    foldCore (sh :. sz)
-      -- Either (1) multidimensional reduction; or
-      --        (2) sequential reduction
-      | dim sh > 0 || gangSize theGang == 1
-      , NativeR k <- kernel
-      = do  let out     = allocateArray sh
-            --
-            liftIO $ do
-              executeFunction k                 $ \f ->
-                fillP defaultSmallPPT (size sh) $ \start end _ ->
-                  callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
-
-            return out
-
-      -- Parallel reduction
-      | NativeR k <- kernel
-      = do  let chunks  = gangSize theGang
-                tmp     = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
-                out     = allocateArray sh
-                n       = sz `min` chunks
-            --
-            liftIO $ do
-              executeNamedFunction k "fold1"         $ \f ->
-                fillP defaultLargePPT (size sh * sz) $ \start end tid ->
-                  callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
-
-              executeNamedFunction k "foldAll" $ \f ->
-                callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
-
-            return out
-
-
--- Scalar expression evaluation
--- ----------------------------
-
-executeExp :: ExecExp Native aenv t -> Aval aenv -> LLVM Native t
-executeExp exp aenv = executeOpenExp exp Empty aenv
-
-executeOpenExp
-    :: forall env aenv exp.
-       ExecOpenExp Native env aenv exp
-    -> Val env
+-- Make space for the neutral element
+foldOp
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
     -> Aval aenv
-    -> LLVM Native exp
-executeOpenExp rootExp env aenv = travE rootExp
-  where
-    travE :: ExecOpenExp Native env aenv t -> LLVM Native t
-    travE exp = case exp of
-      Var ix                    -> return (prj ix env)
-      Let bnd body              -> travE bnd >>= \x -> executeOpenExp body (env `Push` x) aenv
-      Const c                   -> return (toElt c)
-      PrimConst c               -> return (evalPrimConst c)
-      PrimApp f x               -> evalPrim f <$> travE x
-      Tuple t                   -> toTuple <$> travT t
-      Prj ix e                  -> evalPrj ix . fromTuple <$> travE e
-      Cond p t e                -> travE p >>= \x -> if x then travE t else travE e
-      While p f x               -> while p f =<< travE x
-      IndexAny                  -> return Any
-      IndexNil                  -> return Z
-      IndexCons sh sz           -> (:.) <$> travE sh <*> travE sz
-      IndexHead sh              -> (\(_  :. ix) -> ix) <$> travE sh
-      IndexTail sh              -> (\(ix :.  _) -> ix) <$> travE sh
-      IndexSlice ix slix sh     -> indexSlice ix <$> travE slix <*> travE sh
-      IndexFull ix slix sl      -> indexFull  ix <$> travE slix <*> travE sl
-      ToIndex sh ix             -> toIndex   <$> travE sh  <*> travE ix
-      FromIndex sh ix           -> fromIndex <$> travE sh  <*> travE ix
-      Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
-      ShapeSize sh              -> size  <$> travE sh
-      Shape acc                 -> shape <$> travA acc
-      Index acc ix              -> join $ index       <$> travA acc <*> travE ix
-      LinearIndex acc ix        -> join $ indexRemote <$> travA acc <*> travE ix
-      Foreign _ f x             -> eforeign f x
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM Native (Array sh e)
+foldOp kernel gamma aenv stream (sh :. sz)
+  = foldCore kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
 
-    -- Helpers
-    -- -------
+foldCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM Native (Array sh e)
+foldCore (NativeR k) gamma aenv () (sh :. sz)
+  -- Either (1) multidimensional reduction; or
+  --        (2) sequential reduction
+  | dim sh > 0 || gangSize theGang == 1
+  = do  let out     = allocateArray sh
+        --
+        liftIO $ do
+          executeFunction k                 $ \f ->
+            fillP defaultSmallPPT (size sh) $ \start end _ ->
+              callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
 
-    travT :: Tuple (ExecOpenExp Native env aenv) t -> LLVM Native t
-    travT tup = case tup of
-      NilTup            -> return ()
-      SnocTup t e       -> (,) <$> travT t <*> travE e
+        return out
 
-    travA :: ExecOpenAcc Native aenv a -> LLVM Native a
-    travA acc = executeOpenAcc acc aenv
+  -- Parallel reduction
+  | otherwise
+  = do  let chunks  = gangSize theGang
+            tmp     = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
+            out     = allocateArray sh
+            n       = sz `min` chunks
+        --
+        liftIO $ do
+          executeNamedFunction k "fold1"         $ \f ->
+            fillP defaultLargePPT (size sh * sz) $ \start end tid ->
+              callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
 
-    eforeign :: ExecFun Native () (a -> b) -> ExecOpenExp Native env aenv a -> LLVM Native b
-    eforeign _ _ = error "todo: execute Foreign"
---    eforeign (Lam (Body f)) x = travE x >>= \e -> executeOpenExp f (Empty `Push` e) Aempty
---    eforeign _              _ = error "I bless the rains down in Africa"
+          executeNamedFunction k "foldAll" $ \f ->
+            callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
 
-    travF1 :: ExecOpenFun Native env aenv (a -> b) -> a -> LLVM Native b
-    travF1 (Lam (Body f)) x = executeOpenExp f (env `Push` x) aenv
-    travF1 _              _ = error "hayoooo~"
-
-    while :: ExecOpenFun Native env aenv (a -> Bool) -> ExecOpenFun Native env aenv (a -> a) -> a -> LLVM Native a
-    while p f x = do
-      ok <- travF1 p x
-      if ok then while p f =<< travF1 f x
-            else return x
-
-    indexSlice :: (Elt slix, Elt sh, Elt sl)
-               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-               -> slix
-               -> sh
-               -> sl
-    indexSlice ix slix sh = toElt $ restrict ix (fromElt slix) (fromElt sh)
-      where
-        restrict :: SliceIndex slix sl co sh -> slix -> sh -> sl
-        restrict SliceNil              ()        ()       = ()
-        restrict (SliceAll   sliceIdx) (slx, ()) (sl, sz) = (restrict sliceIdx slx sl, sz)
-        restrict (SliceFixed sliceIdx) (slx,  _) (sl,  _) = restrict sliceIdx slx sl
-
-    indexFull :: (Elt slix, Elt sh, Elt sl)
-              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-              -> slix
-              -> sl
-              -> sh
-    indexFull ix slix sl = toElt $ extend ix (fromElt slix) (fromElt sl)
-      where
-        extend :: SliceIndex slix sl co sh -> slix -> sl -> sh
-        extend SliceNil              ()        ()       = ()
-        extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
-        extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
-
-    index :: (Shape sh, Elt e) => Array sh e -> sh -> LLVM Native e
-    index arr ix = indexRemote arr (toIndex (shape arr) ix)
+        return out
 
 
 -- Skeleton execution
 -- ------------------
+
+-- Simple kernels just needs to know the shape of the output array.
+--
+simpleOp
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> LLVM Native (Array sh e)
+simpleOp kernel gamma aenv () sh = do
+  let out = allocateArray sh
+  execute kernel gamma aenv (size sh) out
+  return out
+
 
 -- JIT compile the LLVM code representing this kernel, link to the running
 -- executable, and execute the main function using the 'fillP' method to

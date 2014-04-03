@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -20,22 +21,17 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( allocateArray )
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
-import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
-import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
 
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
@@ -43,11 +39,10 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
-import Prelude                                                  hiding ( exp )
-import Control.Applicative                                      hiding ( Const )
-import Control.Monad
+import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import Control.Monad.Error
 import Text.Printf
+import qualified Prelude                                        as P
 
 #include "accelerate.h"
 
@@ -58,296 +53,140 @@ import Text.Printf
 -- Computations are evaluated by traversing the AST bottom up, and for each node
 -- distinguishing between three cases:
 --
---  1. If it is a Use node, we return a reference to the array data.
---      a) Even though we execute with multiple cores, we assume a shared memory
---         multiprocessor machine.
---      b) However, if we are executing in a heterogeneous setup, this may
---         require coping data back from the GPU.
+--  1. If it is a Use node, we return a reference to the array data. The data
+--     will already have been copied to the device during compilation of the
+--     kernels.
 --
 --  2. If it is a non-skeleton node, such as a let binding or shape conversion,
 --     then execute directly by updating the environment or similar.
 --
 --  3. If it is a skeleton node, then we need to execute the generated LLVM
---     code. This entails:
---      a) lowering the LLVM AST into C++ objects
---      b) building an executable module with MCJIT
---      c) linking the returned function pointer into the running code
---      d) evaluate the function with the thread gang.
+--     code.
 --
-executeAcc :: Arrays a => ExecAcc PTX a -> LLVM PTX a
-executeAcc acc = streaming (executeOpenAcc acc Aempty) wait
-
-executeAfun1 :: (Arrays a, Arrays b) => ExecAfun PTX (a -> b) -> a -> LLVM PTX b
-executeAfun1 afun arrs =
-  streaming (useArrays (arrays arrs) (fromArr arrs))
-            (\(Async event ()) -> executeOpenAfun1 afun Aempty (Async event arrs))
-  where
-    useArrays :: ArraysR arrs -> arrs -> Stream -> LLVM PTX ()
-    useArrays ArraysRunit         ()       _  = return ()
-    useArrays (ArraysRpair r1 r0) (a1, a0) st = useArrays r1 a1 st >> useArrays r0 a0 st
-    useArrays ArraysRarray        arr      st = useArrayAsync arr (Just st)
+instance Execute PTX where
+  map           = simpleOp
+  generate      = simpleOp
+  transform     = simpleOp
+  backpermute   = simpleOp
+  fold          = foldOp
+  fold1         = fold1Op
 
 
-executeOpenAfun1
-    :: PreOpenAfun (ExecOpenAcc PTX) aenv (a -> b)
-    -> Aval aenv
-    -> Async a
-    -> LLVM PTX b
-executeOpenAfun1 (Alam (Abody f)) aenv a = streaming (executeOpenAcc f (aenv `Apush` a)) wait
-executeOpenAfun1 _                _    _ = error "boop!"
+-- Skeleton implementation
+-- -----------------------
 
-
--- Execute an open array computation
+-- Simple kernels just need to know the shape of the output array
 --
-executeOpenAcc
-    :: forall aenv arrs.
-       ExecOpenAcc PTX aenv arrs
+simpleOp
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> LLVM PTX arrs
-executeOpenAcc EmbedAcc{} _ _ =
-  INTERNAL_ERROR(error) "execute" "unexpected delayed array"
-executeOpenAcc (ExecAcc ptx gamma pacc) aenv stream =
-  case pacc of
-
-    -- Array introduction
-    Use arr                     -> return (toArr arr)
-    Unit x                      -> newRemote Z . const =<< travE x
-
-    -- Environment manipulation
-    Avar ix                     -> after stream (aprj ix aenv)
-    Alet bnd body               -> streaming (executeOpenAcc bnd aenv) (\x -> executeOpenAcc body (aenv `Apush` x) stream)
-    Apply f a                   -> streaming (executeOpenAcc a aenv)   (executeOpenAfun1 f aenv)
-    Atuple tup                  -> toTuple <$> travT tup
-    Aprj ix tup                 -> evalPrj ix . fromTuple <$> travA tup
-    Acond p t e                 -> travE p >>= \x -> if x then travA t else travA e
-    Awhile p f a                -> awhile p f =<< travA a
-
-    -- Foreign
-    Aforeign _ff _afun _a       -> error "todo: execute Aforeign"
-
-    -- Producers
-    Map _ a                     -> executeOp =<< extent a
-    Generate sh _               -> executeOp =<< travE sh
-    Transform sh _ _ _          -> executeOp =<< travE sh
-    Backpermute sh _ _          -> executeOp =<< travE sh
-    Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
-
-    -- Consumers
-    Fold _ _ a                  -> foldOp  =<< extent a
-    Fold1 _ a                   -> fold1Op =<< extent a
-
-    -- Removed by fusion
-    Replicate{}                 -> fusionError
-    Slice{}                     -> fusionError
-    ZipWith{}                   -> fusionError
-
-  where
-    fusionError = INTERNAL_ERROR(error) "execute" "unexpected fusible matter"
-
-    -- Term traversals
-    -- ---------------
-    travA :: ExecOpenAcc PTX aenv a -> LLVM PTX a
-    travA acc = executeOpenAcc acc aenv stream
-
-    travE :: ExecExp PTX aenv t -> LLVM PTX t
-    travE exp = executeExp exp aenv stream
-
-    travT :: Atuple (ExecOpenAcc PTX aenv) t -> LLVM PTX t
-    travT NilAtup        = return ()
-    travT (SnocAtup t a) = (,) <$> travT t <*> travA a
-
-    -- get the extent of an embedded array
-    extent :: Shape sh => ExecOpenAcc PTX aenv (Array sh e) -> LLVM PTX sh
-    extent ExecAcc{}     = INTERNAL_ERROR(error) "executeOpenAcc" "expected delayed array"
-    extent (EmbedAcc sh) = travE sh
-
-    -- control flow
-    awhile :: PreOpenAfun (ExecOpenAcc PTX) aenv (a -> Scalar Bool)
-           -> PreOpenAfun (ExecOpenAcc PTX) aenv (a -> a)
-           -> a
-           -> LLVM PTX a
-    awhile p f a = do
-      nop <- liftIO Event.create                -- record event never called, so this is a functional no-op
-      r   <- executeOpenAfun1 p aenv (Async nop a)
-      ok  <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv (Async nop a)
-            else return a
-
-    -- Skeleton implementation
-    -- -----------------------
-
-    -- Execute a skeleton that has no special requirements: thread decomposition
-    -- is based on the given shape.
-    --
-    executeOp :: (Shape sh, Elt e) => sh -> LLVM PTX (Array sh e)
-    executeOp sh = do
-      let kernel = case ptxKernel ptx of
-                      k:_ -> k
-                      _   -> INTERNAL_ERROR(error) "executeOp" "kernel not found"
-      --
-      out <- allocateArray sh
-      execute kernel gamma aenv stream (size sh) out
-      return out
-
-    -- Change the shape of an array without altering its contents. This does not
-    -- execute any kernel programs.
-    --
-    reshapeOp :: Shape sh => sh -> Array sh' e -> Array sh e
-    reshapeOp sh (Array sh' adata)
-      = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
-      $ Array (fromElt sh) adata
-
-    -- Executing fold operations depend on whether we are recursively collapsing
-    -- to a single value using multiple thread blocks, or a multidimensional
-    -- single-pass reduction where there is one block per inner dimension.
-    --
-    fold1Op :: (Shape sh, Elt e) => (sh :. Int) -> LLVM PTX (Array sh e)
-    fold1Op sh@(_ :. sz)
-      = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
-      $ foldCore sh
-
-    foldOp :: (Shape sh, Elt e) => (sh :. Int) -> LLVM PTX (Array sh e)
-    foldOp (sh :. sz)
-      = foldCore ((listToShape . map (max 1) . shapeToList $ sh) :. sz)
-
-    foldCore :: (Shape sh, Elt e) => (sh :. Int) -> LLVM PTX (Array sh e)
-    foldCore sh'@(sh :. _)
-      | dim sh > 0      = executeOp sh
-      | otherwise       = foldAllOp sh'
-
-    -- See note: [Marshalling foldAll output arrays]
-    --
-    foldAllOp :: forall sh e. (Shape sh, Elt e) => (sh :. Int) -> LLVM PTX (Array sh e)
-    foldAllOp sh'
-      | k1:k2:_ <- ptxKernel ptx
-      = let
-            foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
-            foldIntro (sh:.sz) = do
-              let numElements   = size sh * sz
-                  numBlocks     = (kernelThreadBlocks k1) numElements
-
-              out <- allocateArray (sh :. numBlocks)
-              execute k1 gamma aenv stream numElements out
-              foldRec out
-
-            foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
-            foldRec out@(Array (sh,sz) adata) =
-              let numElements   = R.size sh * sz
-                  numBlocks     = (kernelThreadBlocks k2) numElements
-              in if sz <= 1
-                    then do
-                      -- We have recursed to a single block already. Trim the
-                      -- intermediate working vector to the final scalar array.
-                      return $! Array sh adata
-
-                    else do
-                      -- Keep cooperatively reducing the output array in-place.
-                      -- Note that we must continue to update the tracked size
-                      -- so the recursion knows when to stop.
-                      execute k2 gamma aenv stream numElements out
-                      foldRec $! Array (sh,numBlocks) adata
-        in
-        foldIntro sh'
-
-      | otherwise
-      = INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
+    -> sh
+    -> LLVM PTX (Array sh e)
+simpleOp kernel gamma aenv stream sh = do
+  let ptx = case ptxKernel kernel of
+              k:_ -> k
+              _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
+  --
+  out <- allocateArray sh
+  execute ptx gamma aenv stream (size sh) out
+  return out
 
 
--- Scalar expression evaluation
--- ----------------------------
-
-executeExp :: ExecExp PTX aenv t -> Aval aenv -> Stream -> LLVM PTX t
-executeExp exp aenv stream = executeOpenExp exp Empty aenv stream
-
-executeOpenExp
-    :: forall env aenv exp.
-       ExecOpenExp PTX env aenv exp
-    -> Val env
+-- There are two flavours of fold operation:
+--
+--   1. If we are collapsing to a single value, then multiple thread blocks are
+--      working together. Since thread blocks synchronise with each other via
+--      kernel launches, each block computes a partial sum and the kernel is
+--      launched recursively until the final value is reached.
+--
+--   2. If this is a multidimensional reduction, then each inner dimension is
+--      handled by a single thread block, so no global communication is
+--      necessary. Furthermore are two kernel flavours: each innermost dimension
+--      can be cooperatively reduced by (a) a thread warp; or (b) a thread
+--      block. Currently we always use the first, but require benchmarking to
+--      determine when to select each.
+--
+fold1Op
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> LLVM PTX exp
-executeOpenExp rootExp env aenv stream = travE rootExp
-  where
-    travE :: ExecOpenExp PTX env aenv t -> LLVM PTX t
-    travE exp = case exp of
-      Var ix                    -> return (prj ix env)
-      Let bnd body              -> travE bnd >>= \x -> executeOpenExp body (env `Push` x) aenv stream
-      Const c                   -> return (toElt c)
-      PrimConst c               -> return (evalPrimConst c)
-      PrimApp f x               -> evalPrim f <$> travE x
-      Tuple t                   -> toTuple <$> travT t
-      Prj ix e                  -> evalPrj ix . fromTuple <$> travE e
-      Cond p t e                -> travE p >>= \x -> if x then travE t else travE e
-      While p f x               -> while p f =<< travE x
-      IndexAny                  -> return Any
-      IndexNil                  -> return Z
-      IndexCons sh sz           -> (:.) <$> travE sh <*> travE sz
-      IndexHead sh              -> (\(_  :. ix) -> ix) <$> travE sh
-      IndexTail sh              -> (\(ix :.  _) -> ix) <$> travE sh
-      IndexSlice ix slix sh     -> indexSlice ix <$> travE slix <*> travE sh
-      IndexFull ix slix sl      -> indexFull  ix <$> travE slix <*> travE sl
-      ToIndex sh ix             -> toIndex   <$> travE sh  <*> travE ix
-      FromIndex sh ix           -> fromIndex <$> travE sh  <*> travE ix
-      Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
-      ShapeSize sh              -> size  <$> travE sh
-      Shape acc                 -> shape <$> travA acc
-      Index acc ix              -> join $ index       <$> travA acc <*> travE ix
-      LinearIndex acc ix        -> join $ indexRemote <$> travA acc <*> travE ix
-      Foreign _ f x             -> eforeign f x
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+fold1Op kernel gamma aenv stream sh@(_ :. sz)
+  = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+  $ foldCore kernel gamma aenv stream sh
 
-    -- Helpers
-    -- -------
+foldOp
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+foldOp kernel gamma aenv stream (sh :. sz)
+  = foldCore kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
 
-    travT :: Tuple (ExecOpenExp PTX env aenv) t -> LLVM PTX t
-    travT tup = case tup of
-      NilTup            -> return ()
-      SnocTup t e       -> (,) <$> travT t <*> travE e
+foldCore
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+foldCore kernel gamma aenv stream sh'@(sh :. _)
+  | dim sh > 0      = simpleOp  kernel gamma aenv stream sh
+  | otherwise       = foldAllOp kernel gamma aenv stream sh'
 
-    travA :: ExecOpenAcc PTX aenv a -> LLVM PTX a
-    travA acc = executeOpenAcc acc aenv stream
+-- See note: [Marshalling foldAll output arrays]
+--
+foldAllOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+foldAllOp kernel gamma aenv stream sh'
+  | k1:k2:_ <- ptxKernel kernel
+  = let
+        foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
+        foldIntro (sh:.sz) = do
+          let numElements   = size sh * sz
+              numBlocks     = (kernelThreadBlocks k1) numElements
 
-    eforeign :: ExecFun PTX () (a -> b) -> ExecOpenExp PTX env aenv a -> LLVM PTX b
-    eforeign _ _ = error "todo: execute Foreign"
---    eforeign (Lam (Body f)) x = travE x >>= \e -> executeOpenExp f (Empty `Push` e) Aempty
---    eforeign _              _ = error "I bless the rains down in Africa"
+          out <- allocateArray (sh :. numBlocks)
+          execute k1 gamma aenv stream numElements out
+          foldRec out
 
-    travF1 :: ExecOpenFun PTX env aenv (a -> b) -> a -> LLVM PTX b
-    travF1 (Lam (Body f)) x = executeOpenExp f (env `Push` x) aenv stream
-    travF1 _              _ = error "LANAAAAAAAA!"
+        foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
+        foldRec out@(Array (sh,sz) adata) =
+          let numElements   = R.size sh * sz
+              numBlocks     = (kernelThreadBlocks k2) numElements
+          in if sz <= 1
+                then do
+                  -- We have recursed to a single block already. Trim the
+                  -- intermediate working vector to the final scalar array.
+                  return $! Array sh adata
 
-    while :: ExecOpenFun PTX env aenv (a -> Bool) -> ExecOpenFun PTX env aenv (a -> a) -> a -> LLVM PTX a
-    while p f x = do
-      ok <- travF1 p x
-      if ok then while p f =<< travF1 f x
-            else return x
+                else do
+                  -- Keep cooperatively reducing the output array in-place.
+                  -- Note that we must continue to update the tracked size
+                  -- so the recursion knows when to stop.
+                  execute k2 gamma aenv stream numElements out
+                  foldRec $! Array (sh,numBlocks) adata
+    in
+    foldIntro sh'
 
-    indexSlice :: (Elt slix, Elt sh, Elt sl)
-               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-               -> slix
-               -> sh
-               -> sl
-    indexSlice ix slix sh = toElt $ restrict ix (fromElt slix) (fromElt sh)
-      where
-        restrict :: SliceIndex slix sl co sh -> slix -> sh -> sl
-        restrict SliceNil              ()        ()       = ()
-        restrict (SliceAll   sliceIdx) (slx, ()) (sl, sz) = (restrict sliceIdx slx sl, sz)
-        restrict (SliceFixed sliceIdx) (slx,  _) (sl,  _) = restrict sliceIdx slx sl
-
-    indexFull :: (Elt slix, Elt sh, Elt sl)
-              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-              -> slix
-              -> sl
-              -> sh
-    indexFull ix slix sl = toElt $ extend ix (fromElt slix) (fromElt sl)
-      where
-        extend :: SliceIndex slix sl co sh -> slix -> sl -> sh
-        extend SliceNil              ()        ()       = ()
-        extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
-        extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
-
-    index :: (Shape sh, Elt e) => Array sh e -> sh -> LLVM PTX e
-    index arr ix = indexRemote arr (toIndex (shape arr) ix)
+  | otherwise
+  = INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
 
 
 -- Skeleton execution

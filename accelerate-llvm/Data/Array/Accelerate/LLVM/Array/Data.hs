@@ -129,10 +129,8 @@ newRemote
     => sh
     -> (sh -> e)
     -> LLVM arch (Array sh e)
-newRemote sh f = do
-  let arr = newArray sh f
-  copyToRemote arr
-  return arr
+newRemote sh f =
+  copyToRemote $! newArray sh f
 
 
 -- |Upload an existing array from the host
