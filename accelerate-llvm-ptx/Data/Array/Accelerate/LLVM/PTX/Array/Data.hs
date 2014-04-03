@@ -13,7 +13,6 @@
 module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 
   allocateArray,
-  useArrayAsync,
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
@@ -26,10 +25,8 @@ import qualified Data.Array.Accelerate.Array.Representation     as R
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
-
--- cuda
-import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
 -- standard library
 import Control.Monad.State
@@ -42,7 +39,15 @@ instance Remote PTX where
   {-# INLINEABLE copyToRemote #-}
   copyToRemote arrs = do
     PTX{..} <- gets llvmTarget
-    liftIO $ runArrays (runUseArray (Prim.useArrayAsync ptxContext ptxMemoryTable Nothing)) arrs
+    liftIO $ runArrays (runUseArray (Prim.useArray ptxContext ptxMemoryTable)) arrs
+    return arrs
+
+  {-# INLINEABLE copyToRemoteAsync #-}
+  copyToRemoteAsync arrs stream = do
+    PTX{..} <- gets llvmTarget
+    async stream . liftIO $ do
+      runArrays (runUseArray (Prim.useArrayAsync ptxContext ptxMemoryTable (Just stream))) arrs
+      return arrs
 
   {-# INLINEABLE copyToHost #-}
   copyToHost arrs = do
@@ -54,11 +59,21 @@ instance Remote PTX where
   copyToPeer peer arrs = do
     PTX dstCtx dstMT _ <- return peer
     PTX srcCtx srcMT _ <- gets llvmTarget
-
+    --
     liftIO . unless (srcCtx == dstCtx)
       $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer srcCtx srcMT dstCtx dstMT) arr (R.size sh)) arrs
-
+    --
     return arrs
+
+  {-# INLINEABLE copyToPeerAsync #-}
+  copyToPeerAsync peer arrs stream = do
+    PTX dstCtx dstMT _ <- return peer
+    PTX srcCtx srcMT _ <- gets llvmTarget
+    --
+    async stream . liftIO $ do
+      unless (srcCtx == dstCtx) $
+        runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeerAsync srcCtx srcMT dstCtx dstMT (Just stream)) arr (R.size sh)) arrs
+      return arrs
 
   -- | Read a single element from the array at a given row-major index
   --
@@ -66,14 +81,6 @@ instance Remote PTX where
   indexRemote arr i = do
     PTX{..} <- gets llvmTarget
     liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable) arr i
-
--- | Upload an existing array to the device, asynchronously
---
-{-# INLINEABLE useArrayAsync #-}
-useArrayAsync :: Array sh e -> Maybe CUDA.Stream -> LLVM PTX ()
-useArrayAsync arr st = do
-  PTX{..} <- gets llvmTarget
-  liftIO   $ runUseArray (Prim.useArrayAsync ptxContext ptxMemoryTable st) arr
 
 
 -- | Allocate a new, uninitialised Accelerate array on the host and device.

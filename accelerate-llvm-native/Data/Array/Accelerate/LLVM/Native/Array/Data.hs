@@ -17,6 +17,7 @@ module Data.Array.Accelerate.LLVM.Native.Array.Data (
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Native.Execute.Async ()
 
 
 -- | Data instance for arrays in the native backend. We assume a shared-memory

@@ -33,6 +33,7 @@ import Data.Array.Accelerate.Array.Representation               ( size )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( size )
 
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
 import Control.Applicative
@@ -43,13 +44,19 @@ import Foreign.Ptr
 import Foreign.Storable
 
 
-class Remote arch where
+class Async arch => Remote arch where
 
   -- | Upload an existing array from the host to the remote device.
   --
   {-# INLINEABLE copyToRemote #-}
-  copyToRemote :: Arrays a => a -> LLVM arch ()
-  copyToRemote _ = return ()
+  copyToRemote :: Arrays a => a -> LLVM arch a
+  copyToRemote a = return a
+
+  -- | Upload an existing array to the remote device, asynchronously.
+  --
+  {-# INLINEABLE copyToRemoteAsync #-}
+  copyToRemoteAsync :: Arrays a => a -> StreamR arch -> LLVM arch (AsyncR arch a)
+  copyToRemoteAsync a s = async s (copyToRemote a)
 
   -- | Copy an array from the remote device to the host.
   --
@@ -64,6 +71,12 @@ class Remote arch where
   {-# INLINEABLE copyToPeer #-}
   copyToPeer :: Arrays a => arch -> a -> LLVM arch a
   copyToPeer _ a = return a
+
+  -- | As 'copyToPeer', asynchronously
+  --
+  {-# INLINEABLE copyToPeerAsync #-}
+  copyToPeerAsync :: Arrays a => arch -> a -> StreamR arch -> LLVM arch (AsyncR arch a)
+  copyToPeerAsync p a s = async s (copyToPeer p a)
 
   -- | Read a single element from the array at a given row-major index
   --
