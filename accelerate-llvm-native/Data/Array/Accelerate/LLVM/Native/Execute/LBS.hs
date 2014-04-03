@@ -16,12 +16,12 @@ import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import qualified Control.Parallel.Meta.Trans.LBS                as LBS
 import qualified Control.Parallel.Meta.Resource.SMP             as SMP
-import qualified Control.Parallel.Meta.Resource.Backoff         as EB
+-- import qualified Control.Parallel.Meta.Resource.Backoff         as EB
 
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
-import Data.Monoid
+-- import Data.Monoid
 import System.IO.Unsafe
 
 import GHC.Conc                                                 ( numCapabilities )
