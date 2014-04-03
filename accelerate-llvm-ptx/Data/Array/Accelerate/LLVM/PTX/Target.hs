@@ -11,8 +11,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.Target
-  where
+module Data.Array.Accelerate.LLVM.PTX.Target (
+
+  module Data.Array.Accelerate.LLVM.Target,
+  module Data.Array.Accelerate.LLVM.PTX.Target,
+
+) where
 
 -- llvm-general
 import LLVM.General.AST.AddrSpace
