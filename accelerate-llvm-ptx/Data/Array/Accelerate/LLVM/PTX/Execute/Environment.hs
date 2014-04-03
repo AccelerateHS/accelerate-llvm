@@ -10,12 +10,12 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Environment (
 
-  Aval, E.aprj
+  Aval, aprj
 
 ) where
 
 import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.Execute.Environment as E
+import Data.Array.Accelerate.LLVM.Execute.Environment
 
-type Aval = E.Aval PTX
+type Aval = AvalR PTX
 

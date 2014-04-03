@@ -12,13 +12,13 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Environment (
 
-  Aval, E.aprj
+  Aval, aprj
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Target
-import qualified Data.Array.Accelerate.LLVM.Execute.Environment as E
+import Data.Array.Accelerate.LLVM.Execute.Environment
 
-type Aval = E.Aval Native
+type Aval = AvalR Native
 

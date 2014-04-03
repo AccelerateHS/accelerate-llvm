@@ -50,7 +50,7 @@ class Remote arch => Execute arch where
   map           :: (Shape sh, Elt b)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
                 -> LLVM arch (Array sh b)
@@ -58,7 +58,7 @@ class Remote arch => Execute arch where
   generate      :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
                 -> LLVM arch (Array sh e)
@@ -66,7 +66,7 @@ class Remote arch => Execute arch where
   transform     :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
                 -> LLVM arch (Array sh e)
@@ -74,7 +74,7 @@ class Remote arch => Execute arch where
   backpermute   :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
                 -> LLVM arch (Array sh e)
@@ -82,7 +82,7 @@ class Remote arch => Execute arch where
   fold          :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh:.Int
                 -> LLVM arch (Array sh e)
@@ -90,7 +90,7 @@ class Remote arch => Execute arch where
   fold1         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
-                -> Aval arch aenv
+                -> AvalR arch aenv
                 -> StreamR arch
                 -> sh:.Int
                 -> LLVM arch (Array sh e)
@@ -137,7 +137,7 @@ executeAfun1 afun arrs =
 executeOpenAfun1
     :: Execute arch
     => PreOpenAfun (ExecOpenAcc arch) aenv (a -> b)
-    -> Aval arch aenv
+    -> AvalR arch aenv
     -> AsyncR arch a
     -> LLVM arch b
 executeOpenAfun1 (Alam (Abody f)) aenv a = streaming (executeOpenAcc f (aenv `Apush` a)) wait
@@ -149,7 +149,7 @@ executeOpenAfun1 _                _    _ = error "boop!"
 executeOpenAcc
     :: forall arch aenv arrs. Execute arch
     => ExecOpenAcc arch aenv arrs
-    -> Aval arch aenv
+    -> AvalR arch aenv
     -> StreamR arch
     -> LLVM arch arrs
 executeOpenAcc EmbedAcc{} _ _ =
@@ -242,7 +242,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
 executeExp
     :: Execute arch
     => ExecExp arch aenv t
-    -> Aval arch aenv
+    -> AvalR arch aenv
     -> StreamR arch
     -> LLVM arch t
 executeExp exp aenv stream = executeOpenExp exp Empty aenv stream
@@ -251,7 +251,7 @@ executeOpenExp
     :: forall arch env aenv exp. Execute arch
     => ExecOpenExp arch env aenv exp
     -> Val env
-    -> Aval arch aenv
+    -> AvalR arch aenv
     -> StreamR arch
     -> LLVM arch exp
 executeOpenExp rootExp env aenv stream = travE rootExp

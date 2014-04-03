@@ -16,9 +16,7 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- accelerate
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Execute.Async
-import Data.Array.Accelerate.LLVM.State
 
 #include "accelerate.h"
 
@@ -28,14 +26,14 @@ import Data.Array.Accelerate.LLVM.State
 
 -- Valuation for an environment of array computations
 --
-data Aval arch env where
-  Aempty :: Aval arch ()
-  Apush  :: Aval arch env -> AsyncR arch t -> Aval arch (env, t)
+data AvalR arch env where
+  Aempty :: AvalR arch ()
+  Apush  :: AvalR arch env -> AsyncR arch t -> AvalR arch (env, t)
 
 
 -- Projection of a value from a valuation using a de Bruijn index.
 --
-aprj :: Idx env t -> Aval arch env -> AsyncR arch t
+aprj :: Idx env t -> AvalR arch env -> AsyncR arch t
 aprj ZeroIdx       (Apush _   x) = x
 aprj (SuccIdx idx) (Apush val _) = aprj idx val
 aprj _             _             = INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
