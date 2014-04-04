@@ -14,7 +14,7 @@
 module Control.Parallel.Meta.Worker (
 
   Gang, Worker(..), Req(..),
-  gangSize, forkGang, gangIO,
+  gangSize, forkGang, gangIO, exhausted,
 
 ) where
 
@@ -183,6 +183,13 @@ finaliseWorker Worker{..} = do
   message (printf "worker %d shutting down" workerId)
   putMVar requestVar ReqShutdown
   takeMVar resultVar
+
+
+-- | Check whether the work queues of the gang are all empty
+--
+exhausted :: Gang -> IO Bool
+exhausted gang =
+  V.and <$> V.mapM (\Worker{..} -> nullQ workpool) gang
 
 
 -- Debugging
