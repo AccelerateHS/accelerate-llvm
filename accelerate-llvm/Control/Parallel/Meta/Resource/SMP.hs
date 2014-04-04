@@ -76,14 +76,14 @@ mkWorkSearch retries gang =
               return Nothing
 
             loop n      = do
-              targetId <- random
-              if targetId == myId
+              target <- V.unsafeIndex gang `fmap` random
+              if workerId target == myId
                  then loop (n-1)
                  else do
-                   mwork <- tryPopR (workpool (V.unsafeIndex gang targetId))
+                   mwork <- tryPopR (workpool target)
                    case mwork of
                      Nothing    -> loop (n-1)
-                     _          -> do message myId (printf "steal from %d" targetId)
+                     _          -> do message myId (printf "steal from %d" (workerId target))
                                       writeIORef (consecutiveFailures me) 0
                                       return mwork
         in
