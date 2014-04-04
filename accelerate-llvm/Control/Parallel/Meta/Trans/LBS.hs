@@ -72,23 +72,29 @@ mkWorkSearch ppt steal =
         -- return so that they are processed next) and decide what do do with
         -- the remainder:
         --
-        --   1. If our deque is empty, split it in half and push both pieces
+        --   1. If the deque is not empty OR the remainder is less than the PPT,
+        --      push it back without splitting.
+        --
+        --   2. If our deque is empty, split it in half and push both pieces
         --      back onto the deque.
         --
-        --   2. If it is not empty, push the remainder back without splitting.
-        --
         -- This strategy avoids excessive splitting, especially in the case
-        -- where this worker steals back the remainder.
+        -- where this worker steals back the remainder from itself.
         case work of
           Just r | not (R.null r) -> do
             let (this, rest)    = R.splitAt ppt r
                 handleRemainder
-                  | R.null rest = return ()
-                  | otherwise   = do
+                  | R.null rest         = return ()
+
+                  | R.size rest < ppt   = do
+                      message workerId (printf "not splitting remainder (size %d < ppt %d)" (R.size rest) ppt)
+                      pushL workpool rest
+
+                  | otherwise           = do
                       empty <- nullQ workpool
                       if not empty
                          then do
-                           message workerId (printf "not splitting remainder %s" (show rest))
+                           message workerId (printf "not splitting remainder %s (deque not empty)" (show rest))
                            pushL workpool rest
 
                          else do
