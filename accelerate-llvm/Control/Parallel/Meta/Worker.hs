@@ -197,5 +197,5 @@ exhausted gang =
 
 {-# INLINE message #-}
 message :: String -> IO ()
-message msg = Debug.message Debug.dump_sched ("gang: " ++ msg)
+message msg = Debug.message Debug.dump_gang ("gang: " ++ msg)
 
