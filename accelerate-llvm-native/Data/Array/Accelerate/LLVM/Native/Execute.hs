@@ -135,7 +135,7 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
   --        (2) sequential reduction
   if dim sh > 0 || numThreads == 1
      then do let out = allocateArray sh
-                 ppt = defaultLargePPT `max` (defaultSmallPPT * sz)
+                 ppt = defaultSmallPPT `max` (defaultLargePPT `div` sz)
              --
              liftIO $ do
                executeFunction k                          $ \f ->
