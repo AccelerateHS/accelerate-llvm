@@ -14,7 +14,7 @@
 module Control.Parallel.Meta.Worker (
 
   Gang, Worker(..), Req(..),
-  gangSize, forkGang, gangIO, exhausted,
+  gangSize, forkGang, forkGangOn, gangIO, exhausted,
 
 ) where
 
@@ -115,20 +115,25 @@ gangSize = V.length
 -- execution).
 --
 forkGang :: Int -> IO Gang
-forkGang n = do
-  gang <- V.replicateM n
-              $ Worker <$> freshId              -- identifier
-                       <*> newEmptyMVar         -- work request
-                       <*> newEmptyMVar         -- work complete
-                       <*> newQ                 -- work stealing deque
-                       <*> newIORef 0           -- consecutive steal failure count
-                       <*> createSystemRandom   -- random generator for stealing
+forkGang n = forkGangOn [0..n-1]
 
-  V.forM_ (V.indexed gang)
-          (\(tid,w) -> do message (printf "fork %d on capability %d" (workerId w) tid)
-                          void       $ mkWeakMVar (requestVar w) (finaliseWorker w)
-                          forkOn tid $ gangWorker tid w)
-  return gang
+
+-- | Create a set of workers on specific capabilities
+--
+forkGangOn :: [Int] -> IO Gang
+forkGangOn caps = do
+  V.forM (V.fromList caps) $ \cap -> do
+    worker <- Worker <$> freshId                -- identifier
+                     <*> newEmptyMVar           -- work request
+                     <*> newEmptyMVar           -- work complete
+                     <*> newQ                   -- work stealing deque
+                     <*> newIORef 0             -- consecutive steal failure count
+                     <*> createSystemRandom     -- random generator for stealing
+    --
+    message (printf "fork %d on capability %d" (workerId worker) cap)
+    void $ mkWeakMVar (requestVar worker) (finaliseWorker worker)
+    void $ forkOn cap $ gangWorker cap worker
+    return worker
 
 
 -- | The main worker loop for a thread in the gang.
