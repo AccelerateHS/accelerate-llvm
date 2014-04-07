@@ -90,7 +90,7 @@ simpleIO = Executable $ \_ppt range action ->
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
 defaultTarget = unsafePerformIO $ do
-  Debug.message Debug.dump_gc "gc: initialise default instance"
+  Debug.message Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
   (dev,prp)     <- selectBestDevice
   createTarget dev prp [CUDA.SchedAuto]
