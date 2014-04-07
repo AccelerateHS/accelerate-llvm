@@ -209,11 +209,6 @@ i32 = fromIntegral
 
 -- Execute the function implementing this kernel.
 --
--- The kernel argument marshalling is really ugly here. The marshal function
--- operates in the LLVM monad because it wants access to the memory tables. But
--- the kernels need to take a start/end index which is only given by the
--- scheduler, which runs in IO.
---
 execute
     :: Marshalable args
     => Kernel
@@ -224,10 +219,9 @@ execute
     -> args
     -> LLVM PTX ()
 execute kernel gamma aenv stream n args = do
-  PTX{..}   <- gets llvmTarget
-  ps        <- marshal stream (args, (gamma,aenv))
-  liftIO $ runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
-    launch kernel stream (end-start) (CUDA.VArg (i32 start) : CUDA.VArg (i32 end) : ps)
+  ptx@PTX{..} <- gets llvmTarget
+  liftIO       $ runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
+    launch kernel stream (end-start) =<< marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
 
 
 -- Execute a device function with the given thread configuration and function

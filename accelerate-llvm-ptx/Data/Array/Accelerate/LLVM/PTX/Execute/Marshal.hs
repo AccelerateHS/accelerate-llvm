@@ -38,6 +38,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- libraries
 import Control.Monad.State
+import Control.Monad.Reader
 import Data.Int
 import Data.DList                                               ( DList )
 import Data.Typeable
@@ -51,22 +52,20 @@ import qualified Data.IntMap                                    as IM
 
 -- | Convert function arguments into stream a form suitable for CUDA function calls
 --
-marshal :: Marshalable args => Stream -> args -> LLVM PTX [CUDA.FunParam]
-marshal stream args = DL.toList `fmap` marshal' stream args
+marshal :: Marshalable args => PTX -> Stream -> args -> IO [CUDA.FunParam]
+marshal ptx stream args = DL.toList `fmap` marshal' ptx stream args
 
 
 -- Data which can be marshalled as function arguments to kernels
 --
 class Marshalable a where
-  marshal' :: Stream -> a -> LLVM PTX (DList CUDA.FunParam)
+  marshal' :: PTX -> Stream -> a -> IO (DList CUDA.FunParam)
 
 instance Marshalable () where
-  marshal' _ () = return DL.empty
+  marshal' _ _ () = return DL.empty
 
 instance ArrayElt e => Marshalable (ArrayData e) where
-  marshal' _ adata = do
-    PTX{..} <- gets llvmTarget
-
+  marshal' PTX{..} _ adata = do
     let marshalP :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable a)
                  => ArrayData e'
                  -> IO (DList CUDA.FunParam)
@@ -107,49 +106,48 @@ instance ArrayElt e => Marshalable (ArrayData e) where
         marshalR ArrayEltRcdouble ad = marshalP ad
         marshalR ArrayEltRbool    ad = marshalP ad
 
-    liftIO $ marshalR arrayElt adata
+    marshalR arrayElt adata
 
 instance Marshalable (Gamma aenv, Aval aenv) where              -- overlaps with instance (a,b)
-  marshal' stream (gamma, aenv)
+  marshal' ptx stream (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> marshal' stream =<< sync (aprj idx aenv)) (IM.elems gamma)
+    $ mapM (\(_, Idx' idx) -> marshal' ptx stream =<< sync (aprj idx aenv)) (IM.elems gamma)
     where
-      sync :: Async a -> LLVM PTX a
-      sync = after stream
+      sync :: Async a -> IO a
+      sync arr = evalStateT (runReaderT (runLLVM (after stream arr)) undefined) ptx     -- HAXORZ!! D:
 
 instance (Shape sh, Elt e) => Marshalable (Array sh e) where
-  marshal' stream (Array sh adata) =
-    marshal' stream (adata, reverse (R.shapeToList sh))
+  marshal' ptx stream (Array sh adata) =
+    marshal' ptx stream (adata, reverse (R.shapeToList sh))
 
 instance (Marshalable a, Marshalable b) => Marshalable (a, b) where
-  marshal' s (a, b) =
-    DL.concat `fmap` sequence [marshal' s a, marshal' s b]
+  marshal' ptx s (a, b) =
+    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b]
 
 instance (Marshalable a, Marshalable b, Marshalable c) => Marshalable (a, b, c) where
-  marshal' s (a, b, c) =
-    DL.concat `fmap` sequence [marshal' s a, marshal' s b, marshal' s c]
+  marshal' ptx s (a, b, c) =
+    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c]
 
 instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d) => Marshalable (a, b, c, d) where
-  marshal' s (a, b, c, d) =
-    DL.concat `fmap` sequence [marshal' s a, marshal' s b, marshal' s c, marshal' s d]
+  marshal' ptx s (a, b, c, d) =
+    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d]
 
 instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d, Marshalable e)
     => Marshalable (a, b, c, d, e) where
-  marshal' s (a, b, c, d, e) =
-    DL.concat `fmap` sequence [marshal' s a, marshal' s b, marshal' s c, marshal' s d, marshal' s e]
+  marshal' ptx s (a, b, c, d, e) =
+    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d, marshal' ptx s e]
 
 instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d, Marshalable e, Marshalable f)
     => Marshalable (a, b, c, d, e, f) where
-  marshal' s (a, b, c, d, e, f) =
-    DL.concat `fmap` sequence [marshal' s a, marshal' s b, marshal' s c, marshal' s d, marshal' s e, marshal' s f]
+  marshal' ptx s (a, b, c, d, e, f) =
+    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d, marshal' ptx s e, marshal' ptx s f]
 
 instance Marshalable Int where
-  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
 
 instance Marshalable Int32 where
-  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
 
 instance Marshalable a => Marshalable [a] where
-  marshal' s = fmap DL.concat . mapM (marshal' s)
-
+  marshal' ptx s = fmap DL.concat . mapM (marshal' ptx s)
 
