@@ -66,6 +66,21 @@ instance Monoid Resource where
   mappend (Resource st1 ws1) (Resource st2 ws2) = Resource (st1 <> st2) (ws1 <> ws2)
 
 
+-- | An 'Executable' provides a callback that can be used to run a provided
+-- function using an encapsulated work-stealing gang of threads.
+--
+data Executable = Executable {
+    runExecutable :: Int        -- ^ Profitable parallelism threshold (PPT)
+                  -> Range      -- ^ The range to execute over
+                  -> (Int -> Int -> Int -> IO ())
+                        -- ^ The function to execute. The first parameters are
+                        -- the start and end indices of the array this action
+                        -- should process, and the final is the ID of the thread
+                        -- doing the work.
+                  -> IO ()
+  }
+
+
 -- | Run a parallel work-stealing operation.
 --
 -- Each thread initialises its work queue with an equally sized chunk of the
