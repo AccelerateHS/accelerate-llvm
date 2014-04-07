@@ -25,6 +25,7 @@ import LLVM.General.AST.DataLayout                              ( DataLayout )
 -- accelerate
 import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
 import Data.Array.Accelerate.LLVM.Native.Compile.Function       ( Function )
+import Control.Parallel.Meta                                    ( Executable )
 
 -- standard library
 import Control.Monad.Error
@@ -35,7 +36,10 @@ import System.IO.Unsafe
 
 -- | Native machine code JIT execution target
 --
-data Native = Native
+data Native = Native {
+    numThreads  :: {-# UNPACK #-} !Int
+  , fillP       :: {-# UNPACK #-} !Executable
+  }
 
 instance Target Native where
   data ExecutableR Native = NativeR { executableR :: Function }

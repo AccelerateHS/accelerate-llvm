@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS -fno-warn-orphans #-}
@@ -38,11 +39,13 @@ import Data.Array.Accelerate.LLVM.Native.Target
 -- import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 
 -- Use work-stealing scheduler
-import Control.Parallel.Meta.Worker
+import Data.Range.Range                                         ( Range(..) )
+import Control.Parallel.Meta                                    ( runExecutable )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Prelude                                                  hiding ( map, scanl, scanr )
+import Control.Monad.State                                      ( get )
 import Control.Monad.Trans                                      ( liftIO )
 import qualified Prelude                                        as P
 
@@ -125,35 +128,37 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
-foldCore (NativeR k) gamma aenv () (sh :. sz)
+foldCore (NativeR k) gamma aenv () (sh :. sz) = do
+  Native{..} <- get
+
   -- Either (1) multidimensional reduction; or
   --        (2) sequential reduction
-  | dim sh > 0 || gangSize theGang == 1
-  = do  let out     = allocateArray sh
-        --
-        liftIO $ do
-          executeFunction k                 $ \f ->
-            fillP defaultSmallPPT (size sh) $ \start end _ ->
-              callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
+  if dim sh > 0 || numThreads == 1
+     then do let out = allocateArray sh
+                 ppt = defaultLargePPT `max` (defaultSmallPPT * sz)
+             --
+             liftIO $ do
+               executeFunction k                          $ \f ->
+                 runExecutable fillP ppt (IE 0 (size sh)) $ \start end _ ->
+                   callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
 
-        return out
+             return out
 
   -- Parallel reduction
-  | otherwise
-  = do  let chunks  = gangSize theGang
-            tmp     = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
-            out     = allocateArray sh
-            n       = sz `min` chunks
-        --
-        liftIO $ do
-          executeNamedFunction k "fold1"         $ \f ->
-            fillP defaultLargePPT (size sh * sz) $ \start end tid ->
-              callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
+     else do let chunks = numThreads
+                 tmp    = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
+                 out    = allocateArray sh
+                 n      = sz `min` chunks
+             --
+             liftIO $ do
+               executeNamedFunction k "fold1"                              $ \f ->
+                 runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) $ \start end tid ->
+                   callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
 
-          executeNamedFunction k "foldAll" $ \f ->
-            callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
+               executeNamedFunction k "foldAll" $ \f ->
+                 callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
 
-        return out
+             return out
 
 
 -- Skeleton execution
@@ -187,8 +192,9 @@ execute
     -> Int
     -> args
     -> LLVM Native ()
-execute (NativeR main) gamma aenv n args = liftIO $
-  executeFunction main    $ \f ->
-  fillP defaultLargePPT n $ \start end _ ->
-    callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
+execute (NativeR main) gamma aenv n args = do
+  Native{..} <- get
+  liftIO $ executeFunction main                         $ \f ->
+           runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
+             callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
 

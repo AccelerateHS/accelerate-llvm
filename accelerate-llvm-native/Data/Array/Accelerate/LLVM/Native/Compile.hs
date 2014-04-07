@@ -42,6 +42,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
 import Control.Monad.Error
+import Control.Monad.State
 import Data.Maybe
 
 #if !MIN_VERSION_llvm_general(3,3,0)
@@ -62,9 +63,10 @@ instance Compile Native where
 --
 compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
 compileForNativeTarget acc aenv = do
+  target <- get
 
   -- Generate code for this Acc operation
-  let Module ast = llvmOfAcc Native acc aenv
+  let Module ast = llvmOfAcc target acc aenv
       triple     = fromMaybe "" (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 

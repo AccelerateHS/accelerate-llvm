@@ -55,6 +55,7 @@ Library
   other-modules:
     Data.Array.Accelerate.LLVM.Native.Array.Data
     Data.Array.Accelerate.LLVM.Native.Debug
+    Data.Array.Accelerate.LLVM.Native.State
     Data.Array.Accelerate.LLVM.Native.Target
 
     Data.Array.Accelerate.LLVM.Native.Compile
