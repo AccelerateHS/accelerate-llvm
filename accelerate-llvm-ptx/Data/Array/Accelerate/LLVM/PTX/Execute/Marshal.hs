@@ -1,9 +1,11 @@
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE OverlappingInstances #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverlappingInstances  #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -16,20 +18,18 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal (
 
-  Marshalable, marshal
+  Marshalable, M.marshal
 
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar
-import qualified Data.Array.Accelerate.Array.Representation     as R
-
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
-import Data.Array.Accelerate.LLVM.State
+import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async(..) )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( after )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 
@@ -37,8 +37,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- libraries
-import Control.Monad.State
-import Control.Monad.Reader
+import Control.Monad
 import Data.Int
 import Data.DList                                               ( DList )
 import Data.Typeable
@@ -47,24 +46,40 @@ import qualified Data.DList                                     as DL
 import qualified Data.IntMap                                    as IM
 
 
--- Marshalling arguments
--- ---------------------
-
--- | Convert function arguments into stream a form suitable for CUDA function calls
+-- Instances for the PTX backend
 --
-marshal :: Marshalable args => PTX -> Stream -> args -> IO [CUDA.FunParam]
-marshal ptx stream args = DL.toList `fmap` marshal' ptx stream args
+type Marshalable args       = M.Marshalable PTX args
+type instance M.ArgR PTX    = CUDA.FunParam
 
 
--- Data which can be marshalled as function arguments to kernels
+-- Instances for handling concrete types in this backend, namely shapes and
+-- array data.
 --
-class Marshalable a where
-  marshal' :: PTX -> Stream -> a -> IO (DList CUDA.FunParam)
+instance M.Marshalable PTX Int where
+  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
 
-instance Marshalable () where
-  marshal' _ _ () = return DL.empty
+instance M.Marshalable PTX Int32 where
+  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
 
-instance ArrayElt e => Marshalable (ArrayData e) where
+instance M.Marshalable PTX (Gamma aenv, Aval aenv) where        -- overlaps with instance (a,b)
+  marshal' ptx stream (gamma, aenv)
+    = fmap DL.concat
+    $ mapM (\(_, Idx' idx) -> M.marshal' ptx stream =<< sync (aprj idx aenv)) (IM.elems gamma)
+    where
+      -- HAXORZ~ D:
+      --
+      -- The 'Async' class functions need to run in the LLVM monad because the
+      -- continuations of the 'streaming' function run under the full LLVM
+      -- monad. But the marshalling functions must run in IO because they will
+      -- be executed in the lower-level scheduling code.
+      --
+      -- We hack around this impedance mismatch by calling the 'after'
+      -- implementation directly.
+      --
+      sync :: Async a -> IO a
+      sync (Async event arr) = after event stream >> return arr
+
+instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
   marshal' PTX{..} _ adata = do
     let marshalP :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable a)
                  => ArrayData e'
@@ -107,47 +122,4 @@ instance ArrayElt e => Marshalable (ArrayData e) where
         marshalR ArrayEltRbool    ad = marshalP ad
 
     marshalR arrayElt adata
-
-instance Marshalable (Gamma aenv, Aval aenv) where              -- overlaps with instance (a,b)
-  marshal' ptx stream (gamma, aenv)
-    = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> marshal' ptx stream =<< sync (aprj idx aenv)) (IM.elems gamma)
-    where
-      sync :: Async a -> IO a
-      sync arr = evalStateT (runReaderT (runLLVM (after stream arr)) undefined) ptx     -- HAXORZ!! D:
-
-instance (Shape sh, Elt e) => Marshalable (Array sh e) where
-  marshal' ptx stream (Array sh adata) =
-    marshal' ptx stream (adata, reverse (R.shapeToList sh))
-
-instance (Marshalable a, Marshalable b) => Marshalable (a, b) where
-  marshal' ptx s (a, b) =
-    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b]
-
-instance (Marshalable a, Marshalable b, Marshalable c) => Marshalable (a, b, c) where
-  marshal' ptx s (a, b, c) =
-    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c]
-
-instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d) => Marshalable (a, b, c, d) where
-  marshal' ptx s (a, b, c, d) =
-    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d]
-
-instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d, Marshalable e)
-    => Marshalable (a, b, c, d, e) where
-  marshal' ptx s (a, b, c, d, e) =
-    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d, marshal' ptx s e]
-
-instance (Marshalable a, Marshalable b, Marshalable c, Marshalable d, Marshalable e, Marshalable f)
-    => Marshalable (a, b, c, d, e, f) where
-  marshal' ptx s (a, b, c, d, e, f) =
-    DL.concat `fmap` sequence [marshal' ptx s a, marshal' ptx s b, marshal' ptx s c, marshal' ptx s d, marshal' ptx s e, marshal' ptx s f]
-
-instance Marshalable Int where
-  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
-
-instance Marshalable Int32 where
-  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
-
-instance Marshalable a => Marshalable [a] where
-  marshal' ptx s = fmap DL.concat . mapM (marshal' ptx s)
 

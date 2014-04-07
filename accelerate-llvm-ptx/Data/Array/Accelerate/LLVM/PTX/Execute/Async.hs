@@ -13,7 +13,7 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 
-  Async, Stream,
+  Async(..), Stream,
   A.wait, A.after, A.streaming, A.async,
 
 ) where

@@ -69,10 +69,11 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Type
     Data.Array.Accelerate.LLVM.Compile
+    Data.Array.Accelerate.LLVM.Debug
     Data.Array.Accelerate.LLVM.Execute
     Data.Array.Accelerate.LLVM.Execute.Async
     Data.Array.Accelerate.LLVM.Execute.Environment
-    Data.Array.Accelerate.LLVM.Debug
+    Data.Array.Accelerate.LLVM.Execute.Marshal
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util

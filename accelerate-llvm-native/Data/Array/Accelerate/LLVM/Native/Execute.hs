@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -129,7 +130,7 @@ foldCore
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldCore (NativeR k) gamma aenv () (sh :. sz) = do
-  Native{..} <- gets llvmTarget
+  native@Native{..} <- gets llvmTarget
 
   -- Either (1) multidimensional reduction; or
   --        (2) sequential reduction
@@ -140,7 +141,7 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
              liftIO $ do
                executeFunction k                          $ \f ->
                  runExecutable fillP ppt (IE 0 (size sh)) $ \start end _ ->
-                   callFFI f retVoid (marshal (start, end, sz, out, (gamma,aenv)))
+                   callFFI f retVoid =<< marshal native () (start, end, sz, out, (gamma,aenv))
 
              return out
 
@@ -153,10 +154,10 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
              liftIO $ do
                executeNamedFunction k "fold1"                              $ \f ->
                  runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) $ \start end tid ->
-                   callFFI f retVoid (marshal (start,end,tid,tmp,(gamma,aenv)))
+                   callFFI f retVoid =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
 
                executeNamedFunction k "foldAll" $ \f ->
-                 callFFI f retVoid (marshal (0::Int,n,tmp,out,(gamma,aenv)))
+                 callFFI f retVoid =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
 
              return out
 
@@ -193,8 +194,8 @@ execute
     -> args
     -> LLVM Native ()
 execute (NativeR main) gamma aenv n args = do
-  Native{..} <- gets llvmTarget
+  native@Native{..} <- gets llvmTarget
   liftIO $ executeFunction main                         $ \f ->
            runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
-             callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))
+             callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
 
