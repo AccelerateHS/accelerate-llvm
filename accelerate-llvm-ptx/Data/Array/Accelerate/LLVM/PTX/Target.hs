@@ -63,7 +63,6 @@ data PTX = PTX {
     ptxContext                  :: {-# UNPACK #-} !Context
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
-  , ptxNumDevices               :: {-# UNPACK #-} !Int
   , fillP                       :: {-# UNPACK #-} !Executable
   }
 

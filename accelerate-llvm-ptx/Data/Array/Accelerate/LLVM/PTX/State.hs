@@ -55,6 +55,10 @@ evalPTX ptx acc =
 
 -- | Create a new PTX execution target for the given device
 --
+-- TLM: This state structure does not generalise to multiple devices. We require
+--      the context and tables per device, whereas the scheduler requires
+--      access to all devices.
+--
 createTarget
     :: CUDA.Device
     -> CUDA.DeviceProperties
@@ -64,7 +68,7 @@ createTarget dev prp flags = do
   ctx   <- CT.new dev prp flags
   mt    <- MT.new ctx
   st    <- RT.new ctx
-  return $! PTX ctx mt st 1 simpleIO
+  return $! PTX ctx mt st simpleIO
 
 
 {-# INLINE simpleIO #-}
