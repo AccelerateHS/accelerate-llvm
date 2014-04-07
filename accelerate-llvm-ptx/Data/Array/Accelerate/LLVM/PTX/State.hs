@@ -12,7 +12,7 @@
 module Data.Array.Accelerate.LLVM.PTX.State (
 
   evalPTX,
-  createPTX, defaultPTX
+  createTarget, defaultTarget
 
 ) where
 
@@ -52,12 +52,12 @@ evalPTX ptx acc =
 
 -- | Create a new PTX execution target for the given device
 --
-createPTX
+createTarget
     :: CUDA.Device
     -> CUDA.DeviceProperties
     -> [CUDA.ContextFlag]
     -> IO PTX
-createPTX dev prp flags = do
+createTarget dev prp flags = do
   ctx   <- CT.new dev prp flags
   mt    <- MT.new ctx
   st    <- RT.new ctx
@@ -76,11 +76,11 @@ createPTX dev prp flags = do
 -- context. The device is selected based on compute capability and estimated
 -- maximum throughput.
 --
-{-# NOINLINE defaultPTX #-}
-defaultPTX :: PTX
-defaultPTX = unsafePerformIO $ do
+{-# NOINLINE defaultTarget #-}
+defaultTarget :: PTX
+defaultTarget = unsafePerformIO $ do
   Debug.message Debug.dump_gc "gc: initialise default instance"
   CUDA.initialise []
   (dev,prp)     <- selectBestDevice
-  createPTX dev prp [CUDA.SchedAuto]
+  createTarget dev prp [CUDA.SchedAuto]
 

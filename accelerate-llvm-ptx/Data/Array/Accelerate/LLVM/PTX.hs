@@ -53,7 +53,7 @@ run :: Arrays a => Acc a -> a
 run a = unsafePerformIO execute
   where
     !acc        = convertAccWith config a
-    execute     = evalPTX defaultPTX (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
+    execute     = evalPTX defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -93,8 +93,8 @@ run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 f = \a -> unsafePerformIO (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ evalPTX defaultPTX (compileAfun acc) >>= dumpStats
-    execute a   = evalPTX defaultPTX (executeAfun1 afun a >>= copyToHost)
+    !afun       = unsafePerformIO $ evalPTX defaultTarget (compileAfun acc) >>= dumpStats
+    execute a   = evalPTX defaultTarget (executeAfun1 afun a >>= copyToHost)
 
 
 -- | Stream a lazily read list of input arrays through the given program,
