@@ -177,7 +177,8 @@ simpleOp
     -> LLVM Native (Array sh e)
 simpleOp kernel gamma aenv () sh = do
   let out = allocateArray sh
-  execute kernel gamma aenv (size sh) out
+  native <- gets llvmTarget
+  liftIO  $ execute native kernel gamma aenv (size sh) out
   return out
 
 
@@ -187,15 +188,15 @@ simpleOp kernel gamma aenv () sh = do
 --
 execute
     :: Marshalable args
-    => ExecutableR Native
+    => Native
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Int
     -> args
-    -> LLVM Native ()
-execute (NativeR main) gamma aenv n args = do
-  native@Native{..} <- gets llvmTarget
-  liftIO $ executeFunction main                         $ \f ->
-           runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
-             callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
+    -> IO ()
+execute native@Native{..} (NativeR main) gamma aenv n args =
+  executeFunction main                         $ \f ->
+  runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
+    callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
 

@@ -90,13 +90,14 @@ simpleOp
     -> Stream
     -> sh
     -> LLVM PTX (Array sh e)
-simpleOp kernel gamma aenv stream sh = do
-  let ptx = case ptxKernel kernel of
-              k:_ -> k
-              _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
+simpleOp exe gamma aenv stream sh = do
+  let kernel    = case ptxKernel exe of
+                    k:_ -> k
+                    _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
   --
   out <- allocateArray sh
-  execute ptx gamma aenv stream (size sh) out
+  ptx <- gets llvmTarget
+  liftIO $ execute ptx kernel gamma aenv stream (size sh) out
   return out
 
 
@@ -159,39 +160,40 @@ foldAllOp
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldAllOp kernel gamma aenv stream sh'
-  | k1:k2:_ <- ptxKernel kernel
-  = let
-        foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
-        foldIntro (sh:.sz) = do
-          let numElements       = size sh * sz
-              numBlocks         = (kernelThreadBlocks k1) numElements
-          --
-          out <- allocateArray (sh :. numBlocks)
-          execute k1 gamma aenv stream numElements out
-          foldRec out
+foldAllOp exe gamma aenv stream sh' = do
+  ptx <- gets llvmTarget
+  let
+      (k1,k2)   = case ptxKernel exe of
+                    u:v:_       -> (u,v)
+                    _           -> INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
 
-        foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
-        foldRec out@(Array (sh,sz) adata) =
-          let numElements       = R.size sh * sz
-              numBlocks         = (kernelThreadBlocks k2) numElements
-          in if sz <= 1
-                then do
-                  -- We have recursed to a single block already. Trim the
-                  -- intermediate working vector to the final scalar array.
-                  return $! Array sh adata
+      foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
+      foldIntro (sh:.sz) = do
+        let numElements       = size sh * sz
+            numBlocks         = (kernelThreadBlocks k1) numElements
+        --
+        out <- allocateArray (sh :. numBlocks)
+        liftIO $ execute ptx k1 gamma aenv stream numElements out
+        foldRec out
 
-                else do
-                  -- Keep cooperatively reducing the output array in-place.
-                  -- Note that we must continue to update the tracked size
-                  -- so the recursion knows when to stop.
-                  execute k2 gamma aenv stream numElements out
-                  foldRec $! Array (sh,numBlocks) adata
-    in
-    foldIntro sh'
+      foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
+      foldRec out@(Array (sh,sz) adata) =
+        let numElements       = R.size sh * sz
+            numBlocks         = (kernelThreadBlocks k2) numElements
+        in if sz <= 1
+              then do
+                -- We have recursed to a single block already. Trim the
+                -- intermediate working vector to the final scalar array.
+                return $! Array sh adata
 
-  | otherwise
-  = INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
+              else do
+                -- Keep cooperatively reducing the output array in-place.
+                -- Note that we must continue to update the tracked size
+                -- so the recursion knows when to stop.
+                liftIO $ execute ptx k2 gamma aenv stream numElements out
+                foldRec $! Array (sh,numBlocks) adata
+  --
+  foldIntro sh'
 
 
 -- Skeleton execution
@@ -212,16 +214,16 @@ i32 = fromIntegral
 --
 execute
     :: Marshalable args
-    => Kernel
+    => PTX
+    -> Kernel
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Int
     -> args
-    -> LLVM PTX ()
-execute kernel gamma aenv stream n args = do
-  ptx@PTX{..} <- gets llvmTarget
-  liftIO       $ runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
+    -> IO ()
+execute ptx@PTX{..} kernel gamma aenv stream n args = do
+  runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
     launch kernel stream (end-start) =<< marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
 
 
