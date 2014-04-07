@@ -102,19 +102,26 @@ instance Monoid Resource where
 runParIO
     :: Resource
     -> Gang
-    -> Int
+    -> Range
     -> (Int -> Int -> Int -> IO ())
     -> IO ()
-runParIO resource gang len action
-  | V.length gang == 1  = seqIO resource gang len action
-  | otherwise           = parIO resource gang len action
+runParIO resource gang range action
+  | gangSize gang == 1  = seqIO resource gang range action
+  | otherwise           = parIO resource gang range action
 
-seqIO :: Resource -> Gang -> Int -> (Int -> Int -> Int -> IO ()) -> IO ()
-seqIO _ gang len action =
-  gangIO gang $ action 0 len
 
-parIO :: Resource -> Gang -> Int -> (Int -> Int -> Int -> IO ()) -> IO ()
-parIO resource gang len action =
+-- TLM: probably want to change this; often have only 1 GPU, but we still want
+--      that to make its work stealable in LBS fashion. Make the seqIO decision
+--      by the client (Native/Execute/LBS).
+--
+seqIO :: Resource -> Gang -> Range -> (Int -> Int -> Int -> IO ()) -> IO ()
+seqIO _ _    Empty    _      = return ()
+seqIO _ gang (IE u v) action = gangIO gang $ action u v
+
+
+parIO :: Resource -> Gang -> Range -> (Int -> Int -> Int -> IO ()) -> IO ()
+parIO _        _    Empty        _      = return ()
+parIO resource gang (IE inf sup) action =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
@@ -130,14 +137,15 @@ parIO resource gang len action =
         pushL (workpool me) (IE start end)
         loop
   where
+    len                 = sup - inf
     workers             = gangSize gang
     chunkLen            = len `quotInt` workers
     chunkLeftover       = len `remInt`  workers
 
     splitIx thread
       | thread < chunkLeftover
-      = thread * (chunkLen + 1)
+      = inf + thread * (chunkLen + 1)
 
       | otherwise
-      = thread * chunkLen + chunkLeftover
+      = inf + thread * chunkLen + chunkLeftover
 
