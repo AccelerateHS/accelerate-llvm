@@ -31,6 +31,7 @@ import qualified LLVM.General.CodeGenOpt                        as CGO
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
+import Control.Parallel.Meta                                    ( Executable )
 import Data.Array.Accelerate.LLVM.PTX.Context                   ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.Array.Table               ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Reservoir )
@@ -62,6 +63,8 @@ data PTX = PTX {
     ptxContext                  :: {-# UNPACK #-} !Context
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
+  , ptxNumDevices               :: {-# UNPACK #-} !Int
+  , fillP                       :: {-# UNPACK #-} !Executable
   }
 
 data Kernel = Kernel {

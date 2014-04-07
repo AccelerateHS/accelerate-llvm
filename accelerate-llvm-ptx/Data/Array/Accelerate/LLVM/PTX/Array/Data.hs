@@ -56,23 +56,23 @@ instance Remote PTX where
     return arrs
 
   {-# INLINEABLE copyToPeer #-}
-  copyToPeer peer arrs = do
-    PTX dstCtx dstMT _ <- return peer
-    PTX srcCtx srcMT _ <- gets llvmTarget
-    --
-    liftIO . unless (srcCtx == dstCtx)
-      $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer srcCtx srcMT dstCtx dstMT) arr (R.size sh)) arrs
+  copyToPeer dst arrs = do
+    src <- gets llvmTarget
+    liftIO . unless (ptxContext src == ptxContext dst)
+      $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer (ptxContext src) (ptxMemoryTable src)
+                                                                          (ptxContext dst) (ptxMemoryTable dst))
+                                                      arr (R.size sh)) arrs
     --
     return arrs
 
   {-# INLINEABLE copyToPeerAsync #-}
-  copyToPeerAsync peer arrs stream = do
-    PTX dstCtx dstMT _ <- return peer
-    PTX srcCtx srcMT _ <- gets llvmTarget
-    --
+  copyToPeerAsync dst arrs stream = do
+    src <- gets llvmTarget
     async stream . liftIO $ do
-      unless (srcCtx == dstCtx) $
-        runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeerAsync srcCtx srcMT dstCtx dstMT (Just stream)) arr (R.size sh)) arrs
+      unless (ptxContext src == ptxContext dst) $
+        runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeerAsync (ptxContext src) (ptxMemoryTable src)
+                                                                               (ptxContext dst) (ptxMemoryTable dst) (Just stream))
+                                                      arr (R.size sh)) arrs
       return arrs
 
   -- | Read a single element from the array at a given row-major index

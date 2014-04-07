@@ -26,6 +26,9 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table     as MT
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as RT
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
+import Data.Range.Range                                         ( Range(..) )
+import Control.Parallel.Meta                                    ( Executable(..) )
+
 -- standard library
 import Control.Exception                                        ( bracket_, catch )
 import Control.Concurrent                                       ( runInBoundThread )
@@ -61,7 +64,15 @@ createTarget dev prp flags = do
   ctx   <- CT.new dev prp flags
   mt    <- MT.new ctx
   st    <- RT.new ctx
-  return $! PTX ctx mt st
+  return $! PTX ctx mt st 1 simpleIO
+
+
+{-# INLINE simpleIO #-}
+simpleIO :: Executable
+simpleIO = Executable $ \_ppt range action ->
+  case range of
+    Empty       -> return ()
+    IE u v      -> action u v 0
 
 
 -- Top-level mutable state

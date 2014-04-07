@@ -35,13 +35,16 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
+import Data.Range.Range                                         ( Range(..) )
+import Control.Parallel.Meta                                    ( runExecutable )
+
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
-import Data.Int
-import Control.Monad.Error
+import Data.Int                                                 ( Int32 )
+import Control.Monad.State                                      ( gets, liftIO )
 import Text.Printf
 import qualified Prelude                                        as P
 
@@ -90,12 +93,9 @@ simpleOp kernel gamma aenv stream sh = do
   let ptx = case ptxKernel kernel of
               k:_ -> k
               _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
-      n         = size sh
-      start     = 0              :: Int32
-      end       = fromIntegral n :: Int32
   --
   out <- allocateArray sh
-  execute ptx gamma aenv stream n (start,end,out)
+  execute ptx gamma aenv stream (size sh) out
   return out
 
 
@@ -165,19 +165,15 @@ foldAllOp kernel gamma aenv stream sh'
         foldIntro (sh:.sz) = do
           let numElements       = size sh * sz
               numBlocks         = (kernelThreadBlocks k1) numElements
-              start             = 0                        :: Int32
-              end               = fromIntegral numElements :: Int32
           --
           out <- allocateArray (sh :. numBlocks)
-          execute k1 gamma aenv stream numElements (start, end, out)
+          execute k1 gamma aenv stream numElements out
           foldRec out
 
         foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
         foldRec out@(Array (sh,sz) adata) =
           let numElements       = R.size sh * sz
               numBlocks         = (kernelThreadBlocks k2) numElements
-              start             = 0                        :: Int32
-              end               = fromIntegral numElements :: Int32
           in if sz <= 1
                 then do
                   -- We have recursed to a single block already. Trim the
@@ -188,7 +184,7 @@ foldAllOp kernel gamma aenv stream sh'
                   -- Keep cooperatively reducing the output array in-place.
                   -- Note that we must continue to update the tracked size
                   -- so the recursion knows when to stop.
-                  execute k2 gamma aenv stream numElements (start, end, out)
+                  execute k2 gamma aenv stream numElements out
                   foldRec $! Array (sh,numBlocks) adata
     in
     foldIntro sh'
@@ -200,7 +196,23 @@ foldAllOp kernel gamma aenv stream sh'
 -- Skeleton execution
 -- ------------------
 
+-- TODO: Calculate this from the device properties, say [a multiple of] the
+--       maximum number of in-flight threads that the device supports.
+--
+defaultPPT :: Int
+defaultPPT = 32768
+
+{-# INLINE i32 #-}
+i32 :: Int -> Int32
+i32 = fromIntegral
+
+
 -- Execute the function implementing this kernel.
+--
+-- The kernel argument marshalling is really ugly here. The marshal function
+-- operates in the LLVM monad because it wants access to the memory tables. But
+-- the kernels need to take a start/end index which is only given by the
+-- scheduler, which runs in IO.
 --
 execute
     :: Marshalable args
@@ -211,17 +223,20 @@ execute
     -> Int
     -> args
     -> LLVM PTX ()
-execute kernel gamma aenv stream n args =
-  launch kernel stream n =<< marshal stream (args, (gamma,aenv))
+execute kernel gamma aenv stream n args = do
+  PTX{..}   <- gets llvmTarget
+  ps        <- marshal stream (args, (gamma,aenv))
+  liftIO $ runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
+    launch kernel stream (end-start) (CUDA.VArg (i32 start) : CUDA.VArg (i32 end) : ps)
 
 
 -- Execute a device function with the given thread configuration and function
 -- parameters.
 --
-launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> LLVM PTX ()
-launch Kernel{..} stream n args =
-  liftIO $ Debug.timed Debug.dump_exec msg (Just stream)
-         $ CUDA.launchKernel kernelFun grid cta smem (Just stream) args
+launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
+launch Kernel{..} stream n args
+  = Debug.timed Debug.dump_exec msg (Just stream)
+  $ CUDA.launchKernel kernelFun grid cta smem (Just stream) args
   where
     cta         = (kernelThreadBlockSize, 1, 1)
     grid        = (kernelThreadBlocks n, 1, 1)
