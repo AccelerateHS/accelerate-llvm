@@ -103,7 +103,7 @@ compileOpenAcc = traverseAcc
         Apply f a               -> node =<< liftA2 Apply        <$> travAF f <*> travA a
         Awhile p f a            -> node =<< liftA3 Awhile       <$> travAF p <*> travAF f <*> travA a
         Acond p t e             -> node =<< liftA3 Acond        <$> travE  p <*> travA  t <*> travA e
-        Atuple tup              -> node =<< liftA Atuple        <$> travAtup tup
+        Atuple tup              -> node =<< liftA  Atuple       <$> travAtup tup
         Aprj ix tup             -> node =<< liftA (Aprj ix)     <$> travA    tup
 
         -- Foreign
@@ -111,8 +111,7 @@ compileOpenAcc = traverseAcc
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
-        Use arrs                -> do copyToRemote (toArr arrs::arrs)
-                                      node (pure (Use arrs))
+        Use arrs                -> copyToRemote (toArr arrs::arrs) >> node (pure (Use arrs))
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
