@@ -45,7 +45,7 @@ import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Prelude                                                  hiding ( map, scanl, scanr )
-import Control.Monad.State                                      ( get )
+import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
 import qualified Prelude                                        as P
 
@@ -129,7 +129,7 @@ foldCore
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldCore (NativeR k) gamma aenv () (sh :. sz) = do
-  Native{..} <- get
+  Native{..} <- gets llvmTarget
 
   -- Either (1) multidimensional reduction; or
   --        (2) sequential reduction
@@ -193,7 +193,7 @@ execute
     -> args
     -> LLVM Native ()
 execute (NativeR main) gamma aenv n args = do
-  Native{..} <- get
+  Native{..} <- gets llvmTarget
   liftIO $ executeFunction main                         $ \f ->
            runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
              callFFI f retVoid (marshal (start, end, args, (gamma,aenv)))

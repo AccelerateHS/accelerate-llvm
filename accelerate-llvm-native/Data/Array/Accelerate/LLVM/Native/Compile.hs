@@ -63,7 +63,7 @@ instance Compile Native where
 --
 compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
 compileForNativeTarget acc aenv = do
-  target <- get
+  target <- gets llvmTarget
 
   -- Generate code for this Acc operation
   let Module ast = llvmOfAcc target acc aenv

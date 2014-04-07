@@ -82,7 +82,7 @@ createTarget caps = do
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
-  Debug.message Debug.dump_gc (printf "initialise native target with %n CPUs" numCapabilities)
+  Debug.message Debug.dump_gc (printf "gc: initialise native target with %n CPUs" numCapabilities)
   createTarget [0 .. numCapabilities - 1]
 
 
