@@ -82,6 +82,7 @@ Library
     Control.Parallel.Meta
     Control.Parallel.Meta.Worker
     Control.Parallel.Meta.Resource.Backoff
+    Control.Parallel.Meta.Resource.Single
     Control.Parallel.Meta.Resource.SMP
     Control.Parallel.Meta.Trans.LBS
     Data.Range.Range
