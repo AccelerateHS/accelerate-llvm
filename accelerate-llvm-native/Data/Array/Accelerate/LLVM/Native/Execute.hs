@@ -42,6 +42,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 -- Use work-stealing scheduler
 import Data.Range.Range                                         ( Range(..) )
 import Control.Parallel.Meta                                    ( runExecutable )
+import Control.Parallel.Meta.Worker                             ( gangSize )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
@@ -134,7 +135,7 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
 
   -- Either (1) multidimensional reduction; or
   --        (2) sequential reduction
-  if dim sh > 0 || numThreads == 1
+  if dim sh > 0 || gangSize theGang == 1
      then do let out = allocateArray sh
                  ppt = defaultSmallPPT `max` (defaultLargePPT `div` sz)
              --
@@ -146,7 +147,7 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
              return out
 
   -- Parallel reduction
-     else do let chunks = numThreads
+     else do let chunks = gangSize theGang
                  tmp    = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
                  out    = allocateArray sh
                  n      = sz `min` chunks

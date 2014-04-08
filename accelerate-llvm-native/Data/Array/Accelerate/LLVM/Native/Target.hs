@@ -26,6 +26,7 @@ import LLVM.General.AST.DataLayout                              ( DataLayout )
 import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
 import Data.Array.Accelerate.LLVM.Native.Compile.Function       ( Function )
 import Control.Parallel.Meta                                    ( Executable )
+import Control.Parallel.Meta.Worker                             ( Gang )
 
 -- standard library
 import Control.Monad.Error
@@ -37,7 +38,7 @@ import System.IO.Unsafe
 -- | Native machine code JIT execution target
 --
 data Native = Native {
-    numThreads  :: {-# UNPACK #-} !Int
+    theGang     :: {-# UNPACK #-} !Gang
   , fillP       :: {-# UNPACK #-} !Executable
   }
 

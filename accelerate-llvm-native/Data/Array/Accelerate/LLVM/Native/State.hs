@@ -52,7 +52,7 @@ createTarget
     -> IO Native
 createTarget caps = do
   gang  <- forkGangOn caps
-  return . Native (gangSize gang) . Executable $ \ppt range fill ->
+  return . Native gang . Executable $ \ppt range fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt $ SMP.mkResource retries gang
     in
