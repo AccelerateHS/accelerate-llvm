@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
-{-# OPTIONS -funbox-strict-fields #-}
+{-# OPTIONS_GHC -funbox-strict-fields #-}
 -- |
 -- Module      : Data.Range.Range
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation

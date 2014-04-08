@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP           #-}
 {-# LANGUAGE TypeOperators #-}
-{-# OPTIONS -fno-warn-incomplete-patterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Debug
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation

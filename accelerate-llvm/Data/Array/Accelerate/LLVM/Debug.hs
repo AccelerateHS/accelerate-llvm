@@ -1,6 +1,6 @@
 {-# LANGUAGE CPP           #-}
 {-# LANGUAGE TypeOperators #-}
-{-# OPTIONS -fno-warn-incomplete-patterns #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-patterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Debug
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
