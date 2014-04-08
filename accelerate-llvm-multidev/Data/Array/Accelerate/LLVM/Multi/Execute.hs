@@ -80,7 +80,7 @@ simpleOp MultiR{..} gamma aenv stream sh = do
               _   -> INTERNAL_ERROR(error) "execute" "kernel not found"
   --
   message dump_exec "simpleOp: going to try executing something"
-  out   <- allocateArray sh
+  out   <- allocateRemote sh
   multi <- gets llvmTarget
   liftIO $ executeOp multi nativeExecutable ptx gamma aenv stream (size sh) out
   return out
