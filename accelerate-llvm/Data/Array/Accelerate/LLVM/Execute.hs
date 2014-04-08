@@ -227,7 +227,7 @@ executeAfun1 afun arrs =
     useArrays :: ArraysR arrs -> arrs -> StreamR arch -> LLVM arch ()
     useArrays ArraysRunit         ()       _  = return ()
     useArrays (ArraysRpair r1 r0) (a1, a0) st = useArrays r1 a1 st >> useArrays r0 a0 st
-    useArrays ArraysRarray        arr      st = void $ copyToRemoteAsync arr st
+    useArrays ArraysRarray        arr      st = void $ copyToRemoteAsync st arr
 
 
 -- Execute an open array function of one argument

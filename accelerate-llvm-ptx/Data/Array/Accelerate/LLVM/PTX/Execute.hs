@@ -25,7 +25,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        hiding ( allocateArray )
+import Data.Array.Accelerate.Array.Sugar
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.State
@@ -98,7 +98,7 @@ simpleOp exe gamma aenv stream sh = do
                     k:_ -> k
                     _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
   --
-  out <- allocateArray sh
+  out <- allocateRemote sh
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
   return out
@@ -175,7 +175,7 @@ foldAllOp exe gamma aenv stream sh' = do
         let numElements       = size sh * sz
             numBlocks         = (kernelThreadBlocks k1) numElements
         --
-        out <- allocateArray (sh :. numBlocks)
+        out <- allocateRemote (sh :. numBlocks)
         liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 numElements) out
         foldRec out
 

@@ -13,20 +13,19 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 
-  allocateArray,
   module Data.Array.Accelerate.LLVM.Array.Data,
 
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array(..), Shape, Elt, size )
+import Data.Array.Accelerate.Array.Sugar                        ( Array(..), size )
 import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ()
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 
 -- standard library
@@ -37,60 +36,35 @@ import Control.Monad.State
 --
 instance Remote PTX where
 
-  {-# INLINEABLE copyToRemote #-}
-  copyToRemote arrs = do
+  {-# INLINEABLE allocateRemote #-}
+  allocateRemote sh = do
+    let arr = Sugar.allocateArray sh
     PTX{..} <- gets llvmTarget
-    liftIO $ runArrays (runUseArray (Prim.useArray ptxContext ptxMemoryTable)) arrs
-    return arrs
+    liftIO   $ runArray (void . Prim.mallocArray ptxContext ptxMemoryTable (size sh)) arr
+    return arr
 
-  {-# INLINEABLE copyToRemoteAsync #-}
-  copyToRemoteAsync arrs stream = do
+  {-# INLINEABLE copyToRemoteR #-}
+  copyToRemoteR from to ms arr@(Array sh _) = do
     PTX{..} <- gets llvmTarget
-    async stream . liftIO $ do
-      runArrays (runUseArray (Prim.useArrayAsync ptxContext ptxMemoryTable (Just stream))) arrs
-      return arrs
+    liftIO   $ if from == 0 && to == R.size sh
+                  then runArray (Prim.useArrayAsync   ptxContext ptxMemoryTable ms to)      arr
+                  else runArray (Prim.pokeArrayAsyncR ptxContext ptxMemoryTable ms from to) arr
 
-  {-# INLINEABLE copyToHost #-}
-  copyToHost arrs = do
+  {-# INLINEABLE copyToHostR #-}
+  copyToHostR from to ms arr = do
     PTX{..} <- gets llvmTarget
-    liftIO $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.peekArray ptxContext ptxMemoryTable) arr (R.size sh)) arrs
-    return arrs
+    liftIO $ runArray (Prim.peekArrayAsyncR ptxContext ptxMemoryTable ms from to) arr
 
-  {-# INLINEABLE copyToPeer #-}
-  copyToPeer dst arrs = do
+  {-# INLINEABLE copyToPeerR #-}
+  copyToPeerR from to dst ms arr = do
     src <- gets llvmTarget
-    liftIO . unless (ptxContext src == ptxContext dst)
-      $ runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeer (ptxContext src) (ptxMemoryTable src)
-                                                                          (ptxContext dst) (ptxMemoryTable dst))
-                                                      arr (R.size sh)) arrs
-    --
-    return arrs
+    liftIO . unless (ptxContext src == ptxContext dst) $ do
+      runArray (Prim.copyArrayPeerAsyncR (ptxContext src) (ptxMemoryTable src)
+                                         (ptxContext dst) (ptxMemoryTable dst) ms from to)
+               arr
 
-  {-# INLINEABLE copyToPeerAsync #-}
-  copyToPeerAsync dst arrs stream = do
-    src <- gets llvmTarget
-    async stream . liftIO $ do
-      unless (ptxContext src == ptxContext dst) $
-        runArrays (\arr@(Array sh _) -> runArrayData1 (Prim.copyArrayPeerAsync (ptxContext src) (ptxMemoryTable src)
-                                                                               (ptxContext dst) (ptxMemoryTable dst) (Just stream))
-                                                      arr (R.size sh)) arrs
-      return arrs
-
-  -- | Read a single element from the array at a given row-major index
-  --
   {-# INLINEABLE indexRemote #-}
   indexRemote arr i = do
     PTX{..} <- gets llvmTarget
     liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable) arr i
-
-
--- | Allocate a new, uninitialised Accelerate array on the host and device.
---
-{-# INLINEABLE allocateArray #-}
-allocateArray :: (Shape sh, Elt e) => sh -> LLVM PTX (Array sh e)
-allocateArray sh = do
-  let arr = Sugar.allocateArray sh
-  PTX{..} <- gets llvmTarget
-  liftIO   $ runArrayData1 (\ad i -> void $ Prim.mallocArray ptxContext ptxMemoryTable ad i) arr (size sh)
-  return arr
 

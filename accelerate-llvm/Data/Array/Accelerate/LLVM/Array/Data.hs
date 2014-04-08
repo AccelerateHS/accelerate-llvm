@@ -22,10 +22,9 @@ module Data.Array.Accelerate.LLVM.Array.Data (
   copyToHost,   copyToHostAsync,
   copyToPeer,   copyToPeerAsync,
 
-  runUseArray,
   runIndexArray,
   runArrays,
-  runArrayData1,
+  runArray,
 
   module Data.Array.Accelerate.Array.Data,
 
@@ -190,17 +189,6 @@ copyToPeerAsync peer stream arrs =
 -- Helpers for traversing the Arrays data structure
 -- ------------------------------------------------
 
--- |Upload an existing array from the host
---
-{-# INLINEABLE runUseArray #-}
-runUseArray
-    :: Monad m
-    => (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> m ())
-    -> Array sh e
-    -> m ()
-runUseArray worker arr@(Array sh _) = runArrayData1 worker arr (size sh)
-
-
 -- |Read a single element from an array at the given row-major index.
 --
 {-# INLINEABLE runIndexArray #-}
@@ -265,23 +253,23 @@ runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
     runR (ArraysRpair aeR1 aeR2) (arrs1, arrs2) = runR aeR1 arrs1 >> runR aeR2 arrs2
 
 
--- | Generalised functions to traverse the ArrayData structure
+-- | Generalised function to traverse the ArrayData structure with one
+-- additional argument
 
-{-# INLINE runArrayData1 #-}
-runArrayData1
-    :: forall m sh e a. Monad m
-    => (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> a -> m ())
+{-# INLINE runArray #-}
+runArray
+    :: forall m sh e. Monad m
+    => (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> m ())
     -> Array sh e
-    -> a
     -> m ()
-runArrayData1 worker (Array _ adata) a = runR arrayElt adata
+runArray worker (Array _ adata) = runR arrayElt adata
   where
     runR :: ArrayEltR e' -> ArrayData e' -> m ()
     runR ArrayEltRunit             _  = return ()
     runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fstArrayData ad) >>
                                         runR aeR2 (sndArrayData ad)
-    runR aer                       ad = runW aer ad a
+    runR aer                       ad = runW aer ad
     --
-    runW :: ArrayEltR e' -> ArrayData e' -> a -> m ()
+    runW :: ArrayEltR e' -> ArrayData e' -> m ()
     mkPrimDispatch(runW, worker)
 
