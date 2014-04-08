@@ -139,11 +139,12 @@ pokeArrayAsyncR
     -> IO ()
 pokeArrayAsyncR _ !mt !st !from !to !ad = do
   let !n        = to - from
-      !bytes    = n * sizeOf (undefined :: a)
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
       !src      = CUDA.HostPtr (ptrsOfArrayData ad)
   dst   <- devicePtr mt ad
   transfer "pokeArray" bytes st $
-    CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` from) (dst `CUDA.plusDevPtr` from) st
+    CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) st
 
 
 -- | Read a single element from an array at a given row-major index
@@ -204,11 +205,12 @@ peekArrayAsyncR
     -> IO ()
 peekArrayAsyncR _ !mt !st !from !to !ad = do
   let !n        = to - from
-      !bytes    = n * sizeOf (undefined :: a)
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
   src   <- devicePtr mt ad
   transfer "peekArray" bytes st $
-    CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` from) (dst `CUDA.plusHostPtr` from) st
+    CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) st
 
 
 -- | Copy data from one device context into a _new_ array on the second context.
@@ -256,12 +258,13 @@ copyArrayPeerAsyncR
     -> IO ()
 copyArrayPeerAsyncR !ctx1 !mt1 !ctx2 !mt2 !st !from !to !ad = do
   let !n        = to - from
-      !bytes    = n * sizeOf (undefined :: a)
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
   src <- devicePtr mt1 ad       :: IO (CUDA.DevicePtr a)
   dst <- devicePtr mt2 ad       :: IO (CUDA.DevicePtr a)
   transfer "copyArrayPeer" bytes st $
-    CUDA.copyArrayPeerAsync n (src `CUDA.plusDevPtr` from) (deviceContext ctx1)
-                              (dst `CUDA.plusDevPtr` from) (deviceContext ctx2) st
+    CUDA.copyArrayPeerAsync n (src `CUDA.plusDevPtr` offset) (deviceContext ctx1)
+                              (dst `CUDA.plusDevPtr` offset) (deviceContext ctx2) st
 
 -- | Lookup the device memory associated with a given host array
 --
