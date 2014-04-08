@@ -18,8 +18,12 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 
   Remote(..),
   newRemote,
-  runUseArray, runIndexArray,
+  copyToRemote, copyToRemoteAsync,
+  copyToHost,   copyToHostAsync,
+  copyToPeer,   copyToPeerAsync,
 
+  runUseArray,
+  runIndexArray,
   runArrays,
   runArrayData1,
 
@@ -36,7 +40,6 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
-import Control.Applicative
 import Control.Monad
 import Data.Typeable
 import Foreign.C.Types
@@ -46,37 +49,36 @@ import Foreign.Storable
 
 class Async arch => Remote arch where
 
-  -- | Upload an existing array from the host to the remote device.
+  -- | Allocate a new uninitialised array on the remote device
   --
-  {-# INLINEABLE copyToRemote #-}
-  copyToRemote :: Arrays a => a -> LLVM arch a
-  copyToRemote a = return a
+  {-# INLINEABLE allocateRemote #-}
+  allocateRemote :: (Shape sh, Elt e) => sh -> LLVM arch (Array sh e)
+  allocateRemote sh = return $ allocateArray sh
 
-  -- | Upload an existing array to the remote device, asynchronously.
+  -- | Upload a section of an array from the host to the remote device. Only the
+  -- elements between the given indices (inclusive left, exclusive right) are
+  -- transferred.
   --
-  {-# INLINEABLE copyToRemoteAsync #-}
-  copyToRemoteAsync :: Arrays a => a -> StreamR arch -> LLVM arch (AsyncR arch a)
-  copyToRemoteAsync a s = async s (copyToRemote a)
+  {-# INLINEABLE copyToRemoteR #-}
+  copyToRemoteR :: Int -> Int -> Array sh e -> LLVM arch ()
+  copyToRemoteR _ _ _ = return ()
 
-  -- | Copy an array from the remote device to the host.
+  -- | Copy a section of an array from the remote device back to the host. The
+  -- elements between the given indices (inclusive left, exclusive right) are
+  -- transferred.
   --
-  {-# INLINEABLE copyToHost #-}
-  copyToHost :: Arrays a => a -> LLVM arch a
-  copyToHost a = return a
+  {-# INLINEABLE copyToHostR #-}
+  copyToHostR :: Int -> Int -> Array sh e -> LLVM arch ()
+  copyToHostR _ _ _ = return ()
 
-  -- | Copy an array between two remote instances of the same type. This may be
-  -- more efficient than copying to the host and then to the second remote
-  -- instance (e.g. DMA between CUDA devices).
+  -- | Copy a section of an array between two remote instances of the same type.
+  -- This may be more efficient than copying to the host and then to the second
+  -- remote instance (e.g. DMA between two CUDA devices). The elements between
+  -- the given indices (inclusive left, exclusive right) are transferred.
   --
-  {-# INLINEABLE copyToPeer #-}
-  copyToPeer :: Arrays a => arch -> a -> LLVM arch a
-  copyToPeer _ a = return a
-
-  -- | As 'copyToPeer', asynchronously
-  --
-  {-# INLINEABLE copyToPeerAsync #-}
-  copyToPeerAsync :: Arrays a => arch -> a -> StreamR arch -> LLVM arch (AsyncR arch a)
-  copyToPeerAsync p a s = async s (copyToPeer p a)
+  {-# INLINEABLE copyToPeerR #-}
+  copyToPeerR :: Int -> Int -> arch -> Array sh e -> LLVM arch ()
+  copyToPeerR _ _ _ _ = return ()
 
   -- | Read a single element from the array at a given row-major index
   --
@@ -133,13 +135,62 @@ newRemote sh f =
   copyToRemote $! newArray sh f
 
 
+-- | Uploading existing arrays from the host to the remote device
+--
+{-# INLINEABLE copyToRemote #-}
+copyToRemote :: (Remote arch, Arrays a) => a -> LLVM arch a
+copyToRemote arrs = do
+  runArrays (\arr@(Array sh _) -> copyToRemoteR 0 (size sh) arr) arrs
+  return arrs
+
+-- | Upload an existing array to the remote device, asynchronously.
+--
+{-# INLINEABLE copyToRemoteAsync #-}
+copyToRemoteAsync :: (Remote arch, Arrays a) => a -> StreamR arch -> LLVM arch (AsyncR arch a)
+copyToRemoteAsync a s = async s (copyToRemote a)
+
+-- | Copy an array from the remote device to the host.
+--
+{-# INLINEABLE copyToHost #-}
+copyToHost :: (Remote arch, Arrays a) => a -> LLVM arch a
+copyToHost arrs = do
+  runArrays (\arr@(Array sh _) -> copyToHostR 0 (size sh) arr) arrs
+  return arrs
+
+-- | Copy an array from the remote device to the host, asynchronously
+--
+{-# INLINEABLE copyToHostAsync #-}
+copyToHostAsync :: (Remote arch, Arrays a) => a -> StreamR arch -> LLVM arch (AsyncR arch a)
+copyToHostAsync a s = async s (copyToHost a)
+
+-- | Copy arrays between two remote instances of the same type. This may be more
+-- efficient than copying to the host and then to the second remote instance
+-- (e.g. DMA between CUDA devices).
+--
+{-# INLINEABLE copyToPeer #-}
+copyToPeer :: (Remote arch, Arrays a) => arch -> a -> LLVM arch a
+copyToPeer peer arrs = do
+  runArrays (\arr@(Array sh _) -> copyToPeerR 0 (size sh) peer arr) arrs
+  return arrs
+
+-- | As 'copyToPeer', asynchronously.
+--
+{-# INLINEABLE copyToPeerAsync #-}
+copyToPeerAsync :: (Remote arch, Arrays a) => arch -> a -> StreamR arch -> LLVM arch (AsyncR arch a)
+copyToPeerAsync p a s = async s (copyToPeer p a)
+
+
+-- Helpers for traversing the Arrays data structure
+-- ------------------------------------------------
+
 -- |Upload an existing array from the host
 --
 {-# INLINEABLE runUseArray #-}
 runUseArray
-    :: (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> IO ())
+    :: Monad m
+    => (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> m ())
     -> Array sh e
-    -> IO ()
+    -> m ()
 runUseArray worker arr@(Array sh _) = runArrayData1 worker arr (size sh)
 
 
@@ -147,13 +198,14 @@ runUseArray worker arr@(Array sh _) = runArrayData1 worker arr (size sh)
 --
 {-# INLINEABLE runIndexArray #-}
 runIndexArray
-    :: (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> IO a)
+    :: forall m sh e. Monad m
+    => (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> m a)
     -> Array sh e
     -> Int
-    -> IO e
+    -> m e
 runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
   where
-    indexR :: ArrayEltR a -> ArrayData a -> IO a
+    indexR :: ArrayEltR a -> ArrayData a -> m a
     indexR ArrayEltRunit             _  = return ()
     indexR (ArrayEltRpair aeR1 aeR2) ad = liftM2 (,) (indexR aeR1 (fstArrayData ad))
                                                      (indexR aeR2 (sndArrayData ad))
@@ -171,20 +223,20 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
     indexR ArrayEltRfloat            ad = worker ad i
     indexR ArrayEltRdouble           ad = worker ad i
     indexR ArrayEltRchar             ad = worker ad i
-    indexR ArrayEltRcshort           ad = CShort  <$> worker ad i
-    indexR ArrayEltRcushort          ad = CUShort <$> worker ad i
-    indexR ArrayEltRcint             ad = CInt    <$> worker ad i
-    indexR ArrayEltRcuint            ad = CUInt   <$> worker ad i
-    indexR ArrayEltRclong            ad = CLong   <$> worker ad i
-    indexR ArrayEltRculong           ad = CULong  <$> worker ad i
-    indexR ArrayEltRcllong           ad = CLLong  <$> worker ad i
-    indexR ArrayEltRcullong          ad = CULLong <$> worker ad i
-    indexR ArrayEltRcchar            ad = CChar   <$> worker ad i
-    indexR ArrayEltRcschar           ad = CSChar  <$> worker ad i
-    indexR ArrayEltRcuchar           ad = CUChar  <$> worker ad i
-    indexR ArrayEltRcfloat           ad = CFloat  <$> worker ad i
-    indexR ArrayEltRcdouble          ad = CDouble <$> worker ad i
-    indexR ArrayEltRbool             ad = toBool  <$> worker ad i
+    indexR ArrayEltRcshort           ad = CShort  `liftM` worker ad i
+    indexR ArrayEltRcushort          ad = CUShort `liftM` worker ad i
+    indexR ArrayEltRcint             ad = CInt    `liftM` worker ad i
+    indexR ArrayEltRcuint            ad = CUInt   `liftM` worker ad i
+    indexR ArrayEltRclong            ad = CLong   `liftM` worker ad i
+    indexR ArrayEltRculong           ad = CULong  `liftM` worker ad i
+    indexR ArrayEltRcllong           ad = CLLong  `liftM` worker ad i
+    indexR ArrayEltRcullong          ad = CULLong `liftM` worker ad i
+    indexR ArrayEltRcchar            ad = CChar   `liftM` worker ad i
+    indexR ArrayEltRcschar           ad = CSChar  `liftM` worker ad i
+    indexR ArrayEltRcuchar           ad = CUChar  `liftM` worker ad i
+    indexR ArrayEltRcfloat           ad = CFloat  `liftM` worker ad i
+    indexR ArrayEltRcdouble          ad = CDouble `liftM` worker ad i
+    indexR ArrayEltRbool             ad = toBool  `liftM` worker ad i
       where
         toBool 0 = False
         toBool _ = True
@@ -194,13 +246,13 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
 --
 {-# INLINE runArrays #-}
 runArrays
-    :: Arrays arrs
-    => (forall sh e. Array sh e -> IO ())
+    :: forall m arrs. (Monad m, Arrays arrs)
+    => (forall sh e. Array sh e -> m ())
     -> arrs
-    -> IO ()
+    -> m ()
 runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
   where
-    runR :: ArraysR a -> a -> IO ()
+    runR :: ArraysR a -> a -> m ()
     runR ArraysRunit             ()             = return ()
     runR ArraysRarray            arr            = worker arr
     runR (ArraysRpair aeR1 aeR2) (arrs1, arrs2) = runR aeR1 arrs1 >> runR aeR2 arrs2
@@ -210,18 +262,19 @@ runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
 
 {-# INLINE runArrayData1 #-}
 runArrayData1
-    :: forall sh e a. (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> a -> IO ())
+    :: forall m sh e a. Monad m
+    => (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> a -> m ())
     -> Array sh e
     -> a
-    -> IO ()
+    -> m ()
 runArrayData1 worker (Array _ adata) a = runR arrayElt adata
   where
-    runR :: ArrayEltR e' -> ArrayData e' -> IO ()
+    runR :: ArrayEltR e' -> ArrayData e' -> m ()
     runR ArrayEltRunit             _  = return ()
     runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fstArrayData ad) >>
                                         runR aeR2 (sndArrayData ad)
     runR aer                       ad = runW aer ad a
     --
-    runW :: ArrayEltR e' -> ArrayData e' -> a -> IO ()
+    runW :: ArrayEltR e' -> ArrayData e' -> a -> m ()
     mkPrimDispatch(runW, worker)
 
