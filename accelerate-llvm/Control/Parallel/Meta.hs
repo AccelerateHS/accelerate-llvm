@@ -11,12 +11,13 @@
 module Control.Parallel.Meta
   where
 
-import Control.Monad
 import Data.Monoid
-import Data.Range.Range
-import Data.Concurrent.Deque.Class
 import Control.Parallel.Meta.Worker
+import Data.Concurrent.Deque.Class
+import Data.Sequence                                            ( Seq )
+import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
+import qualified Data.Sequence                                  as Seq
 
 import GHC.Base                                                 ( quotInt, remInt )
 
@@ -70,15 +71,29 @@ instance Monoid Resource where
 -- function using an encapsulated work-stealing gang of threads.
 --
 data Executable = Executable {
-    runExecutable :: Int        -- ^ Profitable parallelism threshold (PPT)
-                  -> Range      -- ^ The range to execute over
-                  -> (Int -> Int -> Int -> IO ())
-                        -- ^ The function to execute. The first parameters are
-                        -- the start and end indices of the array this action
-                        -- should process, and the final is the ID of the thread
-                        -- doing the work.
-                  -> IO ()
+    runExecutable
+        :: Int          -- ^ Profitable parallelism threshold (PPT)
+        -> Range        -- ^ The range to execute over
+        -> Finalise     -- ^ Post-processing function given the ranges processed
+                        -- by this thread.
+        -> (Int -> Int -> Int -> IO ())
+                -- ^ The function to execute. The first parameters are
+                -- the start and end indices of the array this action
+                -- should process, and the final is the ID of the thread
+                -- doing the work.
+        -> IO ()
   }
+
+-- | The 'Finalise' component of an executable is an action the thread applies
+-- after processing the work function, given the ranges that this thread
+-- handled.
+--
+data Finalise = Finalise {
+  runFinalise :: Seq Range -> IO () }
+
+instance Monoid Finalise where
+  mempty                            = Finalise $ \_ -> return ()
+  Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
 
 
 -- | Run a parallel work-stealing operation.
@@ -119,38 +134,48 @@ runParIO
     -> Gang
     -> Range
     -> (Int -> Int -> Int -> IO ())
+    -> (Seq Range -> IO ())
     -> IO ()
-runParIO resource gang range action
-  | gangSize gang == 1  = seqIO resource gang range action
-  | otherwise           = parIO resource gang range action
+runParIO resource gang range action finish
+  | gangSize gang == 1  = seqIO resource gang range action finish
+  | otherwise           = parIO resource gang range action finish
 
+seqIO
+    :: Resource
+    -> Gang
+    -> Range
+    -> (Int -> Int -> Int -> IO ())
+    -> (Seq Range -> IO ())
+    -> IO ()
+seqIO _ _    Empty    _      finish = finish Seq.empty
+seqIO _ gang (IE u v) action finish = do
+  gangIO gang $ action u v
+  finish $ Seq.singleton (IE u v)
 
--- TLM: probably want to change this; often have only 1 GPU, but we still want
---      that to make its work stealable in LBS fashion. Make the seqIO decision
---      by the client (Native/Execute/LBS).
---
-seqIO :: Resource -> Gang -> Range -> (Int -> Int -> Int -> IO ()) -> IO ()
-seqIO _ _    Empty    _      = return ()
-seqIO _ gang (IE u v) action = gangIO gang $ action u v
-
-
-parIO :: Resource -> Gang -> Range -> (Int -> Int -> Int -> IO ()) -> IO ()
-parIO _        _    Empty        _      = return ()
-parIO resource gang (IE inf sup) action =
+parIO
+    :: Resource
+    -> Gang
+    -> Range
+    -> (Int -> Int -> Int -> IO ())
+    -> (Seq Range -> IO ())
+    -> IO ()
+parIO _        _    Empty        _      finish = finish Seq.empty
+parIO resource gang (IE inf sup) action finish =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
           me    = V.unsafeIndex gang thread
 
-          loop  = do
+          loop rs = do
             work <- runWorkSearch (workSearch resource) me
             case work of
-              Just (IE u v)     -> action u v thread >> loop
-              _                 -> return ()
+              Just r@(IE u v)   -> action u v thread >> loop (rs `R.append` r)
+              _                 -> return rs
 
-      when (start < end) $ do
-        pushL (workpool me) (IE start end)
-        loop
+      ranges <- if start < end
+                  then pushL (workpool me) (IE start end) >> loop Seq.empty
+                  else return $ Seq.empty
+      finish (compress ranges)
   where
     len                 = sup - inf
     workers             = gangSize gang

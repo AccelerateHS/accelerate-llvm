@@ -40,7 +40,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
-import Control.Parallel.Meta                                    ( runExecutable )
+import Control.Parallel.Meta                                    ( runExecutable, Finalise )
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -48,6 +48,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 -- library
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import Data.Int                                                 ( Int32 )
+import Data.Monoid                                              ( mempty )
 import Control.Monad.State                                      ( gets, liftIO )
 import Text.Printf
 import qualified Prelude                                        as P
@@ -100,7 +101,7 @@ simpleOp exe gamma aenv stream sh = do
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -176,7 +177,7 @@ foldAllOp exe gamma aenv stream sh' = do
             numBlocks         = (kernelThreadBlocks k1) numElements
         --
         out <- allocateRemote (sh :. numBlocks)
-        liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 numElements) out
+        liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
         foldRec out
 
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
@@ -193,7 +194,7 @@ foldAllOp exe gamma aenv stream sh' = do
                 -- Keep cooperatively reducing the output array in-place.
                 -- Note that we must continue to update the tracked size
                 -- so the recursion knows when to stop.
-                liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 numElements) out
+                liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) out
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
@@ -219,14 +220,15 @@ executeOp
     :: Marshalable args
     => PTX
     -> Kernel
+    -> Finalise
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Range
     -> args
     -> IO ()
-executeOp ptx@PTX{..} kernel gamma aenv stream r args = do
-  runExecutable fillP defaultPPT r $ \start end _ ->
+executeOp ptx@PTX{..} kernel after gamma aenv stream r args = do
+  runExecutable fillP defaultPPT r after $ \start end _ ->
     launch kernel stream (end-start) =<< marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
 
 

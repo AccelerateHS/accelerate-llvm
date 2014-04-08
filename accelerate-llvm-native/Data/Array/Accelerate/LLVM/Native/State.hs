@@ -53,11 +53,11 @@ createTarget
     -> IO Native
 createTarget caps = do
   gang  <- forkGangOn caps
-  return . Native gang . Executable $ \ppt range fill ->
+  return . Native gang . Executable $ \ppt range after fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt $ SMP.mkResource retries gang
     in
-    timed $ runParIO resource gang range fill
+    timed $ runParIO resource gang range fill (runFinalise after)
 
 
 -- Top-level mutable state

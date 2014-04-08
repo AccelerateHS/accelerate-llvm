@@ -98,11 +98,11 @@ createTarget native ptx = do
       -- another processor, they steal the whole chunk, and then subdivide it
       -- based on their own PPT.
       --
-      native'   = native { CPU.fillP = Executable $ \ppt range fill ->
-                              parIO (LBS.mkResource ppt cpuR <> gpuR) cpuGang range fill }
+      native'   = native { CPU.fillP = Executable $ \ppt range sync fill -> do
+                              parIO (LBS.mkResource ppt cpuR <> gpuR) cpuGang range fill (runFinalise sync) }
 
-      ptx'      = ptx    { PTX.fillP = Executable $ \ppt range fill ->
-                              parIO (LBS.mkResource ppt gpuR <> cpuR) gpuGang range fill }
+      ptx'      = ptx    { PTX.fillP = Executable $ \ppt range sync fill ->
+                              parIO (LBS.mkResource ppt gpuR <> cpuR) gpuGang range fill (runFinalise sync) }
   --
   return $! Multi ptx' native'
 

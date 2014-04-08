@@ -44,12 +44,13 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 -- Use work-stealing scheduler
 import Data.Range.Range                                         ( Range(..) )
-import Control.Parallel.Meta                                    ( runExecutable )
+import Control.Parallel.Meta                                    ( runExecutable, Finalise )
 import Control.Parallel.Meta.Worker                             ( gangSize )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Prelude                                                  hiding ( map, scanl, scanr )
+import Data.Monoid                                              ( mempty )
 import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
 import qualified Prelude                                        as P
@@ -143,8 +144,8 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
                  ppt = defaultSmallPPT `max` (defaultLargePPT `div` sz)
              --
              liftIO $ do
-               executeFunction k                          $ \f ->
-                 runExecutable fillP ppt (IE 0 (size sh)) $ \start end _ ->
+               executeFunction k                                 $ \f ->
+                 runExecutable fillP ppt (IE 0 (size sh)) mempty $ \start end _ ->
                    callFFI f retVoid =<< marshal native () (start, end, sz, out, (gamma,aenv))
 
              return out
@@ -156,8 +157,8 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
                  n      = sz `min` chunks
              --
              liftIO $ do
-               executeNamedFunction k "fold1"                              $ \f ->
-                 runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) $ \start end tid ->
+               executeNamedFunction k "fold1"                                     $ \f ->
+                 runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) mempty $ \start end tid ->
                    callFFI f retVoid =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
 
                executeNamedFunction k "foldAll" $ \f ->
@@ -182,7 +183,7 @@ simpleOp
 simpleOp kernel gamma aenv () sh = do
   let out = allocateArray sh
   native <- gets llvmTarget
-  liftIO  $ executeOp native kernel gamma aenv (IE 0 (size sh)) out
+  liftIO  $ executeOp native kernel mempty gamma aenv (IE 0 (size sh)) out
   return out
 
 
@@ -194,13 +195,14 @@ executeOp
     :: Marshalable args
     => Native
     -> ExecutableR Native
+    -> Finalise
     -> Gamma aenv
     -> Aval aenv
     -> Range
     -> args
     -> IO ()
-executeOp native@Native{..} (NativeR main) gamma aenv r args =
-  executeFunction main                  $ \f ->
-  runExecutable fillP defaultLargePPT r $ \start end _ ->
+executeOp native@Native{..} (NativeR main) after gamma aenv r args =
+  executeFunction main                        $ \f ->
+  runExecutable fillP defaultLargePPT r after $ \start end _ ->
     callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
 

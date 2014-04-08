@@ -74,7 +74,7 @@ createTarget dev prp flags = do
 
 {-# INLINE simpleIO #-}
 simpleIO :: Executable
-simpleIO = Executable $ \_ppt range action ->
+simpleIO = Executable $ \_ppt range _after action ->
   case range of
     Empty       -> return ()
     IE u v      -> action u v 0

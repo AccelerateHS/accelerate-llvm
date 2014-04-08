@@ -34,6 +34,7 @@ import Data.Array.Accelerate.LLVM.Multi.Execute.Async
 import Data.Array.Accelerate.LLVM.Multi.Execute.Environment
 
 import Data.Range.Range                                         ( Range(..), bisect )
+import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 
 import Data.Array.Accelerate.LLVM.Debug
@@ -42,6 +43,7 @@ import Data.Array.Accelerate.LLVM.Debug
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX, ptxKernel )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async(..) )
 import qualified Data.Array.Accelerate.LLVM.PTX.Target          as PTX
+import qualified Data.Array.Accelerate.LLVM.PTX.Context         as PTX
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute         as PTX
 
 -- accelerate-llvm-native
@@ -49,9 +51,15 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import qualified Data.Array.Accelerate.LLVM.Native.Execute      as Native
 
 -- standard library
-import Prelude                                                  hiding ( map, scanl, scanr )
-import Control.Monad.State
+import Prelude                                                  hiding ( map, mapM_, scanl, scanr )
+import Data.Foldable                                            ( mapM_ )
+import Control.Exception                                        ( bracket_ )
+import Control.Monad.State                                      ( gets, liftIO, evalStateT )
+import Control.Monad.Reader                                     ( runReaderT )
 import System.IO.Unsafe
+
+import Debug.Trace
+import Text.Printf
 
 #include "accelerate.h"
 
@@ -79,10 +87,9 @@ simpleOp MultiR{..} gamma aenv stream sh = do
               k:_ -> k
               _   -> INTERNAL_ERROR(error) "execute" "kernel not found"
   --
-  message dump_exec "simpleOp: going to try executing something"
   out   <- allocateRemote sh
   multi <- gets llvmTarget
-  liftIO $ executeOp multi nativeExecutable ptx gamma aenv stream (size sh) out
+  liftIO $ executeOp multi nativeExecutable ptx gamma aenv stream (size sh) out out
   return out
 
 
@@ -96,20 +103,31 @@ executeOp
     -> Stream
     -> Int
     -> args
+    -> Array sh e
     -> IO ()
-executeOp Multi{..} cpu ptx gamma aval stream n args =
-  let
-      -- Initialise each backend with an equal portion of work
-      (u,v) = bisect (IE 0 n)
-  in
+executeOp Multi{..} cpu ptx gamma aval stream n args result = do
+  let -- Initialise each backend with an equal portion of work
+      (u,v)     = bisect (IE 0 n)
+
+      runPTX :: LLVM PTX () -> IO ()
+      runPTX f = bracket_ setup teardown $ evalStateT (runReaderT (runLLVM f) undefined) ptxTarget
+        where
+          setup     = PTX.push (PTX.ptxContext ptxTarget)
+          teardown  = PTX.pop
+
+      poke from to = runPTX $ copyToRemoteR from to Nothing result
+      peek from to = runPTX $ copyToHostR   from to Nothing result
+
   liftIO . gangIO theGang $ \thread ->
     case thread of
-      0 -> Native.executeOp nativeTarget cpu gamma (avalForNative aval)        u args
-      1 -> PTX.executeOp    ptxTarget    ptx gamma (avalForPTX    aval) stream v args
+      0 -> Native.executeOp nativeTarget cpu (syncWith poke) gamma (avalForNative aval)        u args
+      1 -> PTX.executeOp    ptxTarget    ptx (syncWith peek) gamma (avalForPTX    aval) stream v args
 
       _ -> error "unpossible"
 
-  -- TODO: synchronise the data between the CPU and GPU!
+
+syncWith :: (Int -> Int -> IO ()) -> Finalise
+syncWith copy = Finalise $ mapM_ (\(IE from to) -> copy from to)
 
 
 -- Busywork to convert the array environment into a representation specific to
