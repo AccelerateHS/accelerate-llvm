@@ -82,7 +82,7 @@ createTarget caps = do
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
-  Debug.message Debug.dump_gc (printf "gc: initialise native target with %n CPUs" numCapabilities)
+  Debug.message Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
   createTarget [0 .. numCapabilities - 1]
 
 
@@ -96,3 +96,4 @@ timed f = Debug.timed Debug.dump_exec elapsed f
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String
 elapsed x y = "exec: " ++ Debug.elapsed x y
+
