@@ -92,6 +92,7 @@ Library
     accelerate                  == 0.15.*,
     base                        >= 4.6 && <5.0,
     containers                  >= 0.5 && <0.6,
+    dlist                       >= 0.6,
     fclabels                    >= 2.0,
     llvm-general                >= 3.2,
     llvm-general-pure           >= 3.2,
