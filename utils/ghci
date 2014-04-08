@@ -33,6 +33,7 @@ GHC_FLAGS="$GHC_FLAGS
     -iaccelerate-llvm
     -iaccelerate-llvm-native
     -iaccelerate-llvm-ptx
+    -iaccelerate-llvm-multidev
     -package-db .cabal-sandbox/x86_64-osx-ghc-$VER-packages.conf.d
     -Iaccelerate-llvm/include -optP-include -optPaccelerate-llvm/dist/build/autogen/cabal_macros.h"
 

@@ -1,0 +1,99 @@
+name:                   accelerate-llvm-multidev
+version:                0.15.0.0
+cabal-version:          >=1.10
+tested-with:            GHC == 7.8
+build-type:             Simple
+
+synopsis:               Accelerate backend supporting multiple device execution
+description:
+    This library implements a meta-backend for the /Accelerate/ language, that
+    splits a computation over several accelerate-llvm backend instances. For
+    further information, refer to the main /Accelerate/ package:
+    <http://hackage.haskell.org/package/accelerate>
+
+license:                BSD3
+license-file:           LICENSE
+author:                 Trevor L. McDonell
+maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
+bug-reports:            https://github.com/AccelerateHS/accelerate/issues
+category:               Compilers/Interpreters, Concurrency, Data, Parallelism
+
+extra-source-files:     include/accelerate.h
+
+
+-- Configuration flags
+-- -------------------
+
+Flag debug
+  Default:              True
+  Description:
+    Enable tracing message flags. These are read from the command-line
+    arguments, which is convenient but may cause problems interacting with the
+    user program, so is not enabled by default. The available options:
+    .
+
+Flag bounds-checks
+  Default:              True
+  Description:          Enable bounds checking
+
+Flag unsafe-checks
+  Default:              True
+  Description:          Enable bounds checking in unsafe operations
+
+Flag internal-checks
+  Default:              True
+  Description:          Enable internal consistency checks
+
+
+-- Configuration flags
+-- -------------------
+
+library
+  exposed-modules:
+    Data.Array.Accelerate.LLVM.Multi
+
+  other-modules:
+    Data.Array.Accelerate.LLVM.Multi.Array.Data
+    Data.Array.Accelerate.LLVM.Multi.Compile
+    Data.Array.Accelerate.LLVM.Multi.State
+    Data.Array.Accelerate.LLVM.Multi.Target
+
+    Data.Array.Accelerate.LLVM.Multi.Execute
+    Data.Array.Accelerate.LLVM.Multi.Execute.Async
+    Data.Array.Accelerate.LLVM.Multi.Execute.Environment
+
+  build-depends:
+    accelerate                  == 0.15.*,
+    accelerate-llvm             == 0.15.*,
+    accelerate-llvm-native      == 0.15.*,
+    accelerate-llvm-ptx         == 0.15.*,
+    base                        >= 4.6 && <4.8,
+    cuda                        >= 0.5,
+    dlist                       >= 0.6,
+    mtl                         >= 2.0
+
+  default-language:
+    Haskell2010
+
+  include-dirs:                 include
+  ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
+
+  if flag(debug)
+    cpp-options:                -DACCELERATE_DEBUG
+
+  if flag(bounds-checks)
+    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
+
+  if flag(unsafe-checks)
+    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
+
+  if flag(internal-checks)
+    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
+
+
+
+source-repository head
+  type:                 git
+  location:             git://github.com/AccelerateHS/accelerate-llvm.git
+
+-- vim: nospell
