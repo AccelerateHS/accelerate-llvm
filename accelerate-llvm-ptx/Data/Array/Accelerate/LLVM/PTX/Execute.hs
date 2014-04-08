@@ -19,6 +19,8 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 
   executeAcc, executeAfun1,
 
+  executeOp,
+
 ) where
 
 -- accelerate
@@ -97,7 +99,7 @@ simpleOp exe gamma aenv stream sh = do
   --
   out <- allocateArray sh
   ptx <- gets llvmTarget
-  liftIO $ execute ptx kernel gamma aenv stream (size sh) out
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -173,7 +175,7 @@ foldAllOp exe gamma aenv stream sh' = do
             numBlocks         = (kernelThreadBlocks k1) numElements
         --
         out <- allocateArray (sh :. numBlocks)
-        liftIO $ execute ptx k1 gamma aenv stream numElements out
+        liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 numElements) out
         foldRec out
 
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
@@ -190,7 +192,7 @@ foldAllOp exe gamma aenv stream sh' = do
                 -- Keep cooperatively reducing the output array in-place.
                 -- Note that we must continue to update the tracked size
                 -- so the recursion knows when to stop.
-                liftIO $ execute ptx k2 gamma aenv stream numElements out
+                liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 numElements) out
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
@@ -212,18 +214,18 @@ i32 = fromIntegral
 
 -- Execute the function implementing this kernel.
 --
-execute
+executeOp
     :: Marshalable args
     => PTX
     -> Kernel
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> Int
+    -> Range
     -> args
     -> IO ()
-execute ptx@PTX{..} kernel gamma aenv stream n args = do
-  runExecutable fillP defaultPPT (IE 0 n) $ \start end _ ->
+executeOp ptx@PTX{..} kernel gamma aenv stream r args = do
+  runExecutable fillP defaultPPT r $ \start end _ ->
     launch kernel stream (end-start) =<< marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
 
 

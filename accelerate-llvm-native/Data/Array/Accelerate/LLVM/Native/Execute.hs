@@ -20,6 +20,8 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
   executeAcc, executeAfun1,
 
+  executeOp,
+
 ) where
 
 -- accelerate
@@ -179,7 +181,7 @@ simpleOp
 simpleOp kernel gamma aenv () sh = do
   let out = allocateArray sh
   native <- gets llvmTarget
-  liftIO  $ execute native kernel gamma aenv (size sh) out
+  liftIO  $ executeOp native kernel gamma aenv (IE 0 (size sh)) out
   return out
 
 
@@ -187,17 +189,17 @@ simpleOp kernel gamma aenv () sh = do
 -- executable, and execute the main function using the 'fillP' method to
 -- distribute work evenly amongst the threads.
 --
-execute
+executeOp
     :: Marshalable args
     => Native
     -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
-    -> Int
+    -> Range
     -> args
     -> IO ()
-execute native@Native{..} (NativeR main) gamma aenv n args =
-  executeFunction main                         $ \f ->
-  runExecutable fillP defaultLargePPT (IE 0 n) $ \start end _ ->
+executeOp native@Native{..} (NativeR main) gamma aenv r args =
+  executeFunction main                  $ \f ->
+  runExecutable fillP defaultLargePPT r $ \start end _ ->
     callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
 
