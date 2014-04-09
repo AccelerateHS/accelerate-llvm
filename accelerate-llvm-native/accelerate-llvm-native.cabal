@@ -93,7 +93,8 @@ Library
     llvm-general                >= 3.2,
     llvm-general-pure           >= 3.2,
     mtl                         >= 2.0,
-    time                        >= 1.4
+    time                        >= 1.4,
+    llvm-general-quote
 
   default-language:
     Haskell2010

@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuasiQuotes         #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -27,6 +28,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+
+import LLVM.General.Quote.LLVM
+import Data.Array.Accelerate.Type
 
 -- C Code
 -- ======
@@ -75,13 +79,25 @@ mkMap :: forall t aenv sh a b. Elt b
       -> IRFun1    aenv (a -> b)
       -> IRDelayed aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
-mkMap aenv apply IRDelayed{..} =
-  let
-      (start, end, paramGang)   = gangParam
+mkMap aenv apply IRDelayed{..} = do
+  let (start, end, paramGang)   = gangParam
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-  in
+      i = undefined
+      xs = undefined
+      ys = undefined
+  k <- [llgM|
+  define void @map (
+    $params:(paramGang) ,
+    $params:(paramOut) ,
+    $params:(paramEnv)
+    ) {
+    $bbsM:((imapFromTo start end $ \i -> delayedLinearIndex [i] >>= apply >>= writeArray arrOut i) >> return_ >> createBlocks)
+  }
+  |]
+  return $ [Kernel k]
+{-
   makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
@@ -91,3 +107,4 @@ mkMap aenv apply IRDelayed{..} =
 
     return_
 
+-}
