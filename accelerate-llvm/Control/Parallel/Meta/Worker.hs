@@ -118,11 +118,13 @@ forkGang :: Int -> IO Gang
 forkGang n = forkGangOn [0..n-1]
 
 
--- | Create a set of workers on specific capabilities
+-- | Create a set of workers on specific capabilities. Note that the thread ID
+-- passed to the 'gangWorker' is the index of this worker in the gang structure,
+-- not necessarily the capability is is spawned on.
 --
 forkGangOn :: [Int] -> IO Gang
 forkGangOn caps = do
-  V.forM (V.fromList caps) $ \cap -> do
+  V.forM (V.indexed (V.fromList caps)) $ \(i, cap) -> do
     worker <- Worker <$> freshId                -- identifier
                      <*> newEmptyMVar           -- work request
                      <*> newEmptyMVar           -- work complete
@@ -132,7 +134,7 @@ forkGangOn caps = do
     --
     message (printf "fork %d on capability %d" (workerId worker) cap)
     void $ mkWeakMVar (requestVar worker) (finaliseWorker worker)
-    void $ forkOn cap $ gangWorker cap worker
+    void $ forkOn cap $ gangWorker i worker
     return worker
 
 
