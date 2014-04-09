@@ -53,6 +53,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Execute      as Native
 -- standard library
 import Prelude                                                  hiding ( map, mapM_, scanl, scanr )
 import Data.Foldable                                            ( mapM_ )
+import Control.Concurrent                                       ( runInBoundThread )
 import Control.Exception                                        ( bracket_ )
 import Control.Monad.State                                      ( gets, liftIO, evalStateT )
 import Control.Monad.Reader                                     ( runReaderT )
@@ -110,10 +111,11 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
       (u,v)     = bisect (IE 0 n)
 
       runPTX :: LLVM PTX () -> IO ()
-      runPTX f = bracket_ setup teardown $ evalStateT (runReaderT (runLLVM f) undefined) ptxTarget
+      runPTX f = runInBoundThread (bracket_ setup teardown action)
         where
           setup     = PTX.push (PTX.ptxContext ptxTarget)
           teardown  = PTX.pop
+          action    = evalStateT (runReaderT (runLLVM f) undefined) ptxTarget
 
       poke from to = runPTX $ copyToRemoteR from to Nothing result
       peek from to = runPTX $ copyToHostR   from to Nothing result
@@ -122,7 +124,6 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
     case thread of
       0 -> Native.executeOp nativeTarget cpu (syncWith poke) gamma (avalForNative aval)        u args
       1 -> PTX.executeOp    ptxTarget    ptx (syncWith peek) gamma (avalForPTX    aval) stream v args
-
       _ -> error "unpossible"
 
 
