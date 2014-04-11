@@ -447,7 +447,7 @@ writeArray' volatile arr i val =
 intOfIndex :: [Operand] -> [Operand] -> CodeGen Operand
 intOfIndex extent idx = cvt (reverse extent) (reverse idx)
   where
-    cvt []      []     = return (constOp $ num int 0)
+    cvt []      [_i]   = return (constOp $ num int 0)   -- assert ( i == 0 )
     cvt [_]     [i]    = return i
     cvt (sz:sh) (i:ix) = do
       a <- cvt sh ix
@@ -462,14 +462,13 @@ intOfIndex extent idx = cvt (reverse extent) (reverse idx)
 indexOfInt :: [Operand] -> Operand -> CodeGen [Operand]
 indexOfInt extent idx = reverse `fmap` cvt (reverse extent) idx
   where
+    cvt []      _ = return [constOp $ num int 0]
     cvt [_]     i = return [i]  -- assert( i >= 0 && i < sh )
     cvt (sz:sh) i = do
       r  <- A.rem  int i sz
       i' <- A.quot int i sz
       rs <- cvt sh i'
       return (r:rs)
-    cvt _       _ =
-      INTERNAL_ERROR(error) "indexOfInt" "argument mismatch"
 
 
 -- Primitive functions
