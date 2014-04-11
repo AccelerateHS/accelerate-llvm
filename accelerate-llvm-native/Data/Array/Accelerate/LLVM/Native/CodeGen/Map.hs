@@ -28,6 +28,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+import Data.Array.Accelerate.LLVM.Quote
+import LLVM.General.AST
 
 import LLVM.General.Quote.LLVM
 import Data.Array.Accelerate.Type
@@ -84,19 +86,27 @@ mkMap aenv apply IRDelayed{..} = do
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-      i = undefined
-      xs = undefined
-      ys = undefined
+      i                         = Name "i"
+      i'                        = LocalReference i
+      
   k <- [llgM|
   define void @map (
     $params:(paramGang) ,
     $params:(paramOut) ,
     $params:(paramEnv)
     ) {
-    $bbsM:((imapFromTo start end $ \i -> delayedLinearIndex [i] >>= apply >>= writeArray arrOut i) >> return_ >> createBlocks)
+    entry:
+      br label %for
+    
+    for:
+      for i64 $id:(i) in $opr:(start) to $opr:(end) with %entry {
+        $bbsM:("xs" .=. delayedLinearIndex [i'])
+        $bbsM:("ys" .=. (getVariable "xs" >>= apply))
+        $bbsM:(exec (getVariable "ys" >>= writeArray arrOut i'))
+      }
   }
   |]
-  return $ [Kernel k]
+  return $ [Kernel (trace (show $ show k) k)]
 {-
   makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
