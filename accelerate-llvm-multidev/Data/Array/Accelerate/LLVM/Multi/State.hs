@@ -84,8 +84,8 @@ createTarget native ptx = do
       -- The basic resources for the CPU and GPU. As we don't currently support
       -- multiple GPUs, the lone GPU knows of no other sources of work.
       --
-      gpuR      = Single.mkResource
-      cpuR      = SMP.mkResource (gangSize cpuGang) cpuGang
+      gpuR      = Single.mkResource gpuGang
+      cpuR      = SMP.mkResource (2 * gangSize cpuGang) cpuGang
 
       -- Construct the new Executable contexts for each backend, where the CPU
       -- can steal from the GPU, and vice-versa.

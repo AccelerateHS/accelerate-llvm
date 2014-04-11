@@ -15,14 +15,33 @@ module Control.Parallel.Meta.Resource.Single
 
 -- accelerate
 import Control.Parallel.Meta
+import Control.Parallel.Meta.Worker
 
--- standard library
+-- library
+import Control.Exception
 import Data.Monoid
+import Data.Concurrent.Deque.Class
+import qualified Data.Vector                                    as V
 
 
 -- | Create a single-threaded resource. This resource is not aware of any other
--- sources of work (at this level), so its work search always returns 'Nothing'.
+-- sources of work (at this level). The workpool might still be stolen from by
+-- another processor.
 --
-mkResource :: Resource
-mkResource = mempty
+-- The gang must contain a single worker.
+--
+mkResource :: Gang -> Resource
+mkResource single
+  = assert (gangSize single == 1)
+  $ Resource mempty (mkWorkSearch (V.unsafeIndex single 0))
+
+
+-- | The 'WorkSearch' for a single worker
+--
+mkWorkSearch :: Worker -> WorkSearch
+mkWorkSearch single =
+  WorkSearch $ \me ->
+    if workerId me == workerId single
+       then return Nothing
+       else tryPopR (workpool single)
 
