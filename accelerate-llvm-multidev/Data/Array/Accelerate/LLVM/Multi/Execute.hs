@@ -59,9 +59,6 @@ import Control.Monad.State                                      ( gets, liftIO, 
 import Control.Monad.Reader                                     ( runReaderT )
 import System.IO.Unsafe
 
-import Debug.Trace
-import Text.Printf
-
 #include "accelerate.h"
 
 
@@ -122,8 +119,8 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
 
   liftIO . gangIO theGang $ \thread ->
     case thread of
-      0 -> Native.executeOp nativeTarget cpu (syncWith poke) gamma (avalForNative aval)        u args
-      1 -> PTX.executeOp    ptxTarget    ptx (syncWith peek) gamma (avalForPTX    aval) stream v args
+      0 -> Native.executeOp nativeTarget cpu (syncWith poke) gamma (avalForNative aval)        u args >> message dump_sched "sched/multi: Native exiting"
+      1 -> PTX.executeOp    ptxTarget    ptx (syncWith peek) gamma (avalForPTX    aval) stream v args >> message dump_sched "sched/multi: PTX exiting"
       _ -> error "unpossible"
 
 
