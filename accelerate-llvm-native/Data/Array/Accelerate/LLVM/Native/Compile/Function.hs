@@ -124,8 +124,13 @@ startFunction withFunctions = do
     putMVar varFun f
     functionLoop varReq varDone
 
-  let fun    = unsafePerformIO $ takeMVar varFun
-      worker = Function fun varReq varDone
+  -- The below use of 'unsafePerformIO' might be possible to allow the main
+  -- thread to continue while the lowering to LLVM happens in the background.
+  -- However I had some problems interacting with the multi device backend.
+  -- let fun    = unsafePerformIO $ takeMVar varFun
+
+  fun <- takeMVar varFun
+  let worker = Function fun varReq varDone
 
   message $ "created worker function: " ++ show worker
   return worker
