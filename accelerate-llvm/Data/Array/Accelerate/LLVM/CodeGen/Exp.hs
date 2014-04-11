@@ -447,7 +447,7 @@ writeArray' volatile arr i val =
 intOfIndex :: [Operand] -> [Operand] -> CodeGen Operand
 intOfIndex extent idx = cvt (reverse extent) (reverse idx)
   where
-    cvt []      [_i]   = return (constOp $ num int 0)   -- assert ( i == 0 )
+    cvt []      []     = return (constOp $ num int 0)
     cvt [_]     [i]    = return i
     cvt (sz:sh) (i:ix) = do
       a <- cvt sh ix
