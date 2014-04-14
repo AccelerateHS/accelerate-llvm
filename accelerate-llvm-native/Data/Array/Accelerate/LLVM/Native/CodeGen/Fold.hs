@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE QuasiQuotes         #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -40,6 +41,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
+
+
+import Data.Array.Accelerate.LLVM.Quote
+import LLVM.General.AST
+
+import LLVM.General.Quote.LLVM
 
 -- standard library
 import GHC.Conc
@@ -108,16 +115,42 @@ mkFold'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold' aenv combine seed IRDelayed{..} =
+mkFold' aenv combine seed IRDelayed{..} = do
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
       arrOut                    = arrayData  (undefined::Array sh e) "out"
       paramOut                  = arrayParam (undefined::Array sh e) "out"
-      paramStride               = [Parameter (typeOf (integralType :: IntegralType Int)) "ix.stride" []]
+      intType                   = (typeOf (integralType :: IntegralType Int))
+      paramStride               = [Parameter intType "ix.stride" []]
 
       n                         = local "ix.stride"     -- innermost dimension; length to reduce over
       ty_acc                    = llvmOfTupleType (eltType (undefined::e))
+      sz                        = local "sz"
+      sh                        = local "sh"
+  next <- newVariable
+  xs <- newVariable
+  k <- [llgM|
+  define void @fold (
+    $params:(paramGang) ,
+    $params:(paramStride), 
+    $params:(paramOut) ,
+    $params:(paramEnv)
+    ) {
+      entry:
+        %firstSeg = mul $type:(intType) $opr:(start), $opr:(n)
+        br label %for
+    
+      for:
+        for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) [%firstSeg,%entry] as %sz {
+            $bbsM:(next .=. (add int sz n >>= return . (:[])))
+            $bbsM:(xs .=. (getVariable next >>= \[next'] -> reduce ty_acc delayedLinearIndex combine seed sz next'))
+            $bbsM:(exec (getVariable xs >>= writeArray arrOut sh >> getVariable next >>= \[next'] -> returnV next'))
+        }
+    }
+  |]
+  return $ [Kernel (trace (show $ show k) k)]
+{-
   in
   makeKernel "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
     loop        <- newBlock "fold.top"
@@ -145,7 +178,7 @@ mkFold' aenv combine seed IRDelayed{..} =
 
     setBlock exit
     return_
-
+-}
 
 -- Reduce a non-empty array to a single element. Since there is no seed element
 -- provided, initialise the loop accumulator with the first element of the

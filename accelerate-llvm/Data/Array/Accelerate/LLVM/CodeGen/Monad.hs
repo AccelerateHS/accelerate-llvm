@@ -29,10 +29,10 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   newBlock, setBlock, createBlocks, createBlocks', beginGroup, terminate,
 
   -- variables
-  getVariable, setVariable,
+  newVariableA, getVariableA, setVariableA,
 
   -- instructions
-  instr, do_, return_, phi, phi', br, cbr,
+  instr, do_, return_, returnV, phi, phi', br, cbr,
 
   -- metadata
   addMetadata, trace
@@ -218,6 +218,9 @@ phi' t incoming = do
   phi block crit t incoming
 
 
+returnV :: Operand -> CodeGen ()
+returnV op = void $ terminate (Do (Ret (Just op) []))
+
 -- | Unconditional branch. Return the name of the block that was branched from.
 --
 br :: Block -> CodeGen Block
@@ -308,16 +311,21 @@ beginGroup nm = do
 -- Variables
 -- =========
 
+-- | Create a new Variable
+--
+newVariableA :: CodeGen String
+newVariableA = state $ \s@CodeGenState{..} -> ( show next, s { next = next + 1 } )
+
 -- | Set a Variable
 --
-setVariable :: String -> [Operand] -> CodeGen ()
-setVariable x y =
+setVariableA :: String -> [Operand] -> CodeGen ()
+setVariableA x y =
   state $ \s -> ( (), s{ variables = Map.insert x y (variables s) } )
 
 -- | Get a Variable
 --
-getVariable :: String -> CodeGen [Operand]
-getVariable xs =
+getVariableA :: String -> CodeGen [Operand]
+getVariableA xs =
   state $ \s -> ( xs' s , s )
  where
   xs' s = case Map.lookup xs (variables s) of

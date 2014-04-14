@@ -88,7 +88,8 @@ mkMap aenv apply IRDelayed{..} = do
       paramEnv                  = envParam aenv
       i                         = Name "i"
       i'                        = LocalReference i
-      
+  xs <- newVariable
+  ys <- newVariable
   k <- [llgM|
   define void @map (
     $params:(paramGang) ,
@@ -100,9 +101,9 @@ mkMap aenv apply IRDelayed{..} = do
     
     for:
       for i64 $id:(i) in $opr:(start) to $opr:(end) with %entry {
-        $bbsM:("xs" .=. delayedLinearIndex [i'])
-        $bbsM:("ys" .=. (getVariable "xs" >>= apply))
-        $bbsM:(exec (getVariable "ys" >>= writeArray arrOut i'))
+        $bbsM:(xs .=. delayedLinearIndex [i'])
+        $bbsM:(ys .=. (getVariable xs >>= apply))
+        $bbsM:(exec (getVariable ys >>= writeArray arrOut i'))
       }
   }
   |]
