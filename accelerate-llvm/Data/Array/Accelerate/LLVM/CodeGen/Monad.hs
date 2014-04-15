@@ -140,7 +140,7 @@ initBlockChain' l = Seq.singleton l
 -- generated.
 --
 createBlocks :: CodeGen [BasicBlock]
-createBlocks = createBlocks' True $ Block "empty" Seq.empty Nothing
+createBlocks = createBlocks' False $ Block "empty" Seq.empty Nothing
 
 createBlocks' :: Bool -> Block -> CodeGen [BasicBlock]
 createBlocks' reset l

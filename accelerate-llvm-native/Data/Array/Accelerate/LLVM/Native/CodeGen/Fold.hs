@@ -142,14 +142,16 @@ mkFold' aenv combine seed IRDelayed{..} = do
         br label %for
     
       for:
-        for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) [%firstSeg,%entry] as %sz {
+        for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) [%firstSeg,%entry] as %sz, label %end {
             $bbsM:(next .=. (add int sz n >>= return . (:[])))
             $bbsM:(xs .=. (getVariable next >>= \[next'] -> reduce ty_acc delayedLinearIndex combine seed sz next'))
-            $bbsM:(exec (getVariable xs >>= writeArray arrOut sh >> getVariable next >>= \[next'] -> returnV next'))
+            $bbsM:(execRet (getVariable xs >>= writeArray arrOut sh >> getVariable next >>= \[next'] -> return next'))
         }
+      end:
+        ret void
     }
   |]
-  return $ [Kernel (trace (show $ show k) k)]
+  return $ [Kernel k]
 {-
   in
   makeKernel "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
