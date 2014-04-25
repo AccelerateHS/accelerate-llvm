@@ -4,6 +4,7 @@
 {-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
@@ -25,6 +26,7 @@ import LLVM.General.AST
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Shape
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -41,8 +43,6 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 -- standard library
 import GHC.Conc
-
-#include "accelerate.h"
 
 
 -- Reduce an array along the innermost dimension
@@ -240,7 +240,7 @@ mkFoldAll' aenv combine seed IRDelayed{..} =
       zero      = constOp (num int 0)
 
       manifestLinearIndex [i]   = readArray arrTmp i
-      manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
+      manifestLinearIndex _     = $internalError "makeFoldAll" "expected single expression"
   in do
   [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
             r <- reduce ty_acc manifestLinearIndex combine seed start end
@@ -283,7 +283,7 @@ mkFold1All' aenv combine IRDelayed{..} =
       zero      = constOp (num int 0)
 
       manifestLinearIndex [i]   = readArray arrTmp i
-      manifestLinearIndex _     = INTERNAL_ERROR(error) "makeFoldAll" "expected single expression"
+      manifestLinearIndex _     = $internalError "makeFoldAll" "expected single expression"
   in do
   [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
             r <- reduce1 ty_acc manifestLinearIndex combine start end

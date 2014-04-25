@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Function
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -19,6 +20,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Function (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
@@ -26,8 +28,6 @@ import Control.Concurrent
 import Data.List
 import Foreign.Ptr
 import System.IO.Unsafe
-
-#include "accelerate.h"
 
 
 -- | The 'Req' type encapsulates a request to execute the JIT compiled function
@@ -85,7 +85,7 @@ instance Show Function where
 executeFunction :: Function -> (FunPtr () -> IO ()) -> IO ()
 executeFunction Function{..} run =
   case functionTable of
-    []      -> INTERNAL_ERROR(error) "executeFunction" "no functions defined"
+    []      -> $internalError "executeFunction" "no functions defined"
     (_,f):_ -> do
       putMVar  functionReq (ReqDo $ run f)
       takeMVar functionResult
@@ -96,7 +96,7 @@ executeFunction Function{..} run =
 executeNamedFunction :: Function -> String -> (FunPtr () -> IO ()) -> IO ()
 executeNamedFunction Function{..} name run =
   case lookup name functionTable of
-    Nothing -> INTERNAL_ERROR(error) "executeNamedFunction" "function not found"
+    Nothing -> $internalError "executeNamedFunction" "function not found"
     Just f  -> do
       putMVar  functionReq (ReqDo $ run f)
       takeMVar functionResult

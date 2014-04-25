@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -24,6 +25,8 @@ import LLVM.General.Target                                      hiding ( Target 
 import LLVM.General.AST.DataLayout                              ( DataLayout )
 
 -- accelerate
+import Data.Array.Accelerate.Error                              ( internalError )
+
 import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
 import Data.Array.Accelerate.LLVM.Native.Compile.Function       ( Function )
 import Control.Parallel.Meta                                    ( Executable )
@@ -32,8 +35,6 @@ import Control.Parallel.Meta.Worker                             ( Gang )
 -- standard library
 import Control.Monad.Error
 import System.IO.Unsafe
-
-#include "accelerate.h"
 
 
 -- | Native machine code JIT execution target
@@ -70,7 +71,7 @@ nativeTargetTriple = unsafePerformIO $
 nativeDataLayout :: DataLayout
 nativeDataLayout
   = unsafePerformIO
-  $ fmap (either (INTERNAL_ERROR(error) "nativeDataLayout") id)
+  $ fmap (either ($internalError "nativeDataLayout") id)
   $ runErrorT (withDefaultTargetMachine getTargetMachineDataLayout)
 
 

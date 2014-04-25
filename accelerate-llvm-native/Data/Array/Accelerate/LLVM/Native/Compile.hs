@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile
@@ -24,6 +25,7 @@ import LLVM.General.Target
 import LLVM.General.ExecutionEngine
 
 -- accelerate
+import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -51,8 +53,6 @@ import Data.Word
 import System.Directory
 import System.IO
 #endif
-
-#include "accelerate.h"
 
 
 instance Compile Native where
@@ -96,7 +96,7 @@ compileForNativeTarget acc aenv = do
 
   return $! NativeR fun
   where
-    runError    = either (INTERNAL_ERROR(error) "compileForNativeTarget") return <=< runErrorT
+    runError    = either ($internalError "compileForNativeTarget") return <=< runErrorT
 
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?

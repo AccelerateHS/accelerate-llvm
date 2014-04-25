@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -26,6 +27,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.State
@@ -62,8 +64,6 @@ import Data.Word
 import Data.Maybe
 import qualified LLVM.General.Context                           as LLVM
 #endif
-
-#include "accelerate.h"
 
 
 -- Array expression evaluation
@@ -111,7 +111,7 @@ fold1Op
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 fold1Op kernel gamma aenv stream sh@(_ :. sz)
-  = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+  = $boundsCheck "fold1" "empty array" (sz > 0)
   $ foldCore kernel gamma aenv stream sh
 
 -- Make space for the neutral element

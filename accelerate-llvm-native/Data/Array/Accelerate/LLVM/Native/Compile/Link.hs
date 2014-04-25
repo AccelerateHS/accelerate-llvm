@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Link
@@ -20,10 +21,11 @@ import LLVM.General.AST.Global
 
 import LLVM.General.ExecutionEngine
 
+-- accelerate
+import Data.Array.Accelerate.Error
+
 -- standard library
 import Data.Maybe
-
-#include "accelerate.h"
 
 
 -- | Return function pointers to all of the global function definitions in the
@@ -38,7 +40,7 @@ getGlobalFunctions ast exe
   = mapM (\f -> (f,) `fmap` link f)
   $ globalFunctions (moduleDefinitions ast)
   where
-    link f = fromMaybe (INTERNAL_ERROR(error) "link" "function not found") `fmap` getFunction exe (Name f)
+    link f = fromMaybe ($internalError "link" "function not found") `fmap` getFunction exe (Name f)
 
 
 -- | Extract the names of the function definitions from a module
