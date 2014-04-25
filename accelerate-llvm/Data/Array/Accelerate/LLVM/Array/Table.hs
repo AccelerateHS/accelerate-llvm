@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
@@ -24,6 +25,7 @@ module Data.Array.Accelerate.LLVM.Array.Table (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.LLVM.Array.Nursery                 ( Nursery(..), NRS )
 import qualified Data.Array.Accelerate.LLVM.Array.Nursery       as Nursery
@@ -46,8 +48,6 @@ import qualified Data.IntMap.Strict                             as IM
 import GHC.Base
 import GHC.Ptr
 import GHC.Weak
-
-#include "accelerate.h"
 
 
 -- | The memory table is used to associate a host-side Accelerate array with a
@@ -126,7 +126,7 @@ lookup MemoryTable{..} !adata = do
             case mv of
               Just v
                 | Just p <- gcast v -> trace ("lookup/found: " ++ show key) $ return (Just p)
-                | otherwise         -> INTERNAL_ERROR(error) "memory table/lookup" "type mismatch"
+                | otherwise         -> $internalError "memory table/lookup" "type mismatch"
 
               -- Note: [Weak pointer weirdness]
               --
@@ -144,7 +144,7 @@ lookup MemoryTable{..} !adata = do
               --
               Nothing
                 -> do key' <- makeHostArray adata
-                      INTERNAL_ERROR(error) "memory table/lookup" ("dead weak pointer: " ++ show key')
+                      $internalError "memory table/lookup" ("dead weak pointer: " ++ show key')
 
 
 -- | Convert the host array data into a memory table key
@@ -233,7 +233,7 @@ insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable $ \mt ->
       let f Nothing  = Just remote
-          f (Just _) = INTERNAL_ERROR(error) "insert" "duplicate key"
+          f (Just _) = $internalError "insert" "duplicate key"
       in
       return $! IM.alter f key mt
 

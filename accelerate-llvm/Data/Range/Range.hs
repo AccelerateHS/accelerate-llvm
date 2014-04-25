@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -funbox-strict-fields #-}
 -- |
 -- Module      : Data.Range.Range
@@ -14,14 +15,16 @@
 module Data.Range.Range
   where
 
+-- accelerate
+import Data.Array.Accelerate.Error
+
+-- standard library
 import Prelude                                          hiding ( take, splitAt )
 import GHC.Base                                         ( quotInt )
 import Text.Printf
 
 import Data.Sequence                                    ( Seq )
 import qualified Data.Sequence                          as Seq
-
-#include "accelerate.h"
 
 
 -- | A simple range data type
@@ -134,7 +137,7 @@ merge :: Range -> Range -> Maybe Range
 merge (IE u v) (IE x y)
   | v == x      = Just (IE u y)
   | otherwise   = Nothing
-merge _ _       = INTERNAL_ERROR(error) "merge" "empty range encountered"
+merge _ _       = $internalError "merge" "empty range encountered"
 
 
 -- | /O(1)/. Add a new range to the end of the given sequence. We assume that
@@ -162,7 +165,7 @@ compress = squash . Seq.unstableSortBy cmp
     -- Compare by the lower bound. Assume ranges are non-overlapping.
     --
     cmp (IE u _) (IE v _) = compare u v
-    cmp _        _        = INTERNAL_ERROR(error) "compress" "empty range encountered"
+    cmp _        _        = $internalError "compress" "empty range encountered"
 
     -- Look at the first two elements, compress them if they are adjacent, and
     -- continue walking down the sequence doing the same. If we merge a range,

@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -21,6 +22,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), Array, Shape, Elt, Foreign )
@@ -36,8 +38,6 @@ import Prelude                                                  hiding ( exp )
 import Control.Applicative                                      hiding ( Const )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
-
-#include "accelerate.h"
 
 
 class Target arch => Compile arch where
@@ -94,7 +94,7 @@ compileOpenAcc = traverseAcc
     -- These will be required during code generation and execution.
     --
     traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
-    traverseAcc Delayed{}              = INTERNAL_ERROR(error) "compileOpenAcc" "unexpected delayed array"
+    traverseAcc Delayed{}              = $internalError "compileOpenAcc" "unexpected delayed array"
     traverseAcc topAcc@(Manifest pacc) =
       case pacc of
         -- Environment and control flow
@@ -177,7 +177,7 @@ compileOpenAcc = traverseAcc
         wrap = return . liftA (ExecAcc noKernel mempty)
 
         noKernel :: ExecutableR arch
-        noKernel =  INTERNAL_ERROR(error) "compile" "no kernel module for this node"
+        noKernel =  $internalError "compile" "no kernel module for this node"
 
         -- If there is a foreign call for the LLVM backend, don't bother
         -- compiling the pure version
@@ -241,7 +241,7 @@ compileOpenAcc = traverseAcc
 
         bind :: (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
-        bind _                       = INTERNAL_ERROR(error) "bind" "expected array variable"
+        bind _                       = $internalError "bind" "expected array variable"
 
         foreignE :: (Elt a, Elt b, Foreign f)
                  => f a b

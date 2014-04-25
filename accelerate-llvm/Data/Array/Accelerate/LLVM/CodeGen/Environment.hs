@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP   #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -18,13 +19,12 @@ import LLVM.General.AST
 
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
+import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 -- standard library
 import Data.IntMap                                              ( IntMap )
 import qualified Data.IntMap                                    as IM
-
-#include "accelerate.h"
 
 
 -- Array environment
@@ -48,7 +48,7 @@ aprj :: Idx aenv t -> Gamma aenv -> Name
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
     Just (n,_)  -> n
-    Nothing     -> INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
+    Nothing     -> $internalError "aprj" "inconsistent valuation"
 
 
 data Idx' aenv where
@@ -84,5 +84,5 @@ data Val env where
 prj :: Idx env t -> Val env -> [Operand]
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
-prj _            _            = INTERNAL_ERROR(error) "prj" "inconsistent valuation"
+prj _            _            = $internalError "prj" "inconsistent valuation"
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ParallelListComp    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 -- |
@@ -25,6 +26,7 @@ import Data.Array.Accelerate.AST                                hiding ( Val(..)
 import Data.Array.Accelerate.Analysis.Type                      ( preExpType, delayedAccType )
 import Data.Array.Accelerate.Array.Representation               hiding ( Shape )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, Foreign, (:.), eltType )
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Type
@@ -39,8 +41,6 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 -- standard library
 import Control.Applicative                                      ( (<$>), (<*>) )
 import Control.Monad.State
-
-#include "accelerate.h"
 
 
 -- Scalar functions
@@ -167,7 +167,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     prjToInt :: TupleIdx t e -> TupleType a -> Int
     prjToInt ZeroTupIdx     _                 = 0
     prjToInt (SuccTupIdx i) (b `PairTuple` a) = sizeTupleType a + prjToInt i b
-    prjToInt _              _                 = INTERNAL_ERROR(error) "prjToInt" "inconsistent valuation"
+    prjToInt _              _                 = $internalError "prjToInt" "inconsistent valuation"
 
     sizeTupleType :: TupleType a -> Int
     sizeTupleType UnitTuple       = 0
@@ -274,7 +274,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           restrict SliceNil              _       _       = []
           restrict (SliceAll   sliceIdx) slx     (sz:sl) = sz : restrict sliceIdx slx sl
           restrict (SliceFixed sliceIdx) (_:slx) ( _:sl) =      restrict sliceIdx slx sl
-          restrict _ _ _ = INTERNAL_ERROR(error) "IndexSlice" "unexpected shapes"
+          restrict _ _ _ = $internalError "IndexSlice" "unexpected shapes"
           --
           slice slix' sh' = reverse $ restrict sliceIndex (reverse slix') (reverse sh')
       in
@@ -293,7 +293,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           extend SliceNil              _        _       = []
           extend (SliceAll   sliceIdx) slx      (sz:sh) = sz : extend sliceIdx slx sh
           extend (SliceFixed sliceIdx) (sz:slx) sh      = sz : extend sliceIdx slx sh
-          extend _ _ _ = INTERNAL_ERROR(error) "IndexFull" "unexpected shapes"
+          extend _ _ _ = $internalError "IndexFull" "unexpected shapes"
           --
           replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
       in
@@ -302,7 +302,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
     -- Some terms demand we extract only simple scalar expressions
     single :: String -> [a] -> a
     single _   [x] = x
-    single loc _   = INTERNAL_ERROR(error) loc "expected single expression"
+    single loc _   = $internalError loc "expected single expression"
 
     -- Generate the linear index of a multidimensional index and array shape
     --
@@ -345,7 +345,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       i   <- intOfIndex (map local sh) ix'
       readArray ad i
     index _ _ _ =
-      INTERNAL_ERROR(error) "index" "expected array variable"
+      $internalError "index" "expected array variable"
 
     linearIndex :: forall sh e env. Elt e
                 => DelayedOpenAcc     aenv (Array sh e)
@@ -359,7 +359,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       i   <- single "linearIndex" `fmap` cvtE ix env
       readArray ad i
     linearIndex _ _ _ =
-      INTERNAL_ERROR(error) "linearIndex" "expected array variable"
+      $internalError "linearIndex" "expected array variable"
 
     -- Array shapes created in this method refer to the shape of a free array
     -- variable, and are always passed as arguments to the function.
@@ -373,7 +373,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
       in
       return (map local sh)
     shape _ =
-      INTERNAL_ERROR(error) "shape" "expected array variable"
+      $internalError "shape" "expected array variable"
 
     shapeSize :: DelayedOpenExp env aenv sh
               -> Val env
@@ -455,7 +455,7 @@ intOfIndex extent idx = cvt (reverse extent) (reverse idx)
       c <- A.add (numType :: NumType Int) b i
       return c
     cvt _       _      =
-      INTERNAL_ERROR(error) "cvt" "argument mismatch"
+      $internalError "cvt" "argument mismatch"
 
 -- Convert a linear array index into a multidimensional array
 --
@@ -534,6 +534,6 @@ llvmOfPrimFun (PrimFromIntegral ta tb) [a]   = A.fromIntegral ta tb a
 
 -- If the argument lists are not the correct length
 llvmOfPrimFun _ _ =
-  INTERNAL_ERROR(error) "llvmOfPrimFun" "inconsistent valuation"
+  $internalError "llvmOfPrimFun" "inconsistent valuation"
 
 

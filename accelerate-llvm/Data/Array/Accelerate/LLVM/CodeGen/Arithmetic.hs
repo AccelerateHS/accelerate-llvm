@@ -3,6 +3,7 @@
 {-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -27,6 +28,7 @@ import qualified LLVM.General.AST.IntegerPredicate              as IP
 import qualified LLVM.General.AST.FloatingPointPredicate        as FP
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Util
@@ -43,8 +45,6 @@ import Control.Applicative
 import Control.Monad
 import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
-
-#include "accelerate.h"
 
 
 -- Configuration
@@ -72,7 +72,7 @@ nsw = False
 --   (b) If this is a floating point type, we add 'f' to the end of the name.
 --
 mathf :: Name -> FloatingType t -> [Operand] -> CodeGen Operand
-mathf (UnName _) _ _    = INTERNAL_ERROR(error) "mathf" "attempt to call unnamed function"
+mathf (UnName _) _ _    = $internalError "mathf" "attempt to call unnamed function"
 mathf (Name n)   f args = call name t (toArgs args) [NoUnwind, ReadNone]
   where
     t      = typeOf f
@@ -81,7 +81,7 @@ mathf (Name n)   f args = call name t (toArgs args) [NoUnwind, ReadNone]
                     32  -> n ++ "f"
                     64  -> n
                     128 -> n ++ "l"     -- long double
-                    _  -> INTERNAL_ERROR(error) "mathf" "unsupported floating point size"
+                    _  -> $internalError "mathf" "unsupported floating point size"
 
 
 -- Operations from Num
@@ -500,14 +500,14 @@ ord x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> instr $ SExt x (typeOf (integralType :: IntegralType Int)) []
-    _  -> INTERNAL_ERROR(error) "ord" "I don't know what architecture I am"
+    _  -> $internalError "ord" "I don't know what architecture I am"
 
 chr :: Operand -> CodeGen Operand
 chr x =
   case bitSize (undefined :: Int) of
     32 -> return x
     64 -> trunc (scalarType :: ScalarType Char) x
-    _  -> INTERNAL_ERROR(error) "ord" "I don't know what architecture I am"
+    _  -> $internalError "ord" "I don't know what architecture I am"
 
 boolToInt :: Operand -> CodeGen Operand
 boolToInt x = zext (scalarType :: ScalarType Int) x

@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Util
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -13,6 +14,9 @@
 module Data.Array.Accelerate.LLVM.Util
   where
 
+-- accelerate
+import Data.Array.Accelerate.Error
+
 -- standard library
 import Data.Word
 import qualified Data.Bits as B
@@ -22,7 +26,9 @@ import qualified Data.Bits as B
 --
 {-# INLINE bitSize #-}
 bitSize :: B.Bits a => a -> Word32
-bitSize x = fromIntegral (B.bitSize x)
+bitSize x
+  | Just s <- B.bitSizeMaybe x  = fromIntegral s
+  | otherwise                   = $internalError "bitSize" "could not determine bit size of type"
 
 
 -- | Convert a boolean value into an integral value, where False is zero and

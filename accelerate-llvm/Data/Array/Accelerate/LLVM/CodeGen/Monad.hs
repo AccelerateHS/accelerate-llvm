@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -55,11 +56,11 @@ import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.AST.Global                        as AST
 
 -- accelerate
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
-#include "accelerate.h"
 
 
 -- Names
@@ -143,7 +144,7 @@ createBlocks
           trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
   where
     makeBlock Block{..} =
-      let err   = INTERNAL_ERROR(error) "createBlocks" $ "Block has no terminator (" ++ show blockLabel ++ ")"
+      let err   = $internalError "createBlocks" $ "Block has no terminator (" ++ show blockLabel ++ ")"
           term  = fromMaybe err terminator
           ins   = Seq.toList instructions
       in
@@ -162,7 +163,7 @@ instr op = do
   name  <- freshName
   state $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> INTERNAL_ERROR(error) "instr" "empty block chain"
+      Seq.EmptyR  -> $internalError "instr" "empty block chain"
       bs Seq.:> b -> ( LocalReference name
                      , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> name := op } } )
 
@@ -172,7 +173,7 @@ do_ :: Instruction -> CodeGen ()
 do_ op = do
   modify $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> INTERNAL_ERROR(error) "do_" "empty block chain"
+      Seq.EmptyR  -> $internalError "do_" "empty block chain"
       bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> Do op } }
 
 
@@ -195,7 +196,7 @@ phi target crit t incoming =
   in
   state $ \s ->
     case Seq.findIndexR search (blockChain s) of
-      Nothing -> INTERNAL_ERROR(error) "phi" "unknown basic block"
+      Nothing -> $internalError "phi" "unknown basic block"
       Just i  -> ( LocalReference crit
                  , s { blockChain = Seq.adjust (\b -> b { instructions = crit := op Seq.<| instructions b }) i (blockChain s) } )
 
@@ -203,7 +204,7 @@ phi' :: Type -> [(Operand,Block)] -> CodeGen Operand
 phi' t incoming = do
   crit  <- freshName
   block <- state $ \s -> case Seq.viewr (blockChain s) of
-                           Seq.EmptyR -> INTERNAL_ERROR(error) "phi'" "empty block chain"
+                           Seq.EmptyR -> $internalError "phi'" "empty block chain"
                            _ Seq.:> b -> ( b, s )
   phi block crit t incoming
 
@@ -225,7 +226,7 @@ terminate :: Named Terminator -> CodeGen Block
 terminate target =
   state $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> INTERNAL_ERROR(error) "terminate" "empty block chain"
+      Seq.EmptyR  -> $internalError "terminate" "empty block chain"
       bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = Just target } } )
 
 
@@ -233,7 +234,7 @@ terminate target =
 --
 declare :: Global -> CodeGen ()
 declare g =
-  let unique (Just q) | g /= q    = INTERNAL_ERROR(error) "global" "duplicate symbol"
+  let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
                       | otherwise = Just g
       unique _                    = Just g
   in

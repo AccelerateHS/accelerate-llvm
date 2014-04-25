@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -23,6 +24,7 @@ module Data.Array.Accelerate.LLVM.CodeGen (
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Trafo
 
@@ -38,8 +40,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- standard library
 import Prelude                                                  hiding ( map, scanl, scanl1, scanr, scanr1 )
 import qualified Prelude                                        as P
-
-#include "accelerate.h"
 
 
 -- | A class covering code generation for all of the primitive operations.
@@ -193,7 +193,7 @@ llvmOfAcc :: forall arch aenv arrs. (Target arch, Skeleton arch)
           -> DelayedOpenAcc aenv arrs
           -> Gamma aenv
           -> Module arch aenv arrs
-llvmOfAcc _    Delayed{}       _    = INTERNAL_ERROR(error) "llvmOfAcc" "expected manifest array"
+llvmOfAcc _    Delayed{}       _    = $internalError "llvmOfAcc" "expected manifest array"
 llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
   case pacc of
     -- Producers
@@ -237,7 +237,7 @@ llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
   where
     -- code generation for delayed arrays
     travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed aenv (Array sh e)
-    travD Manifest{}  = INTERNAL_ERROR(error) "llvmOfAcc" "expected delayed array"
+    travD Manifest{}  = $internalError "llvmOfAcc" "expected delayed array"
     travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
 
     -- scalar code generation
@@ -262,8 +262,8 @@ llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
       $ P.map constOp (constant (eltType (undefined::e)) c)
 
     -- sadness
-    unexpectedError x   = INTERNAL_ERROR(error) "llvmOfAcc" $ "unexpected array primitive: " ++ showPreAccOp x
-    fusionError x       = INTERNAL_ERROR(error) "llvmOfAcc" $ "unexpected fusible material: " ++ showPreAccOp x
+    unexpectedError x   = $internalError "llvmOfAcc" $ "unexpected array primitive: " ++ showPreAccOp x
+    fusionError x       = $internalError "llvmOfAcc" $ "unexpected fusible material: " ++ showPreAccOp x
 
 
 -- Default producers

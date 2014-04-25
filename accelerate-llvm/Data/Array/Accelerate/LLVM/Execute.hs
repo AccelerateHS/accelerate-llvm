@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
@@ -24,6 +25,7 @@ module Data.Array.Accelerate.LLVM.Execute (
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
@@ -42,8 +44,6 @@ import Data.Array.Accelerate.LLVM.Execute.Environment
 import Prelude                                                  hiding ( exp, map, scanl, scanr, scanl1, scanr1 )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
-
-#include "accelerate.h"
 
 
 class Remote arch => Execute arch where
@@ -251,7 +251,7 @@ executeOpenAcc
     -> StreamR arch
     -> LLVM arch arrs
 executeOpenAcc EmbedAcc{} _ _ =
-  INTERNAL_ERROR(error) "execute" "unexpected delayed array"
+  $internalError "execute" "unexpected delayed array"
 executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
   case pacc of
 
@@ -299,7 +299,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     ZipWith{}                   -> fusionError
 
   where
-    fusionError = INTERNAL_ERROR(error) "execute" "unexpected fusible matter"
+    fusionError = $internalError "execute" "unexpected fusible matter"
 
     -- Term traversals
     -- ---------------
@@ -315,7 +315,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
 
     -- get the extent of an embedded array
     extent :: Shape sh => ExecOpenAcc arch aenv (Array sh e) -> LLVM arch sh
-    extent ExecAcc{}     = INTERNAL_ERROR(error) "executeOpenAcc" "expected delayed array"
+    extent ExecAcc{}     = $internalError "executeOpenAcc" "expected delayed array"
     extent (EmbedAcc sh) = travE sh
 
     -- Skeleton implementation
@@ -325,7 +325,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     -- execute any kernel programs.
     reshapeOp :: Shape sh => sh -> Array sh' e -> Array sh e
     reshapeOp sh (Array sh' adata)
-      = BOUNDS_CHECK(check) "reshape" "shape mismatch" (size sh == R.size sh')
+      = $boundsCheck "reshape" "shape mismatch" (size sh == R.size sh')
       $ Array (fromElt sh) adata
 
     -- Array level conditional

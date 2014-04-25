@@ -1,6 +1,7 @@
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Environment
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -16,9 +17,8 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Execute.Async
-
-#include "accelerate.h"
 
 
 -- Array environments
@@ -36,5 +36,5 @@ data AvalR arch env where
 aprj :: Idx env t -> AvalR arch env -> AsyncR arch t
 aprj ZeroIdx       (Apush _   x) = x
 aprj (SuccIdx idx) (Apush val _) = aprj idx val
-aprj _             _             = INTERNAL_ERROR(error) "aprj" "inconsistent valuation"
+aprj _             _             = $internalError "aprj" "inconsistent valuation"
 
