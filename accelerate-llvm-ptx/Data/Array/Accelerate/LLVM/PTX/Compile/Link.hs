@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ViewPatterns      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -31,6 +32,8 @@ import LLVM.General.AST.Global                                  as G
 import LLVM.General.AST.Linkage
 
 -- accelerate
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 () -- instance IsString Name
 
@@ -49,8 +52,6 @@ import Data.List
 import Data.Monoid
 import Text.Printf
 import qualified Data.HashSet                                   as Set
-
-#include "accelerate.h"
 
 
 -- | Lower an LLVM AST to C++ objects and link it against the libdevice module,
@@ -95,7 +96,7 @@ withLibdeviceNVPTX dev ctx (analyse -> (externs, ast)) next =
         next libd
   where
     arch        = computeCapability dev
-    runError    = either (INTERNAL_ERROR(error) "withLibdeviceNVPTX") return <=< runErrorT
+    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runErrorT
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))
@@ -126,7 +127,7 @@ withLibdeviceNVVM dev ctx (analyse -> (externs, ast)) next =
         | otherwise     = []
 
     arch        = computeCapability dev
-    runError    = either (INTERNAL_ERROR(error) "withLibdeviceNVPTX") return <=< runErrorT
+    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runErrorT
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (map (\(Name s) -> s) (Set.toList externs))

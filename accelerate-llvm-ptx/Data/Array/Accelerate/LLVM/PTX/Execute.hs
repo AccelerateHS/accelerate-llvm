@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -25,6 +26,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
@@ -52,8 +54,6 @@ import Data.Monoid                                              ( mempty )
 import Control.Monad.State                                      ( gets, liftIO )
 import Text.Printf
 import qualified Prelude                                        as P
-
-#include "accelerate.h"
 
 
 -- Array expression evaluation
@@ -97,7 +97,7 @@ simpleOp
 simpleOp exe gamma aenv stream sh = do
   let kernel    = case ptxKernel exe of
                     k:_ -> k
-                    _   -> INTERNAL_ERROR(error) "simpleOp" "kernel not found"
+                    _   -> $internalError "simpleOp" "kernel not found"
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
@@ -128,7 +128,7 @@ fold1Op
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
 fold1Op kernel gamma aenv stream sh@(_ :. sz)
-  = BOUNDS_CHECK(check) "fold1" "empty array" (sz > 0)
+  = $boundsCheck "fold1" "empty array" (sz > 0)
   $ foldCore kernel gamma aenv stream sh
 
 foldOp
@@ -169,7 +169,7 @@ foldAllOp exe gamma aenv stream sh' = do
   let
       (k1,k2)   = case ptxKernel exe of
                     u:v:_       -> (u,v)
-                    _           -> INTERNAL_ERROR(error) "foldAllOp" "kernel not found"
+                    _           -> $internalError "foldAllOp" "kernel not found"
 
       foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
       foldIntro (sh:.sz) = do

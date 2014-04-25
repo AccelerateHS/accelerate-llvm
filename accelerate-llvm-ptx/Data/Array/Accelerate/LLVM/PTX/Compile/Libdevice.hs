@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE CPP               #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TupleSections     #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -31,6 +32,7 @@ import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Global                                  as G
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -55,7 +57,6 @@ import qualified Data.ByteString                                as B
 import qualified Data.ByteString.Char8                          as B8
 import qualified Data.HashSet                                   as Set
 
-#include "accelerate.h"
 
 instance Hashable Name where
   hashWithSalt salt (Name n)   = 0 `hashWithSalt` salt `hashWithSalt` n
@@ -119,7 +120,7 @@ nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
     runError  $ withModuleFromAST ctx nvvmReflectPass_mdl (return . B8.pack <=< moduleLLVMAssembly)
   where
     name     = "__nvvm_reflect"
-    runError = either (INTERNAL_ERROR(error) "nvvmReflectPass") return <=< runErrorT
+    runError = either ($internalError "nvvmReflectPass") return <=< runErrorT
 #if !MIN_VERSION_llvm_general(3,3,0)
     moduleLLVMAssembly = moduleString
 #endif
@@ -137,7 +138,7 @@ instance Libdevice AST.Module where
       (2,0) -> libdevice_20_mdl
       (3,0) -> libdevice_30_mdl
       (3,5) -> libdevice_35_mdl
-      _     -> INTERNAL_ERROR(error) "libdevice" "no binary for this architecture"
+      _     -> $internalError "libdevice" "no binary for this architecture"
 
 instance Libdevice (String, ByteString) where
   libdevice (Compute n m) =
@@ -145,7 +146,7 @@ instance Libdevice (String, ByteString) where
       (2,0) -> libdevice_20_bc
       (3,0) -> libdevice_30_bc
       (3,5) -> libdevice_35_bc
-      _     -> INTERNAL_ERROR(error) "libdevice" "no binary for this architecture"
+      _     -> $internalError "libdevice" "no binary for this architecture"
 
 
 -- Load the libdevice bitcode files as an LLVM AST module. The top-level
@@ -194,7 +195,7 @@ libdeviceModule arch = do
   --      executed once per program execution.
   --
   Module{..} <- withContext $ \ctx ->
-    either (INTERNAL_ERROR(error) "libdeviceModule") id `fmap`
+    either ($internalError "libdeviceModule") id `fmap`
     runErrorT (withModuleFromBitcode ctx bc moduleAST)
 
   -- This is to avoid the warning message:
@@ -225,7 +226,7 @@ withModuleFromBitcode _ _ _ = error "withModuleFromBitcode: requires llvm-genera
 libdeviceBitcode :: Compute -> IO (String, ByteString)
 libdeviceBitcode (Compute m n) = do
   let arch       = printf "libdevice.compute_%d%d" m n
-      err        = INTERNAL_ERROR(error) "libdevice" (printf "not found: %s.YY.bc" arch)
+      err        = $internalError "libdevice" (printf "not found: %s.YY.bc" arch)
       best f     = arch `isPrefixOf` f && takeExtension f == ".bc"
 
   path  <- libdevicePath

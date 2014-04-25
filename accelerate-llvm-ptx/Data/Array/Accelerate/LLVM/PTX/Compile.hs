@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
@@ -27,6 +28,7 @@ import qualified LLVM.General.Module                            as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
 
 -- accelerate
+import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -57,8 +59,6 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Text.Printf
 import qualified Data.ByteString.Char8                          as B
-
-#include "accelerate.h"
 
 
 instance Compile PTX where
@@ -144,7 +144,7 @@ compileModuleNVPTX dev name mdl =
     --       code is generated for multidimensional folds.
     --
     let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 2 }
-        runError e = either (INTERNAL_ERROR(error) "compileModuleNVPTX") id `fmap` runErrorT e
+        runError e = either ($internalError "compileModuleNVPTX") id `fmap` runErrorT e
 
     LLVM.withPassManager pss $ \pm -> do
 #ifdef ACCELERATE_INTERNAL_CHECKS

@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
@@ -18,8 +19,9 @@ module Data.Array.Accelerate.LLVM.PTX.State (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.Error
 
+import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
@@ -38,8 +40,6 @@ import System.Mem                                               ( performGC )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
 
-#include "accelerate.h"
-
 
 -- | Execute a PTX computation
 --
@@ -47,7 +47,7 @@ evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
   runInBoundThread (bracket_ setup teardown action)
   `catch`
-  \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: CUDAException))
+  \e -> $internalError "unhandled" (show (e :: CUDAException))
   where
     setup       = CT.push (ptxContext ptx)
     teardown    = performGC >> CT.pop

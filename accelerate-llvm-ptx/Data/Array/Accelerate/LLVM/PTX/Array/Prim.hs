@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Prim
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -26,6 +27,8 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 
 -- accelerate
 import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Array.Table
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
@@ -44,8 +47,6 @@ import Foreign.Ptr
 import Foreign.Storable
 import Text.Printf
 
-#include "accelerate.h"
-
 -- | Allocate a device-side array associated with the given host array. If the
 -- allocation fails due to a memory error, we attempt some last-ditch memory
 -- cleanup before trying again.
@@ -61,7 +62,7 @@ mallocArray
 mallocArray !ctx !mt !n !ad = do
 #ifdef ACCELERATE_INTERNAL_CHECKS
   exists <- isJust `fmap` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
-  _      <- INTERNAL_CHECK(check) "mallocArray" "double malloc" (not exists) (return ())
+  _      <- $internalCheck "mallocArray" "double malloc" (not exists) (return ())
 #endif
   message ("mallocArray: " ++ showBytes (n * sizeOf (undefined::a)))
   malloc ctx mt ad n :: IO (CUDA.DevicePtr a)
@@ -278,7 +279,7 @@ devicePtr !mt !ad = do
   mv <- lookup mt ad
   case mv of
     Just v      -> return v
-    Nothing     -> INTERNAL_ERROR(error) "devicePtr" "lost device memory"
+    Nothing     -> $internalError "devicePtr" "lost device memory"
 
 
 -- Debug

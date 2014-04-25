@@ -1,6 +1,7 @@
-{-# LANGUAGE CPP            #-}
-{-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE TypeFamilies   #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE EmptyDataDecls  #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
@@ -29,6 +30,8 @@ import qualified LLVM.General.CodeModel                         as CM
 import qualified LLVM.General.CodeGenOpt                        as CGO
 
 -- accelerate
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
@@ -47,8 +50,6 @@ import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                       as Map
 import qualified Data.Set                                       as Set
-
-#include "accelerate.h"
 
 
 -- | The PTX execution target for NVIDIA GPUs.
@@ -127,7 +128,7 @@ ptxTargetTriple =
   case bitSize (undefined::Int) of
     32  -> "nvptx-nvidia-cuda"
     64  -> "nvptx64-nvidia-cuda"
-    _   -> INTERNAL_ERROR(error) "ptxTargetTriple" "I don't know what architecture I am"
+    _   -> $internalError "ptxTargetTriple" "I don't know what architecture I am"
 
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
