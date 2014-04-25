@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi.State
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -17,6 +18,8 @@ module Data.Array.Accelerate.LLVM.Multi.State (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
+
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import qualified Control.Parallel.Meta.Trans.LBS                as LBS
@@ -47,8 +50,6 @@ import Control.Concurrent                                       ( runInBoundThre
 import System.Mem                                               ( performGC )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 
-#include "accelerate.h"
-
 
 -- | Execute a computation in the Multi backend. Requires initialising the CUDA
 -- environment; copied from that backend.
@@ -57,7 +58,7 @@ evalMulti :: Multi -> LLVM Multi a -> IO a
 evalMulti multi acc =
   runInBoundThread (bracket_ setup teardown action)
   `catch`
-  \e -> INTERNAL_ERROR(error) "unhandled" (show (e :: CUDAException))
+  \e -> $internalError "unhandled" (show (e :: CUDAException))
   where
     setup       = Context.push (PTX.ptxContext (ptxTarget multi))
     teardown    = performGC >> Context.pop

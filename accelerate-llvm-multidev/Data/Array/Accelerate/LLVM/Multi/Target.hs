@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi.Target
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -18,6 +19,8 @@ module Data.Array.Accelerate.LLVM.Multi.Target (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
@@ -26,8 +29,6 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 -- standard library
 import Control.Monad.Reader
 import Control.Monad.State
-
-#include "accelerate.h"
 
 
 -- | The multi-device target is a collection of several manifest targets; in
@@ -46,8 +47,8 @@ instance Target Multi where
         , nativeExecutable :: ExecutableR Native
         }
 
-  targetTriple _     = INTERNAL_ERROR(error) "targetTriple" "I am an abstract target"
-  targetDataLayout _ = INTERNAL_ERROR(error) "targetDataLayout" "I am an abstract target"
+  targetTriple _     = $internalError "targetTriple" "I am an abstract target"
+  targetDataLayout _ = $internalError "targetDataLayout" "I am an abstract target"
 
 
 with :: LLVM t a -> (Multi -> t) -> LLVM Multi a

@@ -1,7 +1,7 @@
 name:                   accelerate-llvm-multidev
 version:                0.15.0.0
 cabal-version:          >=1.10
-tested-with:            GHC == 7.8
+tested-with:            GHC == 7.8.*
 build-type:             Simple
 
 synopsis:               Accelerate backend supporting multiple device execution
@@ -17,8 +17,6 @@ author:                 Trevor L. McDonell
 maintainer:             Trevor L. McDonell <tmcdonell@nvidia.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
-
-extra-source-files:     include/accelerate.h
 
 
 -- Configuration flags
@@ -67,7 +65,7 @@ library
     accelerate-llvm             == 0.15.*,
     accelerate-llvm-native      == 0.15.*,
     accelerate-llvm-ptx         == 0.15.*,
-    base                        >= 4.6 && <4.8,
+    base                        == 4.7.*,
     cuda                        >= 0.5,
     dlist                       >= 0.6,
     mtl                         >= 2.0
@@ -75,7 +73,6 @@ library
   default-language:
     Haskell2010
 
-  include-dirs:                 include
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
   if flag(debug)

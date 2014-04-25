@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs            #-}
 {-# LANGUAGE RecordWildCards  #-}
+{-# LANGUAGE TemplateHaskell  #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi.Execute
@@ -21,6 +22,7 @@ module Data.Array.Accelerate.LLVM.Multi.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, size )
+import Data.Array.Accelerate.Error                              ( internalError )
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
@@ -59,8 +61,6 @@ import Control.Monad.State                                      ( gets, liftIO, 
 import Control.Monad.Reader                                     ( runReaderT )
 import System.IO.Unsafe
 
-#include "accelerate.h"
-
 
 instance Execute Multi where
   map           = simpleOp
@@ -83,7 +83,7 @@ simpleOp MultiR{..} gamma aenv stream sh = do
   let
       ptx = case ptxKernel ptxExecutable of
               k:_ -> k
-              _   -> INTERNAL_ERROR(error) "execute" "kernel not found"
+              _   -> $internalError "execute" "kernel not found"
   --
   out   <- allocateRemote sh
   multi <- gets llvmTarget
