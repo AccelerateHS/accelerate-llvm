@@ -61,6 +61,11 @@ nuw = False
 nsw :: Bool
 nsw = False
 
+-- | fast-math flags are optimization hints to enable otherwise unsafe
+-- floating point optimizations
+--
+fmflags :: FastMathFlags
+fmflags = UnsafeAlgebra
 
 -- Primitive operations
 -- ====================
@@ -89,15 +94,15 @@ mathf (Name n)   f args = call name t (toArgs args) [NoUnwind, ReadNone]
 
 add :: NumType a -> Operand -> Operand -> CodeGen Operand
 add (IntegralNumType _) x y = instr $ Add nuw nsw x y []
-add (FloatingNumType _) x y = instr $ FAdd x y []
+add (FloatingNumType _) x y = instr $ FAdd fmflags x y []
 
 sub :: NumType a -> Operand -> Operand -> CodeGen Operand
 sub (IntegralNumType _) x y = instr $ Sub nuw nsw x y []
-sub (FloatingNumType _) x y = instr $ FSub x y []
+sub (FloatingNumType _) x y = instr $ FSub fmflags x y []
 
 mul :: NumType a -> Operand -> Operand -> CodeGen Operand
 mul (IntegralNumType _) x y = instr $ Mul nuw nsw x y []
-mul (FloatingNumType _) x y = instr $ FMul x y []
+mul (FloatingNumType _) x y = instr $ FMul fmflags x y []
 
 negate :: forall a. NumType a -> Operand -> CodeGen Operand
 negate t x =
@@ -295,7 +300,7 @@ rotateR t x i | IntegralDict <- integralDict t = do
 -- ---------------------------------------------------------
 
 fdiv :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-fdiv _ x y = instr $ FDiv x y []
+fdiv _ x y = instr $ FDiv fmflags x y []
 
 recip :: FloatingType a -> Operand -> CodeGen Operand
 recip t x | FloatingDict <- floatingDict t = fdiv t (constOp (floating t (-1))) x
