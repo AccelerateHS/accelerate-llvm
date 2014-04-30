@@ -29,7 +29,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   newBlock, setBlock, createBlocks, createBlocks', beginGroup, terminate,
 
   -- variables
-  newVariableA, getVariableA, setVariableA,
+  lookupVariableA, setVariableA,
 
   -- instructions
   instr, do_, return_, returnV, phi, phi', br, cbr,
@@ -88,7 +88,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 --
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                            -- blocks for this function
-  , variables           :: Map String [Operand]                 -- locally defined Variables
+  , variables           :: Map Name [Operand]                 -- locally defined Variables
   , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
   , metadataTable       :: Map String (Seq [Maybe Operand])     -- module metadata to be collected
   , next                :: {-# UNPACK #-} !Word                 -- a name supply
@@ -311,26 +311,19 @@ beginGroup nm = do
 -- Variables
 -- =========
 
--- | Create a new Variable
---
-newVariableA :: CodeGen String
-newVariableA = state $ \s@CodeGenState{..} -> ( show next, s { next = next + 1 } )
-
 -- | Set a Variable
 --
-setVariableA :: String -> [Operand] -> CodeGen ()
+setVariableA :: Name -> [Operand] -> CodeGen ()
 setVariableA x y =
   state $ \s -> ( (), s{ variables = Map.insert x y (variables s) } )
 
 -- | Get a Variable
 --
-getVariableA :: String -> CodeGen [Operand]
-getVariableA xs =
+lookupVariableA :: Name -> CodeGen (Maybe [Operand])
+lookupVariableA xs =
   state $ \s -> ( xs' s , s )
  where
-  xs' s = case Map.lookup xs (variables s) of
-            Just xs' -> xs'
-            Nothing  -> INTERNAL_ERROR(error) "variable" "not defined"
+  xs' s = Map.lookup xs (variables s)
 
 -- Metadata
 -- ========

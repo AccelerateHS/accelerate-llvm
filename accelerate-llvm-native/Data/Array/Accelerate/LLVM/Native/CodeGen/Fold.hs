@@ -128,8 +128,6 @@ mkFold' aenv combine seed IRDelayed{..} = do
       ty_acc                    = llvmOfTupleType (eltType (undefined::e))
       sz                        = local "sz"
       sh                        = local "sh"
-  next <- newVariable
-  xs <- newVariable
   k <- [llgM|
   define void @fold (
     $params:(paramGang) ,
@@ -143,9 +141,17 @@ mkFold' aenv combine seed IRDelayed{..} = do
     
       for:
         for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) [%firstSeg,%entry] as %sz, label %end {
-            $bbsM:(next .=. (add int sz n >>= return . (:[])))
-            $bbsM:(xs .=. (getVariable next >>= \[next'] -> reduce ty_acc delayedLinearIndex combine seed sz next'))
-            $bbsM:(execRet (getVariable xs >>= writeArray arrOut sh >> getVariable next >>= \[next'] -> return next'))
+          for.entry:
+            %next = add $type:(intType) %sz, $opr:(n)
+            br label %reduce
+          reduce:
+            for $type:(intType) %j in %sz to %next with $types:(ty_acc) [$oprsM:(seed),%for.entry] as %x {
+                $bbsM:("y" .=. delayedLinearIndex [LocalReference "j"])
+                $bbsM:("z" .=. (getVariable "x" >>= \x -> getVariable "y" >>= \y -> combine x y))
+                $bbsM:(execRet (return $ LocalReference "z"))
+            }
+            $bbsM:(exec (getVariable "x" >>= writeArray arrOut sh))
+            ret $type:(intType) %next
         }
       end:
         ret void
