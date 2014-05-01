@@ -41,7 +41,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Data.Maybe
 import Data.Map                                                 ( Map )
 import Data.Sequence                                            ( Seq )
@@ -140,7 +140,7 @@ initBlockChain' l = Seq.singleton l
 -- generated.
 --
 createBlocks :: CodeGen [BasicBlock]
-createBlocks = createBlocks' False $ Block "empty" Seq.empty Nothing
+createBlocks = freshName >>= \n -> createBlocks' False $ Block n Seq.empty Nothing
 
 createBlocks' :: Bool -> Block -> CodeGen [BasicBlock]
 createBlocks' reset l

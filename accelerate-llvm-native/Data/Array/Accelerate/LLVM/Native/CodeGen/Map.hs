@@ -28,7 +28,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import Data.Array.Accelerate.LLVM.Quote
 import LLVM.General.AST
 
 import LLVM.General.Quote.LLVM
