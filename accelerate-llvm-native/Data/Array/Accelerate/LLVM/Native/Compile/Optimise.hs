@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -41,26 +40,19 @@ optimiseModule
     -> Module
     -> IO ()
 optimiseModule datalayout machine libinfo mdl = do
-#if !MIN_VERSION_llvm_general(3,3,0)
-  machine <- maybe (return Nothing) (\m -> Just `fmap` getTargetLowering m) machine
-#endif
 
-  let p1 = defaultCuratedPassSetSpec { optLevel = Just 3 }
+  let p1 = defaultCuratedPassSetSpec
+            { optLevel                  = Just 3
+            , curatedDataLayout         = datalayout
+            , curatedTargetMachine      = machine
+            , curatedTargetLibraryInfo  = libinfo
+            }
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
   Debug.message Debug.dump_llvm $
     printf "llvm: optimisation did work? %s" (show b1)
 
---  let p1 = PassSetSpec prepass datalayout libinfo machine
---      p2 = PassSetSpec optpass datalayout libinfo machine
---
---  b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
---  b2 <- withPassManager p2 $ \pm -> runPassManager pm mdl
-
---  Debug.message Debug.dump_llvm $
---    printf "llvm: optimisation did work? %s %s" (show b1) (show b2)
-
-
+{--
 -- The first gentle optimisation pass. I think this is usually done when loading
 -- the module?
 --
@@ -145,4 +137,5 @@ optpass =
   , GlobalDeadCodeElimination
   , ConstantMerge
   ]
+--}
 
