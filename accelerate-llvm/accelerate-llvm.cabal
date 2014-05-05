@@ -97,6 +97,7 @@ Library
     llvm-general-pure           >= 3.2,
     mtl                         >= 2.0,
     mwc-random                  >= 0.13,
+    unordered-containers        >= 0.2,
     vector                      >= 0.10
 
   default-language:
