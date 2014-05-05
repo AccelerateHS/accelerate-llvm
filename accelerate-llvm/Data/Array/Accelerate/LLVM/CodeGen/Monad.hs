@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  freshName, declare,
+  freshName, declare, intrinsic,
 
   -- basic blocks
   newBlock, setBlock, createBlocks, beginGroup,
@@ -42,13 +42,15 @@ import Control.Monad.State
 import Data.Maybe
 import Data.Map                                                 ( Map )
 import Data.Sequence                                            ( Seq )
+import Data.HashMap.Strict                                      ( HashMap )
 import Data.String
 import Data.Word
 import Text.Printf
 import System.IO.Unsafe
+import qualified Data.Foldable                                  as Seq
+import qualified Data.HashMap.Strict                            as HashMap
 import qualified Data.Map                                       as Map
 import qualified Data.Sequence                                  as Seq
-import qualified Data.Foldable                                  as Seq
 
 -- llvm-general
 import LLVM.General.AST                                         hiding ( Module )
@@ -60,6 +62,7 @@ import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 
@@ -86,7 +89,8 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                            -- blocks for this function
   , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
-  , metadataTable       :: Map String (Seq [Maybe Operand])     -- module metadata to be collected
+  , metadataTable       :: HashMap String (Seq [Maybe Operand]) -- module metadata to be collected
+  , intrinsicTable      :: HashMap String Name                  -- standard math intrinsic functions
   , next                :: {-# UNPACK #-} !Word                 -- a name supply
   }
   deriving Show
@@ -102,12 +106,23 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
 
-runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
+runLLVM
+    :: forall t aenv a. (Target t, Intrinsic t)
+    => CodeGen [Kernel t aenv a]
+    -> Module t aenv a
 runLLVM ll =
-  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty Map.empty 0)
-      kernels           = map unKernel r
-      defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
-                       ++ createMetadata (metadataTable st)
+  let
+      (r, st)   = runState (runCodeGen ll) $ CodeGenState
+                    { blockChain        = initBlockChain
+                    , symbolTable       = Map.empty
+                    , metadataTable     = HashMap.empty
+                    , intrinsicTable    = intrinsicForTarget (undefined::t)
+                    , next              = 0
+                    }
+
+      kernels   = map unKernel r
+      defs      = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+               ++ createMetadata (metadataTable st)
 
       name | x:_          <- kernels
            , f@Function{} <- x
@@ -241,6 +256,16 @@ declare g =
   modify (\s -> s { symbolTable = Map.alter unique (AST.name g) (symbolTable s) })
 
 
+-- | Get name of the corresponding intrinsic function implementing a given C
+-- function. If there is no mapping, the C function name is used.
+--
+intrinsic :: String -> CodeGen Name
+intrinsic key =
+  state $ \s ->
+    let name = HashMap.lookupDefault (Name key) key (intrinsicTable s)
+    in  (name, s)
+
+
 -- Block chain
 -- ===========
 
@@ -305,7 +330,7 @@ beginGroup nm = do
 addMetadata :: String -> [Maybe Operand] -> CodeGen ()
 addMetadata key val =
   modify $ \s ->
-    s { metadataTable = Map.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }
+    s { metadataTable = HashMap.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }
 
 
 -- | Generate the metadata definitions for the file. Every key in the map
@@ -313,8 +338,8 @@ addMetadata key val =
 -- represent the metadata node definitions that will be attached to that
 -- definition.
 --
-createMetadata :: Map String (Seq [Maybe Operand]) -> [Definition]
-createMetadata md = build (Map.assocs md) (Seq.empty, Seq.empty)
+createMetadata :: HashMap String (Seq [Maybe Operand]) -> [Definition]
+createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
   where
     build :: [(String, Seq [Maybe Operand])]
           -> (Seq Definition, Seq Definition)   -- accumulator of (names, metadata)

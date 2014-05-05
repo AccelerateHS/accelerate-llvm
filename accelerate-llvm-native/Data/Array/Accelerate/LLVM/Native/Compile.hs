@@ -58,6 +58,8 @@ import System.IO
 instance Compile Native where
   compileForTarget = compileForNativeTarget
 
+instance Intrinsic Native
+
 
 -- Compile an Accelerate expression for the native CPU target.
 --

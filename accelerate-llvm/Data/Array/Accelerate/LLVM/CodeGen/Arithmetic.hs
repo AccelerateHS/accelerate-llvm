@@ -38,7 +38,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
-import Prelude                                                  ( Num, ($), (++), (-), undefined, map )
+import Prelude                                                  ( Num, String, ($), (++), (-), undefined, map )
 import Data.Bool
 import Data.Char                                                ( Char )
 import Control.Applicative
@@ -71,22 +71,23 @@ fmflags = UnsafeAlgebra
 -- ====================
 
 -- Call a function from the standard C math library. This is a wrapper around
--- the standard function `call`, because:
+-- the standard function 'call', because:
 --
 --   (a) The parameter and return types are all the same; and
---   (b) If this is a floating point type, we add 'f' to the end of the name.
+--   (b) We check if there is an intrinsic implementation of this function
 --
-mathf :: Name -> FloatingType t -> [Operand] -> CodeGen Operand
-mathf (UnName _) _ _    = $internalError "mathf" "attempt to call unnamed function"
-mathf (Name n)   f args = call name t (toArgs args) [NoUnwind, ReadNone]
+mathf :: String -> FloatingType t -> [Operand] -> CodeGen Operand
+mathf n f args = do
+  name <- intrinsic key
+  call name t (toArgs args) [NoUnwind, ReadOnly]
   where
     t      = typeOf f
     toArgs = map (t,)
-    name   = Name $ case typeBits t of
-                    32  -> n ++ "f"
-                    64  -> n
-                    128 -> n ++ "l"     -- long double
-                    _  -> $internalError "mathf" "unsupported floating point size"
+    key    = case typeBits t of
+               32  -> n ++ "f"
+               64  -> n
+               128 -> n ++ "l"     -- long double
+               _   -> $internalError "mathf" "unsupported floating point size"
 
 
 -- Operations from Num

@@ -17,7 +17,7 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen (
 
-  Skeleton(..), llvmOfAcc,
+  Skeleton(..), Intrinsic(..), llvmOfAcc,
 
 ) where
 
@@ -34,6 +34,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
+import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
@@ -188,7 +189,7 @@ class Skeleton arch where
 
 -- | Generate code for a given target architecture.
 --
-llvmOfAcc :: forall arch aenv arrs. (Target arch, Skeleton arch)
+llvmOfAcc :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch)
           => arch
           -> DelayedOpenAcc aenv arrs
           -> Gamma aenv
