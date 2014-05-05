@@ -10,7 +10,7 @@
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@nvidia.com>
+-- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
