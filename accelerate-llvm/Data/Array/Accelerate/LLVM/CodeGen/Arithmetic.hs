@@ -38,7 +38,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- standard library
-import Prelude                                                  ( Num, String, ($), (++), (-), undefined, map )
+import Prelude                                                  ( Num, String, ($), (++), (-), (==), undefined, map )
 import Data.Bool
 import Data.Char                                                ( Char )
 import Control.Applicative
@@ -349,10 +349,15 @@ log :: FloatingType a -> Operand -> CodeGen Operand
 log t x = mathf "log" t [x]
 
 logBase :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-logBase t x y = do
-  x' <- log t x
-  y' <- log t y
-  fdiv t x' y'
+logBase t x y | FloatingDict <- floatingDict t = logBase' t x y
+
+logBase' :: Num a => FloatingType a -> Operand -> Operand -> CodeGen Operand
+logBase' t x y
+  | constOp (floating t 2)  == x = mathf "log2"  t [y]
+  | constOp (floating t 10) == x = mathf "log10" t [y]
+  | otherwise                    = do x' <- log t x
+                                      y' <- log t y
+                                      fdiv t x' y'
 
 truncate :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
 truncate _ i x
