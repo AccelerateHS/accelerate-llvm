@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -50,11 +51,16 @@ import Control.Monad.State
 -- blocks.
 --
 llvmOfFun1 :: DelayedFun aenv (a -> b) -> Gamma aenv -> IRFun1 aenv (a -> b)
-llvmOfFun1 (Lam (Body f)) aenv xs = llvmOfOpenExp f (Empty `Push` xs) aenv
+llvmOfFun1 (Lam (Body f)) aenv xs = do
+  xs' <- toIRExp xs 
+  llvmOfOpenExp f (Empty `Push` xs') aenv
 llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike"
 
 llvmOfFun2 :: DelayedFun aenv (a -> b -> c) -> Gamma aenv -> IRFun2 aenv (a -> b -> c)
-llvmOfFun2 (Lam (Lam (Body f))) aenv xs ys = llvmOfOpenExp f (Empty `Push` xs `Push` ys) aenv
+llvmOfFun2 (Lam (Lam (Body f))) aenv xs ys = do
+  xs' <- toIRExp xs
+  ys' <- toIRExp ys
+  llvmOfOpenExp f (Empty `Push` xs' `Push` ys') aenv
 llvmOfFun2 _                    _    _  _  = error "when the world seems to chaaaange~ overniiight"
 
 
@@ -430,14 +436,15 @@ readArray' volatile arr i =
 
 -- Write elements into an array.
 --
-writeArray :: [Name] -> Operand -> [Operand] -> CodeGen ()
+writeArray :: IROperand a => [Name] -> Operand -> a -> CodeGen ()
 writeArray = writeArray' False
 
-writeVolatileArray :: [Name] -> Operand -> [Operand] -> CodeGen ()
+writeVolatileArray :: IROperand a => [Name] -> Operand -> a -> CodeGen ()
 writeVolatileArray = writeArray' True
 
-writeArray' :: Bool -> [Name] -> Operand -> [Operand] -> CodeGen ()
-writeArray' volatile arr i val =
+writeArray' :: IROperand a => Bool -> [Name] -> Operand -> a -> CodeGen ()
+writeArray' volatile arr i val' = do
+  val <- toIRExp val'
   zipWithM_ (\a v -> do
     p <- instr $ GetElementPtr False (local a) [i] []
     do_        $ Store volatile p v Nothing 0 []) arr val

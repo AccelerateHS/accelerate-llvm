@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -24,6 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
@@ -85,36 +87,19 @@ mkMap aenv apply IRDelayed{..} = do
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-      i                         = Name "i"
-      i'                        = LocalReference i
-  xs <- newVariable
-  ys <- newVariable
+      intType                   = (typeOf (integralType :: IntegralType Int))
   k <- [llgM|
   define void @map (
     $params:(paramGang) ,
     $params:(paramOut) ,
     $params:(paramEnv)
     ) {
-    entry:
-      br label %for
-    
-    for:
-      for i64 $id:(i) in $opr:(start) to $opr:(end) with %entry {
-        $bbsM:(xs .=. delayedLinearIndex [i'])
-        $bbsM:(ys .=. (getVariable xs >>= apply))
-        $bbsM:(exec (getVariable ys >>= writeArray arrOut i'))
+      for $type:(intType) %i in $opr:(start) to $opr:(end) {
+        $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
+        $bbsM:("y" .=. apply ("x" :: Name))
+        $bbsM:(exec (writeArray arrOut "i" ("y" :: Name)))
       }
+      ret void
   }
   |]
-  return $ [Kernel (trace (show $ show k) k)]
-{-
-  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
-
-    imapFromTo start end $ \i -> do
-      xs <- delayedLinearIndex [i]
-      ys <- apply xs
-      writeArray arrOut i ys
-
-    return_
-
--}
+  return $ [Kernel k]

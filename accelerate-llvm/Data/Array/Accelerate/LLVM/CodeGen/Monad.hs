@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -35,7 +36,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   instr, do_, return_, returnV, phi, phi', br, cbr,
 
   -- metadata
-  addMetadata, trace
+  addMetadata, trace,
+
+  B.CodeGenMonad(..)
 
 ) where
 
@@ -65,12 +68,19 @@ import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
+import qualified LLVM.General.Quote.Base as B
 
 -- Names
 -- =====
 
 instance IsString Name where
   fromString = Name . fromString
+
+instance IsString Operand where
+  fromString = LocalReference . fromString
+
+instance IsString [Operand] where
+  fromString = (:[]) . fromString
 
 -- | Generate a fresh (un)name.
 --
@@ -105,6 +115,27 @@ data Block = Block
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
+instance B.CodeGenMonad CodeGen where
+  newVariable = freshName
+  lookupVariable = lookupVariableA
+  setVariable = setVariableA
+  xs .=. f = do
+    xs' <- f
+    setVariableA xs xs'
+    n <- newBlock "nextblock"
+    _ <- br n
+    createBlocks
+  exec f = do
+    f
+    n <- newBlock "nextblock"
+    _ <- br n
+  --  n <- newBlock "bb"
+    createBlocks
+  execRet f = do
+    x <- f
+    returnV x
+  --  n <- newBlock "bb"
+    createBlocks
 
 runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
 runLLVM ll =
