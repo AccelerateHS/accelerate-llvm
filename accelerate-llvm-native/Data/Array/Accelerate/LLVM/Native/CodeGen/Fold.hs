@@ -45,6 +45,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
 import LLVM.General.AST
+import LLVM.General.AST.Global
 
 import LLVM.General.Quote.LLVM
 
@@ -134,7 +135,7 @@ mkFold' aenv combine seed IRDelayed{..} = do
     $params:(paramEnv)
     ) {
       entry:
-        %firstSeg = mul $type:(intType) $opr:(start), $opr:(n)
+        %firstSeg = mul $type:(intType) $opr:(start), %ix.stride
         br label %for
     
       for:
@@ -149,7 +150,7 @@ mkFold' aenv combine seed IRDelayed{..} = do
                 $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
                 $bbsM:(execRet (return "z"))
             }
-            $bbsM:(exec (writeArray arrOut sh ("x" :: Name)))
+            $bbsM:(exec (writeArray arrOut "sh" ("x" :: Name)))
             ret $type:(intType) %next
         }
       end:
@@ -296,8 +297,14 @@ mkFoldAll'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFoldAll' aenv combine seed IRDelayed{..} =
-  let
+mkFoldAll' aenv combine seed delayed = do
+  let manifest = delayed
+  [Kernel k1'] <- mkFold' aenv combine seed manifest
+  let k1 = Kernel ( k1' { name = "foldAll" } )
+  [k2] <- mkFold1' aenv combine delayed
+  return [k1,k2]
+  
+{-
       -- inputs
       (start, end, paramGang)   = gangParam
       (tid, paramId)            = gangId
@@ -326,6 +333,7 @@ mkFoldAll' aenv combine seed IRDelayed{..} =
             writeArray arrTmp tid r
             return_
   return [k1,k2]
+-}
 
 -- Reduce an array to a single element, without a starting value.
 --
@@ -339,8 +347,13 @@ mkFold1All'
     -> IRFun2 aenv (e -> e -> e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold1All' aenv combine IRDelayed{..} =
-  let
+mkFold1All' aenv combine delayed = do
+  let manifest = delayed
+  [Kernel k1'] <- mkFold1' aenv combine manifest
+  let k1 = Kernel ( k1' { name = "foldAll" } )
+  [k2] <- mkFold1' aenv combine delayed
+  return [k1,k2]
+{-
       -- inputs
       (start, end, paramGang)   = gangParam
       (tid, paramId)            = gangId
@@ -369,6 +382,7 @@ mkFold1All' aenv combine IRDelayed{..} =
             writeArray arrTmp tid r
             return_
   return [k1,k2]
+-}
 
 
 -- Reduction loops
