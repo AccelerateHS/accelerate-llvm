@@ -54,13 +54,18 @@ mkMap _nvvm aenv apply IRDelayed{..} = do
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
+  step  <- gridSize
+  tid   <- globalThreadIdx
   k <- [llgM|
   define void @map (
     $params:(paramGang) ,
     $params:(paramOut) ,
     $params:(paramEnv)
     ) {
-      for i32 %i in $opr:(start) to $opr:(end) {
+      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above (step, tid)
+      %z = add i32 $opr:(tid), $opr:(start)
+      br label %nextblock
+      for i32 %i in %z to $opr:(end) step $opr:(step) {
         $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
         $bbsM:("y" .=. apply ("x" :: Name))
         $bbsM:(execRet_ (writeArray arrOut "i" ("y" :: Name)))
