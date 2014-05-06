@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -17,16 +19,22 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
+
+import LLVM.General.AST
+import LLVM.General.Quote.LLVM
 
 -- standard library
 import Prelude                                                  hiding ( fromIntegral )
@@ -41,19 +49,26 @@ mkMap :: forall t aenv sh a b. Elt b
       -> IRFun1    aenv (a -> b)
       -> IRDelayed aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
-mkMap _nvvm aenv apply IRDelayed{..} =
-  let
-      (start, end, paramGang)   = gangParam
+mkMap _nvvm aenv apply IRDelayed{..} = do
+  let (start, end, paramGang)   = gangParam
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-  in
-  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
-
-    imapFromTo start end $ \i -> do
-      xs <- delayedLinearIndex [i]              -- TLM: safe to keep as int32?
-      ys <- apply xs
-      writeArray arrOut i ys
-
-    return_
-
+  k <- [llgM|
+  define void @map (
+    $params:(paramGang) ,
+    $params:(paramOut) ,
+    $params:(paramEnv)
+    ) {
+      for i32 %i in $opr:(start) to $opr:(end) {
+        $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
+        $bbsM:("y" .=. apply ("x" :: Name))
+        $bbsM:(execRet_ (writeArray arrOut "i" ("y" :: Name)))
+      }
+      ret void
+  }
+  |]
+  addMetadata "nvvm.annotations" [ Just $ global "map"
+                                 , Just $ MetadataStringOperand "kernel"
+                                 , Just $ constOp (num int32 1) ]
+  return $ [Kernel k]

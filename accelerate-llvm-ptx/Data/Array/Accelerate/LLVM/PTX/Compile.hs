@@ -152,13 +152,13 @@ compileModuleNVPTX dev name mdl =
 #endif
       b1      <- LLVM.runPassManager pm mdl
 
-      -- Lower the LLVM module into target assembly (PTX)
-      ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
-
       -- debug printout
       Debug.when Debug.dump_llvm $ do
         Debug.message Debug.dump_llvm $ printf "llvm: optimisation did work? %s" (show b1)
         Debug.message Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
+
+      -- Lower the LLVM module into target assembly (PTX)
+      ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
 
       -- Link into a new CUDA module in the current context
       linkPTX name (B.pack ptx)

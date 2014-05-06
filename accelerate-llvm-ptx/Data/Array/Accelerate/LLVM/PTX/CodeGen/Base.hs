@@ -109,8 +109,8 @@ shapeSize (x:xs) = trunc int32 =<< foldM (mul int) (rvalue x) (map rvalue xs)
 
 -- Convert the input Int32`s to natural Int`s.
 --
-toInt :: [Operand] -> CodeGen [Operand]
-toInt = mapM (A.fromIntegral int32 int)
+toInt :: IROperand a => a -> CodeGen [Operand]
+toInt = mapM (A.fromIntegral int32 int) <=< toIRExp
 
 
 -- Gang coordination

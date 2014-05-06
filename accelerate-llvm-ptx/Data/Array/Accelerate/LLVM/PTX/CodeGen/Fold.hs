@@ -5,6 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -404,7 +406,7 @@ mkFoldAll' ptx aenv combine seed arr =
       rec               = IRDelayed
         { delayedExtent      = return (map rvalue shOut)        -- See note: [Marshalling foldAll output arrays]
         , delayedIndex       = error "mkFoldAll: delayedIndex"
-        , delayedLinearIndex = \[i] -> readArray arrOut i
+        , delayedLinearIndex = \i' -> toIRExp i' >>= \[i] -> readArray arrOut i
         }
 
       arr'              = IRDelayed
@@ -436,7 +438,7 @@ mkFold1All' ptx aenv combine arr =
       rec               = IRDelayed
         { delayedExtent      = return (map rvalue shOut)        -- See note: [Marshalling foldAll output arrays]
         , delayedIndex       = error "mkFoldAll: delayedIndex"
-        , delayedLinearIndex = \[i] -> readArray arrOut i
+        , delayedLinearIndex = \i' -> toIRExp i' >>= \[i] -> readArray arrOut i
         }
 
       arr'              = IRDelayed
