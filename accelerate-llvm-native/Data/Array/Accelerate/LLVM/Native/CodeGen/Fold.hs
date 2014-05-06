@@ -158,35 +158,6 @@ mkFold' aenv combine seed IRDelayed{..} = do
     }
   |]
   return $ [Kernel k]
-{-
-  in
-  makeKernel "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
-    loop        <- newBlock "fold.top"
-    exit        <- newBlock "fold.exit"
-
-    seg         <- mul int start n
-    c           <- gte int start end
-    top         <- cbr c exit loop
-
-    setBlock loop
-    c_sh        <- freshName
-    c_sz        <- freshName
-    let sh      = local c_sh
-        sz      = local c_sz
-
-    next        <- add int sz n
-    r           <- reduce ty_acc delayedLinearIndex combine seed sz next
-    writeArray arrOut sh r
-
-    sh'         <- add int sh (constOp $ num int 1)
-    c'          <- gte int sh' end
-    bot         <- cbr c' exit loop
-    _           <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
-    _           <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot)  ]
-
-    setBlock exit
-    return_
--}
 
 -- Reduce a non-empty array to a single element. Since there is no seed element
 -- provided, initialise the loop accumulator with the first element of the
@@ -242,35 +213,6 @@ mkFold1' aenv combine IRDelayed{..} = do
     }
   |]
   return $ [Kernel k]
-  
-{-
-  makeKernel "fold1" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
-    loop        <- newBlock "fold.top"
-    exit        <- newBlock "fold.exit"
-
-    seg         <- mul int start n
-    c           <- gte int start end
-    top         <- cbr c exit loop
-
-    setBlock loop
-    c_sh        <- freshName
-    c_sz        <- freshName
-    let sh      = local c_sh
-        sz      = local c_sz
-
-    next        <- add int sz n
-    r           <- reduce1 ty_acc delayedLinearIndex combine sz next
-    writeArray arrOut sh r
-
-    sh'         <- add int sh (constOp $ num int 1)
-    c'          <- gte int sh' end
-    bot         <- cbr c' exit loop
-    _           <- phi loop c_sz (typeOf (int :: IntegralType Int)) [ (seg,top),   (next,bot) ]
-    _           <- phi loop c_sh (typeOf (int :: IntegralType Int)) [ (start,top), (sh',bot) ]
-
-    setBlock exit
-    return_
--}
 
 -- Reduction to scalar
 -- -------------------
@@ -303,37 +245,6 @@ mkFoldAll' aenv combine seed delayed = do
   let k1 = Kernel ( k1' { name = "foldAll" } )
   [k2] <- mkFold1' aenv combine delayed
   return [k1,k2]
-  
-{-
-      -- inputs
-      (start, end, paramGang)   = gangParam
-      (tid, paramId)            = gangId
-      paramEnv                  = envParam aenv
-
-      -- intermediate result of first step
-      paramTmp  = arrayParam (undefined::Vector e) "tmp"
-      arrTmp    = arrayData  (undefined::Vector e) "tmp"
-
-      -- output array from final step
-      paramOut  = arrayParam (undefined::Scalar e) "out"
-      arrOut    = arrayData  (undefined::Scalar e) "out"
-
-      ty_acc    = llvmOfTupleType (eltType (undefined::e))
-      zero      = constOp (num int 0)
-
-      manifestLinearIndex [i]   = readArray arrTmp i
-      manifestLinearIndex _     = $internalError "makeFoldAll" "expected single expression"
-  in do
-  [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
-            r <- reduce ty_acc manifestLinearIndex combine seed start end
-            writeArray arrOut zero r
-            return_
-  [k2] <- makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
-            r <- reduce1 ty_acc delayedLinearIndex combine start end
-            writeArray arrTmp tid r
-            return_
-  return [k1,k2]
--}
 
 -- Reduce an array to a single element, without a starting value.
 --
@@ -353,73 +264,3 @@ mkFold1All' aenv combine delayed = do
   let k1 = Kernel ( k1' { name = "foldAll" } )
   [k2] <- mkFold1' aenv combine delayed
   return [k1,k2]
-{-
-      -- inputs
-      (start, end, paramGang)   = gangParam
-      (tid, paramId)            = gangId
-      paramEnv                  = envParam aenv
-
-      -- intermediate result of first step
-      paramTmp  = arrayParam (undefined::Vector e) "tmp"
-      arrTmp    = arrayData  (undefined::Vector e) "tmp"
-
-      -- output array from final step
-      paramOut  = arrayParam (undefined::Scalar e) "out"
-      arrOut    = arrayData  (undefined::Scalar e) "out"
-
-      ty_acc    = llvmOfTupleType (eltType (undefined::e))
-      zero      = constOp (num int 0)
-
-      manifestLinearIndex [i]   = readArray arrTmp i
-      manifestLinearIndex _     = $internalError "makeFoldAll" "expected single expression"
-  in do
-  [k1] <- makeKernel "foldAll" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
-            r <- reduce1 ty_acc manifestLinearIndex combine start end
-            writeArray arrOut zero r
-            return_
-  [k2] <- makeKernel "fold1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
-            r <- reduce1 ty_acc delayedLinearIndex combine start end
-            writeArray arrTmp tid r
-            return_
-  return [k1,k2]
--}
-
-
--- Reduction loops
--- ---------------
-
--- Sequentially reduce all elements between the start and end indices, using the
--- provided seed element, combination function, and function to retrieve each
--- element.
---
--- > reduce indexArray c z start end = iter start z
--- >   where
--- >     iter i acc
--- >       | i >= end        = acc
--- >       | otherwise       = iter (i+1) (acc `c` indexArray i)
---
-reduce :: [Type]                                        -- Type of the accumulator
-       -> ([Operand] -> CodeGen [Operand])              -- read an element of the array
-       -> ([Operand] -> [Operand] -> CodeGen [Operand]) -- combine elements
-       -> CodeGen [Operand]                             -- seed
-       -> Operand                                       -- starting array index
-       -> Operand                                       -- final index
-       -> CodeGen [Operand]                             -- reduction
-reduce ty get combine seed start end = do
-  z <- seed
-  iterFromTo start end ty z $ \i acc -> combine acc =<< get [i]
-
-
--- Sequential reduction loop over a non-empty sequence. The condition is not
--- checked.
---
-reduce1 :: [Type]
-        -> ([Operand] -> CodeGen [Operand])              -- read an element of the array
-        -> ([Operand] -> [Operand] -> CodeGen [Operand]) -- combine elements
-        -> Operand                                       -- starting array index
-        -> Operand                                       -- final index
-        -> CodeGen [Operand]                             -- reduction
-reduce1 ty get combine start end = do
-  start' <- add int start (constOp $ num int 1)
-  reduce ty get combine (get [start]) start' end
-
