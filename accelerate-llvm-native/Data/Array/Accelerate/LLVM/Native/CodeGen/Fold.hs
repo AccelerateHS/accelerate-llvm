@@ -142,10 +142,9 @@ mkFold' aenv combine seed IRDelayed{..} = do
         for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
           for.entry:
             %next = add $type:(intType) %sz, %ix.stride
-            %end = sub $type:(intType) %next, 1
             br label %reduce
           reduce:
-            for $type:(intType) %j in %sz to %end with $types:(ty_acc) $oprs:(seed') as %x {
+            for $type:(intType) %j in %sz to %next with $types:(ty_acc) $oprs:(seed') as %x {
                 $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
                 $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
                 $bbsM:(execRet (return "z"))
@@ -195,12 +194,11 @@ mkFold1' aenv combine IRDelayed{..} = do
         for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
           for.entry:
             %next = add $type:(intType) %sz, $opr:(n)
-            %end = sub $type:(intType) %next, 1
             %start = add $type:(intType) %sz, 1
           br label %nextblock
             $bbsM:("seed" .=. delayedLinearIndex ("sz" :: [Operand]))
           reduce:
-            for $type:(intType) %j in %start to %end with $types:(ty_acc) %seed as %x {
+            for $type:(intType) %j in %start to %next with $types:(ty_acc) %seed as %x {
                 $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
                 $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
                 $bbsM:(execRet (return "z"))
