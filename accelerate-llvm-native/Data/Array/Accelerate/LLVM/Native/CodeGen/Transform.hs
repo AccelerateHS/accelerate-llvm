@@ -65,7 +65,7 @@ mkTransform aenv permute apply IRDelayed{..} = do
           $bbsM:("ix1" .=. permute ("ix" :: Name))              ;; apply backwards index permutation
           $bbsM:("xs" .=. delayedIndex ("ix1" :: Name))         ;; get element
           $bbsM:("ys" .=. apply ("xs" :: Name))                 ;; apply function from input array
-          $bbsM:(exec (writeArray arrOut "i" ("ys" :: Name)))
+          $bbsM:(execRet_ (writeArray arrOut "i" ("ys" :: Name)))
       }
 
       ret void

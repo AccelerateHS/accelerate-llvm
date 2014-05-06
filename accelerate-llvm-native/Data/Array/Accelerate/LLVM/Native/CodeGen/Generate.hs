@@ -59,7 +59,7 @@ mkGenerate aenv apply = do
       for $type:(intType) %i in $opr:(start) to $opr:(end) {
         $bbsM:("ix" .=. indexOfInt (map local shOut) ("i" :: Operand))
         $bbsM:("r" .=. apply ("ix" :: Name))
-        $bbsM:(exec (writeArray arrOut "i" ("r" :: Name)))
+        $bbsM:(execRet_ (writeArray arrOut "i" ("r" :: Name)))
       }
       ret void
   }

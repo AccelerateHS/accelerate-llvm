@@ -136,6 +136,10 @@ instance B.CodeGenMonad CodeGen where
     returnV x
   --  n <- newBlock "bb"
     createBlocks
+  execRet_ f = do
+    f
+    return_
+    createBlocks
 
 runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
 runLLVM ll =
