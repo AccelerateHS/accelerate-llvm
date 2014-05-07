@@ -48,7 +48,7 @@ mkTransform aenv permute apply IRDelayed{..} =
   in
   makeKernel "transform" (paramGang ++ paramOut ++ paramEnv) $ do
     imapFromTo start end $ \i -> do
-      ix  <- indexOfInt (map local shOut) i     -- convert to multidimensional index
+      ix  <- indexOfInt shOut i                 -- convert to multidimensional index
       ix' <- permute ix                         -- apply backwards index permutation
       xs  <- delayedIndex ix'                   -- get element
       ys  <- apply xs                           -- apply function from input array

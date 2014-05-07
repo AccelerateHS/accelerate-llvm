@@ -342,7 +342,7 @@ llvmOfOpenExp exp env aenv = cvtE exp env
           sh    = arrayShape (undefined::Array sh e) name
       --
       ix' <- cvtE ix env
-      i   <- intOfIndex (map local sh) ix'
+      i   <- intOfIndex sh ix'
       readArray ad i
     index _ _ _ =
       $internalError "index" "expected array variable"
@@ -444,8 +444,8 @@ writeArray' volatile arr i val =
 
 -- Convert a multidimensional array index into a linear index
 --
-intOfIndex :: [Operand] -> [Operand] -> CodeGen Operand
-intOfIndex extent idx = cvt (reverse extent) (reverse idx)
+intOfIndex :: (Rvalue sh, Rvalue ix) => [sh] -> [ix] -> CodeGen Operand
+intOfIndex extent idx = cvt (reverseMap rvalue extent) (reverseMap rvalue idx)
   where
     cvt []      []     = return (constOp $ num int 0)
     cvt [_]     [i]    = return i
@@ -459,8 +459,8 @@ intOfIndex extent idx = cvt (reverse extent) (reverse idx)
 
 -- Convert a linear array index into a multidimensional array
 --
-indexOfInt :: [Operand] -> Operand -> CodeGen [Operand]
-indexOfInt extent idx = reverse `fmap` cvt (reverse extent) idx
+indexOfInt :: (Rvalue sh, Rvalue i) => [sh] -> i -> CodeGen [Operand]
+indexOfInt extent idx = reverse `fmap` cvt (reverseMap rvalue extent) (rvalue idx)
   where
     cvt []      _ = return [constOp $ num int 0]
     cvt [_]     i = return [i]  -- assert( i >= 0 && i < sh )
@@ -469,6 +469,9 @@ indexOfInt extent idx = reverse `fmap` cvt (reverse extent) idx
       i' <- A.quot int i sz
       rs <- cvt sh i'
       return (r:rs)
+
+reverseMap :: (a -> b) -> [a] -> [b]
+reverseMap f = reverse . map f
 
 
 -- Primitive functions

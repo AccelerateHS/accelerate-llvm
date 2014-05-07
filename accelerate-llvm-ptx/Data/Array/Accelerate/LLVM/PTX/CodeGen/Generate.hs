@@ -53,7 +53,7 @@ mkGenerate _dev aenv apply =
 
     imapFromTo start end $ \i -> do
       ii  <- fromIntegral int32 int i           -- keep the loop counter as i32, but do calculations in Int
-      ix  <- indexOfInt (map local shOut) ii    -- convert to multidimensional index
+      ix  <- indexOfInt shOut ii                -- convert to multidimensional index
       r   <- apply ix                           -- apply generator function
       writeArray arrOut i r                     -- write result
 

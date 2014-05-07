@@ -57,7 +57,7 @@ mkTransform _dev aenv permute apply IRDelayed{..} =
 
     imapFromTo start end $ \i -> do
       ii  <- fromIntegral int32 int i           -- loop counter is i32, calculation is in Int
-      ix  <- indexOfInt (map local shOut) ii    -- convert to multidimensional index
+      ix  <- indexOfInt shOut ii                -- convert to multidimensional index
       ix' <- permute ix                         -- apply backwards index permutation
       xs  <- delayedIndex ix'                   -- get element
       ys  <- apply xs                           -- apply function from input array

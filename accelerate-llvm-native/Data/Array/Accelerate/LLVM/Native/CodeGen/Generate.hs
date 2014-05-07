@@ -44,7 +44,7 @@ mkGenerate aenv apply =
   in
   makeKernel "generate" (paramGang ++ paramOut ++ paramEnv) $ do
     imapFromTo start end $ \i -> do
-      ix <- indexOfInt (map local shOut) i      -- convert to multidimensional index
+      ix <- indexOfInt shOut i                  -- convert to multidimensional index
       r  <- apply ix                            -- apply generator function
       writeArray arrOut i r                     -- store result
 
