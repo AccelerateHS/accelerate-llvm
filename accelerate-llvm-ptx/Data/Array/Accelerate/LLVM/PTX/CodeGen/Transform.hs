@@ -60,13 +60,18 @@ mkTransform _dev aenv permute apply IRDelayed{..} = do
       paramEnv                    = envParam aenv
       (start, end, paramGang)     = gangParam
       intType                     = (typeOf (integralType :: IntegralType Int))
+  step  <- gridSize
+  tid   <- globalThreadIdx
   k <- [llgM|
   define void @transform (
     $params:(paramGang) ,
     $params:(paramOut) ,
     $params:(paramEnv)
   ) {
-      for i32 %i in $opr:(start) to $opr:(end) {
+      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above (step, tid)
+      %z = add i32 $opr:(tid), $opr:(start)
+      br label %nextblock
+      for i32 %i in %z to $opr:(end) step $opr:(step) {
           %ii = sext i32 %i to $type:(intType)
           br label %nextblock
           $bbsM:("ix" .=. indexOfInt (map local shOut) "ii")    ;; convert to multidimensional index
