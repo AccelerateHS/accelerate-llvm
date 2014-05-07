@@ -46,6 +46,8 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX, ptxDevice
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop              as Loop
 
+import LLVM.General.Quote.LLVM
+
 -- CUDA
 import Foreign.CUDA.Analysis.Device                             ( DeviceProperties )
 import qualified Foreign.CUDA.Analysis.Device                   as CUDA
@@ -261,7 +263,7 @@ mkFold'warp
     -> Maybe (IRExp aenv e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
-mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
+mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
@@ -274,6 +276,68 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
       i32               = typeOf (int32 :: IntegralType Int32)
+      ty_acc            = llvmOfTupleType (eltType (undefined::e))
+  ntid                <- blockDim
+  nctaid              <- gridDim
+  tid                 <- threadIdx
+  gid                 <- globalThreadIdx
+  sdata               <- sharedMem (undefined::e) ntid
+
+  threadLane          <- A.band int32 tid (constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev - 1)))
+  segmentSize         <- A.fromIntegral int int32 . indexHead =<< delayedExtent
+  k <- [llgM|
+  define void @mkFoldByWarp (
+    $params:(paramGang) ,
+    $params:(paramOut) ,
+    $params:(paramEnv)
+    ) {
+      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above
+      %entry.cond = icmp ult i32 $opr:(threadLane), $opr:(segmentSize)
+      br i1 %entry.cond, label %main.top, label %main.exit
+
+      main.top:
+      %vectorsPerBlock = udiv i32 $opr:(ntid), $opr:(warpSize)
+      %warpIdx         = udiv i32 $opr:(gid), $opr:(warpSize)
+      %numWarps        = mul  i32 %vectorsPerBlock, $opr:(nctaid)
+      %firstSegment    = add  i32 $opr:(startSeg), %warpIdx
+      br label %main.for
+
+      main.for:
+      for i32 %seg in %firstSegment to $opr:(lastSegment) step %numWarps {
+        %s     = mul i32 %seg, $opr:(segmentSize)
+        %start = add i32 %s, $opr:(threadLane)
+        %end   = add i32 %s, $opr:(segmentSize)
+        br label %nextblock
+        $bbsM:("xs" .=. delayedLinearIndex ("start" :: [Operand]))
+        %start1 = add i32 %start, $opr:(warpSize)
+        br label %nextblock
+        for i32 %i in %start1 to %end step $opr:(warpSize) with $types:(ty_acc) %xs as %acc {
+          $bbsM:("ys" .=. delayedLinearIndex ("i" :: [Operand]))
+          $bbsM:("zs" .=. (combine ("acc" :: Name) ("ys" :: Name)))
+          $bbsM:(execRet (return "zs"))
+        }
+        $bbsM:(exec (writeVolatileArray sdata tid ("acc" :: Name)))
+        %end1.cond = icmp ugt i32 $opr:(tid), $opr:(warpSize)
+        %end1 = select i1 %end1.cond, i32 $opr:(tid), i32 $opr:(warpSize)
+        br label %nextblock
+        $bbsM:("acc1" .=. reduceWarp True dev arrTy combine ("acc" :: Name) sdata "end1" threadLane tid)
+        %write.cond = icmp eq i32 $opr:(threadLane), 0
+        br i1 %write.cond, label %write, label %exit
+        write:
+        br label %nextblock
+        $bbsM:(exec $ writeArraySeeded combine mseed arrOut "seg" ("acc1" :: Name))
+        exit:
+        ret void
+      }
+      main.exit:
+      ret void
+  }
+  |]
+  addMetadata "nvvm.annotations" [ Just $ global "mkFoldByWarp"
+                                 , Just $ MetadataStringOperand "kernel"
+                                 , Just $ constOp (num int32 1) ]
+  return $ [Kernel k]
+{-
   in
   makeKernel "mkFoldByWarp" (paramGang ++ paramOut ++ paramEnv) $ do
     ntid                <- blockDim
@@ -353,7 +417,7 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
 
     setBlock exit
     return_
-
+-}
 
 -- Reduction to scalar
 -- -------------------
@@ -668,11 +732,12 @@ reduceBlock dev ty combine x0 sdata n ix tid
 
 
 reduceWarp
-    :: Bool                         -- is the number of elements in range [0,warpSize) ?
+    :: IROperand a
+    => Bool                         -- is the number of elements in range [0,warpSize) ?
     -> DeviceProperties             -- properties of the target GPU
     -> [Type]                       -- type of element 'e'
     -> IRFun2 aenv (e -> e -> e)    -- combination function
-    -> [Operand]                    -- this thread's initial value
+    -> a                            -- this thread's initial value
     -> [Name]                       -- shared memory array that intermediate and input values are stored in
     -> Operand                      -- number of elements to reduce [0,n) :: Int32
     -> Operand                      -- thread identifier, such as thread lane or threadIdx.x
@@ -680,7 +745,8 @@ reduceWarp
     -> CodeGen [Operand]            -- variables storing the final reduction value
 reduceWarp half dev ty combine x0 sdata n ix tid
   | shflOK dev ty = error "butterfly reduction"
-  | otherwise     = reduceWarpTree half dev ty combine x0 sdata n ix tid
+  | otherwise     = do x0' <- toIRExp x0
+                       reduceWarpTree half dev ty combine x0' sdata n ix tid
 
 
 -- Butterfly reduction
@@ -856,3 +922,10 @@ reduceWarpTree half dev ty combine x0 sdata n ix tid
                                    writeVolatileArray sdata tid res
       return res
 
+writeArraySeeded combine mseed arrOut seg ys' =
+  case mseed of
+    Nothing   -> writeArray arrOut seg ys'
+    Just seed -> do
+      xs'     <- seed
+      ys''    <- combine xs' ys'
+      writeArray arrOut seg ys''
