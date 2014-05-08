@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   freshName, declare, intrinsic,
 
   -- basic blocks
+  Block,
   newBlock, setBlock, createBlocks, beginGroup,
 
   -- instructions

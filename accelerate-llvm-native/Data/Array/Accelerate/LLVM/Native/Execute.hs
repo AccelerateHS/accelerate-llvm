@@ -1,11 +1,12 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                      #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TemplateHaskell          #-}
+{-# LANGUAGE TypeOperators            #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -28,21 +29,19 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Execute
 
+import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Compile.Function
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Target
-
--- Use chunked evaluation
--- import Data.Array.Accelerate.LLVM.Native.Execute.Fill
--- import Data.Array.Accelerate.LLVM.Native.Execute.Gang
 
 -- Use work-stealing scheduler
 import Data.Range.Range                                         ( Range(..) )
@@ -53,11 +52,14 @@ import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 -- library
 import Prelude                                                  hiding ( map, scanl, scanr )
 import Data.Monoid                                              ( mempty )
+import Data.Word                                                ( Word8 )
 import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
 import qualified Prelude                                        as P
 
 import Foreign.LibFFI                                           as FFI
+import Foreign.C
+import Foreign.Ptr
 
 #if !MIN_VERSION_llvm_general(3,3,0)
 import Data.Word
@@ -89,6 +91,7 @@ instance Execute Native where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  permute       = permuteOp
 
 
 -- Skeleton implementation
@@ -166,6 +169,33 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
 
              return out
 
+-- Forward permutation, specified by an indexing mapping into an array and a
+-- combination function to combine elements.
+--
+permuteOp
+    :: (Shape sh, Shape sh', Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Array sh' e
+    -> LLVM Native (Array sh' e)
+permuteOp kernel gamma aenv () shIn dfs = do
+  let
+      barrier :: Vector Word8
+      barrier@(Array _ adata)   = allocateArray (Z :. n)
+      ((), ptr)                 = ptrsOfArrayData adata
+      n                         = size (shape dfs)
+      unlocked                  = 0
+  --
+  out    <- cloneArray dfs
+  native <- gets llvmTarget
+  liftIO $ do
+    memset ptr unlocked n
+    executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
+  return out
+
 
 -- Skeleton execution
 -- ------------------
@@ -205,4 +235,14 @@ executeOp native@Native{..} (NativeR main) after gamma aenv r args =
   executeFunction main                        $ \f ->
   runExecutable fillP defaultLargePPT r after $ \start end _ ->
     callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
+
+
+-- Standard C functions
+-- --------------------
+
+memset :: Ptr Word8 -> Word8 -> Int -> IO ()
+memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
+
+foreign import ccall unsafe "string.h memset" c_memset
+    :: Ptr Word8 -> CInt -> CSize -> IO (Ptr Word8)
 
