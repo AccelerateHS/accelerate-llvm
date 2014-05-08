@@ -165,7 +165,7 @@ runLLVM ll =
 --
 initBlockChain :: Seq Block
 initBlockChain =
-  initBlockChain' $ Block "empty" Seq.empty Nothing
+  initBlockChain' $ Block "entry" Seq.empty Nothing
 
 initBlockChain' :: Block -> Seq Block
 initBlockChain' l = Seq.singleton l
