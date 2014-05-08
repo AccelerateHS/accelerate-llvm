@@ -18,6 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 
 -- llvm-general
 import LLVM.General.AST
+import LLVM.General.AST.RMWOperation
 
 -- accelerate
 import Data.Array.Accelerate.Type
@@ -127,14 +128,23 @@ spinlock barrier' i action =
   _     <- br loop
   setBlock loop
 
-  old   <- instr $ CmpXchg True addr unlocked locked (Atomicity True AcquireRelease) []
-  lock  <- eq int32 old unlocked
-  _     <- cbr lock done loop
+  -- Atomically set the slot to the locked state, returning the old state. If
+  -- the slot was unlocked we just acquired it, otherwise the state remains
+  -- unchanged (previously locked) and we need to spin until it becomes
+  -- unlocked.
+  --
+  old   <- instr $ AtomicRMW True Xchg addr locked (Atomicity True Acquire) []
+  c     <- eq (scalarType :: ScalarType Word8) old locked
+  _     <- cbr c loop done
 
+  -- Later x86 architectures can release the lock safely by using an unlocked
+  -- MOV instruction rather than the slower locked XCHG. This is due to subtle
+  -- memory ordering rules which allow this, even though MOV is not a full
+  -- memory barrier.
+  --
   setBlock done
   res   <- action
   do_    $ Store True addr unlocked (Just $ Atomicity True Release) 0 []
-  -- end of critical section
 
   return (res, done)
 
