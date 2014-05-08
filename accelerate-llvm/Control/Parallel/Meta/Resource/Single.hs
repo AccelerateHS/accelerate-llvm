@@ -7,8 +7,6 @@
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
--- This module implements a single-threaded resource.
---
 
 module Control.Parallel.Meta.Resource.Single
   where
@@ -18,30 +16,14 @@ import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 
 -- library
-import Control.Exception
 import Data.Monoid
 import Data.Concurrent.Deque.Class
-import qualified Data.Vector                                    as V
 
 
--- | Create a single-threaded resource. This resource is not aware of any other
--- sources of work (at this level). The workpool might still be stolen from by
--- another processor.
+-- | Create a resource where each thread works in isolation. The resource is not
+-- aware of any other sources of work (at this level) and only ever tries to pop
+-- from its own local queue.
 --
--- The gang must contain a single worker.
---
-mkResource :: Gang -> Resource
-mkResource single
-  = assert (gangSize single == 1)
-  $ Resource mempty (mkWorkSearch (V.unsafeIndex single 0))
-
-
--- | The 'WorkSearch' for a single worker
---
-mkWorkSearch :: Worker -> WorkSearch
-mkWorkSearch single =
-  WorkSearch $ \me ->
-    if workerId me == workerId single
-       then return Nothing
-       else tryPopR (workpool single)
+mkResource :: Resource
+mkResource = Resource mempty (WorkSearch (tryPopL . workpool))
 

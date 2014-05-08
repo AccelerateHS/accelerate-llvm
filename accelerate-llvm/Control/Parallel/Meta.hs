@@ -84,6 +84,7 @@ data Executable = Executable {
         -> IO ()
   }
 
+
 -- | The 'Finalise' component of an executable is an action the thread applies
 -- after processing the work function, given the ranges that this thread
 -- handled.
