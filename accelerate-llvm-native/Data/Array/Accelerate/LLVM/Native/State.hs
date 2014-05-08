@@ -22,6 +22,7 @@ import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import qualified Control.Parallel.Meta.Trans.LBS                as LBS
 import qualified Control.Parallel.Meta.Resource.SMP             as SMP
+import qualified Control.Parallel.Meta.Resource.Single          as Single
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -52,8 +53,26 @@ createTarget
     :: [Int]
     -> IO Native
 createTarget caps = do
-  gang  <- forkGangOn caps
-  return . Native gang . Executable $ \ppt range after fill ->
+  gang   <- forkGangOn caps
+  return $! Native gang (balancedParIO gang)
+
+
+-- | Execute a computation without load balancing. Each thread evaluates its
+-- local work queue only and does not create or search for additional work. This
+-- relies on 'runParIO' initialising each thread with an equally sized chunk of
+-- the input.
+--
+unbalancedParIO :: Gang -> Executable
+unbalancedParIO gang =
+  Executable $ \_ range after fill ->
+    timed $ runParIO Single.mkResource gang range fill (runFinalise after)
+
+
+-- | Execute a computation using lazy splitting work stealing queues.
+--
+balancedParIO :: Gang -> Executable
+balancedParIO gang =
+  Executable $ \ppt range after fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt $ SMP.mkResource retries gang
     in
