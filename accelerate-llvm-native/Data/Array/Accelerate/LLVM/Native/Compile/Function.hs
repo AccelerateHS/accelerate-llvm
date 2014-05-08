@@ -27,7 +27,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Control.Concurrent
 import Data.List
 import Foreign.Ptr
-import System.IO.Unsafe
 
 
 -- | The 'Req' type encapsulates a request to execute the JIT compiled function

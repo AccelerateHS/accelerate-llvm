@@ -89,6 +89,8 @@ class Async arch => Remote arch where
 -- CPP hackery to generate the cases where we dispatch to the worker function handling
 -- elementary types.
 --
+-- TODO: Turn me into Template Haskell so that I can be exported and reused.
+--
 #define mkPrimDispatch(dispatcher,worker)                                       \
 ; dispatcher ArrayEltRint     = worker                                          \
 ; dispatcher ArrayEltRint8    = worker                                          \
