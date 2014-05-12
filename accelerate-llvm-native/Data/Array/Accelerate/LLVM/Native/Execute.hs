@@ -33,14 +33,13 @@ import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Compile.Function
+import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
-import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
+import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Target
 
 -- Use work-stealing scheduler

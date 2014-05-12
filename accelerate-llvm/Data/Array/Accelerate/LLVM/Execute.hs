@@ -31,9 +31,8 @@ import Data.Array.Accelerate.Tuple
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.Array.Data
-import Data.Array.Accelerate.LLVM.AST
+import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 

@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
@@ -14,7 +15,8 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Compile (
 
-  module Data.Array.Accelerate.LLVM.Compile
+  module Data.Array.Accelerate.LLVM.Compile,
+  ExecutableR(..), Kernel(..),
 
 ) where
 
@@ -36,7 +38,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Compile.Link
@@ -62,8 +63,20 @@ import qualified Data.ByteString.Char8                          as B
 
 
 instance Compile PTX where
-  compileForTarget = compileForPTX
+  data ExecutableR PTX = PTXR { ptxKernel :: [Kernel]
+                              , ptxModule :: {-# UNPACK #-} !CUDA.Module
+                              }
+  compileForTarget     = compileForPTX
 
+
+data Kernel = Kernel {
+    kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
+  , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
+  , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
+  , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
+  , kernelThreadBlocks          :: (Int -> Int)
+  , kernelName                  :: String
+  }
 
 -- | Compile a given module for the NVPTX backend. This produces a CUDA module
 -- as well as a list of the kernel functions in the module, together with some

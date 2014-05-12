@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -18,6 +19,11 @@ module Data.Array.Accelerate.LLVM.Compile (
   Compile(..),
   compileAcc, compileAfun,
 
+  ExecOpenAcc(..),
+  ExecAcc, ExecAfun,
+  ExecExp, ExecOpenExp,
+  ExecFun, ExecOpenFun
+
 ) where
 
 -- accelerate
@@ -27,11 +33,9 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), Array, Shape, Elt, Foreign )
 
-import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target
 
 -- standard library
 import Prelude                                                  hiding ( exp )
@@ -40,13 +44,41 @@ import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 
 
-class Target arch => Compile arch where
+class Compile arch where
+  data ExecutableR t
+
   -- | Compile an accelerate computation into some backend-specific executable format
   --
   compileForTarget
       :: DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM arch (ExecutableR arch)
+
+
+-- | Annotate an open array expression with the information necessary to execute
+-- each node directly.
+--
+data ExecOpenAcc arch aenv a where
+  ExecAcc  :: ExecutableR arch
+           -> Gamma aenv
+           -> PreOpenAcc (ExecOpenAcc arch) aenv a
+           -> ExecOpenAcc arch aenv a
+
+  EmbedAcc :: (Shape sh, Elt e)
+           => PreExp (ExecOpenAcc arch) aenv sh
+           -> ExecOpenAcc arch aenv (Array sh e)
+
+
+-- An annotated AST suitable for execution
+--
+type ExecAcc arch a     = ExecOpenAcc arch () a
+type ExecAfun arch a    = PreAfun (ExecOpenAcc arch) a
+
+type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
+type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
+
+type ExecExp arch       = ExecOpenExp arch ()
+type ExecFun arch       = ExecOpenFun arch ()
 
 
 -- | Initialise code generation, compilation, and data transfer (if required)

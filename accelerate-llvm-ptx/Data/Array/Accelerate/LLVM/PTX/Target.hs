@@ -42,7 +42,6 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Reservoir )
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
-import qualified Foreign.CUDA.Analysis                          as CUDA
 
 -- standard library
 import Control.Monad.Error
@@ -68,19 +67,7 @@ data PTX = PTX {
   , fillP                       :: {-# UNPACK #-} !Executable
   }
 
-data Kernel = Kernel {
-    kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
-  , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
-  , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
-  , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
-  , kernelThreadBlocks          :: (Int -> Int)
-  , kernelName                  :: String
-  }
-
 instance Target PTX where
-  data ExecutableR PTX = PTXR { ptxKernel :: [Kernel]
-                              , ptxModule :: {-# UNPACK #-} !CUDA.Module
-                              }
   targetTriple _     = Just ptxTargetTriple
   targetDataLayout _ = Just ptxDataLayout
 

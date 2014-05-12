@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile
@@ -14,6 +15,8 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
+  module Data.Array.Accelerate.LLVM.Native.Compile.Function,
+  ExecutableR(..),
 
 ) where
 
@@ -56,7 +59,8 @@ import System.IO
 
 
 instance Compile Native where
-  compileForTarget = compileForNativeTarget
+  data ExecutableR Native = NativeR { executableR :: Function }
+  compileForTarget        = compileForNativeTarget
 
 instance Intrinsic Native
 

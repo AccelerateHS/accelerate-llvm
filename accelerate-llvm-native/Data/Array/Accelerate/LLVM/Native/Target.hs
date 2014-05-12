@@ -28,7 +28,6 @@ import LLVM.General.AST.DataLayout                              ( DataLayout )
 import Data.Array.Accelerate.Error                              ( internalError )
 
 import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
-import Data.Array.Accelerate.LLVM.Native.Compile.Function       ( Function )
 import Control.Parallel.Meta                                    ( Executable )
 import Control.Parallel.Meta.Worker                             ( Gang )
 
@@ -45,8 +44,6 @@ data Native = Native {
   }
 
 instance Target Native where
-  data ExecutableR Native = NativeR { executableR :: Function }
-
   targetTriple     _ = Just nativeTargetTriple
   targetDataLayout _ = Just nativeDataLayout
 

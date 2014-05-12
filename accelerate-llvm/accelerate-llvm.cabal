@@ -52,7 +52,6 @@ Flag chase-lev
 Library
   exposed-modules:
     -- Accelerate-LLVM middle-end
-    Data.Array.Accelerate.LLVM.AST
     Data.Array.Accelerate.LLVM.Array.Data
     Data.Array.Accelerate.LLVM.Array.Nursery
     Data.Array.Accelerate.LLVM.Array.Table

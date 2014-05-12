@@ -22,7 +22,6 @@ import LLVM.General.AST.DataLayout                              ( DataLayout )
 -- | Describes some target specific information needed for code generation
 --
 class Target t where
-  data ExecutableR t
   targetTriple          :: t {- dummy -} -> Maybe String
   targetDataLayout      :: t {- dummy -} -> Maybe DataLayout
 
