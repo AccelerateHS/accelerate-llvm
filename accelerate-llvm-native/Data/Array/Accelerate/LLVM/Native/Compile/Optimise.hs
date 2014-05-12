@@ -19,7 +19,6 @@ import LLVM.General.AST.DataLayout
 import LLVM.General.Module
 import LLVM.General.PassManager
 import LLVM.General.Target
-import LLVM.General.Transforms
 
 -- accelerate
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
