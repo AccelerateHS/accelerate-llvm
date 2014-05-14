@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -26,19 +27,24 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   freshName, declare,
 
   -- basic blocks
-  newBlock, setBlock, createBlocks, beginGroup,
+  newBlock, setBlock, createBlocks, createBlocks', beginGroup, terminate,
+
+  -- variables
+  lookupVariableA, setVariableA,
 
   -- instructions
-  instr, do_, return_, phi, phi', br, cbr,
+  instr, do_, return_, returnV, phi, phi', br, cbr,
 
   -- metadata
-  addMetadata,
+  addMetadata, trace,
+
+  B.CodeGenMonad(..)
 
 ) where
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Data.Maybe
 import Data.Map                                                 ( Map )
 import Data.Sequence                                            ( Seq )
@@ -62,12 +68,19 @@ import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
+import qualified LLVM.General.Quote.Base as B
 
 -- Names
 -- =====
 
 instance IsString Name where
   fromString = Name . fromString
+
+instance IsString Operand where
+  fromString = LocalReference . fromString
+
+instance IsString [Operand] where
+  fromString = (:[]) . fromString
 
 -- | Generate a fresh (un)name.
 --
@@ -85,6 +98,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 --
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                            -- blocks for this function
+  , variables           :: Map Name [Operand]                 -- locally defined Variables
   , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
   , metadataTable       :: Map String (Seq [Maybe Operand])     -- module metadata to be collected
   , next                :: {-# UNPACK #-} !Word                 -- a name supply
@@ -101,10 +115,35 @@ data Block = Block
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
+instance B.CodeGenMonad CodeGen where
+  newVariable = freshName
+  lookupVariable = lookupVariableA
+  setVariable = setVariableA
+  xs .=. f = do
+    xs' <- f
+    setVariableA xs xs'
+    n <- newBlock "nextblock"
+    _ <- br n
+    createBlocks
+  exec f = do
+    f
+    n <- newBlock "nextblock"
+    _ <- br n
+  --  n <- newBlock "bb"
+    createBlocks
+  execRet f = do
+    x <- f
+    returnV x
+  --  n <- newBlock "bb"
+    createBlocks
+  execRet_ f = do
+    f
+    return_
+    createBlocks
 
 runLLVM :: forall t aenv a. Target t => CodeGen [Kernel t aenv a] -> Module t aenv a
 runLLVM ll =
-  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty Map.empty 0)
+  let (r, st)           = runState (runCodeGen ll) (CodeGenState initBlockChain Map.empty Map.empty Map.empty 0)
       kernels           = map unKernel r
       defs              = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
@@ -126,17 +165,22 @@ runLLVM ll =
 --
 initBlockChain :: Seq Block
 initBlockChain =
-  Seq.singleton $ Block "entry" Seq.empty Nothing
+  initBlockChain' $ Block "entry" Seq.empty Nothing
 
+initBlockChain' :: Block -> Seq Block
+initBlockChain' l = Seq.singleton l
 
 -- | Extract the block state and construct the basic blocks to form a function
 -- body. This also clears the block stream, ready for a new function to be
 -- generated.
 --
 createBlocks :: CodeGen [BasicBlock]
-createBlocks
+createBlocks = freshName >>= \n -> createBlocks' False $ Block n Seq.empty Nothing
+
+createBlocks' :: Bool -> Block -> CodeGen [BasicBlock]
+createBlocks' reset l
   = state
-  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+  $ \s -> let s'     = s { blockChain = initBlockChain' l, next = if reset then 0 else (next s) }
               blocks = makeBlock `fmap` blockChain s
               m      = Seq.length (blockChain s)
               n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
@@ -209,6 +253,9 @@ phi' t incoming = do
   phi block crit t incoming
 
 
+returnV :: Operand -> CodeGen ()
+returnV op = void $ terminate (Do (Ret (Just op) []))
+
 -- | Unconditional branch. Return the name of the block that was branched from.
 --
 br :: Block -> CodeGen Block
@@ -273,11 +320,11 @@ declare g =
 newBlock :: String -> CodeGen Block
 newBlock nm =
   state $ \s ->
-    let idx     = Seq.length (blockChain s)
+    let idx     = next s
         label   = Name $ let (h,t) = break (== '.') nm in (h ++ shows idx t)
-        next    = Block label Seq.empty Nothing
+        nextB   = Block label Seq.empty Nothing
     in
-    ( next, s )
+    ( nextB, s{ next = idx+1 } )
 
 -- | Add this block to the block stream. Any instructions pushed onto the stream
 -- by 'instr' and friends will now apply to this block.
@@ -296,6 +343,22 @@ beginGroup nm = do
   _    <- br next
   setBlock next
 
+-- Variables
+-- =========
+
+-- | Set a Variable
+--
+setVariableA :: Name -> [Operand] -> CodeGen ()
+setVariableA x y =
+  state $ \s -> ( (), s{ variables = Map.insert x y (variables s) } )
+
+-- | Get a Variable
+--
+lookupVariableA :: Name -> CodeGen (Maybe [Operand])
+lookupVariableA xs =
+  state $ \s -> ( xs' s , s )
+ where
+  xs' s = Map.lookup xs (variables s)
 
 -- Metadata
 -- ========
