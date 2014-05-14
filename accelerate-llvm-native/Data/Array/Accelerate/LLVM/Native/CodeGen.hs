@@ -19,6 +19,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
 
@@ -28,4 +29,5 @@ instance Skeleton Native where
   transform _   = mkTransform
   fold _        = mkFold
   fold1 _       = mkFold1
+  scanl1 _      = mkScanl1
 
