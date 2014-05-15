@@ -29,7 +29,8 @@ FILES=`find accelerate-llvm*/Data accelerate-llvm/Control -iname "$1*" -name "*.
 COUNT=`echo $FILES | wc -w`
 
 if [ $COUNT -eq 1 ]; then
-    $GHC $GHC_FLAGS $FILES
+    shift
+    $GHC $GHC_FLAGS $FILES $@
 else
     $GHC $GHC_FLAGS $@
 fi
