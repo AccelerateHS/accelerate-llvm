@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -46,7 +45,7 @@ mkGenerate
     -> Gamma aenv
     -> IRFun1 aenv (sh -> e)
     -> CodeGen [Kernel arch aenv (Array sh e)]
-mkGenerate _dev aenv apply = do
+mkGenerate _dev aenv apply =
   let
       arrOut                    = arrayData  (undefined::Array sh e) "out"
       shOut                     = arrayShape (undefined::Array sh e) "out"
@@ -54,29 +53,30 @@ mkGenerate _dev aenv apply = do
       paramEnv                  = envParam aenv
       (start, end, paramGang)   = gangParam
       intType                   = (typeOf (integralType :: IntegralType Int))
-  step  <- gridSize
-  tid   <- globalThreadIdx
-  k <- [llgM|
-  define void @generate (
-    $params:(paramGang) ,
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above (step, tid)
-      %z = add i32 $opr:(tid), $opr:(start)
-      br label %nextblock
-      for i32 %i in %z to $opr:(end) step $opr:(step) {
-        %ii = sext i32 %i to $type:(intType)                    ;; keep the loop counter as i32, but do calculations in Int
+  in
+  makeKernelQ "generate" [llgM|
+    define void @generate
+    (
+        $params:paramGang,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        $bbsM:("step" .=. gridSize)
+        $bbsM:("tid"  .=. globalThreadIdx)
+        %z = add i32 %tid, $opr:start
         br label %nextblock
-        $bbsM:("ix" .=. indexOfInt shOut ("ii" :: Operand))     ;; convert to multidimensional index
-        $bbsM:("r" .=. apply ("ix" :: Name))                    ;; apply generator function
-        $bbsM:(execRet_ (writeArray arrOut "i" ("r" :: Name)))  ;; write result
-      }
-      ret void
-  }
+
+        for i32 %i in %z to $opr:end step %step
+        {
+            %ii = sext i32 %i to $type:intType                          ;; keep the loop counter as i32, but do calculations in Int
+            br label %nextblock
+
+            $bbsM:("ix" .=. indexOfInt shOut ("ii" :: Operand))         ;; convert to multidimensional index
+            $bbsM:("r"  .=. apply ("ix" :: Name))                       ;; apply generator function
+            $bbsM:(execRet_ (writeArray arrOut "i" ("r" :: Name)))      ;; write result
+        }
+        ret void
+    }
   |]
-  addMetadata "nvvm.annotations" [ Just $ global "generate"
-                                 , Just $ MetadataStringOperand "kernel"
-                                 , Just $ constOp (num int32 1) ]
-  return $ [Kernel k]
 

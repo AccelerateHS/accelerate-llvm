@@ -28,7 +28,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   sharedMem,
 
   -- Kernel definition
-  makeKernel,
+  makeKernel, makeKernelQ,
 
 ) where
 
@@ -233,4 +233,16 @@ makeKernel kernel param body = do
              , parameters  = (param, False)
              , basicBlocks = code
              } ]
+
+
+-- A version of 'makeKernel' that runs a quasi quoter generating a global
+-- function definition.
+--
+makeKernelQ :: Name -> CodeGen Global -> CodeGen [Kernel t aenv a]
+makeKernelQ kernel qq = do
+  code <- qq
+  addMetadata "nvvm.annotations" [ Just $ global kernel
+                                 , Just $ MetadataStringOperand "kernel"
+                                 , Just $ constOp (num int32 1) ]
+  return [ Kernel code { name = kernel } ]
 
