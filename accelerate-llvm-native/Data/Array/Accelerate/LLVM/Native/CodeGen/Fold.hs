@@ -21,19 +21,13 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
--- llvm-general
-import LLVM.General.AST
-
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Shape
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -41,7 +35,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
-import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
 import LLVM.General.AST

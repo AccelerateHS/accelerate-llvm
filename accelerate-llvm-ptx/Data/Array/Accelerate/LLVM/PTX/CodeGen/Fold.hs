@@ -38,14 +38,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
-import Data.Array.Accelerate.LLVM.CodeGen.Loop                  as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX, ptxDeviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop              as Loop
 
 import LLVM.General.Quote.LLVM
 
@@ -169,7 +167,6 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
                         = gangParam
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
-      i32               = typeOf (int32 :: IntegralType Int32)
       ty_acc            = llvmOfTupleType (eltType (undefined::e))
   ntid                <- blockDim
   nctaid              <- gridDim
@@ -334,7 +331,6 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
       warpSize          = constOp $ num int32 (P.fromIntegral (CUDA.warpSize dev))
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
-      i32               = typeOf (int32 :: IntegralType Int32)
       ty_acc            = llvmOfTupleType (eltType (undefined::e))
   ntid                <- blockDim
   nctaid              <- gridDim
@@ -1113,6 +1109,15 @@ reduceWarpTree half dev ty combine x0 sdata n ix tid
                                    writeVolatileArray sdata tid res
       return res
 
+
+writeArraySeeded
+    :: (IROperand a, IROperand b)
+    => (a -> b -> CodeGen a)
+    -> Maybe (CodeGen a)
+    -> [Name]
+    -> Operand
+    -> b
+    -> CodeGen ()
 writeArraySeeded combine mseed arrOut seg ys' =
   case mseed of
     Nothing   -> writeArray arrOut seg ys'

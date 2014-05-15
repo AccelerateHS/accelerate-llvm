@@ -14,17 +14,14 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
 -- llvm-general
 import LLVM.General.AST
+import LLVM.General.Quote.LLVM
 
 -- accelerate
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Analysis.Shape
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -33,14 +30,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 
-
-import LLVM.General.AST
-import LLVM.General.AST.Global
-
-import LLVM.General.Quote.LLVM
-
 -- standard library
-import GHC.Conc
+import Control.Monad
+
 
 mkScanl1
     :: forall t aenv e. (Elt e)
@@ -49,9 +41,16 @@ mkScanl1
     -> IRDelayed aenv (Vector e)
     -> CodeGen [Kernel t aenv (Vector e)]
 mkScanl1 aenv f a = do
-  let arrTmp    = arrayData  (undefined::Vector e) "tmp"
-      tmp       = IRDelayed{
-        delayedLinearIndex = \i' -> toIRExp i' >>= \[i] -> readArray arrTmp i
+  let
+      single [i]        = i
+      single _          = $internalError "single" "expected single expression"
+
+      arrTmp            = arrayData  (undefined::Vector e) "tmp"
+      shTmp             = arrayShape (undefined::Vector e) "tmp"
+      tmp               = IRDelayed {
+          delayedExtent      = return (map local shTmp)
+        , delayedLinearIndex = readArray arrTmp . single <=< toIRExp
+        , delayedIndex       = $internalError "mkScanl1" "linear indexing of temporary array only"
         }
   [k1] <- mkScanl1Seq aenv f a
   [k2] <- mkScanl1Pre aenv f a

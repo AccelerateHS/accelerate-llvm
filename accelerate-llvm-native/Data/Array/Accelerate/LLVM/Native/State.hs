@@ -62,8 +62,8 @@ createTarget caps = do
 -- relies on 'runParIO' initialising each thread with an equally sized chunk of
 -- the input.
 --
-unbalancedParIO :: Gang -> Executable
-unbalancedParIO gang =
+_unbalancedParIO :: Gang -> Executable
+_unbalancedParIO gang =
   Executable $ \_ range after fill ->
     timed $ runParIO Single.mkResource gang range fill (runFinalise after)
 

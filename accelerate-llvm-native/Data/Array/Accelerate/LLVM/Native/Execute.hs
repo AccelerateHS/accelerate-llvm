@@ -201,7 +201,7 @@ permuteOp kernel gamma aenv () shIn dfs = do
 -- Left inclusive scan
 --
 scanl1Op
-    :: forall aenv sh e. (Elt e)
+    :: forall aenv e. Elt e
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -229,11 +229,11 @@ scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
              --
              liftIO $ do
                executeNamedFunction k "scanl1Pre"           $ \f -> do
-                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end tid -> do
+                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
                    callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
 
                executeNamedFunction k "scanl1Post"          $ \f ->
-                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end tid -> do
+                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
                    callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
 
              return out
@@ -273,9 +273,9 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp native@Native{..} (NativeR main) after gamma aenv r args =
+executeOp native@Native{..} (NativeR main) finish gamma aenv r args =
   executeFunction main                        $ \f ->
-  runExecutable fillP defaultLargePPT r after $ \start end _ ->
+  runExecutable fillP defaultLargePPT r finish $ \start end _ ->
     callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
 
 

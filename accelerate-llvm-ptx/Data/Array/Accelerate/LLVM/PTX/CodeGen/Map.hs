@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -31,7 +30,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
 import LLVM.General.AST
 import LLVM.General.Quote.LLVM
