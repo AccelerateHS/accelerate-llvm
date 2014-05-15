@@ -9,6 +9,7 @@
 --
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
+  {-# DEPRECATED "use llvm-general-quote instead" #-}
   where
 
 -- llvm-general
