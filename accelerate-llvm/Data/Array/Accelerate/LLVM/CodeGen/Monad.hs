@@ -81,7 +81,7 @@ instance IsString Name where
 instance IsString Operand where
   fromString = LocalReference . fromString
 
-instance IsString [Operand] where
+instance IsString [Operand] where       -- TLM: @tvh you are just the worst
   fromString = (:[]) . fromString
 
 -- | Generate a fresh (un)name.
