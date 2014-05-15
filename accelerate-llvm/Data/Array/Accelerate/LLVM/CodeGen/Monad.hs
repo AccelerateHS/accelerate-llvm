@@ -30,9 +30,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   Block,
   newBlock, setBlock, createBlocks, createBlocks', beginGroup, terminate,
 
-  -- variables
-  lookupVariableA, setVariableA,
-
   -- instructions
   instr, do_, return_, returnV, phi, phi', br, cbr,
 
@@ -378,15 +375,13 @@ beginGroup nm = do
 --
 setVariableA :: Name -> [Operand] -> CodeGen ()
 setVariableA x y =
-  state $ \s -> ( (), s{ variables = Map.insert x y (variables s) } )
+  state $ \s -> ( (), s { variables = Map.insert x y (variables s) } )
 
 -- | Get a Variable
 --
 lookupVariableA :: Name -> CodeGen (Maybe [Operand])
 lookupVariableA xs =
-  state $ \s -> ( xs' s , s )
- where
-  xs' s = Map.lookup xs (variables s)
+  state $ \s -> ( Map.lookup xs (variables s) , s )
 
 -- Metadata
 -- ========
