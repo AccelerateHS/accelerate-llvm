@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold (
 -- llvm-general
 import LLVM.General.AST
 import LLVM.General.AST.Global
+import LLVM.General.Quote.LLVM
 
 -- accelerate
 import Data.Array.Accelerate.AST
@@ -44,8 +45,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX, ptxDeviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-
-import LLVM.General.Quote.LLVM
 
 -- CUDA
 import Foreign.CUDA.Analysis.Device                             ( DeviceProperties )
@@ -157,7 +156,7 @@ mkFold'block
     -> Maybe (IRExp aenv e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
-mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
+mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
   let
       arrTy             = llvmOfTupleType (eltType (undefined::e))
       arrOut            = arrayData  (undefined::Array sh e) "out"
@@ -168,135 +167,90 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
 
       indexHead         = last -- recall: snoc-list representation for shapes & indices
       ty_acc            = llvmOfTupleType (eltType (undefined::e))
-  ntid                <- blockDim
-  nctaid              <- gridDim
-  ctaid               <- blockIdx
-  tid                 <- threadIdx
-  sdata               <- sharedMem (undefined::e) ntid
-  segmentSize         <- A.fromIntegral int int32 . indexHead =<< delayedExtent
-  k <- [llgM|
-  define void @mkFoldByBlock (
-    $params:(paramGang) ,
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above
-      %entry.cond = icmp ult i32 $opr:(tid), $opr:(segmentSize)
-      br i1 %entry.cond, label %main.top, label %main.exit
+  in do
+  ntid          <- blockDim
+  nctaid        <- gridDim
+  ctaid         <- blockIdx
+  tid           <- threadIdx
+  sdata         <- sharedMem (undefined::e) ntid
+  segmentSize   <- A.fromIntegral int int32 . indexHead =<< delayedExtent
+  --
+  makeKernelQ "mkFoldByBlock" [llgM|
+    define void @mkFoldByBlock
+    (
+        $params:paramGang,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        ; -- Splice in the terms already defined outside the quoter?!?
+        ; -- Ye-gads this is ugly o_O
+        ;
+        $bbsM:(exec $ return ())
 
+        ; -- If each segment has fewer elements than the number of threads in the
+        ; -- block, than the out-of-bounds threads exit immediately. This means
+        ; -- the first read of the array will always succeed.
+        ; --
+        %c1     = icmp ult i32 $opr:tid, $opr:segmentSize
+        br i1 %c1, label %main.top, label %main.exit
+
+        ; -- All threads in the block cooperatively reduce a segment. This loop
+        ; -- iterates over the innermost index space.
+        ; --
       main.top:
-      %firstSegment = add i32 $opr:(startSeg), $opr:(ctaid)
-      br label %main.for
+        %firstSegment = add i32 $opr:startSeg, $opr:ctaid
+        br label %main.for
 
       main.for:
-      for i32 %seg in %firstSegment to $opr:(lastSegment) step $opr:(nctaid) {
-        %s     = mul i32 %seg, $opr:(segmentSize)
-        %start = add i32 %s, $opr:(tid)
-        %end   = add i32 %s, $opr:(segmentSize)
-        br label %nextblock
-        $bbsM:("xs" .=. delayedLinearIndex ("start" :: [Operand]))
-        %start1 = add i32 %start, $opr:(ntid)
-        br label %nextblock
-        for i32 %i in %start1 to %end step $opr:(ntid) with $types:(ty_acc) %xs as %acc {
-          $bbsM:("ys" .=. delayedLinearIndex ("i" :: [Operand]))
-          $bbsM:("zs" .=. (combine ("acc" :: Name) ("ys" :: Name)))
-          $bbsM:(execRet (return "zs"))
+        for i32 %seg in %firstSegment to $opr:lastSegment step $opr:nctaid
+        {
+            %s          = mul i32 %seg, $opr:segmentSize
+            %end        = add i32 %s, $opr:segmentSize
+            %start      = add i32 %s, $opr:tid
+            br label %nextblock
+
+            ; -- Threads of the block sequentially read elements from the input
+            ; -- array and compute a local sum
+            ; --
+            $bbsM:("xs" .=. delayedLinearIndex ("start" :: [Operand]))
+            %ii = add i32 %start, $opr:ntid
+            br label %nextblock
+
+            for i32 %i in %ii to %end step %ntid with $types:ty_acc %xs as %acc
+            {
+                $bbsM:("ys" .=. delayedLinearIndex ("i" :: [Operand]))
+                $bbsM:("zs" .=. combine ("acc" :: Name) ("ys" :: Name))
+                $bbsM:(execRet $ return "zs")
+            }
+
+            ; -- Now cooperatively reduce the local sums to a single value
+            ; --
+            $bbsM:(exec $ writeVolatileArray sdata tid ("acc" :: Name))
+
+            %min.cond   = icmp ule i32 %end, $opr:ntid
+            %end1       = select i1 %min.cond, i32 %end, i32 $opr:ntid
+            br label %nextblock
+
+            $bbsM:("acc1" .=. reduceBlock dev arrTy combine ("acc" :: Name) sdata "end1" tid tid)
+
+            ; -- The first thread writes the result (including the seed element if
+            ; -- this is an exclusive reduction) back to global memory.
+            ; --
+            %write.cond = icmp eq i32 $opr:(tid), 0
+            br i1 %write.cond, label %write, label %exit
+
+          write:
+            br label %nextblock
+            $bbsM:(exec $ writeArrayWithSeed combine mseed arrOut "seg" ("acc1" :: Name))
+
+          exit:
+            ret void
         }
-        $bbsM:(exec (writeVolatileArray sdata tid ("acc" :: Name)))
-        %end1.cond = icmp ugt i32 %end, $opr:(ntid)
-        %end1 = select i1 %end1.cond, i32 %end, i32 $opr:(ntid)
-        br label %nextblock
-        $bbsM:("acc1" .=. reduceBlock dev arrTy combine ("acc" :: Name) sdata "end1" tid tid)
-        %write.cond = icmp eq i32 $opr:(tid), 0
-        br i1 %write.cond, label %write, label %exit
-        write:
-        br label %nextblock
-        $bbsM:(exec $ writeArraySeeded combine mseed arrOut "seg" ("acc1" :: Name))
-        exit:
-        ret void
-      }
       main.exit:
-      ret void
-  }
+        ret void
+    }
   |]
-  addMetadata "nvvm.annotations" [ Just $ global "mkFoldByBlock"
-                                 , Just $ MetadataStringOperand "kernel"
-                                 , Just $ constOp (num int32 1) ]
-  return $ [Kernel k]
-{-
-  in
-  makeKernel "mkFoldByBlock" (paramGang ++ paramOut ++ paramEnv) $ do
-    ntid                <- blockDim
-    nctaid              <- gridDim
-    ctaid               <- blockIdx
-    tid                 <- threadIdx
-    sdata               <- sharedMem (undefined::e) ntid
-    segmentSize         <- A.fromIntegral int int32 . indexHead =<< delayedExtent
-
-    -- If each segment has fewer elements than the number of threads in the
-    -- block, than the out-of-bounds threads exit immediately. This means the
-    -- first read of the array will always succeed.
-    --
-    main                <- newBlock "main.top"
-    exit                <- newBlock "main.exit"
-    c1                  <- lt int32 tid segmentSize
-    _                   <- cbr c1 main exit
-
-    -- All threads in the block cooperatively reduce a segment. This loop
-    -- iterates over the innermost index space.
-    --
-    setBlock main
-    firstSegment        <- add int32 startSeg ctaid
-
-    Loop.for i32 firstSegment
-        (\seg -> lt  int32 seg lastSegment)
-        (\seg -> add int32 seg nctaid)
-        (\seg -> do
-                    s     <- mul int32 seg segmentSize
-                    end   <- add int32 s   segmentSize
-                    start <- add int32 s   tid
-
-                    -- Threads of the block sequentially read elements from the
-                    -- input array and compute a local sum
-                    i     <- A.add int32 start ntid
-                    xs    <- delayedLinearIndex =<< toInt [start]
-                    ys    <- Loop.iter i32 i
-                                 (\i' -> lt  int32 i' end)
-                                 (\i' -> add int32 i' ntid)
-                                 arrTy xs
-                                 (\i' acc -> do xs' <- delayedLinearIndex =<< toInt [i']
-                                                combine xs' acc)
-
-                    -- Now cooperatively reduce the local sums to a single value
-                    writeVolatileArray sdata tid ys
-                    end'  <- A.min int32 end ntid
-                    ys'   <- reduceBlock dev arrTy combine ys sdata end' tid tid
-
-                    -- The first thread writes the result (including the seed
-                    -- element if this is an exclusive reduction) back to global
-                    -- memory.
-                    ifThen  <- newBlock "finish.if.then"
-                    ifExit  <- newBlock "finish.if.exit"
-                    c2      <- eq int32 tid (constOp $ num int32 0)
-                    _       <- cbr c2 ifThen ifExit
-
-                    setBlock ifThen
-                    case mseed of
-                      Nothing   -> writeArray arrOut seg ys'
-                      Just seed -> do
-                        xs'     <- seed
-                        ys''    <- combine xs' ys'
-                        writeArray arrOut seg ys''
-
-                    _       <- br ifExit
-
-                    setBlock ifExit)
-
-    _ <- br exit
-
-    setBlock exit
-    return_
--}
 
 
 -- Reduce a multidimensional array along the innermost dimension. Each warp
@@ -380,7 +334,7 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} = do
         br i1 %write.cond, label %write, label %exit
         write:
         br label %nextblock
-        $bbsM:(exec $ writeArraySeeded combine mseed arrOut "seg" ("acc1" :: Name))
+        $bbsM:(exec $ writeArrayWithSeed combine mseed arrOut "seg" ("acc1" :: Name))
         exit:
         ret void
       }
@@ -785,13 +739,14 @@ mkFold1AllCore
     -> IRFun2    aenv (e -> e -> e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel ptx aenv (Array sh e)]
-mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} = do
+mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       arrTy                     = llvmOfTupleType (eltType (undefined::e))
       arrOut                    = arrayData  (undefined::Array DIM1 e) "out"
       paramOut                  = arrayParam (undefined::Array DIM1 e) "out"
       paramEnv                  = envParam aenv
+  in do
   tid         <- threadIdx
   gtid        <- globalThreadIdx
   ntid        <- blockDim
@@ -906,7 +861,7 @@ reduceBlock
     => DeviceProperties
     -> [Type]                           -- type of element 'e'
     -> IRFun2 aenv (e -> e -> e)        -- combination function
-    -> a                        -- this thread's initial value
+    -> a                                -- this thread's initial value
     -> [Name]                           -- shared memory array that intermediate and input values are stored in
     -> Operand                          -- number of elements to reduce [0,n) :: Int32
     -> Operand                          -- thread identifier, such as thread lane or threadIdx.x
@@ -1110,15 +1065,18 @@ reduceWarpTree half dev ty combine x0 sdata n ix tid
       return res
 
 
-writeArraySeeded
+-- Store a value into an array at a given index. If the seed value is not
+-- Nothing, then this is combined with the given value first.
+--
+writeArrayWithSeed
     :: (IROperand a, IROperand b)
-    => (a -> b -> CodeGen a)
-    -> Maybe (CodeGen a)
-    -> [Name]
-    -> Operand
-    -> b
+    => (a -> b -> CodeGen a)            -- Use this function to combine the...
+    -> Maybe (CodeGen a)                -- ...seed value (if any) before writing the result to
+    -> [Name]                           -- ...the output array
+    -> Operand                          -- ...at this index
+    -> b                                -- The base value to store
     -> CodeGen ()
-writeArraySeeded combine mseed arrOut seg ys' =
+writeArrayWithSeed combine mseed arrOut seg ys' =
   case mseed of
     Nothing   -> writeArray arrOut seg ys'
     Just seed -> do
