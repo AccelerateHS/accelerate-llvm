@@ -222,8 +222,8 @@ scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
              return out
 
   -- Parallel reduction
-     else do let chunkSize = 16::Int
-                 chunks    = sz `div` defaultLargePPT
+     else do let chunkSize = defaultLargePPT
+                 chunks    = sz `div` chunkSize
                  tmp       = allocateArray (Z :. (chunks-1)) :: Vector e
                  out       = allocateArray (Z :. sz)
              --
