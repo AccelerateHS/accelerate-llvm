@@ -46,7 +46,8 @@ gangId =
   (local thread, [Parameter t thread []] )
 
 
--- | Make a complete kernel function using a quasi quoter
+-- | A version of 'makeKernel' that runs a quasi quoter generating the global
+-- function definition.
 --
 makeKernelQ :: Name -> CodeGen Global -> CodeGen [Kernel t aenv a]
 makeKernelQ n qq = do
