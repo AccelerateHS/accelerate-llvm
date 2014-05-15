@@ -130,14 +130,14 @@ mkFold' aenv combine seed IRDelayed{..} = do
   k <- [llgM|
   define void @fold (
     $params:(paramGang) ,
-    $params:(paramStride), 
+    $params:(paramStride),
     $params:(paramOut) ,
     $params:(paramEnv)
     ) {
       entry:
         %firstSeg = mul $type:(intType) $opr:(start), %ix.stride
         br label %for
-    
+
       for:
         for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
           for.entry:
@@ -182,14 +182,14 @@ mkFold1' aenv combine IRDelayed{..} = do
   k <- [llgM|
   define void @fold (
     $params:(paramGang) ,
-    $params:(paramStride), 
+    $params:(paramStride),
     $params:(paramOut) ,
     $params:(paramEnv)
     ) {
       entry:
         %firstSeg = mul $type:(intType) $opr:(start), $opr:(n)
         br label %for
-    
+
       for:
         for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
           for.entry:
@@ -262,3 +262,4 @@ mkFold1All' aenv combine delayed = do
   let k1 = Kernel ( k1' { name = "foldAll" } )
   [k2] <- mkFold1' aenv combine delayed
   return [k1,k2]
+

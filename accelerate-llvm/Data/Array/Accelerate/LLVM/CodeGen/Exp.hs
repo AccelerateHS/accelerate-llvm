@@ -52,7 +52,7 @@ import Control.Monad.State
 --
 llvmOfFun1 :: DelayedFun aenv (a -> b) -> Gamma aenv -> IRFun1 aenv (a -> b)
 llvmOfFun1 (Lam (Body f)) aenv xs = do
-  xs' <- toIRExp xs 
+  xs' <- toIRExp xs
   llvmOfOpenExp f (Empty `Push` xs') aenv
 llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike"
 

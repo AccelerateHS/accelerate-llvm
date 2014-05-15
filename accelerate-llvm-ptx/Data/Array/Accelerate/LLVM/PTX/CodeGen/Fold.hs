@@ -624,15 +624,15 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
       $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above
       %c1 = icmp eq i32 $opr:(start), $opr:(end)
       br i1 %c1, label %empty.top, label %main.top
-      
+
       empty.top:
       %c2 = icmp eq i32 $opr:(tid), 0
       br i1 %c1, label %empty.seed, label %main.exit
-      
+
       empty.seed:
       br label %nextblock
       $bbsM:(exec $ writeArray arrOut ctaid =<< seed)
-     
+
       main.top:
       %start1 = add i32 $opr:(start), $opr:(gtid)
       %c3 = icmp ult i32 %start1, $opr:(end)
@@ -647,7 +647,7 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
         $bbsM:("zs" .=. combine ("ys" :: Name) ("acc" :: Name))
         $bbsM:(execRet $ return "zs")
       }
-      
+
       $bbsM:(exec $ writeVolatileArray sdata tid ("acc" :: Name))
 
       %u = mul i32 $opr:(ctaid), $opr:(ntid)
@@ -660,13 +660,13 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
 
       %c4 = icmp eq i32 $opr:(tid), 0
       br i1 %c4, label %finish, label %main.exit
-      
+
       finish:
       %c5 = icmp eq i32 $opr:(nctaid), 1
       br label %nextblock
       $bbsM:("seed1" .=. seed)
       $bbsM:("acc2" .=. combine ("acc1" :: Name) ("seed1" :: Name))
-      $bbsM:(do 
+      $bbsM:(do
                 x1 <- toIRExp ("acc1" :: Name)
                 x2 <- toIRExp ("acc2" :: Name)
                 "r" .=. zipWithM (\f t -> instr $ Select "c5" t f []) x1 x2)
@@ -812,7 +812,7 @@ mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} = do
       %start1 = add i32 $opr:(start), $opr:(gtid)
       %c1 = icmp eq i32 %start1, $opr:(end)
       br i1 %c1, label %main.top, label %main.exit
-     
+
       main.top:
       %start2 = add i32 %start1, $opr:(step)
       br label %nextblock
@@ -822,7 +822,7 @@ mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} = do
         $bbsM:("zs" .=. combine ("ys" :: Name) ("acc" :: Name))
         $bbsM:(execRet $ return "zs")
       }
-      
+
       $bbsM:(exec $ writeVolatileArray sdata tid ("acc" :: Name))
 
       %u = mul i32 $opr:(ctaid), $opr:(ntid)
@@ -835,7 +835,7 @@ mkFold1AllCore name (ptxDeviceProperties -> dev) aenv combine IRDelayed{..} = do
 
       %c2 = icmp eq i32 $opr:(tid), 0
       br i1 %c2, label %finish, label %main.exit
-      
+
       finish:
       br label %nextblock
       $bbsM:(exec $ writeArray arrOut ctaid ("acc1" :: Name))

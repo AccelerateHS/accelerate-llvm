@@ -83,7 +83,7 @@ mkScanl1Seq aenv combine IRDelayed{..} = do
         $bbsM:(exec (writeArray arrOut start ("x" :: Name)))
         %start1 = add $type:(intType) $opr:(start), 1
         br label %for
-    
+
       for:
         for $type:(intType) %i in %start1 to $opr:(end) with $types:(ty_acc) %x as %acc {
           $bbsM:("y" .=. delayedLinearIndex ("i" :: [Operand]))
