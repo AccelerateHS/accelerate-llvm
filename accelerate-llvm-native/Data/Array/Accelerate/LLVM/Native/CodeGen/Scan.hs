@@ -104,7 +104,6 @@ mkScanl1Seq aenv combine IRDelayed{..} =
               $bbsM:(exec    $ writeArray arrOut "i" ("z" :: Name))
               $bbsM:(execRet $ return "z")
           }
-        end:
           ret void
     }
   |]
