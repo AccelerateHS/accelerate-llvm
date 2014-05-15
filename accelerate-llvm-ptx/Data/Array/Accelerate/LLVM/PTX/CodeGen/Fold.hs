@@ -508,79 +508,131 @@ mkFoldAllCore name (ptxDeviceProperties -> dev) aenv combine seed IRDelayed{..} 
       arrOut                    = arrayData  (undefined::Array DIM1 e) "out"
       paramOut                  = arrayParam (undefined::Array DIM1 e) "out"
       paramEnv                  = envParam aenv
-  tid         <- threadIdx
-  gtid        <- globalThreadIdx
-  ntid        <- blockDim
-  ctaid       <- blockIdx
-  nctaid      <- gridDim
-  sdata       <- sharedMem (undefined::e) ntid
-  step        <- gridSize
-  k <- [llgM|
-  define void @mkFoldAllCore (
-    $params:(paramGang) ,
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      $bbsM:(exec $ return ())               ;; splice in the BasicBlocks from above
-      %c1 = icmp eq i32 $opr:(start), $opr:(end)
-      br i1 %c1, label %empty.top, label %main.top
+  --
+  tid           <- threadIdx
+  gtid          <- globalThreadIdx
+  ntid          <- blockDim
+  ctaid         <- blockIdx
+  nctaid        <- gridDim
+  sdata         <- sharedMem (undefined::e) ntid
+  step          <- gridSize
+
+  makeKernelQ name [llgM|
+    define void @mkFoldAllCore
+    (
+        $params:paramGang,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        ; -- Splice in the terms defined outside the quasi quoter.
+        ; -- Every time we do this, a fairy dies.
+        ; --
+        $bbsM:(exec $ return ())
+
+        ; -- If this is an exclusive reduction of an empty shape, then just
+        ; -- initialise the output array with the seed element and exit
+        ; -- immediately. Doing this here means that we can make some assumptions
+        ; -- about the liveliness of threads in the main loop.
+        ; --
+        %c1 = icmp eq i32 $opr:start, $opr:end
+        br i1 %c1, label %empty.top, label %main.top
 
       empty.top:
-      %c2 = icmp eq i32 $opr:(tid), 0
-      br i1 %c1, label %empty.seed, label %main.exit
+        %c2 = icmp eq i32 $opr:tid, 0
+        br i1 %c1, label %empty.seed, label %main.exit
 
       empty.seed:
-      br label %nextblock
-      $bbsM:(exec $ writeArray arrOut ctaid =<< seed)
+        br label %nextblock
+        $bbsM:(exec $ writeArray arrOut ctaid =<< seed)
+        br label %main.exit
 
+        ; -- Each thread sequentially reduces multiple elements. This reduces the
+        ; -- overall cost of the algorithm while keeping the work complexity O(n)
+        ; -- and the step complexity O(log n). See also Brent's Theorem
+        ; -- optimisation.
+        ; --
+        ; -- The number of elements reduced sequentially is determined by the
+        ; -- number of active thread blocks. More blocks result in a larger grid
+        ; -- size, hence fewer elements per thread.
+        ; --
       main.top:
-      %start1 = add i32 $opr:(start), $opr:(gtid)
-      %c3 = icmp ult i32 %start1, $opr:(end)
-      br i1 %c3, label %reduce, label %main.exit
+        %start1 = add i32 $opr:start, $opr:gtid
+        %c3     = icmp ult i32 %start1, $opr:end
+        br i1 %c3, label %reduce, label %main.exit
 
       reduce:
-      %start2 = add i32 %start1, $opr:(step)
-      br label %nextblock
-      $bbsM:("xs" .=. delayedLinearIndex ("start1" :: [Operand]))
-      for i32 %i in %start2 to $opr:(end) with $types:(arrTy) %xs as %acc {
-        $bbsM:("ys" .=. delayedLinearIndex ("i" :: [Operand]))
-        $bbsM:("zs" .=. combine ("ys" :: Name) ("acc" :: Name))
-        $bbsM:(execRet $ return "zs")
-      }
+        %start2 = add i32 %start1, $opr:(step)
+        br label %nextblock
 
-      $bbsM:(exec $ writeVolatileArray sdata tid ("acc" :: Name))
+        $bbsM:("xs" .=. delayedLinearIndex ("start1" :: [Operand]))
 
-      %u = mul i32 $opr:(ctaid), $opr:(ntid)
-      %v = sub i32 $opr:(end), $opr:(start)
-      %w = sub i32 %v, %u
-      %end1.cond = icmp ult i32 $opr:(ntid), %w
-      %end1 = select i1 %end1.cond, i32 $opr:(ntid), i32 %w
-      br label %nextblock
-      $bbsM:("acc1" .=. reduceBlock dev arrTy combine ("acc" :: Name) sdata "end1" tid tid)
+        for i32 %i in %start2 to $opr:end with $types:arrTy %xs as %acc
+        {
+            $bbsM:("ys" .=. delayedLinearIndex ("i" :: [Operand]))
+            $bbsM:("zs" .=. combine ("ys" :: Name) ("acc" :: Name))
+            $bbsM:(execRet $ return "zs")
+        }
 
-      %c4 = icmp eq i32 $opr:(tid), 0
-      br i1 %c4, label %finish, label %main.exit
+        $bbsM:(exec $ writeVolatileArray sdata tid ("acc" :: Name))
+
+        ; -- Each thread puts its local sum into shared memory, then cooperatively
+        ; -- reduces the shared array to a single value.
+        ; --
+        ; -- end' = min((end - start) - blockIdx * blockDim, blockDim)
+        ; --
+        %u        = mul i32 $opr:ctaid, $opr:ntid
+        %v        = sub i32 $opr:end,   $opr:start
+        %w        = sub i32 %v, %u
+        %min.cond = icmp ult i32 $opr:ntid, %w
+        %end1     = select i1 %min.cond, i32 $opr:ntid, i32 %w
+        br label %nextblock
+
+        $bbsM:("acc1" .=. reduceBlock dev arrTy combine ("acc" :: Name) sdata "end1" tid tid)
+
+        ; -- The first thread writes the result of this block back into global memory
+        ; --
+        %c4 = icmp eq i32 $opr:tid, 0
+        br i1 %c4, label %finish, label %main.exit
 
       finish:
-      %c5 = icmp eq i32 $opr:(nctaid), 1
-      br label %nextblock
-      $bbsM:("seed1" .=. seed)
-      $bbsM:("acc2" .=. combine ("acc1" :: Name) ("seed1" :: Name))
-      $bbsM:(do
-                x1 <- toIRExp ("acc1" :: Name)
-                x2 <- toIRExp ("acc2" :: Name)
-                "r" .=. zipWithM (\f t -> instr $ Select "c5" t f []) x1 x2)
-      $bbsM:(exec $ writeArray arrOut ctaid ("r" :: Name))
+        ; -- If we are the last phase of a multiblock reduction
+        ; --
+        %c5 = icmp eq i32 $opr:nctaid, 1
+        br i1 %c5, label %finish.if.then, label %finish.if.exit
+
+      finish.if.then:
+        br label %nextblock
+        ; -- ...then include the seed element when writing the final result...
+        ; --
+        $bbsM:("seed" .=. seed)
+        $bbsM:("acc2" .=. combine ("seed" :: Name) ("acc1" :: Name))
+
+        ; -- ...otherwise just write the result of the parallel reduction
+      finish.if.exit:
+
+        ; -- ===================================================================
+        ; --            MISSING ABILITY TO INSERT PHI NODES?!?
+        ; -- ===================================================================
+        br label %main.exit
 
       main.exit:
-      ret void
-    }
+        ret void
+
+;--        br label %nextblock
+;--
+;--        $bbsM:("seed1" .=. seed)
+;--        $bbsM:("acc2"  .=. combine ("acc1" :: Name) ("seed1" :: Name))
+;--        $bbsM:(do
+;--                  x1 <- toIRExp ("acc1" :: Name)
+;--                  x2 <- toIRExp ("acc2" :: Name)
+;--                  "r" .=. zipWithM (\f t -> instr $ Select "c5" t f []) x1 x2)
+;--        $bbsM:(exec $ writeArray arrOut ctaid ("r" :: Name))
+;--
+;--        main.exit:
+;--        ret void
+      }
   |]
-  addMetadata "nvvm.annotations" [ Just $ global name
-                                 , Just $ MetadataStringOperand "kernel"
-                                 , Just $ constOp (num int32 1) ]
-  let k1 = k { name = name }
-  return $ [Kernel k1]
 
 {-
   in
