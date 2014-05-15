@@ -84,19 +84,19 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
-    accelerate                  == 0.15.*,
-    accelerate-llvm             == 0.15.*,
-    base                        >= 4.6 && <5.0,
-    containers                  >= 0.5 && <0.6,
-    directory                   >= 1.0,
-    dlist                       >= 0.6,
-    fclabels                    >= 2.0,
-    libffi                      >= 0.1,
-    llvm-general                >= 3.2,
-    llvm-general-pure           >= 3.2,
-    mtl                         >= 2.0,
-    time                        >= 1.4,
-    llvm-general-quote
+          base                          >= 4.6 && <5.0
+        , accelerate                    == 0.15.*
+        , accelerate-llvm               == 0.15.*
+        , containers                    >= 0.5 && <0.6
+        , directory                     >= 1.0
+        , dlist                         >= 0.6
+        , fclabels                      >= 2.0
+        , libffi                        >= 0.1
+        , llvm-general                  >= 3.2
+        , llvm-general-pure             >= 3.2
+        , llvm-general-quote            >= 0.1
+        , mtl                           >= 2.0
+        , time                          >= 1.4
 
   default-language:
     Haskell2010
