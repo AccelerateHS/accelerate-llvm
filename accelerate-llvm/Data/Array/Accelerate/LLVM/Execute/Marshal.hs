@@ -80,6 +80,16 @@ instance (Marshalable t a, Marshalable t b, Marshalable t c, Marshalable t d, Ma
   marshal' t s (a, b, c, d, e, f) =
     DL.concat `fmap` sequence [marshal' t s a, marshal' t s b, marshal' t s c, marshal' t s d, marshal' t s e, marshal' t s f]
 
+instance (Marshalable t a, Marshalable t b, Marshalable t c, Marshalable t d, Marshalable t e, Marshalable t f, Marshalable t g)
+    => Marshalable t (a, b, c, d, e, f, g) where
+  marshal' t s (a, b, c, d, e, f, g) =
+    DL.concat `fmap` sequence [marshal' t s a, marshal' t s b, marshal' t s c, marshal' t s d, marshal' t s e, marshal' t s f, marshal' t s g]
+
+instance (Marshalable t a, Marshalable t b, Marshalable t c, Marshalable t d, Marshalable t e, Marshalable t f, Marshalable t g, Marshalable t h)
+    => Marshalable t (a, b, c, d, e, f, g, h) where
+  marshal' t s (a, b, c, d, e, f, g, h) =
+    DL.concat `fmap` sequence [marshal' t s a, marshal' t s b, marshal' t s c, marshal' t s d, marshal' t s e, marshal' t s f, marshal' t s g, marshal' t s h]
+
 instance Marshalable t a => Marshalable t [a] where
   marshal' t s = fmap DL.concat . mapM (marshal' t s)
 

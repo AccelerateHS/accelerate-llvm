@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -277,7 +278,7 @@ defaultMap
     -> IRFun1    aenv (a -> b)
     -> IRDelayed aenv (Array sh a)
     -> CodeGen [Kernel arch aenv (Array sh b)]
-defaultMap arch aenv f a = transform arch aenv return f a
+defaultMap arch aenv f a = transform arch aenv toIRExp f a
 
 defaultBackpermute
     :: (Shape sh, Shape sh', Elt e, Skeleton arch)
@@ -286,7 +287,7 @@ defaultBackpermute
     -> IRFun1    aenv (sh' -> sh)
     -> IRDelayed aenv (Array sh e)
     -> CodeGen [Kernel arch aenv (Array sh' e)]
-defaultBackpermute arch aenv p a = transform arch aenv p return a
+defaultBackpermute arch aenv p a = transform arch aenv p toIRExp a
 
 defaultTransform
     :: (Shape sh, Shape sh', Elt a, Elt b, Skeleton arch)

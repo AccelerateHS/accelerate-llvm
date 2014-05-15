@@ -4,6 +4,8 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE FlexibleInstances   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Base
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -96,12 +98,23 @@ type IR env aenv t = [Operand]
 
 type IRExp aenv t  = CodeGen [Operand]
 
+class IROperand a where
+  toIRExp :: a -> CodeGen [Operand]
+
+instance IROperand [Operand] where
+  toIRExp = return
+
+instance IROperand Name where
+  toIRExp = getVariable
+
 -- | The code generator for scalar functions emits monadic operations. Since
 -- LLVM IR is static single assignment, we need to generate new operand names
 -- each time the function is applied.
 --
-type IRFun1 aenv f = [Operand]              -> CodeGen [Operand]
-type IRFun2 aenv f = [Operand] -> [Operand] -> CodeGen [Operand]
+type IRFun1 aenv f = forall a. IROperand a
+                     => a              -> CodeGen [Operand]
+type IRFun2 aenv f = forall a b. (IROperand a, IROperand b)
+                     => a -> b -> CodeGen [Operand]
 
 -- | A wrapper representing the state of code generation for a delayed array
 --

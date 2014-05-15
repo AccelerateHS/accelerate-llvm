@@ -91,6 +91,7 @@ instance Execute Native where
   fold          = foldOp
   fold1         = fold1Op
   permute       = permuteOp
+  scanl1        = scanl1Op
 
 
 -- Skeleton implementation
@@ -168,6 +169,7 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
 
              return out
 
+
 -- Forward permutation, specified by an indexing mapping into an array and a
 -- combination function to combine elements.
 --
@@ -194,6 +196,47 @@ permuteOp kernel gamma aenv () shIn dfs = do
     memset ptr unlocked n
     executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
   return out
+
+
+-- Left inclusive scan
+--
+scanl1Op
+    :: forall aenv sh e. (Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e)
+scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
+  native@Native{..} <- gets llvmTarget
+
+  -- sequential reduction
+  if gangSize theGang == 1 || sz < defaultLargePPT
+     then do let out = allocateArray (Z :. sz)
+             --
+             liftIO $ do
+               executeNamedFunction k "scanl1Seq" $ \f ->
+                 callFFI f retVoid =<< marshal native () (0::Int, sz, out, (gamma,aenv))
+
+             return out
+
+  -- Parallel reduction
+     else do let chunkSize = 16::Int
+                 chunks    = sz `div` defaultLargePPT
+                 tmp       = allocateArray (Z :. (chunks-1)) :: Vector e
+                 out       = allocateArray (Z :. sz)
+             --
+             liftIO $ do
+               executeNamedFunction k "scanl1Pre"           $ \f -> do
+                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end tid -> do
+                   callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
+
+               executeNamedFunction k "scanl1Post"          $ \f ->
+                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end tid -> do
+                   callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
+
+             return out
 
 
 -- Skeleton execution
