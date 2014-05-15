@@ -39,6 +39,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   -- metadata
   addMetadata, trace,
 
+  -- llvm-general-quote
+  (B..=.),
   B.CodeGenMonad(..)
 
 ) where
@@ -63,6 +65,7 @@ import qualified Data.Sequence                                  as Seq
 import LLVM.General.AST                                         hiding ( Module )
 import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.AST.Global                        as AST
+import qualified LLVM.General.Quote.Base                        as B
 
 -- accelerate
 import Data.Array.Accelerate.Error
@@ -71,8 +74,6 @@ import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
-
-import qualified LLVM.General.Quote.Base as B
 
 -- Names
 -- =====
@@ -124,7 +125,7 @@ instance B.CodeGenMonad CodeGen where
   newVariable = freshName
   lookupVariable = lookupVariableA
   setVariable = setVariableA
-  xs .=. f = do
+  xs `assign` f = do
     xs' <- f
     setVariableA xs xs'
     n <- newBlock "nextblock"
