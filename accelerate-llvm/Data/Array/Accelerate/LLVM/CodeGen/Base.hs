@@ -107,12 +107,13 @@ instance IROperand [Operand] where
 instance IROperand Name where
   toIRExp = getVariable
 
+
 -- | The code generator for scalar functions emits monadic operations. Since
 -- LLVM IR is static single assignment, we need to generate new operand names
 -- each time the function is applied.
 --
 type IRFun1 aenv f = forall a. IROperand a
-                     => a              -> CodeGen [Operand]
+                     => a      -> CodeGen [Operand]
 type IRFun2 aenv f = forall a b. (IROperand a, IROperand b)
                      => a -> b -> CodeGen [Operand]
 

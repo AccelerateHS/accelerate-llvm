@@ -81,24 +81,28 @@ mkMap :: forall t aenv sh a b. Elt b
       -> IRFun1    aenv (a -> b)
       -> IRDelayed aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
-mkMap aenv apply IRDelayed{..} = do
+mkMap aenv apply IRDelayed{..} =
   let (start, end, paramGang)   = gangParam
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-      intType                   = (typeOf (integralType :: IntegralType Int))
-  k <- [llgM|
-  define void @map (
-    $params:(paramGang) ,
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      for $type:(intType) %i in $opr:(start) to $opr:(end) {
-        $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
-        $bbsM:("y" .=. apply ("x" :: Name))
-        $bbsM:(execRet_ (writeArray arrOut "i" ("y" :: Name)))
-      }
-      ret void
-  }
+      intType                   = typeOf (integralType :: IntegralType Int)
+  in
+  makeKernelQ "map" [llgM|
+    define void @map
+    (
+        $params:paramGang,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        for $type:intType %i in $opr:start to $opr:end
+        {
+            $bbsM:("x" .=. delayedLinearIndex ("i" :: Name))
+            $bbsM:("y" .=. apply ("x" :: Name))
+            $bbsM:(execRet_ $ writeArray arrOut "i" ("y" :: Name))
+        }
+        ret void
+    }
   |]
-  return $ [Kernel k]
+

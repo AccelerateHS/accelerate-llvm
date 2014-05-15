@@ -46,6 +46,14 @@ gangId =
   (local thread, [Parameter t thread []] )
 
 
+-- | Make a complete kernel function using a quasi quoter
+--
+makeKernelQ :: Name -> CodeGen Global -> CodeGen [Kernel t aenv a]
+makeKernelQ n qq = do
+  fun <- qq
+  return [ Kernel fun { name = n } ]
+
+
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --

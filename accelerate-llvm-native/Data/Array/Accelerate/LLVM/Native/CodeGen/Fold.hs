@@ -21,13 +21,20 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
+-- llvm-general
+import LLVM.General.AST
+import LLVM.General.Quote.LLVM
+
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Shape
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -35,12 +42,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
-
-
-import LLVM.General.AST
-import LLVM.General.AST.Global
-
-import LLVM.General.Quote.LLVM
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 -- standard library
 import GHC.Conc
@@ -109,47 +111,52 @@ mkFold'
     -> IRExp     aenv e
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold' aenv combine seed IRDelayed{..} = do
+mkFold' aenv combine seed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
       arrOut                    = arrayData  (undefined::Array sh e) "out"
       paramOut                  = arrayParam (undefined::Array sh e) "out"
-      intType                   = (typeOf (integralType :: IntegralType Int))
+      intType                   = typeOf (integralType :: IntegralType Int)
       paramStride               = [Parameter intType "ix.stride" []]
 
       ty_acc                    = llvmOfTupleType (eltType (undefined::e))
-  seed' <- seed
-  k <- [llgM|
-  define void @fold (
-    $params:(paramGang) ,
-    $params:(paramStride),
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      entry:
-        %firstSeg = mul $type:(intType) $opr:(start), %ix.stride
-        br label %for
+  in
+  makeKernelQ "fold" [llgM|
+    define void @fold
+    (
+        $params:paramGang,
+        $params:paramStride,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        entry:
+          %firstSeg = mul $type:intType $opr:(start), %ix.stride
+          br label %for.segment
 
-      for:
-        for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
-          for.entry:
-            %next = add $type:(intType) %sz, %ix.stride
-            br label %reduce
-          reduce:
-            for $type:(intType) %j in %sz to %next with $types:(ty_acc) $oprs:(seed') as %x {
-                $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
-                $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
-                $bbsM:(execRet (return "z"))
-            }
-            $bbsM:(exec (writeArray arrOut "sh" ("x" :: Name)))
-            ret $type:(intType) %next
-        }
-      end:
-        ret void
-    }
+        for.segment:
+          for $type:intType %sh in $opr:start to $opr:end with $type:intType %firstSeg as %sz
+          {
+              $bbsM:("seed" .=. seed)
+              %next = add $type:intType %sz, %ix.stride
+              br label %reduce
+
+            reduce:
+              for $type:intType %j in %sz to %next with $types:ty_acc %seed as %x
+              {
+                  $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
+                  $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
+                  $bbsM:(execRet $ return "z")
+              }
+
+              $bbsM:(exec $ writeArray arrOut "sh" ("x" :: Name))
+              ret $type:intType %next
+          }
+          ret void
+      }
   |]
-  return $ [Kernel k]
+
 
 -- Reduce a non-empty array to a single element. Since there is no seed element
 -- provided, initialise the loop accumulator with the first element of the
@@ -161,7 +168,7 @@ mkFold1'
     -> IRFun2    aenv (e -> e -> e)
     -> IRDelayed aenv (Array (sh:.Int) e)
     -> CodeGen [Kernel t aenv (Array sh e)]
-mkFold1' aenv combine IRDelayed{..} = do
+mkFold1' aenv combine IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
@@ -171,39 +178,45 @@ mkFold1' aenv combine IRDelayed{..} = do
 
       n                         = local "ix.stride"
       ty_acc                    = llvmOfTupleType (eltType (undefined::e))
-      intType                   = (typeOf (integralType :: IntegralType Int))
-  k <- [llgM|
-  define void @fold (
-    $params:(paramGang) ,
-    $params:(paramStride),
-    $params:(paramOut) ,
-    $params:(paramEnv)
-    ) {
-      entry:
-        %firstSeg = mul $type:(intType) $opr:(start), $opr:(n)
-        br label %for
+      intType                   = typeOf (integralType :: IntegralType Int)
+  in
+  makeKernelQ "fold" [llgM|
+    define void @fold
+    (
+        $params:paramGang,
+        $params:paramStride,
+        $params:paramOut,
+        $params:paramEnv
+    )
+    {
+        entry:
+          %firstSeg = mul $type:intType $opr:(start), $opr:(n)
+          br label %for.segment
 
-      for:
-        for $type:(intType) %sh in $opr:(start) to $opr:(end) with $type:(intType) %firstSeg as %sz {
-          for.entry:
-            %next = add $type:(intType) %sz, $opr:(n)
-            %start = add $type:(intType) %sz, 1
-          br label %nextblock
-            $bbsM:("seed" .=. delayedLinearIndex ("sz" :: [Operand]))
-          reduce:
-            for $type:(intType) %j in %start to %next with $types:(ty_acc) %seed as %x {
-                $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
-                $bbsM:("z" .=. (combine ("x" :: Name) ("y" :: Name)))
-                $bbsM:(execRet (return "z"))
-            }
-            $bbsM:(exec (writeArray arrOut "sh" ("x" :: Name)))
-            ret $type:(intType) %next
-        }
-      end:
-        ret void
+        for.segment:
+          for $type:intType %sh in $opr:start to $opr:end with $type:intType %firstSeg as %sz
+          {
+              $bbsM:("seed" .=. delayedLinearIndex ("sz" :: [Operand]))
+              %next  = add $type:intType %sz, $opr:(n)
+              %start = add $type:intType %sz, 1
+              br label %reduce
+
+            reduce:
+              for $type:intType %j in %start to %next with $types:ty_acc %seed as %x
+              {
+                  $bbsM:("y" .=. delayedLinearIndex ("j" :: [Operand]))
+                  $bbsM:("z" .=. combine ("x" :: Name) ("y" :: Name))
+                  $bbsM:(execRet $ return "z")
+              }
+
+              $bbsM:(exec $ writeArray arrOut "sh" ("x" :: Name))
+              ret $type:intType %next
+          }
+
+          ret void
     }
   |]
-  return $ [Kernel k]
+
 
 -- Reduction to scalar
 -- -------------------
