@@ -111,13 +111,13 @@ Library
   if flag(libnvvm)
     cpp-options:                -DACCELERATE_USE_LIBNVVM
     build-depends:
-      libnvvm                   >= 1.0,
-      llvm-general              == 3.2.*,
-      llvm-general-pure         == 3.2.*
+          libnvvm                   >= 1.0
+        , llvm-general              == 3.2.*
+        , llvm-general-pure         == 3.2.*
   else
     build-depends:
-      llvm-general              >= 3.3,
-      llvm-general-pure         >= 3.3
+          llvm-general              >= 3.3
+        , llvm-general-pure         >= 3.3
 
   if flag(debug)
     cpp-options:                -DACCELERATE_DEBUG
