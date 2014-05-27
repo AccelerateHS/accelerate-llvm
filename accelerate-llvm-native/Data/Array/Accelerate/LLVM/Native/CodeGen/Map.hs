@@ -98,7 +98,7 @@ mkMap aenv apply IRDelayed{..} =
     {
         for $type:intType %i in $opr:start to $opr:end
         {
-            $bbsM:("x" .=. delayedLinearIndex ("i" :: Name))
+            $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
             $bbsM:("y" .=. apply ("x" :: Name))
             $bbsM:(execRet_ $ writeArray arrOut "i" ("y" :: Name))
         }
