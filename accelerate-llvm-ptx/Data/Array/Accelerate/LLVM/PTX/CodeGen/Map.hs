@@ -1,9 +1,8 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -28,9 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-
-import LLVM.General.AST
-import LLVM.General.Quote.LLVM
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
 -- standard library
 import Prelude                                                  hiding ( fromIntegral )
@@ -52,26 +49,12 @@ mkMap _nvvm aenv apply IRDelayed{..} =
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
   in
-  makeKernelQ "map" [llgM|
-    define void @map
-    (
-        $params:paramGang,
-        $params:paramOut,
-        $params:paramEnv
-    )
-    {
-        $bbsM:("step" .=. gridSize)
-        $bbsM:("tid"  .=. globalThreadIdx)
-        %z = add i32 %tid, $opr:start
-        br label %nextblock
+  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
-        for i32 %i in %z to $opr:end step %step
-        {
-            $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
-            $bbsM:("y" .=. apply ("x" :: Name))
-            $bbsM:(execRet_ $ writeArray arrOut "i" ("y" :: Name))
-        }
-        ret void
-    }
-  |]
+    imapFromTo start end $ \i -> do
+      xs <- delayedLinearIndex [i]              -- TLM: safe to keep as int32?
+      ys <- apply xs
+      writeArray arrOut i ys
+
+    return_
 
