@@ -10,7 +10,6 @@
 --
 
 module Data.Array.Accelerate.LLVM.CodeGen.Loop
-  {-# DEPRECATED "use llvm-general-quote instead" #-}
   where
 
 -- llvm-general
