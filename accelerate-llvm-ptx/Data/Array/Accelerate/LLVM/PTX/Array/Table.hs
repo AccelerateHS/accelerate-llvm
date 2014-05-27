@@ -15,7 +15,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Array.Table (
 
   MemoryTable,
-  new, lookup, malloc,
+  new, member, lookup, malloc,
 
 ) where
 
@@ -50,6 +50,16 @@ type MemoryTable = MT.MemoryTable CUDA.DevicePtr
 --
 new :: Context -> IO MemoryTable
 new !ctx = MT.new (freeRemote ctx)
+
+
+-- | Does the host array have a valid entry in the table?
+--
+member
+    :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
+    => MemoryTable
+    -> ArrayData e
+    -> IO Bool
+member = MT.member
 
 
 -- | Lookup the remote array corresponding to the given host-side array

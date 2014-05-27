@@ -20,7 +20,7 @@
 module Data.Array.Accelerate.LLVM.Array.Table (
 
   MemoryTable, MallocRemote, FreeRemote,
-  new, lookup, malloc, cleanup,
+  new, member, lookup, malloc, cleanup,
 
 ) where
 
@@ -33,6 +33,7 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 
 -- standard library
 import Prelude                                                  hiding ( lookup )
+import Control.Concurrent
 import Control.Concurrent.MVar
 import Control.Monad
 import Data.IntMap.Strict                                       ( IntMap )
@@ -105,7 +106,49 @@ new freeRemote = do
       withMVar r (mapM_ (\(RemoteArray w) -> finalize w) . IM.elems)
 
 
--- | Lookup the remote array corresponding to the given host-side array
+-- | Is the key a _valid_ member of the memory table?
+--
+-- Because of the possibility of collisions in the host key, this also ensures
+-- that the entries still refers to valid data. If not, we run the finaliser,
+-- which also deallocates the remote data and removes its entry from the table.
+-- Note that it is important for the main thread to 'yield' at that point so
+-- that the finaliser can run immediately.
+--
+-- See: [Host arrays as memory table keys]
+--
+{-# INLINEABLE member #-}
+member :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
+       => MemoryTable c
+       -> ArrayData e
+       -> IO Bool
+member MemoryTable{..} !adata = do
+  key <- makeHostArray adata
+  mw  <- withMVar memoryTable (\mt -> return (IM.lookup key mt))
+  case mw of
+    Nothing                             -- no entry in the table
+      -> return False
+
+    Just (RemoteArray w) -> do
+      mv <- deRefWeak w
+      case mv of
+        Just _  -> return True          -- entry present and valid
+        Nothing -> do                   -- entry present but invalid, refers to old (dead) data
+          message ("member/finalise dead: " ++ show key)
+          finalize w                    -- queue the finaliser to run
+          yield                         -- yield so that the finaliser can run immediately
+#ifdef ACCELERATE_INTERNAL_CHECKS
+          exists <- withMVar memoryTable (\mt -> return (IM.member key mt))
+          _      <- $internalCheck "member" "finaliser did not run" (not exists) (return ())
+#endif
+          return False
+
+
+-- | Lookup the remote array corresponding to the given host-side array. This
+-- assumes that all key-value pairs in the memory table refer to valid data. If
+-- you are not sure, or want to check whether there is a remote array for the
+-- given key, use 'member' instead.
+--
+-- See note: [Host arrays as memory table keys].
 --
 {-# INLINEABLE lookup #-}
 lookup :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable b)
@@ -146,7 +189,41 @@ lookup MemoryTable{..} !adata = do
                       $internalError "memory table/lookup" ("dead weak pointer: " ++ show key')
 
 
--- | Convert the host array data into a memory table key
+-- | Convert the host array data into a memory table key.
+--
+-- Note: [Host arrays as memory table keys]
+--
+-- The raw pointer value is used as a key to the host array. This means that the
+-- value is only unique as long as the array is alive, not for the entire life
+-- of the program, as a StableName would be. Thus, we must be careful with its
+-- use when it comes to finalisers. Consider the following situation:
+--
+--   1. An array is allocated on the host
+--
+--   2. An Accelerate computation is run. It sees that the array has no
+--      corresponding device array so creates one and puts an entry in the
+--      memory table.
+--
+--   3. Garbage collection occurs. The host side array is no longer referenced,
+--      so it is deallocated. Any calls to 'deRefWeak' on the weak pointer for
+--      this array will return 'Nothing'. Most importantly, the finalizer has
+--      not yet run. GHC makes no guarantees about when, or even if, a finalizer
+--      will run. This means there is still an entry in the memory table for
+--      this array.
+--
+--   4. A new array is allocated host side. The allocator returns a block of
+--      memory that was recently freed, the same one used for the first array.
+--      This means both this new array, and the old array, have the same pointer
+--      value, and thus the same 'HostArray' key.
+--
+--   5. Another Accelerate computation is run. It finds an entry in the memory
+--      table for what it thinks is the array, but is actually the dead array.
+--      It calls 'deRefWeak' on the weak pointer that has already been
+--      tombstoned, and gets 'Nothing' even though the (new) key is alive,
+--      because the weak pointer actually refers to the old, dead key.
+--
+-- Thus, if there is an existing entry in the table when we attempt to allocate
+-- a new array (4), we must ensure that that entry refers to valid data.
 --
 {-# INLINEABLE makeHostArray #-}
 makeHostArray
@@ -231,7 +308,7 @@ insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable $ \mt ->
       let f Nothing  = Just remote
-          f (Just _) = $internalError "insert" "duplicate key"
+          f (Just _) = $internalError "insert" ("duplicate key: " ++ show key)
       in
       return $! IM.alter f key mt
 

@@ -40,7 +40,6 @@ import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 -- standard library
 import Prelude                                                  hiding ( lookup )
 import Control.Monad
-import Data.Maybe
 import Data.Typeable
 import Foreign.Marshal.Alloc                                    ( alloca )
 import Foreign.Ptr
@@ -61,7 +60,7 @@ mallocArray
     -> IO (CUDA.DevicePtr a)
 mallocArray !ctx !mt !n !ad = do
 #ifdef ACCELERATE_INTERNAL_CHECKS
-  exists <- isJust `fmap` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
+  exists <- member mt ad
   _      <- $internalCheck "mallocArray" "double malloc" (not exists) (return ())
 #endif
   message ("mallocArray: " ++ showBytes (n * sizeOf (undefined::a)))
@@ -95,7 +94,7 @@ useArrayAsync
 useArrayAsync !ctx !mt !st !n !ad = do
   let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
       !bytes    = n * sizeOf (undefined::a)
-  exists        <- isJust `liftM` (lookup mt ad :: IO (Maybe (CUDA.DevicePtr a)))
+  exists        <- member mt ad
   unless exists $ do
     dst <- malloc ctx mt ad n
     transfer "useArray" bytes st $ CUDA.pokeArrayAsync n src dst st
