@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -17,8 +16,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -28,9 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-
-import LLVM.General.AST
-import LLVM.General.Quote.LLVM
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
 -- standard library
 import Prelude                                                  hiding ( fromIntegral )
@@ -47,36 +44,19 @@ mkGenerate
     -> CodeGen [Kernel arch aenv (Array sh e)]
 mkGenerate _dev aenv apply =
   let
+      (start, end, paramGang)   = gangParam
       arrOut                    = arrayData  (undefined::Array sh e) "out"
       shOut                     = arrayShape (undefined::Array sh e) "out"
       paramOut                  = arrayParam (undefined::Array sh e) "out"
       paramEnv                  = envParam aenv
-      (start, end, paramGang)   = gangParam
-      intType                   = (typeOf (integralType :: IntegralType Int))
   in
-  makeKernelQ "generate" [llgM|
-    define void @generate
-    (
-        $params:paramGang,
-        $params:paramOut,
-        $params:paramEnv
-    )
-    {
-        $bbsM:("step" .=. gridSize)
-        $bbsM:("tid"  .=. globalThreadIdx)
-        %z = add i32 %tid, $opr:start
-        br label %nextblock
+  makeKernel "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
-        for i32 %i in %z to $opr:end step %step
-        {
-            %ii = sext i32 %i to $type:intType                          ;; keep the loop counter as i32, but do calculations in Int
-            br label %nextblock
+    imapFromTo start end $ \i -> do
+      ii  <- fromIntegral int32 int i           -- keep the loop counter as i32, but do calculations in Int
+      ix  <- indexOfInt shOut ii                -- convert to multidimensional index
+      r   <- apply ix                           -- apply generator function
+      writeArray arrOut i r                     -- write result
 
-            $bbsM:("ix" .=. indexOfInt shOut ("ii" :: Operand))         ;; convert to multidimensional index
-            $bbsM:("r"  .=. apply ("ix" :: Name))                       ;; apply generator function
-            $bbsM:(execRet_ (writeArray arrOut "i" ("r" :: Name)))      ;; write result
-        }
-        ret void
-    }
-  |]
+    return_
 
