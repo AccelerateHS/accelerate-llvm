@@ -223,13 +223,7 @@ mkFold'block (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
                     _       <- cbr c2 ifThen ifExit
 
                     setBlock ifThen
-                    case mseed of
-                      Nothing   -> writeArray arrOut seg ys'
-                      Just seed -> do
-                        xs'     <- seed
-                        ys''    <- combine xs' ys'
-                        writeArray arrOut seg ys''
-
+                    writeArrayWithSeed combine mseed arrOut seg ys'
                     _       <- br ifExit
 
                     setBlock ifExit)
@@ -337,13 +331,7 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
                     _       <- cbr c2 ifThen ifExit
 
                     setBlock ifThen
-                    case mseed of
-                      Nothing   -> writeArray arrOut seg ys'
-                      Just seed -> do
-                        xs'     <- seed
-                        ys''    <- combine xs' ys'
-                        writeArray arrOut seg ys''
-
+                    writeArrayWithSeed combine mseed arrOut seg ys'
                     _       <- br ifExit
 
                     setBlock ifExit)
@@ -352,6 +340,26 @@ mkFold'warp (ptxDeviceProperties -> dev) aenv combine mseed IRDelayed{..} =
 
     setBlock exit
     return_
+
+
+-- Store a value into an array at a given index. If the seed value is not
+-- Nothing, then this is combined with the given value first.
+--
+writeArrayWithSeed
+    :: (IROperand a, IROperand b)
+    => (a -> b -> CodeGen a)            -- Use this function to combine the...
+    -> Maybe (CodeGen a)                -- ...seed value (if any) before writing the result to
+    -> [Name]                           -- ...the output array
+    -> Operand                          -- ...at this index
+    -> b                                -- The base value to store
+    -> CodeGen ()
+writeArrayWithSeed combine mseed arrOut seg ys' =
+  case mseed of
+    Nothing   -> writeArray arrOut seg ys'
+    Just seed -> do
+      xs'     <- seed
+      ys''    <- combine xs' ys'
+      writeArray arrOut seg ys''
 
 
 -- Reduction to scalar
