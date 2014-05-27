@@ -1,4 +1,3 @@
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
@@ -6,6 +5,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE UnboxedTuples       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Table
