@@ -98,7 +98,6 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-general-quote            >= 0.1
         , mtl                           >= 2.0
         , pretty                        >= 1.1
         , time                          >= 1.4
