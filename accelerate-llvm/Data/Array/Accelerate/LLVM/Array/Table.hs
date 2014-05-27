@@ -47,7 +47,6 @@ import qualified Data.IntMap.Strict                             as IM
 
 import GHC.Base
 import GHC.Ptr
-import GHC.Weak
 
 
 -- | The memory table is used to associate a host-side Accelerate array with a
@@ -159,18 +158,17 @@ makeHostArray !adata =
     Ptr a# -> return $! I# (addr2Int# a#)
 
 
--- | Make a weak pointer to array data
+-- | Make a weak pointer between the host side array data and the remote array.
 --
-{-# INLINEABLE makeWeakArrayData #-}
-makeWeakArrayData
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a)
+{-# INLINEABLE makeRemoteArray #-}
+makeRemoteArray
+    :: (Typeable a, ArrayElt e, ArrayPtrs e ~ Ptr a)
     => ArrayData e
     -> c a
     -> IO ()
-    -> IO (Weak (c a))
-makeWeakArrayData adata v f =
-  case ptrsOfArrayData adata of
-    Ptr a# -> IO $ \s -> case mkWeak# a# v f s of (# s', w #) -> (# s', Weak w #)
+    -> IO (RemoteArray c)
+makeRemoteArray adata v f =
+  RemoteArray `fmap` mkWeak adata v (Just f)
 
 
 -- | Allocate a new remote array and associate it with the given host side
@@ -229,7 +227,7 @@ insert freeRemote !MemoryTable{..} !adata !ptr !bytes =
       finalise key              = delete freeRemote weakTable weakNursery key ptr bytes
   in do
     key    <- makeHostArray adata
-    remote <- RemoteArray `fmap` makeWeakArrayData adata ptr (finalise key)
+    remote <- makeRemoteArray adata ptr (finalise key)
     message ("insert: " ++ show key)
     modifyMVar_ memoryTable $ \mt ->
       let f Nothing  = Just remote
