@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE QuasiQuotes         #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -15,22 +14,17 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
   where
 
--- llvm-general
-import LLVM.General.AST
-import LLVM.General.Quote.LLVM
-
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
 -- Construct a new array by applying a function to each index. Each thread
@@ -43,28 +37,17 @@ mkGenerate
     -> CodeGen [Kernel arch aenv (Array sh e)]
 mkGenerate aenv apply =
   let
-      arrOut                    = arrayData  (undefined::Array sh e) "out"
-      shOut                     = arrayShape (undefined::Array sh e) "out"
-      paramOut                  = arrayParam (undefined::Array sh e) "out"
-      paramEnv                  = envParam aenv
-      (start, end, paramGang)   = gangParam
-      intType                   = typeOf (integralType :: IntegralType Int)
+      arrOut                      = arrayData  (undefined::Array sh e) "out"
+      shOut                       = arrayShape (undefined::Array sh e) "out"
+      paramOut                    = arrayParam (undefined::Array sh e) "out"
+      paramEnv                    = envParam aenv
+      (start, end, paramGang)     = gangParam
   in
-  makeKernelQ "generate" [llgM|
-    define void @generate
-    (
-        $params:paramGang,
-        $params:paramOut,
-        $params:paramEnv
-    )
-    {
-        for $type:intType %i in $opr:start to $opr:end
-        {
-            $bbsM:("ix" .=. indexOfInt shOut ("i" :: Operand))          ;; convert to multidimensional index
-            $bbsM:("r"  .=. apply ("ix" :: Name))                       ;; apply generator function
-            $bbsM:(execRet_ $ writeArray arrOut "i" ("r" :: Name))      ;; store result
-        }
-        ret void
-    }
-  |]
+  makeKernel "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+    imapFromTo start end $ \i -> do
+      ix <- indexOfInt shOut i                  -- convert to multidimensional index
+      r  <- apply ix                            -- apply generator function
+      writeArray arrOut i r                     -- store result
+
+    return_
 
