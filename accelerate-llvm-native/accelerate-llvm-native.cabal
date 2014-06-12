@@ -94,7 +94,6 @@ Library
         , libffi                        >= 0.1
         , llvm-general                  >= 3.2
         , llvm-general-pure             >= 3.2
-        , llvm-general-quote            >= 0.1
         , mtl                           >= 2.0
         , time                          >= 1.4
 

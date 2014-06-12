@@ -94,7 +94,6 @@ Library
         , fclabels                      >= 2.0
         , llvm-general                  >= 3.2
         , llvm-general-pure             >= 3.2
-        , llvm-general-quote            >= 0.1
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , unordered-containers          >= 0.2
