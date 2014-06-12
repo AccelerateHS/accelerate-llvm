@@ -1,9 +1,8 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -25,14 +24,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import LLVM.General.AST
-
-import LLVM.General.Quote.LLVM
-import Data.Array.Accelerate.Type
 
 -- C Code
 -- ======
@@ -82,27 +77,18 @@ mkMap :: forall t aenv sh a b. Elt b
       -> IRDelayed aenv (Array sh a)
       -> CodeGen [Kernel t aenv (Array sh b)]
 mkMap aenv apply IRDelayed{..} =
-  let (start, end, paramGang)   = gangParam
+  let
+      (start, end, paramGang)   = gangParam
       arrOut                    = arrayData  (undefined::Array sh b) "out"
       paramOut                  = arrayParam (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-      intType                   = typeOf (integralType :: IntegralType Int)
   in
-  makeKernelQ "map" [llgM|
-    define void @map
-    (
-        $params:paramGang,
-        $params:paramOut,
-        $params:paramEnv
-    )
-    {
-        for $type:intType %i in $opr:start to $opr:end
-        {
-            $bbsM:("x" .=. delayedLinearIndex ("i" :: [Operand]))
-            $bbsM:("y" .=. apply ("x" :: Name))
-            $bbsM:(execRet_ $ writeArray arrOut "i" ("y" :: Name))
-        }
-        ret void
-    }
-  |]
+  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    imapFromTo start end $ \i -> do
+      xs <- delayedLinearIndex [i]
+      ys <- apply xs
+      writeArray arrOut i ys
+
+    return_
 
