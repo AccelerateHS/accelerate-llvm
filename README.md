@@ -48,21 +48,11 @@ These are some TODOs and notes that pop into my head from time to time...
 
 **General**
 
-  * Stability...
-
 
 **Code generation**
 
-  * Implement a wrapper over llvm-general-pure so that (at least) Operands are
-    typed. Thus, implement a completely typed compilation and execution
-    pipeline. Moreover, LLVM IR is typed, but we only get type errors at
-    Accelerate compilation time, which corresponds to Haskell runtime ):
-
-    * Would that be the first completely typed DSL?
-
-    * The llvm-tf package may provide useful inspiration.
-
-    * Still unclear how to implement tuples...
+  * It would be good to have a typed version of the LLVM IR, and then a
+    type-preserving conversion from Accelerate to LLVM terms.
 
 
 **Native backend**
@@ -79,12 +69,10 @@ These are some TODOs and notes that pop into my head from time to time...
 - [ ] scanl1, scanr1
 - [ ] scanl', scanr'
 - [ ] foldSeg
-- [ ] permute
+- [x] permute
 - [ ] stencil
 - [ ] stencil2
 - [ ] foreign functions
-
-  * SLP vectorization
 
 
 **PTX backend**
@@ -105,16 +93,6 @@ These are some TODOs and notes that pop into my head from time to time...
 - [ ] stencil
 - [ ] stencil2
 - [ ] foreign functions
-
-
-**Thread safety**
-
-  * There is a bunch of behind-the-scenes state going on. This is all wrapped in
-    MVars, but I'm still not certain if it is all correct. There is a line in
-    the MVar documentation that says 'modifyMVar' is "only atomic if there are
-    no other producers for this MVar". I'm not sure what they mean by producers.
-
-  * IORef might be a (faster?) lighter-weight alternative to using MVar.
 
 
  [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
