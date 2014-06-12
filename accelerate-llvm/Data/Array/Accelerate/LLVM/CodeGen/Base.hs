@@ -104,9 +104,6 @@ class IROperand a where
 instance IROperand [Operand] where
   toIRExp = return
 
-instance IROperand Name where
-  toIRExp = getVariable
-
 
 -- | The code generator for scalar functions emits monadic operations. Since
 -- LLVM IR is static single assignment, we need to generate new operand names
