@@ -10,6 +10,18 @@ tracker][Issues] of the main repository.
   [GitHub]:  https://github.com/AccelerateHS/accelerate
   [Issues]:  https://github.com/AccelerateHS/accelerate/issues
 
+Dependencies
+------------
+
+You will need the following packages from github:
+
+  * [llvm-general](https://github.com/tvh/llvm-general/tree/curatedTargetMachine)
+  * [lib-nvvm](https://github.com/nvidia-compiler-sdk/hsnvvm) (optional)
+
+The version of `llvm-general` available on Hackage is not suitable due to an
+outstanding [pull-request][llvm-general-issue101]. Add a comment to that pull
+request to nudge the maintainer along...
+
 
 Installation
 ------------
@@ -97,4 +109,5 @@ These are some TODOs and notes that pop into my head from time to time...
 
  [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
  [llvm-general-issue85]:        https://github.com/bscarlet/llvm-general/issues/85
+ [llvm-general-issue101]:       https://github.com/bscarlet/llvm-general/pull/101
 
