@@ -27,7 +27,7 @@ import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..)
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
-import Data.Array.Accelerate.Tuple
+import Data.Array.Accelerate.Product
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.Array.Data

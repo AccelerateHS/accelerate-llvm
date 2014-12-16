@@ -28,8 +28,8 @@ import Data.Array.Accelerate.Analysis.Type                      ( preExpType, de
 import Data.Array.Accelerate.Array.Representation               hiding ( Shape )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, Foreign, (:.), eltType )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base

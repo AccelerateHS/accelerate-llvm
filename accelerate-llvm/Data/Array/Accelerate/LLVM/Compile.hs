@@ -29,8 +29,8 @@ module Data.Array.Accelerate.LLVM.Compile (
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Tuple
 import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.Array.Data
