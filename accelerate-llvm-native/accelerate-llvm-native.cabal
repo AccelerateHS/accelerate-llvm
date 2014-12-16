@@ -1,7 +1,7 @@
 name:                   accelerate-llvm-native
-version:                0.15.0.0
+version:                0.16.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC == 7.6.*
+tested-with:            GHC == 7.8.*
 build-type:             Simple
 
 synopsis:               Accelerate backend generating LLVM
@@ -84,8 +84,8 @@ Library
 
   build-depends:
           base                          >= 4.6 && <5.0
-        , accelerate                    == 0.15.*
-        , accelerate-llvm               == 0.15.*
+        , accelerate                    >= 0.16
+        , accelerate-llvm               == 0.16.*
         , containers                    >= 0.5 && <0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
