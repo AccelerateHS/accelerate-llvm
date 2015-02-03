@@ -34,6 +34,11 @@ import qualified LLVM.General.AST.Operand                       as L
 import qualified LLVM.General.AST.Type                          as L
 
 
+-- | Convert a value from our representation of the LLVM AST which uses
+-- Haskell-level types, into the llvm-general representation where types are
+-- represented only at the value level. We use the type-level information to
+-- generate the appropriate value-level types.
+--
 class Downcast a b where
   downcast :: a -> b
 
