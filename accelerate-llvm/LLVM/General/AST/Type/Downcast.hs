@@ -1,6 +1,4 @@
-{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
 -- |
@@ -77,21 +75,29 @@ instance Downcast (Instruction a) L.Instruction where
 
 
 instance Downcast (Constant a) LC.Constant where
-  downcast (IntegralConstant x)
-    | IntegralDict <- integralDict (integralType :: IntegralType a)
-    = LC.Int (L.typeBits (singleValueType (undefined :: a))) (toInteger x)
+  downcast (ScalarConstant (NumScalarType (IntegralNumType t)) x)
+    | IntegralDict <- integralDict t
+    = LC.Int (L.typeBits (downcast t)) (fromIntegral x)
 
-  downcast (FloatingConstant x) = LC.Float $
-    case floatingType :: FloatingType a of
-      TypeFloat{}   -> L.Single x
-      TypeDouble{}  -> L.Double x
-      TypeCFloat{}  -> L.Single $ case x of CFloat x' -> x'
-      TypeCDouble{} -> L.Double $ case x of CDouble x' -> x'
+  downcast (ScalarConstant (NumScalarType (FloatingNumType t)) x)
+    = LC.Float
+    $ case t of
+        TypeFloat{}   -> L.Single x
+        TypeDouble{}  -> L.Double x
+        TypeCFloat{}  -> L.Single $ case x of CFloat x' -> x'
+        TypeCDouble{} -> L.Double $ case x of CDouble x' -> x'
 
-  downcast (NonNumConstant x)   = LC.Int (L.typeBits (singleValueType (undefined :: a))) x
+  downcast (ScalarConstant (NonNumScalarType t) x)
+    = LC.Int (L.typeBits (downcast t))
+    $ case t of
+        TypeBool{}      -> fromIntegral (fromEnum x)
+        TypeChar{}      -> fromIntegral (fromEnum x)
+        TypeCChar{}     -> fromIntegral (fromEnum x)
+        TypeCUChar{}    -> fromIntegral (fromEnum x)
+        TypeCSChar{}    -> fromIntegral (fromEnum x)
 
-  downcast (GlobalReference n)  = LC.GlobalReference (llvmType (undefined::a)) (downcast n)
-  downcast Undef                = LC.Undef (llvmType (undefined::a))
+--  downcast (GlobalReference n)  = LC.GlobalReference (llvmType (undefined::a)) (downcast n)
+--  downcast Undef                = LC.Undef (llvmType (undefined::a))
 
 instance Downcast (Operand a) L.Operand where
   downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)

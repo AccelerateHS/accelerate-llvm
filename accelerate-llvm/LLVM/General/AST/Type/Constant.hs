@@ -14,18 +14,29 @@ module LLVM.General.AST.Type.Constant
 
 import Data.Array.Accelerate.Type
 
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Representation
+-- import LLVM.General.AST.Type.Name
+-- import LLVM.General.AST.Type.Representation
 
+
+-- | Although constant expressions and instructions have many similarities,
+-- there are important differences - so they're represented using different
+-- types in this AST. At the cost of making it harder to move an code back and
+-- forth between being constant and not, this approach embeds more of the rules
+-- of what IR is legal into the Haskell types.
+--
+-- <http://llvm.org/docs/LangRef.html#constants>
+--
+-- <http://llvm.org/docs/LangRef.html#constant-expressions>
+--
 data Constant a where
-  IntegralConstant      :: (IsIntegral a, SingleValueType a) => a -> Constant a
-  FloatingConstant      :: (IsFloating a, SingleValueType a) => a -> Constant a
-  NonNumConstant        :: (IsNonNum a,   SingleValueType a) => Integer -> Constant a   -- arbitrary bit pattern stored as an integer
+  ScalarConstant        :: ScalarType a
+                        -> a
+                        -> Constant a
 
+{--
   GlobalReference       :: IsType a => Name a -> Constant a
   Undef                 :: IsType a => Constant a
 
-{--
   Add                   :: NSW
                         -> NUW
                         -> Constant a
