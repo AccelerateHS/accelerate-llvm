@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Downcast
 -- Copyright   : [2015] Trevor L. McDonell
@@ -15,6 +16,8 @@
 module LLVM.General.AST.Type.Downcast
   where
 
+import Data.Bits
+
 import Data.Array.Accelerate.Type
 
 import LLVM.General.AST.Type.Constant
@@ -22,7 +25,6 @@ import LLVM.General.AST.Type.Flags
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
 
 import Foreign.C.Types
 
@@ -115,38 +117,36 @@ instance Downcast (NumType a) L.Type where
   downcast (IntegralNumType t) = downcast t
   downcast (FloatingNumType t) = downcast t
 
--- TODO: make instances concrete
---
 instance Downcast (IntegralType a) L.Type where
-  downcast (TypeInt     _) = llvmType (undefined::a)
-  downcast (TypeInt8    _) = llvmType (undefined::a)
-  downcast (TypeInt16   _) = llvmType (undefined::a)
-  downcast (TypeInt32   _) = llvmType (undefined::a)
-  downcast (TypeInt64   _) = llvmType (undefined::a)
-  downcast (TypeWord    _) = llvmType (undefined::a)
-  downcast (TypeWord8   _) = llvmType (undefined::a)
-  downcast (TypeWord16  _) = llvmType (undefined::a)
-  downcast (TypeWord32  _) = llvmType (undefined::a)
-  downcast (TypeWord64  _) = llvmType (undefined::a)
-  downcast (TypeCShort  _) = llvmType (undefined::a)
-  downcast (TypeCUShort _) = llvmType (undefined::a)
-  downcast (TypeCInt    _) = llvmType (undefined::a)
-  downcast (TypeCUInt   _) = llvmType (undefined::a)
-  downcast (TypeCLong   _) = llvmType (undefined::a)
-  downcast (TypeCULong  _) = llvmType (undefined::a)
-  downcast (TypeCLLong  _) = llvmType (undefined::a)
-  downcast (TypeCULLong _) = llvmType (undefined::a)
+  downcast (TypeInt     _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
+  downcast (TypeInt8    _) = L.IntegerType 8
+  downcast (TypeInt16   _) = L.IntegerType 16
+  downcast (TypeInt32   _) = L.IntegerType 32
+  downcast (TypeInt64   _) = L.IntegerType 64
+  downcast (TypeWord    _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
+  downcast (TypeWord8   _) = L.IntegerType 8
+  downcast (TypeWord16  _) = L.IntegerType 16
+  downcast (TypeWord32  _) = L.IntegerType 32
+  downcast (TypeWord64  _) = L.IntegerType 64
+  downcast (TypeCShort  _) = L.IntegerType 16
+  downcast (TypeCUShort _) = L.IntegerType 16
+  downcast (TypeCInt    _) = L.IntegerType 32
+  downcast (TypeCUInt   _) = L.IntegerType 32
+  downcast (TypeCLong   _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CLong)) |] )
+  downcast (TypeCULong  _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CULong)) |] )
+  downcast (TypeCLLong  _) = L.IntegerType 64
+  downcast (TypeCULLong _) = L.IntegerType 64
 
 instance Downcast (FloatingType a) L.Type where
-  downcast (TypeFloat   _) = llvmType (undefined::a)
-  downcast (TypeDouble  _) = llvmType (undefined::a)
-  downcast (TypeCFloat  _) = llvmType (undefined::a)
-  downcast (TypeCDouble _) = llvmType (undefined::a)
+  downcast (TypeFloat   _) = L.FloatingPointType 32 L.IEEE
+  downcast (TypeDouble  _) = L.FloatingPointType 64 L.IEEE
+  downcast (TypeCFloat  _) = L.FloatingPointType 32 L.IEEE
+  downcast (TypeCDouble _) = L.FloatingPointType 64 L.IEEE
 
 instance Downcast (NonNumType a) L.Type where
-  downcast (TypeBool   _) = llvmType (undefined::a)
-  downcast (TypeChar   _) = llvmType (undefined::a)
-  downcast (TypeCChar  _) = llvmType (undefined::a)
-  downcast (TypeCSChar _) = llvmType (undefined::a)
-  downcast (TypeCUChar _) = llvmType (undefined::a)
+  downcast (TypeBool   _) = L.IntegerType 1
+  downcast (TypeChar   _) = L.IntegerType 32
+  downcast (TypeCChar  _) = L.IntegerType 8
+  downcast (TypeCSChar _) = L.IntegerType 8
+  downcast (TypeCUChar _) = L.IntegerType 8
 
