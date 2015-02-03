@@ -34,7 +34,6 @@ import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
 -- standard library
 import Prelude                                                  hiding ( lookup )
 import Control.Concurrent
-import Control.Concurrent.MVar
 import Control.Monad
 import Data.IntMap.Strict                                       ( IntMap )
 import Data.Maybe
