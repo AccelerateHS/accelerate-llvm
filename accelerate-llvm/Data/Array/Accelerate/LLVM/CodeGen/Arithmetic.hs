@@ -16,10 +16,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 -- import Data.Default.Class
 import Control.Applicative
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.IR

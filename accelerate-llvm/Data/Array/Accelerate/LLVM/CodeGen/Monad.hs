@@ -28,7 +28,6 @@ import Data.Word
 import qualified Data.Sequence                                  as Seq
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
@@ -40,7 +39,6 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 -- llvm-general-pure
-import qualified LLVM.General.AST.Type                          as L
 import qualified LLVM.General.AST.Instruction                   as L
 
 
