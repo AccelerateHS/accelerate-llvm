@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs        #-}
 {-# LANGUAGE TypeFamilies #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar
+-- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -10,7 +10,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
+module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
   IR(..), Operands(..),
   IROP(..),
