@@ -11,7 +11,8 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
-  constant, primConst,
+  primConst,
+  constant, scalar, num, integral, floating, nonnum,
 
 ) where
 
@@ -48,8 +49,20 @@ primPi t | FloatingDict <- floatingDict t = pi
 constant :: TupleType a -> a -> Operands a
 constant UnitTuple         ()    = OP_Unit
 constant (PairTuple ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
-constant (SingleTuple t)   a     = scalar t a
+constant (SingleTuple t)   a     = OP_Scalar (scalar t a)
 
-scalar :: ScalarType a -> a -> Operands a
-scalar t = OP_Scalar . ConstantOperand . ScalarConstant t
+scalar :: ScalarType a -> a -> Operand a
+scalar t = ConstantOperand . ScalarConstant t
+
+num :: NumType a -> a -> Operand a
+num t = scalar (NumScalarType t)
+
+integral :: IntegralType a -> a -> Operand a
+integral t = num (IntegralNumType t)
+
+floating :: FloatingType a -> a -> Operand a
+floating t = num (FloatingNumType t)
+
+nonnum :: NonNumType a -> a -> Operand a
+nonnum t = scalar (NonNumScalarType t)
 
