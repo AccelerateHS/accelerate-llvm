@@ -22,17 +22,17 @@ import Prelude                                                  hiding ( exp, an
 import Control.Applicative                                      hiding ( Const )
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Analysis.Match
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
-import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 
 type LLVMAcc acc = forall aenv a. acc aenv a -> Val aenv -> CodeGen (IR a)
@@ -132,21 +132,78 @@ llvmOfOpenExp cvtA top env aenv = cvtE top
 -- Primitive functions
 -- ===================
 
-fst :: forall a b. Elt a => IR (a, b) -> IR a
+fst :: IR (a, b) -> IR a
 fst (IR (OP_Pair (OP_Pair OP_Unit x) _)) = IR x
 
-snd :: forall a b. Elt b => IR (a, b) -> IR b
+snd :: IR (a, b) -> IR b
 snd (IR (OP_Pair _ y)) = IR y
 
-unpair :: (Elt a, Elt b) => IR (a, b) -> (IR a, IR b)
+unpair :: IR (a, b) -> (IR a, IR b)
 unpair x = (fst x, snd x)
 
-uncurry :: (Elt a, Elt b) => (IR a -> IR b -> c) -> IR (a, b) -> c
+uncurry :: (IR a -> IR b -> c) -> IR (a, b) -> c
 uncurry f (unpair -> (x,y)) = f x y
 
 
 -- | Generate llvm operations for primitive scalar functions
 --
-llvmOfPrimFun :: forall a r. (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
-llvmOfPrimFun (PrimAdd t) = uncurry (add t)
+llvmOfPrimFun :: (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
+llvmOfPrimFun (PrimAdd t)               = uncurry (A.add t)
+llvmOfPrimFun (PrimSub t)               = uncurry (A.sub t)
+llvmOfPrimFun (PrimMul t)               = uncurry (A.mul t)
+llvmOfPrimFun (PrimNeg t)               = A.negate t
+llvmOfPrimFun (PrimAbs t)               = A.abs t
+llvmOfPrimFun (PrimSig t)               = A.signum t
+llvmOfPrimFun (PrimQuot t)              = uncurry (A.quot t)
+llvmOfPrimFun (PrimRem t)               = uncurry (A.rem t)
+llvmOfPrimFun (PrimQuotRem t)           = uncurry (A.quotRem t)
+llvmOfPrimFun (PrimIDiv t)              = uncurry (A.idiv t)
+llvmOfPrimFun (PrimMod t)               = uncurry (A.mod t)
+llvmOfPrimFun (PrimDivMod t)            = uncurry (A.divMod t)
+llvmOfPrimFun (PrimBAnd t)              = uncurry (A.band t)
+llvmOfPrimFun (PrimBOr t)               = uncurry (A.bor t)
+llvmOfPrimFun (PrimBXor t)              = uncurry (A.xor t)
+llvmOfPrimFun (PrimBNot t)              = A.complement t
+llvmOfPrimFun (PrimBShiftL t)           = uncurry (A.shiftL t)
+llvmOfPrimFun (PrimBShiftR t)           = uncurry (A.shiftR t)
+llvmOfPrimFun (PrimBRotateL t)          = uncurry (A.rotateL t)
+llvmOfPrimFun (PrimBRotateR t)          = uncurry (A.rotateR t)
+llvmOfPrimFun (PrimFDiv t)              = uncurry (A.fdiv t)
+llvmOfPrimFun (PrimRecip t)             = A.recip t
+llvmOfPrimFun (PrimSin t)               = A.sin t
+llvmOfPrimFun (PrimCos t)               = A.cos t
+llvmOfPrimFun (PrimTan t)               = A.tan t
+llvmOfPrimFun (PrimAsin t)              = A.asin t
+llvmOfPrimFun (PrimAcos t)              = A.acos t
+llvmOfPrimFun (PrimAtan t)              = A.atan t
+llvmOfPrimFun (PrimAsinh t)             = A.asinh t
+llvmOfPrimFun (PrimAcosh t)             = A.acosh t
+llvmOfPrimFun (PrimAtanh t)             = A.atanh t
+llvmOfPrimFun (PrimAtan2 t)             = uncurry (A.atan2 t)
+llvmOfPrimFun (PrimExpFloating t)       = A.exp t
+llvmOfPrimFun (PrimFPow t)              = uncurry (A.fpow t)
+llvmOfPrimFun (PrimSqrt t)              = A.sqrt t
+llvmOfPrimFun (PrimLog t)               = A.log t
+llvmOfPrimFun (PrimLogBase t)           = uncurry (A.logBase t)
+llvmOfPrimFun (PrimTruncate ta tb)      = A.truncate ta tb
+llvmOfPrimFun (PrimRound ta tb)         = A.round ta tb
+llvmOfPrimFun (PrimFloor ta tb)         = A.floor ta tb
+llvmOfPrimFun (PrimCeiling ta tb)       = A.ceiling ta tb
+llvmOfPrimFun (PrimIsNaN t)             = A.isNaN t
+llvmOfPrimFun (PrimLt t)                = uncurry (A.lt t)
+llvmOfPrimFun (PrimGt t)                = uncurry (A.gt t)
+llvmOfPrimFun (PrimLtEq t)              = uncurry (A.lte t)
+llvmOfPrimFun (PrimGtEq t)              = uncurry (A.gte t)
+llvmOfPrimFun (PrimEq t)                = uncurry (A.eq t)
+llvmOfPrimFun (PrimNEq t)               = uncurry (A.neq t)
+llvmOfPrimFun (PrimMax t)               = uncurry (A.max t)
+llvmOfPrimFun (PrimMin t)               = uncurry (A.min t)
+llvmOfPrimFun PrimLAnd                  = uncurry A.land
+llvmOfPrimFun PrimLOr                   = uncurry A.lor
+llvmOfPrimFun PrimLNot                  = A.lnot
+llvmOfPrimFun PrimOrd                   = A.ord
+llvmOfPrimFun PrimChr                   = A.chr
+llvmOfPrimFun PrimBoolToInt             = A.boolToInt
+llvmOfPrimFun (PrimFromIntegral ta tb)  = A.fromIntegral ta tb
+  -- no missing patterns, whoo!
 
