@@ -27,7 +27,7 @@ import Data.Array.Accelerate.Type
 --
 -- Metadata can be attached to an instruction.
 --
-type InstructionMetadata = forall a. [(String, MetadataNode a)]         -- FIXME ??
+-- type InstructionMetadata = forall a. [(String, MetadataNode a)]         -- FIXME ??
 
 
 -- | <http://llvm.org/docs/LangRef.html#terminators>
@@ -39,22 +39,33 @@ type InstructionMetadata = forall a. [(String, MetadataNode a)]         -- FIXME
 --      @phi@ node?
 --
 data Terminator a where
-
-  -- TLM: Combine Ret/RetVal somehow? In llvm-general a maybe type is used, but
-  -- if there is no return value the type should be unit, and the Maybe doesn't
-  -- reflect this information.
+  -- | <http://llvm.org/docs/LangRef.html#ret-instruction>
   --
   Ret           :: Terminator ()
 
-  RetVal        :: Operand a
+  -- | <http://llvm.org/docs/LangRef.html#ret-instruction>
+  --
+  RetVal        :: ScalarType a
+                -> Operand a
                 -> Terminator a
+  -- | <http://llvm.org/docs/LangRef.html#br-instruction>
+  --
+  Br            :: Label
+                -> Terminator ()
 
+  -- | <http://llvm.org/docs/LangRef.html#br-instruction>
+  --
   CondBr        :: Operand Bool
                 -> Label
                 -> Label
                 -> Terminator ()
 
-  Br            :: Label
+  -- | <http://llvm.org/docs/LangRef.html#switch-instruction>
+  --
+  Switch        :: IntegralType a
+                -> Operand a
+                -> Label
+                -> [(Constant a, Label)]
                 -> Terminator ()
 
 
