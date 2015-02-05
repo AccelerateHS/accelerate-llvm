@@ -194,8 +194,6 @@ ceiling tf ti x = error "ceiling"
 -- Relational and Equality operators
 -- ---------------------------------
 
-data Predicate = EQ | NE | LT | LE | GT | GE
-
 cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 cmp op ty x y = error "cmp"
 
