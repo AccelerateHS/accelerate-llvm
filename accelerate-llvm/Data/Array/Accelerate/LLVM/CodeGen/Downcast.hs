@@ -2,7 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
 -- |
--- Module      : LLVM.General.AST.Type.Downcast
+-- Module      : Data.Array.Accelerate.LLVM.CodeGen.Downcast
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -11,7 +11,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Downcast
+module Data.Array.Accelerate.LLVM.CodeGen.Downcast
   where
 
 import Data.Bits
