@@ -41,7 +41,8 @@ data instance Operands a        = OP_Scalar (Operand a)
 data instance Operands (a,b)    = OP_Pair (Operands a) (Operands b)
 
 
--- | Scalar types can be converted between the IR and Operands formats.
+-- | Given some evidence that 'IR a' represents a scalar type, it can be
+-- converted between the IR and Operand data types.
 --
 class IROP dict where
   op :: dict a -> IR a -> Operand a
