@@ -288,7 +288,7 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#call-instruction>
   --
-  Call          :: Function args t
+  Call          :: GlobalFunction args t
                 -> [FunctionAttribute]
                 -> Instruction t
 
@@ -303,20 +303,14 @@ data Instruction a where
   -- LandingPad
 
 
--- data Function t where
---   Body :: ScalarType r -> Label ->      Function r
---   Lam  :: ScalarType a -> Function r -> Function (a -> r)
-
--- data Function args t where
---   Body :: ScalarType r -> Label                        -> Function ()       r
---   Lam  :: ScalarType a -> Operand a -> Function args t -> Function (args,a) t
-
-data Function args t where
-  Body :: ScalarType r -> Label                        -> Function '[]         r
-  Lam  :: ScalarType a -> Operand a -> Function args t -> Function (a ': args) t
+-- | A global function definition
+--
+data GlobalFunction args t where
+  Body :: ScalarType r -> Label                              -> GlobalFunction '[]         r
+  Lam  :: ScalarType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
 
 data HList (l :: [*]) where
-  HNil  :: HList '[]
+  HNil  ::                 HList '[]
   HCons :: e -> HList l -> HList (e ': l)
 
 

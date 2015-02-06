@@ -200,9 +200,9 @@ instance Downcast a b => Downcast (L.Named a) (L.Named b) where
 instance Downcast Label L.Name where
   downcast (Label l)    = L.Name l
 
-instance Downcast (Function args t) L.CallableOperand where
+instance Downcast (GlobalFunction args t) L.CallableOperand where
   downcast f
-    = let trav :: Function args t -> ([L.Type], L.Type, L.Name)
+    = let trav :: GlobalFunction args t -> ([L.Type], L.Type, L.Name)
           trav (Body t n)  = ([], downcast t, downcast n)
           trav (Lam t _ l) = let (t',r, n) = trav l
                              in  (downcast t : t', r, n)
@@ -212,7 +212,7 @@ instance Downcast (Function args t) L.CallableOperand where
       in
       Right (L.ConstantOperand (LC.GlobalReference ty name))
 
-instance Downcast (Function args t) [(L.Operand, [L.ParameterAttribute])] where
+instance Downcast (GlobalFunction args t) [(L.Operand, [L.ParameterAttribute])] where
   downcast Body{}      = []
   downcast (Lam _ x l) = (downcast x, []) : downcast l
 

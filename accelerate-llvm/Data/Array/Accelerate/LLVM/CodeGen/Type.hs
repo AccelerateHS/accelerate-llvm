@@ -95,7 +95,7 @@ instance TypeOf Instruction where
       Phi t _           -> t
       Call f _          -> funResultType f
         where
-          funResultType :: Function args t -> ScalarType t
+          funResultType :: GlobalFunction args t -> ScalarType t
           funResultType (Lam _ _ l) = funResultType l
           funResultType (Body t _)  = t
 
