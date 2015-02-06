@@ -8,7 +8,7 @@
 {-# LANGUAGE RankNTypes          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -18,7 +18,7 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen (
 
-  Skeleton(..), Intrinsic(..), llvmOfAcc,
+  -- Skeleton(..), Intrinsic(..), llvmOfAcc,
 
 ) where
 
@@ -26,17 +26,16 @@ module Data.Array.Accelerate.LLVM.CodeGen (
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Target
 
-import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 -- standard library
@@ -55,145 +54,151 @@ import qualified Prelude                                        as P
 --   * stencil, stencil2
 --
 class Skeleton arch where
+  {-# MINIMAL generate, fold, fold1, foldSeg, fold1Seg, scanl, scanl', scanl1,
+              scanr, scanr', scanr1, permute, stencil, stencil2 #-}
+
   generate      :: (Shape sh, Elt e)
                 => arch
-                -> Gamma aenv
-                -> IRFun1 aenv (sh -> e)
-                -> CodeGen [Kernel arch aenv (Array sh e)]
+                -> Val aenv
+                -> IRFun arch aenv (sh -> e)
+                -> CodeGen (IROpenAcc arch aenv (Array sh e))
 
   transform     :: (Shape sh, Shape sh', Elt a, Elt b)
                 => arch
-                -> Gamma aenv
-                -> IRFun1    aenv (sh' -> sh)
-                -> IRFun1    aenv (a -> b)
-                -> IRDelayed aenv (Array sh a)
-                -> CodeGen [Kernel arch aenv (Array sh' b)]
+                -> Val aenv
+                -> IRFun     arch aenv (sh' -> sh)
+                -> IRFun     arch aenv (a -> b)
+                -> IRDelayed arch aenv (Array sh a)
+                -> CodeGen (IROpenAcc arch aenv (Array sh' b))
   transform = defaultTransform
 
   map           :: (Shape sh, Elt a, Elt b)
                 => arch
-                -> Gamma aenv
-                -> IRFun1    aenv (a -> b)
-                -> IRDelayed aenv (Array sh a)
-                -> CodeGen [Kernel arch aenv (Array sh b)]
+                -> Val aenv
+                -> IRFun     arch aenv (a -> b)
+                -> IRDelayed arch aenv (Array sh a)
+                -> CodeGen (IROpenAcc arch aenv (Array sh b))
   map = defaultMap
 
   fold          :: (Shape sh, Elt e)
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Array (sh:.Int) e)
-                -> CodeGen [Kernel arch aenv (Array sh e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array sh e))
 
   fold1         :: (Shape sh, Elt e)
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRDelayed aenv (Array (sh:.Int) e)
-                -> CodeGen [Kernel arch aenv (Array sh e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array sh e))
 
   foldSeg       :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Array (sh:.Int) e)
-                -> IRDelayed aenv (Segments i)
-                -> CodeGen [Kernel arch aenv (Array (sh:.Int) e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> IRDelayed arch aenv (Segments i)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
   fold1Seg      :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRDelayed aenv (Array (sh:.Int) e)
-                -> IRDelayed aenv (Segments i)
-                -> CodeGen [Kernel arch aenv (Array (sh:.Int) e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> IRDelayed arch aenv (Segments i)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
   scanl         :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   scanl'        :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e, Scalar e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
 
   scanl1        :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   scanr         :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   scanr'        :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRExp     aenv e
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e, Scalar e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
 
   scanr1        :: Elt e
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRDelayed aenv (Vector e)
-                -> CodeGen [Kernel arch aenv (Vector e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Vector e)
+                -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Gamma aenv
-                -> IRFun2    aenv (e -> e -> e)
-                -> IRFun1    aenv (sh -> sh')
-                -> IRDelayed aenv (Array sh e)
-                -> CodeGen [Kernel arch aenv (Array sh' e)]
+                -> Val aenv
+                -> IRFun     arch aenv (e -> e -> e)
+                -> IRFun     arch aenv (sh -> sh')
+                -> IRDelayed arch aenv (Array sh e)
+                -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
   backpermute   :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Gamma aenv
-                -> IRFun1    aenv (sh' -> sh)
-                -> IRDelayed aenv (Array sh e)
-                -> CodeGen [Kernel arch aenv (Array sh' e)]
+                -> Val aenv
+                -> IRFun     arch aenv (sh' -> sh)
+                -> IRDelayed arch aenv (Array sh e)
+                -> CodeGen (IROpenAcc arch aenv (Array sh' e))
   backpermute = defaultBackpermute
 
-  stencil       :: Elt b        -- (Elt a, Stencil sh a stencil)
+  stencil       :: (Elt a, Elt b, Stencil sh a stencil)
                 => arch
-                -> Gamma aenv
-                -> IRFun1 aenv (stencil -> b)
-                -> Boundary (IRExp aenv a)
-                -> CodeGen [Kernel arch aenv (Array sh b)]
+                -> Val aenv
+                -> IRFun arch aenv (stencil -> b)
+                -> Boundary (IRExp arch aenv a)
+                -> IRManifest arch aenv (Array sh a)
+                -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
-  stencil2      :: Elt c        -- (Elt a, Elt b, Stencil sh a stencil1, Stencil sh b stencil2)
+  stencil2      :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
                 => arch
-                -> Gamma aenv
-                -> IRFun2 aenv (stencil1 -> stencil2 -> c)
-                -> Boundary (IRExp aenv a)
-                -> Boundary (IRExp aenv b)
-                -> CodeGen [Kernel arch aenv (Array sh c)]
+                -> Val aenv
+                -> IRFun arch aenv (stencil1 -> stencil2 -> c)
+                -> Boundary (IRExp arch aenv a)
+                -> IRManifest arch aenv (Array sh a)
+                -> Boundary (IRExp arch aenv b)
+                -> IRManifest arch aenv (Array sh b)
+                -> CodeGen (IROpenAcc arch aenv (Array sh c))
 
-
+{--
 -- | Generate code for a given target architecture.
 --
 llvmOfAcc :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch)
           => arch
           -> DelayedOpenAcc aenv arrs
-          -> Gamma aenv
+          -> Val aenv
           -> Module arch aenv arrs
 llvmOfAcc _    Delayed{}       _    = $internalError "llvmOfAcc" "expected manifest array"
 llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
@@ -246,16 +251,16 @@ llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 aenv (a -> b)
     travF1 f = llvmOfFun1 f aenv
 
-    travF2 :: DelayedFun aenv (a -> b -> c) -> IRFun2 aenv (a -> b -> c)
+    travF2 :: DelayedFun aenv (a -> b -> c) -> IRFun arch aenv (a -> b -> c)
     travF2 f = llvmOfFun2 f aenv
 
-    travE :: DelayedExp aenv t -> IRExp aenv t
+    travE :: DelayedExp aenv t -> IRExp arch aenv t
     travE e = llvmOfOpenExp e Empty aenv
 
     travB :: forall sh e. Elt e
           => DelayedOpenAcc aenv (Array sh e)
           -> Boundary (EltRepr e)
-          -> Boundary (IRExp aenv e)
+          -> Boundary (IRExp arch aenv e)
     travB _ Clamp        = Clamp
     travB _ Mirror       = Mirror
     travB _ Wrap         = Wrap
@@ -266,7 +271,7 @@ llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
     -- sadness
     unexpectedError x   = $internalError "llvmOfAcc" $ "unexpected array primitive: " ++ showPreAccOp x
     fusionError x       = $internalError "llvmOfAcc" $ "unexpected fusible material: " ++ showPreAccOp x
-
+--}
 
 -- Default producers
 -- -----------------
@@ -274,32 +279,35 @@ llvmOfAcc arch (Manifest pacc) aenv = runLLVM $
 defaultMap
     :: (Shape sh, Elt a, Elt b, Skeleton arch)
     => arch
-    -> Gamma aenv
-    -> IRFun1    aenv (a -> b)
-    -> IRDelayed aenv (Array sh a)
-    -> CodeGen [Kernel arch aenv (Array sh b)]
-defaultMap arch aenv f a = transform arch aenv toIRExp f a
+    -> Val aenv
+    -> IRFun     arch aenv (a -> b)
+    -> IRDelayed arch aenv (Array sh a)
+    -> CodeGen (IROpenAcc arch aenv (Array sh b))
+defaultMap arch aenv f a = transform arch aenv undefined f a
 
 defaultBackpermute
     :: (Shape sh, Shape sh', Elt e, Skeleton arch)
     => arch
-    -> Gamma aenv
-    -> IRFun1    aenv (sh' -> sh)
-    -> IRDelayed aenv (Array sh e)
-    -> CodeGen [Kernel arch aenv (Array sh' e)]
-defaultBackpermute arch aenv p a = transform arch aenv p toIRExp a
+    -> Val aenv
+    -> IRFun     arch aenv (sh' -> sh)
+    -> IRDelayed arch aenv (Array sh e)
+    -> CodeGen (IROpenAcc arch aenv (Array sh' e))
+defaultBackpermute arch aenv p a = transform arch aenv p undefined a
 
 defaultTransform
     :: (Shape sh, Shape sh', Elt a, Elt b, Skeleton arch)
     => arch
-    -> Gamma aenv
-    -> IRFun1    aenv (sh' -> sh)
-    -> IRFun1    aenv (a -> b)
-    -> IRDelayed aenv (Array sh a)
-    -> CodeGen [Kernel arch aenv (Array sh' b)]
-defaultTransform arch aenv p f IRDelayed{..} =
-  generate arch aenv $ \ix -> do
-    ix' <- p ix
-    a   <- delayedIndex ix'
-    f a
+    -> Val aenv
+    -> IRFun     arch aenv (sh' -> sh)
+    -> IRFun     arch aenv (a -> b)
+    -> IRDelayed arch aenv (Array sh a)
+    -> CodeGen (IROpenAcc arch aenv (Array sh' b))
+defaultTransform arch aenv p f IRDelayed{..} = undefined
+--  generate arch aenv $ \ix -> do
+--    ix' <- p ix
+--    a   <- delayedIndex ix'
+--    f a
+
+-- defaultStencil
+--     :: (Shape sh, Elt a, Skeleton arch)
 
