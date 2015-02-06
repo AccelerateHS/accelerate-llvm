@@ -12,6 +12,9 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
+  IRExp, IRFun,
+  IROpenExp(..), IROpenFun(..), IROpenAcc(..), IRDelayed(..), IRManifest(..),
+
   IR(..), Operands(..),
   IROP(..),
 
@@ -20,7 +23,35 @@ module Data.Array.Accelerate.LLVM.CodeGen.IR (
 import LLVM.General.AST.Type.Operand
 
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
+
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
+
+
+type IRExp arch aenv t = IROpenExp arch () aenv t
+type IRFun arch aenv t = IROpenFun arch () aenv t
+
+data IROpenExp arch env aenv t where
+  IRExp  :: CodeGen (IR t) -> IROpenExp arch env aenv t
+
+data IROpenFun arch env aenv t where
+  IRBody :: IROpenExp arch env      aenv t -> IROpenFun arch env aenv t
+  IRLam  :: IROpenFun arch (env, a) aenv r -> IROpenFun arch env aenv (a -> r)
+
+data IROpenAcc arch aenv a where
+  IROpenAcc :: () {- ??? -} -> IROpenAcc arch aenv a
+
+data IRDelayed arch aenv a where
+  IRDelayed :: (Shape sh, Elt e) =>
+    { delayedExtent      :: IRExp arch aenv sh
+    , delayedIndex       :: IRFun arch aenv (sh -> e)
+    , delayedLinearIndex :: IRFun arch aenv (Int -> e)
+    }
+    -> IRDelayed arch aenv (Array sh e)
+
+data IRManifest arch aenv a where
+  IRManifest :: Arrays arrs => Idx aenv arrs -> IRManifest arch aenv arrs
 
 
 -- | The datatype 'IR' represents the LLVM IR producing a value of type 'a'.
