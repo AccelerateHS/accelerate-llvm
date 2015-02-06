@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- standard library
 import Control.Applicative
 import Control.Monad.State.Strict
--- import Data.Maybe
+import Data.Function
 -- import Data.Map                                                 ( Map )
 import Data.Sequence                                            ( Seq )
 -- import Data.HashMap.Strict                                      ( HashMap )
@@ -31,12 +31,13 @@ import qualified Data.Sequence                                  as Seq
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
--- llvm-general-typed
-import LLVM.General.AST.Type.Downcast
+-- accelerate-llvm
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+
+import Data.Array.Accelerate.LLVM.CodeGen.Downcast
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 -- llvm-general-pure
 import qualified LLVM.General.AST.Instruction                   as L
@@ -134,6 +135,16 @@ setBlock next =
   modify $ \s -> s { blockChain = blockChain s Seq.|> next }
 
 
+-- | Generate a new block and branch unconditionally to it.
+--
+beginBlock :: String -> CodeGen Block
+beginBlock nm = do
+  next <- newBlock nm
+  _    <- br next
+  setBlock next
+  return next
+
+
 -- Instructions
 -- ------------
 
@@ -141,6 +152,7 @@ setBlock next =
 --
 freshName :: CodeGen (Name a)
 freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
+
 
 -- | Add an instruction to the state of the currently active block so that it is
 -- computed, and return the operand (LocalReference) that can be used to later
@@ -152,8 +164,8 @@ instr ins = do
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "instr" "empty block chain"
-      bs Seq.:> b -> ( LocalReference (instructionType ins) name
-                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast name L.:= downcast ins } } )
+      bs Seq.:> b -> ( LocalReference (typeOf ins) name
+                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (name := ins) } } )
 
 
 -- | Execute an unnamed instruction
@@ -163,30 +175,66 @@ do_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "do_" "empty block chain"
-      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> L.Do (downcast ins) } }
+      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (Do ins) } }
 
 
 -- | Return void from a basic block
 --
 return_ :: CodeGen ()
-return_ = void $ terminate (L.Do Ret)
+return_ = void $ terminate Ret
 
 -- | Return a value from a basic block
 --
-retval_ :: IsType a => Operand a -> CodeGen ()
-retval_ x = void $ terminate (L.Do (RetVal x))
+retval_ :: Operand a -> CodeGen ()
+retval_ x = void $ terminate (RetVal x)
+
+
+-- | Unconditional branch. Return the name of the block that was branched from.
+--
+br :: Block -> CodeGen Block
+br target = terminate $ Br (blockLabel target)
+
+
+-- | Conditional branch. Return the name of the block that was branched from.
+--
+cbr :: Operand Bool -> Block -> Block -> CodeGen Block
+cbr cond t f = terminate $ CondBr cond (blockLabel t) (blockLabel f)
+
+
+-- | Add a phi node to the top of the current block
+--
+phi :: [(Operand a, Block)] -> CodeGen (Operand a)
+phi incoming = do
+  crit  <- freshName
+  block <- state $ \s -> case Seq.viewr (blockChain s) of
+                           Seq.EmptyR -> $internalError "phi" "empty block chain"
+                           _ Seq.:> b -> ( b, s )
+  phi' block crit incoming
+
+phi' :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
+phi' target crit incoming =
+  let cmp       = (==) `on` blockLabel
+      update b  = b { instructions = downcast (crit := Phi ty [ (op,blockLabel) | (op,Block{..}) <- incoming ]) Seq.<| instructions b }
+      ty        = case incoming of
+                    []        -> $internalError "phi" "no incoming values specified"
+                    (o,_):_   -> typeOf o
+  in
+  state $ \s ->
+    case Seq.findIndexR (cmp target) (blockChain s) of
+      Nothing -> $internalError "phi" "unknown basic block"
+      Just i  -> ( LocalReference ty crit
+                 , s { blockChain = Seq.adjust update i (blockChain s) } )
 
 
 -- | Add a termination condition to the current instruction stream. Also return
 -- the block that was just terminated.
 --
-terminate :: forall a. IsType a => L.Named (Terminator a) -> CodeGen Block
-terminate target =
+terminate :: Terminator a -> CodeGen Block
+terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "terminate" "empty block chain"
-      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast target } } )
---                                                       , returnType = llvmType (undefined :: a) } } )
+      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = L.Do (downcast term) } } )
 
 
 -- Debug
