@@ -39,6 +39,7 @@ data MetadataNode a
 data Operand a where
   LocalReference        :: ScalarType a -> Name a -> Operand a
   ConstantOperand       :: Constant a -> Operand a
-  MetadataStringOperand :: String -> Operand a
-  MetadataNodeOperand   :: MetadataNode a -> Operand a
+
+--  MetadataStringOperand :: String -> Operand a
+--  MetadataNodeOperand   :: MetadataNode a -> Operand a
 

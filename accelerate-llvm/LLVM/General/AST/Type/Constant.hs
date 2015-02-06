@@ -14,7 +14,7 @@ module LLVM.General.AST.Type.Constant
 
 import Data.Array.Accelerate.Type
 
--- import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Name
 -- import LLVM.General.AST.Type.Representation
 
 
@@ -33,23 +33,7 @@ data Constant a where
                         -> a
                         -> Constant a
 
-{--
-  GlobalReference       :: IsType a => Name a -> Constant a
-  Undef                 :: IsType a => Constant a
-
-  Add                   :: NSW
-                        -> NUW
+  GlobalReference       :: ScalarType a
+                        -> Name a
                         -> Constant a
-                        -> Constant a
-                        -> Constant a
-
-  -- 'fptoui' or 'fptosi'
-  Round                 :: (Integral a, Floating b)
-                        => Constant a
-                        -> Constant b
-
-  FromIntegral          :: (Floating a, Integral b)
-                        => Constant a
-                        -> Constant b
---}
 

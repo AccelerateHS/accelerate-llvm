@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -14,9 +16,12 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Downcast
   where
 
+import Prelude                                                  hiding ( Ordering(..) )
 import Data.Bits
+import Foreign.C.Types
 
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Flags
@@ -24,11 +29,13 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
-import Foreign.C.Types
-
+import qualified LLVM.General.AST.Attribute                     as L
+import qualified LLVM.General.AST.CallingConvention             as L
 import qualified LLVM.General.AST.Constant                      as LC
 import qualified LLVM.General.AST.Float                         as L
+import qualified LLVM.General.AST.FloatingPointPredicate        as FP
 import qualified LLVM.General.AST.Instruction                   as L
+import qualified LLVM.General.AST.IntegerPredicate              as IP
 import qualified LLVM.General.AST.Name                          as L
 import qualified LLVM.General.AST.Operand                       as L
 import qualified LLVM.General.AST.Type                          as L
@@ -42,16 +49,11 @@ import qualified LLVM.General.AST.Type                          as L
 class Downcast a b where
   downcast :: a -> b
 
-instance Downcast NUW Bool where
-  downcast NoUnsignedWrap = True
-  downcast UnsignedWrap   = False
+instance Downcast a a' => Downcast [a] [a'] where
+  downcast = map downcast
 
-instance Downcast NSW Bool where
-  downcast NoSignedWrap = True
-  downcast SignedWrap   = False
-
-instance Downcast FastMathFlags L.FastMathFlags where
-  downcast = id
+instance (Downcast a a', Downcast b b') => Downcast (a,b) (a',b') where
+  downcast (a,b) = (downcast a, downcast b)
 
 nsw :: Bool
 nsw = False
@@ -65,19 +67,94 @@ fmf = UnsafeAlgebra
 md :: L.InstructionMetadata
 md = []
 
+instance Downcast NUW Bool where
+  downcast NoUnsignedWrap = True
+  downcast UnsignedWrap   = False
+
+instance Downcast NSW Bool where
+  downcast NoSignedWrap = True
+  downcast SignedWrap   = False
+
+instance Downcast FastMathFlags L.FastMathFlags where
+  downcast = id
 
 instance Downcast (Name a) L.Name where
   downcast (Name s)   = L.Name s
   downcast (UnName n) = L.UnName n
 
+instance (Downcast (i a) i') => Downcast (Named i a) (L.Named i') where
+  downcast (x := op) = downcast x L.:= downcast op
+  downcast (Do op)   = L.Do (downcast op)
+
 instance Downcast (Instruction a) L.Instruction where
-  downcast (Add IntegralNumType{} x y) = L.Add nsw nuw (downcast x) (downcast y) md
-  downcast (Add FloatingNumType{} x y) = L.FAdd fmf (downcast x) (downcast y) md
-
---  downcast (Mul x y)
---    | IntegralNumType{} <- numType :: NumType a = L.Mul nsw nuw (downcast x) (downcast y) md
---    | FloatingNumType{} <- numType :: NumType a = L.FMul fmf (downcast x) (downcast y) md
-
+  downcast (Add t x y) =
+    case t of
+      IntegralNumType{}        -> L.Add nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}        -> L.FAdd fmf    (downcast x) (downcast y) md
+  downcast (Sub t x y) =
+    case t of
+      IntegralNumType{}        -> L.Sub nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}        -> L.FSub fmf    (downcast x) (downcast y) md
+  downcast (Mul t x y) =
+    case t of
+      IntegralNumType{}        -> L.Mul nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}        -> L.FMul fmf    (downcast x) (downcast y) md
+  downcast (Quot t x y)
+    | signed t                  = L.SDiv False (downcast x) (downcast y) md
+    | otherwise                 = L.UDiv False (downcast x) (downcast y) md
+  downcast (Rem t x y)
+    | signed t                  = L.SRem (downcast x) (downcast y) md
+    | otherwise                 = L.URem (downcast x) (downcast y) md
+  downcast (Div _ x y)          = L.FDiv fmf (downcast x) (downcast y) md
+  downcast (ShiftL _ x i)       = L.Shl nsw nuw (downcast x) (downcast i) md
+  downcast (ShiftRL _ x i)      = L.LShr False (downcast x) (downcast i) md
+  downcast (ShiftRA _ x i)      = L.AShr False (downcast x) (downcast i) md
+  downcast (BAnd _ x y)         = L.And (downcast x) (downcast y) md
+  downcast (BOr _ x y)          = L.Or (downcast x) (downcast y) md
+  downcast (BXor _ x y)         = L.Xor (downcast x) (downcast y) md
+  downcast (Trunc _ t x)        = L.Trunc (downcast x) (downcast t) md
+  downcast (FTrunc _ t x)       = L.FPTrunc (downcast x) (downcast t) md
+  downcast (Ext _ t x)
+    | signed t                  = L.SExt (downcast x) (downcast t) md
+    | otherwise                 = L.ZExt (downcast x) (downcast t) md
+  downcast (FExt _ t x)         = L.FPExt (downcast x) (downcast t) md
+  downcast (FPToInt _ t x)
+    | signed t                  = L.FPToSI (downcast x) (downcast t) md
+    | otherwise                 = L.FPToUI (downcast x) (downcast t) md
+  downcast (IntToFP t t' x)
+    | signed t                  = L.SIToFP (downcast x) (downcast t') md
+    | otherwise                 = L.UIToFP (downcast x) (downcast t') md
+  downcast (BitCast t x)        = L.BitCast (downcast x) (downcast t) md
+  downcast (Phi t incoming)     = L.Phi (downcast t) (downcast incoming) md
+  downcast (Select _ p x y)     = L.Select (downcast p) (downcast x) (downcast y) md
+  downcast (Call f attrs)       = L.Call False L.C [] (downcast f) (downcast f) (downcast attrs) md
+  downcast (Cmp t p x y) =
+    let
+        fp EQ = FP.OEQ
+        fp NE = FP.ONE
+        fp LT = FP.OLT
+        fp LE = FP.OLE
+        fp GT = FP.OGT
+        fp GE = FP.OGE
+        --
+        si EQ = IP.EQ
+        si NE = IP.NE
+        si LT = IP.SLT
+        si LE = IP.SLE
+        si GT = IP.SGT
+        si GE = IP.SGE
+        --
+        ui EQ = IP.EQ
+        ui NE = IP.NE
+        ui LT = IP.ULT
+        ui LE = IP.ULE
+        ui GT = IP.UGT
+        ui GE = IP.UGE
+    in
+    case t of
+      NumScalarType FloatingNumType{}   -> L.FCmp (fp p) (downcast x) (downcast y) md
+      _ | signed t                      -> L.ICmp (si p) (downcast x) (downcast y) md
+        | otherwise                     -> L.ICmp (ui p) (downcast x) (downcast y) md
 
 instance Downcast (Constant a) LC.Constant where
   downcast (ScalarConstant (NumScalarType (IntegralNumType t)) x)
@@ -101,17 +178,20 @@ instance Downcast (Constant a) LC.Constant where
         TypeCUChar{}    -> fromIntegral (fromEnum x)
         TypeCSChar{}    -> fromIntegral (fromEnum x)
 
---  downcast (GlobalReference n)  = LC.GlobalReference (llvmType (undefined::a)) (downcast n)
---  downcast Undef                = LC.Undef (llvmType (undefined::a))
+  downcast (GlobalReference t n)
+    = LC.GlobalReference (downcast t) (downcast n)
 
 instance Downcast (Operand a) L.Operand where
   downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)
   downcast (ConstantOperand c)       = L.ConstantOperand (downcast c)
-  downcast (MetadataStringOperand s) = L.MetadataStringOperand s
+--  downcast (MetadataStringOperand s) = L.MetadataStringOperand s
 
 instance Downcast (Terminator a) L.Terminator where
-  downcast Ret          = L.Ret Nothing []
-  downcast (RetVal x)   = L.Ret (Just (downcast x)) []
+  downcast Ret                  = L.Ret Nothing md
+  downcast (RetVal x)           = L.Ret (Just (downcast x)) md
+  downcast (Br l)               = L.Br (downcast l) md
+  downcast (CondBr p t f)       = L.CondBr (downcast p) (downcast t) (downcast f) md
+  downcast (Switch p d a)       = L.Switch (downcast p) (downcast d) (downcast a) md
 
 instance Downcast a b => Downcast (L.Named a) (L.Named b) where
   downcast (l L.:= r)   = l L.:= downcast r
@@ -119,6 +199,28 @@ instance Downcast a b => Downcast (L.Named a) (L.Named b) where
 
 instance Downcast Label L.Name where
   downcast (Label l)    = L.Name l
+
+instance Downcast (Function args t) L.CallableOperand where
+  downcast f
+    = let trav :: Function args t -> ([L.Type], L.Type, L.Name)
+          trav (Body t n)  = ([], downcast t, downcast n)
+          trav (Lam t _ l) = let (t',r, n) = trav l
+                             in  (downcast t : t', r, n)
+
+          (args, result, name)  = trav f
+          ty                    = L.FunctionType result args False
+      in
+      Right (L.ConstantOperand (LC.GlobalReference ty name))
+
+instance Downcast (Function args t) [(L.Operand, [L.ParameterAttribute])] where
+  downcast Body{}      = []
+  downcast (Lam _ x l) = (downcast x, []) : downcast l
+
+instance Downcast FunctionAttribute L.FunctionAttribute where
+  downcast NoReturn = L.NoReturn
+  downcast NoUnwind = L.NoUnwind
+  downcast ReadOnly = L.ReadOnly
+  downcast ReadNone = L.ReadNone
 
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t

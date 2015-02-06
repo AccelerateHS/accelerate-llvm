@@ -19,6 +19,7 @@ module LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Bits
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Constant
 
 import Data.Array.Accelerate.Type
 
@@ -45,8 +46,7 @@ data Terminator a where
 
   -- | <http://llvm.org/docs/LangRef.html#ret-instruction>
   --
-  RetVal        :: ScalarType a
-                -> Operand a
+  RetVal        :: Operand a
                 -> Terminator a
   -- | <http://llvm.org/docs/LangRef.html#br-instruction>
   --
@@ -62,8 +62,7 @@ data Terminator a where
 
   -- | <http://llvm.org/docs/LangRef.html#switch-instruction>
   --
-  Switch        :: IntegralType a
-                -> Operand a
+  Switch        :: Operand a
                 -> Label
                 -> [(Constant a, Label)]
                 -> Terminator ()
@@ -148,18 +147,21 @@ data Instruction a where
   --
   ShiftL        :: IntegralType a
                 -> Operand a
-                -> Operand Int -> Instruction a
+                -> Operand Int
+                -> Instruction a
 
   -- | <http://llvm.org/docs/LangRef.html#lshr-instruction>
   --
   ShiftRL       :: IntegralType a
                 -> Operand a
-                -> Operand Int -> Instruction a
+                -> Operand Int
+                -> Instruction a
 
   -- | <http://llvm.org/docs/LangRef.html#ashr-instruction>
   ShiftRA       :: IntegralType a
                 -> Operand a
-                -> Operand Int -> Instruction a
+                -> Operand Int
+                -> Instruction a
 
   -- Bitwise Binary Operations
   -- <http://llvm.org/docs/LangRef.html#bitwise-binary-operations>
@@ -226,7 +228,7 @@ data Instruction a where
   --   <http://llvm.org/docs/LangRef.html#sext-to-instruction>
   --
   Ext           :: (BitSize a < BitSize b)
-                => IntegralType a               -- Integral OR Char OR Bool
+                => IntegralType a               -- Integral OR Char OR Bool ):
                 -> IntegralType b
                 -> Operand a
                 -> Instruction b
@@ -318,8 +320,11 @@ data HList (l :: [*]) where
   HCons :: e -> HList l -> HList (e ': l)
 
 
+-- | Instances of instructions may be given a name, allowing their results to be
+-- referenced as Operands. Instructions returning void (e.g. function calls)
+-- don't need names.
 --
--- data Named (i :: * -> *) where
---   (:=) :: Name a -> i a -> Named i
---   Do   :: i ()          -> Named i
+data Named ins a where
+  (:=) :: Name a -> ins a -> Named ins a
+  Do   :: ins ()          -> Named ins ()
 
