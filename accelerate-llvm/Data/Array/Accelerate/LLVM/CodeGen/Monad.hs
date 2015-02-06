@@ -13,8 +13,25 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Monad
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Monad (
+
+  CodeGen,
+  -- runLLVM,
+
+  -- declarations
+  freshName, -- declare, intrinsic,
+
+  -- basic blocks
+  Block,
+  newBlock, setBlock, beginBlock, -- createBlocks,
+
+  -- instructions
+  instr, do_, return_, retval_, br, cbr, phi, phi',
+
+  -- metadata
+  -- addMetadata
+
+) where
 
 -- standard library
 import Control.Applicative
@@ -79,8 +96,8 @@ initCodeGenState = CodeGenState
   }
 
 
--- Block chain
--- ===========
+-- Basic Blocks
+-- ============
 
 -- | An initial block chain
 --
