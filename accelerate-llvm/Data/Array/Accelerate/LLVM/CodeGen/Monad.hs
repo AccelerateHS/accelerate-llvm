@@ -16,7 +16,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   CodeGen,
-  -- runLLVM,
+  runLLVM,
 
   -- declarations
   freshName, -- declare, intrinsic,
@@ -53,8 +53,13 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
+import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
+import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
+import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
+
+import {-# SOURCE #-}  Data.Array.Accelerate.LLVM.CodeGen.IR
 
 -- llvm-general-pure
 import qualified LLVM.General.AST.Instruction                   as L
@@ -88,6 +93,16 @@ data Block = Block
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
+
+runLLVM
+    :: forall arch aenv a. (Target arch, Intrinsic arch)
+    => CodeGen (IROpenAcc arch aenv a)
+    -> Module arch aenv a
+runLLVM  ll =
+  let
+      (r, st)   = runState (runCodeGen ll) initCodeGenState
+  in
+  undefined
 
 initCodeGenState :: CodeGenState
 initCodeGenState = CodeGenState

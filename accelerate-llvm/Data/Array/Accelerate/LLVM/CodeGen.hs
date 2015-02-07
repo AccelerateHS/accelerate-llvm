@@ -128,10 +128,3 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     unexpectedError x   = $internalError "llvmOfOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp x
     fusionError x       = $internalError "llvmOfOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp x
 
-
-runLLVM
-    :: forall arch aenv a. (Target arch, Intrinsic arch)
-    => CodeGen (IROpenAcc arch aenv a)
-    -> Module arch aenv a
-runLLVM = undefined
-
