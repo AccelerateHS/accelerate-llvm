@@ -1,5 +1,7 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
 -- Copyright   : [2015] Trevor L. McDonell
@@ -12,8 +14,9 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
-  IRExp, IRFun,
-  IROpenExp(..), IROpenFun(..), IROpenAcc(..), IRDelayed(..), IRManifest(..),
+  IRExp, IRFun1, IRFun2,
+  IROpenExp, IROpenFun1(..), IROpenFun2(..),
+  IROpenAcc(..), IRDelayed(..), IRManifest(..),
 
   IR(..), Operands(..),
   IROP(..),
@@ -29,24 +32,73 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 
-type IRExp arch aenv t = IROpenExp arch () aenv t
-type IRFun arch aenv t = IROpenFun arch () aenv t
+-- | LLVM IR is in single static assignment, so we need to be able to generate
+-- fresh names for each application of a scalar function or expression.
+--
+type IRExp     arch     aenv t = IROpenExp arch () aenv t
+type IROpenExp arch env aenv t = CodeGen (IR t)
 
-data IROpenExp arch env aenv t where
-  IRExp  :: CodeGen (IR t) -> IROpenExp arch env aenv t
+type IRFun1 arch aenv t = IROpenFun1 arch () aenv t
+type IRFun2 arch aenv t = IROpenFun2 arch () aenv t
 
-data IROpenFun arch env aenv t where
-  IRBody :: IROpenExp arch env      aenv t -> IROpenFun arch env aenv t
-  IRLam  :: IROpenFun arch (env, a) aenv r -> IROpenFun arch env aenv (a -> r)
+data IROpenFun1 arch env aenv t where
+  IRFun1 :: { app1 :: IR a -> IROpenExp arch (env,a) aenv b }
+         -> IROpenFun1 arch env aenv (a -> b)
+
+data IROpenFun2 arch env aenv t where
+  IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
+         -> IROpenFun2 arch env aenv (a -> b -> c)
+
+-- type IRFun     arch     aenv t = IROpenFun arch () aenv t
+
+-- type IRFun1 arch aenv t  = forall a b. IRFun arch aenv (a -> b)
+-- type IRFun2 arch aenv t  = forall a b c. IRFun arch aenv (a -> b -> c)
+
+-- type family IROpenFun arch env aenv f where
+--   IROpenFun arch env aenv (a -> b -> c) = IR a -> IR b -> IROpenExp arch env aenv c
+--   IROpenFun arch env aenv (a -> b)      = IR a -> IROpenExp arch env aenv b
+
+
+-- type IROpenFun arch env aenv t = IRFunR env t
+
+-- type family IRFunR env t where
+--   IRFunR env (a -> b) = IR a -> IRFunR (env,a) b
+--   IRFunR env t        = CodeGen (IR t)
+
+-- type family IROpenFun arch env aenv t where
+--   IROpenFun arch env aenv (a -> b) = IR a -> IROpenFun arch (env,a) aenv b
+--   IROpenFun arch env aenv t        =         IROpenExp arch env     aenv t
+
+
+--type IROpenFun arch env t = forall a. IR a -> IROpenExp arch
+
+-- data IROpenFun arch env aenv t where
+--   IRBody ::          IROpenExp arch env aenv t       -> IROpenFun arch env aenv t
+--   IRLam  :: (IR a -> IROpenFun arch (env, a) aenv t) -> IROpenFun arch env aenv (a -> t)
+
+-- TLM: This is annoying to specialise for function arity, it would be better to
+--      make this general like AST.PreOpenFun
+--
+-- type IRFun1 arch aenv f         = forall a b.   IR a         -> IROpenExp arch ((),a)     aenv b
+-- type IRFun2 arch aenv f         = forall a b c. IR a -> IR b -> IROpenExp arch (((),a),b) aenv c
+
+-- data IROpenExp arch env aenv t where
+--   IRExp  :: CodeGen (IR t) -> IROpenExp arch env aenv t
+
+--data IROpenFun arch env aenv t where
+--  IRBody :: IROpenExp arch env      aenv t -> IROpenFun arch env aenv t
+--  IRLam  :: IROpenFun arch (env, a) aenv r -> IROpenFun arch env aenv (a -> r)
+
 
 data IROpenAcc arch aenv a where
-  IROpenAcc :: () {- ??? -} -> IROpenAcc arch aenv a
+  IROpenAcc :: () {- ??? -}
+            -> IROpenAcc arch aenv a
 
 data IRDelayed arch aenv a where
   IRDelayed :: (Shape sh, Elt e) =>
-    { delayedExtent      :: IRExp arch aenv sh
-    , delayedIndex       :: IRFun arch aenv (sh -> e)
-    , delayedLinearIndex :: IRFun arch aenv (Int -> e)
+    { delayedExtent      :: IRExp  arch aenv sh
+    , delayedIndex       :: IRFun1 arch aenv (sh -> e)
+    , delayedLinearIndex :: IRFun1 arch aenv (Int -> e)
     }
     -> IRDelayed arch aenv (Array sh e)
 
