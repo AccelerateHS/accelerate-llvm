@@ -36,6 +36,25 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 
 type LLVMAcc acc = forall aenv a. acc aenv a -> Val aenv -> CodeGen (IR a)
+-- | A class covering code generation for a subset of the scalar operations.
+-- All operations (except Foreign) have a default instance, but this allows a
+-- backend to specialise the implementation for the more complex operations.
+--
+class Expression arch where
+  eforeign      :: (Foreign f, Elt x, Elt y)
+                => arch
+                -> f x y
+                -> IRFun1    arch ()   (x -> y)
+                -> IROpenExp arch env aenv x
+                -> IROpenExp arch env aenv y
+  eforeign = $internalError "eforeign" "default instance not implemented yet"
+
+  while         :: Elt a
+                => IROpenFun1 arch env aenv (a -> Bool)
+                -> IROpenFun1 arch env aenv (a -> a)
+                -> IROpenExp  arch env aenv a
+                -> IROpenExp  arch env aenv a
+  while = $internalError "while" "default instance not implemented yet"
 
 
 -- Scalar expressions
