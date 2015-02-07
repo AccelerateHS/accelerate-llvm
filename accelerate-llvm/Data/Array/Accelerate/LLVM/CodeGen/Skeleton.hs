@@ -16,6 +16,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Skeleton
   where
 
+import Prelude                                                  hiding ( id )
+
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
 import Data.Array.Accelerate.Array.Sugar
@@ -54,7 +56,6 @@ class Skeleton arch where
                 -> IRFun1    arch aenv (a -> b)
                 -> IRDelayed arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' b))
-  transform = defaultTransform
 
   map           :: (Shape sh, Elt a, Elt b)
                 => arch
@@ -62,7 +63,6 @@ class Skeleton arch where
                 -> IRFun1    arch aenv (a -> b)
                 -> IRDelayed arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
-  map = defaultMap
 
   fold          :: (Shape sh, Elt e)
                 => arch
@@ -156,7 +156,6 @@ class Skeleton arch where
                 -> IRFun1    arch aenv (sh' -> sh)
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
-  backpermute = defaultBackpermute
 
   stencil       :: (Elt a, Elt b, Stencil sh a stencil)
                 => arch
@@ -165,7 +164,6 @@ class Skeleton arch where
                 -> Boundary (IRExp arch aenv a)
                 -> IRManifest arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
-  stencil = defaultStencil
 
   stencil2      :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
                 => arch
@@ -176,66 +174,21 @@ class Skeleton arch where
                 -> Boundary (IRExp arch aenv b)
                 -> IRManifest arch aenv (Array sh b)
                 -> CodeGen (IROpenAcc arch aenv (Array sh c))
-  stencil2 = defaultStencil2
+
+  -- Default instances
+  -- -----------------
+  map arch aenv f a             = transform arch aenv id f a
+  backpermute arch aenv p a     = transform arch aenv p id a
+  transform arch aenv p f IRDelayed{..} =
+    generate arch aenv . IRFun1 $ \ix -> do
+      ix' <- app1 p ix
+      a   <- app1 delayedIndex ix'
+      app1 f a
+
+  stencil                       = $internalError "stencil1" "no default instance yet"
+  stencil2                      = $internalError "stencil2" "no default instance yet"
 
 
--- Default producers
--- -----------------
-
-identity :: forall arch aenv a. IRFun1 arch aenv (a -> a)
-identity = IRFun1 return
-
-defaultMap
-    :: (Shape sh, Elt a, Elt b, Skeleton arch)
-    => arch
-    -> Val aenv
-    -> IRFun1    arch aenv (a -> b)
-    -> IRDelayed arch aenv (Array sh a)
-    -> CodeGen (IROpenAcc arch aenv (Array sh b))
-defaultMap arch aenv f a = transform arch aenv identity f a
-
-defaultBackpermute
-    :: (Shape sh, Shape sh', Elt e, Skeleton arch)
-    => arch
-    -> Val aenv
-    -> IRFun1    arch aenv (sh' -> sh)
-    -> IRDelayed arch aenv (Array sh e)
-    -> CodeGen (IROpenAcc arch aenv (Array sh' e))
-defaultBackpermute arch aenv p a = transform arch aenv p identity a
-
-defaultTransform
-    :: (Shape sh, Shape sh', Elt a, Elt b, Skeleton arch)
-    => arch
-    -> Val aenv
-    -> IRFun1    arch aenv (sh' -> sh)
-    -> IRFun1    arch aenv (a -> b)
-    -> IRDelayed arch aenv (Array sh a)
-    -> CodeGen (IROpenAcc arch aenv (Array sh' b))
-defaultTransform arch aenv p f IRDelayed{..} =
-  generate arch aenv $ IRFun1 $ \ix -> do
-    ix' <- app1 p ix
-    a   <- app1 delayedIndex ix'
-    app1 f a
-
-defaultStencil
-    :: (Elt a, Elt b, Stencil sh a stencil)
-    => arch
-    -> Val aenv
-    -> IRFun1 arch aenv (stencil -> b)
-    -> Boundary (IRExp arch aenv a)
-    -> IRManifest arch aenv (Array sh a)
-    -> CodeGen (IROpenAcc arch aenv (Array sh b))
-defaultStencil = $internalError "stencil" "no default instance yet"
-
-defaultStencil2
-    :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
-    => arch
-    -> Val aenv
-    -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
-    -> Boundary (IRExp arch aenv a)
-    -> IRManifest arch aenv (Array sh a)
-    -> Boundary (IRExp arch aenv b)
-    -> IRManifest arch aenv (Array sh b)
-    -> CodeGen (IROpenAcc arch aenv (Array sh c))
-defaultStencil2 = $internalError "stencil2" "no default instance yet"
+id :: forall arch aenv a. IRFun1 arch aenv (a -> a)
+id = IRFun1 return
 
