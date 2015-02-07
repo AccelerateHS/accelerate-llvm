@@ -26,16 +26,17 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
+import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 
-type LLVMAcc acc = forall aenv a. acc aenv a -> Val aenv -> CodeGen (IR a)
 -- | A class covering code generation for a subset of the scalar operations.
 -- All operations (except Foreign) have a default instance, but this allows a
 -- backend to specialise the implementation for the more complex operations.
@@ -60,24 +61,43 @@ class Expression arch where
 -- Scalar expressions
 -- ==================
 
+llvmOfFun1
+    :: (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedFun aenv (a -> b)
+    -> Val aenv
+    -> IRFun1 arch aenv (a -> b)
+llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body (Empty `Push` x) aenv
+llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
+
+llvmOfFun2
+    :: (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedFun aenv (a -> b -> c)
+    -> Val aenv
+    -> IRFun2 arch aenv (a -> b -> c)
+llvmOfFun2 arch (Lam (Lam (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp arch body (Empty `Push` x `Push` y) aenv
+llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impossible evaluation"
+
+
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
 --
 llvmOfOpenExp
-    :: forall acc env aenv _t.
-       LLVMAcc acc
-    -> PreOpenExp acc env aenv _t
+    :: forall arch env aenv _t. (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedOpenExp env aenv _t
     -> Val env
     -> Val aenv
-    -> CodeGen (IR _t)
-llvmOfOpenExp cvtA top env aenv = cvtE top
+    -> IROpenExp arch env aenv _t
+llvmOfOpenExp arch top env aenv = cvtE top
   where
-    cvtE :: forall t. PreOpenExp acc env aenv t -> CodeGen (IR t)
+    cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
         Let bnd body            -> do x <- cvtE bnd
-                                      llvmOfOpenExp cvtA body (env `Push` x) aenv
+                                      llvmOfOpenExp arch body (env `Push` x) aenv
         Var ix                  -> return $ prj ix env
         Const c                 -> return $ IR (constant (eltType (undefined::t)) c)
         PrimConst c             -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
@@ -89,6 +109,7 @@ llvmOfOpenExp cvtA top env aenv = cvtE top
         IndexTail ix            -> indexTail <$> cvtE ix
         Prj ix tup              -> prjT ix <$> cvtE tup
         Tuple tup               -> cvtT tup
+        Foreign asm native x    -> eforeign arch asm (llvmOfFun1 arch native Empty) (cvtE x)
 
         IndexSlice _slice _slix _sh     -> error "IndexSlice"
         IndexFull _slice _slix _sh      -> error "IndexFull"
@@ -102,9 +123,6 @@ llvmOfOpenExp cvtA top env aenv = cvtE top
         ShapeSize _sh                   -> error "ShapeSize"
         Intersect _sh1 _sh2             -> error "Intersect"
         Union _sh1 _sh2                 -> error "Union"
-
-        Foreign{}                      -> $internalError "llvmOfOpenExp" "Foreign not supported yet"
-
 
     indexNil :: IR Z
     indexNil = IR (constant (eltType Z) (fromElt Z))
@@ -132,14 +150,14 @@ llvmOfOpenExp cvtA top env aenv = cvtE top
         go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _)      = go ix t tup
         go _ _ _                                                = $internalError "prjT" "inconsistent valuation"
 
-    cvtT :: forall t. (Elt t, IsTuple t) => Tuple (PreOpenExp acc env aenv) (TupleRepr t) -> CodeGen (IR t)
+    cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (IR t)
     cvtT tup = IR <$> go (eltType (undefined::t)) tup
       where
-        go :: TupleType t' -> Tuple (PreOpenExp acc env aenv) tup -> CodeGen (Operands t')
+        go :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
         go UnitTuple NilTup
           = return OP_Unit
 
-        go (PairTuple ta tb) (SnocTup a (b :: PreOpenExp acc env aenv b))
+        go (PairTuple ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
           | Just REFL <- matchTupleType tb (eltType (undefined::b))
           = do a'    <- go ta a
                IR b' <- cvtE b
