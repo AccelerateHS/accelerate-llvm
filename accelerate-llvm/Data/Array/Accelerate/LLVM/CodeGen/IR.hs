@@ -49,47 +49,6 @@ data IROpenFun2 arch env aenv t where
   IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
--- type IRFun     arch     aenv t = IROpenFun arch () aenv t
-
--- type IRFun1 arch aenv t  = forall a b. IRFun arch aenv (a -> b)
--- type IRFun2 arch aenv t  = forall a b c. IRFun arch aenv (a -> b -> c)
-
--- type family IROpenFun arch env aenv f where
---   IROpenFun arch env aenv (a -> b -> c) = IR a -> IR b -> IROpenExp arch env aenv c
---   IROpenFun arch env aenv (a -> b)      = IR a -> IROpenExp arch env aenv b
-
-
--- type IROpenFun arch env aenv t = IRFunR env t
-
--- type family IRFunR env t where
---   IRFunR env (a -> b) = IR a -> IRFunR (env,a) b
---   IRFunR env t        = CodeGen (IR t)
-
--- type family IROpenFun arch env aenv t where
---   IROpenFun arch env aenv (a -> b) = IR a -> IROpenFun arch (env,a) aenv b
---   IROpenFun arch env aenv t        =         IROpenExp arch env     aenv t
-
-
---type IROpenFun arch env t = forall a. IR a -> IROpenExp arch
-
--- data IROpenFun arch env aenv t where
---   IRBody ::          IROpenExp arch env aenv t       -> IROpenFun arch env aenv t
---   IRLam  :: (IR a -> IROpenFun arch (env, a) aenv t) -> IROpenFun arch env aenv (a -> t)
-
--- TLM: This is annoying to specialise for function arity, it would be better to
---      make this general like AST.PreOpenFun
---
--- type IRFun1 arch aenv f         = forall a b.   IR a         -> IROpenExp arch ((),a)     aenv b
--- type IRFun2 arch aenv f         = forall a b c. IR a -> IR b -> IROpenExp arch (((),a),b) aenv c
-
--- data IROpenExp arch env aenv t where
---   IRExp  :: CodeGen (IR t) -> IROpenExp arch env aenv t
-
---data IROpenFun arch env aenv t where
---  IRBody :: IROpenExp arch env      aenv t -> IROpenFun arch env aenv t
---  IRLam  :: IROpenFun arch (env, a) aenv r -> IROpenFun arch env aenv (a -> r)
-
-
 data IROpenAcc arch aenv a where
   IROpenAcc :: () {- ??? -}
             -> IROpenAcc arch aenv a
