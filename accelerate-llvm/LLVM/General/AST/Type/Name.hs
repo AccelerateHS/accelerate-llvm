@@ -48,6 +48,9 @@ data Name a
   | UnName Word         -- ^ a number for a nameless thing
   deriving (Eq, Ord, Read, Show, Typeable, Data)
 
+instance IsString (Name a) where
+  fromString = Name
+
 
 -- TLM: 'Name' is used a lot over the place, to refer to things like variables
 --      as well as basic block labels. In the first case the type makes sense,
