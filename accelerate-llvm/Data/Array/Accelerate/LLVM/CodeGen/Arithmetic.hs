@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -14,11 +15,12 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Num, Char, Bool, String, error, return, otherwise )
+import Prelude                                                  ( Num, Char, Bool, String, ($), error, undefined, return, otherwise )
 import Control.Applicative
 
 -- accelerate
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
 
 -- accelerate-llvm
 import LLVM.General.AST.Type.Instruction
@@ -26,9 +28,9 @@ import LLVM.General.AST.Type.Operand
 
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                 hiding ( cbr, phi )
 import Data.Array.Accelerate.LLVM.CodeGen.Type
-
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Monad       as M
 
 
 -- Operations from Num
@@ -256,4 +258,43 @@ fromIntegral = error "fromIntegral"
 
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
 binop f dict (op dict -> x) (op dict -> y) = ir dict <$> instr (f dict x y)
+
+cbr :: IR Bool -> Block -> Block -> CodeGen Block
+cbr p = M.cbr (op nonNumType p)
+
+phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
+phi ir = IR <$> go (eltType (undefined::a)) [ (o, b) | (IR o, b) <- ir ]
+  where
+    go :: TupleType t -> [(Operands t, Block)] -> CodeGen (Operands t)
+    go UnitTuple         _   = return OP_Unit
+    go (SingleTuple _)   ops = OP_Scalar <$> M.phi [ (x, b) | (OP_Scalar x, b) <- ops ]
+    go (PairTuple t1 t2) ops = OP_Pair   <$> go t1 [ (x, b) | (OP_Pair x _, b) <- ops ]
+                                         <*> go t2 [ (y, b) | (OP_Pair _ y, b) <- ops ]
+
+
+ifThenElse
+    :: Elt a
+    => CodeGen (IR Bool)
+    -> CodeGen (IR a)
+    -> CodeGen (IR a)
+    -> CodeGen (IR a)
+ifThenElse test yes no = do
+  ifThen <- newBlock "if.then"
+  ifElse <- newBlock "if.else"
+  ifExit <- newBlock "if.exit"
+
+  _  <- beginBlock "if.entry"
+  p  <- test
+  _  <- cbr p ifThen ifElse
+
+  setBlock ifThen
+  tv <- yes
+  tb <- br ifExit
+
+  setBlock ifElse
+  fv <- no
+  fb <- br ifExit
+
+  setBlock ifExit
+  phi [(tv, tb), (fv, fb)]
 
