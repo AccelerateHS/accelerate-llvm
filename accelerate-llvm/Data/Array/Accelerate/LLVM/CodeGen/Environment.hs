@@ -13,11 +13,20 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Environment
   where
 
-import Data.Array.Accelerate.AST                        ( Idx(..) )
-import Data.Array.Accelerate.Error
+import Data.IntMap                                              ( IntMap )
+import qualified Data.IntMap                                    as IM
+
+import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt )
+import Data.Array.Accelerate.Error                              ( internalError )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
+import LLVM.General.AST.Type.Name
+
+
+-- Scalar environment
+-- ==================
 
 -- | An environment for local scalar expression bindings, encoded at the value
 -- level as a heterogenous snoc list, and on the type level as nested tuples.
@@ -33,4 +42,48 @@ prj :: Idx env t -> Val env -> IR t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
 prj _            _            = $internalError "prj" "inconsistent valuation"
+
+
+-- Array environment
+-- =================
+
+-- | A mapping between the environment index of a free array variable and the
+-- Name of that array to be used in the generated code.
+--
+-- This simply compresses the array indices into a continuous range, rather than
+-- directly using the integer equivalent of the de Bruijn index. Thus, the
+-- result is still sensitive to the order of let bindings, but not of any
+-- intermediate (unused) free array variables.
+--
+type Aval aenv  = IntMap (Label, Idx' aenv)
+type Gamma aenv = IntMap (Idx' aenv)
+
+data Idx' aenv where
+  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
+
+-- Projection of a value from the array environment using a de Bruijn index.
+-- This returns a pair of operands to access the shape and array data
+-- respectively.
+--
+aprj :: Idx aenv t -> Aval aenv -> Name t
+aprj ix aenv =
+  case IM.lookup (idxToInt ix) aenv of
+    Nothing             -> $internalError "aprj" "free variable not registered"
+    Just (Label n,_)    -> Name n
+
+
+-- | Construct the array environment index, will be used by code generation to
+-- map free array variable indices to names in the generated code.
+--
+makeAval :: Gamma aenv -> Aval aenv
+makeAval = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
+  where
+    toAval :: Int -> Idx' aenv -> (Label, Idx' aenv)
+    toAval n ix = (Label ("fv" ++ show n), ix)
+
+-- | A free variable
+--
+freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Gamma aenv
+freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
+
 

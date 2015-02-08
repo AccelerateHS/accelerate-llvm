@@ -196,7 +196,7 @@ compileOpenAcc = traverseAcc
         exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
              -> LLVM arch (ExecOpenAcc arch aenv arrs)
         exec (aenv, eacc) = do
-          let aval = makeGamma aenv
+          let aval = makeAval aenv
           kernel <- build topAcc aval
           return $! ExecAcc kernel aval eacc
 
