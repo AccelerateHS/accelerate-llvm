@@ -26,7 +26,7 @@ for :: forall i. (Elt i, IsIntegral i)
     => IR i                                     -- ^ starting index
     -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
     -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
-    -> (IR i -> CodeGen (IR ()))                -- ^ body of the loop
+    -> (IR i -> CodeGen ())                     -- ^ body of the loop
     -> CodeGen ()
 for start test incr body = do
   loop  <- newBlock "for.top"
