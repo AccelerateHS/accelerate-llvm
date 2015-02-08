@@ -16,7 +16,7 @@
 
 module Data.Array.Accelerate.LLVM.Execute (
 
-  Execute(..),Gamma,
+  Execute(..), Aval,
   executeAcc, executeAfun1,
 
 ) where
@@ -34,7 +34,7 @@ import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Aval )
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.Execute.Environment
@@ -48,7 +48,7 @@ import Control.Monad
 class Remote arch => Execute arch where
   map           :: (Shape sh, Elt b)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
@@ -56,7 +56,7 @@ class Remote arch => Execute arch where
 
   generate      :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
@@ -64,7 +64,7 @@ class Remote arch => Execute arch where
 
   transform     :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
@@ -72,7 +72,7 @@ class Remote arch => Execute arch where
 
   backpermute   :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
@@ -80,7 +80,7 @@ class Remote arch => Execute arch where
 
   fold          :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh :. Int
@@ -88,7 +88,7 @@ class Remote arch => Execute arch where
 
   fold1         :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh :. Int
@@ -96,7 +96,7 @@ class Remote arch => Execute arch where
 
   foldSeg       :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh :. Int
@@ -105,7 +105,7 @@ class Remote arch => Execute arch where
 
   fold1Seg      :: (Shape sh, Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh :. Int
@@ -114,7 +114,7 @@ class Remote arch => Execute arch where
 
   scanl         :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -122,7 +122,7 @@ class Remote arch => Execute arch where
 
   scanl1        :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -130,7 +130,7 @@ class Remote arch => Execute arch where
 
   scanl'        :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -138,7 +138,7 @@ class Remote arch => Execute arch where
 
   scanr         :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -146,7 +146,7 @@ class Remote arch => Execute arch where
 
   scanr1        :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -154,7 +154,7 @@ class Remote arch => Execute arch where
 
   scanr'        :: Elt e
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> DIM1
@@ -162,7 +162,7 @@ class Remote arch => Execute arch where
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> sh
@@ -171,7 +171,7 @@ class Remote arch => Execute arch where
 
   stencil1      :: (Shape sh, Elt a, Elt b)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> Array sh a
@@ -179,7 +179,7 @@ class Remote arch => Execute arch where
 
   stencil2      :: (Shape sh, Elt a, Elt b, Elt c)
                 => ExecutableR arch
-                -> Gamma aenv
+                -> Aval aenv
                 -> AvalR arch aenv
                 -> StreamR arch
                 -> Array sh a
