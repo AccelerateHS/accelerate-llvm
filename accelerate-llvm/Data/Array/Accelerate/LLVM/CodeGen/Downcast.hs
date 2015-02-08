@@ -30,6 +30,7 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
+import qualified LLVM.General.AST.AddrSpace                     as L
 import qualified LLVM.General.AST.Attribute                     as L
 import qualified LLVM.General.AST.CallingConvention             as L
 import qualified LLVM.General.AST.Constant                      as LC
@@ -68,9 +69,6 @@ fmf = UnsafeAlgebra
 
 md :: L.InstructionMetadata
 md = []
-
-pa :: [L.ParameterAttribute]
-pa = []
 
 
 instance Downcast NUW Bool where
@@ -229,7 +227,8 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast ReadNone = L.ReadNone
 
 instance Downcast (Parameter a) L.Parameter where
-  downcast (Parameter t x) = L.Parameter (downcast t) (downcast x) pa
+  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                 (downcast x) []
+  downcast (PtrParameter t x)    = L.Parameter (L.PointerType (downcast t) (L.AddrSpace 0)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
 
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t
