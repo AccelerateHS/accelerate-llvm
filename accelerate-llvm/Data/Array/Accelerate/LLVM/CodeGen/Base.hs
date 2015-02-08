@@ -13,6 +13,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base
 
 
 import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
@@ -28,4 +29,7 @@ local t x = ir t (LocalReference t x)
 
 global :: ScalarType a -> Name a -> IR a
 global t x = ir t (ConstantOperand (GlobalReference t x))
+
+param :: ScalarType t -> Name t -> Parameter t
+param = Parameter
 

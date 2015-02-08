@@ -25,6 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Flags
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
@@ -34,6 +35,7 @@ import qualified LLVM.General.AST.CallingConvention             as L
 import qualified LLVM.General.AST.Constant                      as LC
 import qualified LLVM.General.AST.Float                         as L
 import qualified LLVM.General.AST.FloatingPointPredicate        as FP
+import qualified LLVM.General.AST.Global                        as L
 import qualified LLVM.General.AST.Instruction                   as L
 import qualified LLVM.General.AST.IntegerPredicate              as IP
 import qualified LLVM.General.AST.Name                          as L
@@ -66,6 +68,10 @@ fmf = UnsafeAlgebra
 
 md :: L.InstructionMetadata
 md = []
+
+pa :: [L.ParameterAttribute]
+pa = []
+
 
 instance Downcast NUW Bool where
   downcast NoUnsignedWrap = True
@@ -221,6 +227,9 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast NoUnwind = L.NoUnwind
   downcast ReadOnly = L.ReadOnly
   downcast ReadNone = L.ReadNone
+
+instance Downcast (Parameter a) L.Parameter where
+  downcast (Parameter t x) = L.Parameter (downcast t) (downcast x) pa
 
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t
