@@ -14,10 +14,6 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
-  IRExp, IRFun1, IRFun2,
-  IROpenExp, IROpenFun1(..), IROpenFun2(..),
-  IROpenAcc(..), IRDelayed(..), IRManifest(..),
-
   IR(..), Operands(..),
   IROP(..),
 
@@ -28,41 +24,6 @@ import LLVM.General.AST.Type.Operand
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
-
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
-
-
--- | LLVM IR is in single static assignment, so we need to be able to generate
--- fresh names for each application of a scalar function or expression.
---
-type IRExp     arch     aenv t = IROpenExp arch () aenv t
-type IROpenExp arch env aenv t = CodeGen (IR t)
-
-type IRFun1 arch aenv t = IROpenFun1 arch () aenv t
-type IRFun2 arch aenv t = IROpenFun2 arch () aenv t
-
-data IROpenFun1 arch env aenv t where
-  IRFun1 :: { app1 :: IR a -> IROpenExp arch (env,a) aenv b }
-         -> IROpenFun1 arch env aenv (a -> b)
-
-data IROpenFun2 arch env aenv t where
-  IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
-         -> IROpenFun2 arch env aenv (a -> b -> c)
-
-data IROpenAcc arch aenv a where
-  IROpenAcc :: () {- ??? -}
-            -> IROpenAcc arch aenv a
-
-data IRDelayed arch aenv a where
-  IRDelayed :: (Shape sh, Elt e) =>
-    { delayedExtent      :: IRExp  arch aenv sh
-    , delayedIndex       :: IRFun1 arch aenv (sh -> e)
-    , delayedLinearIndex :: IRFun1 arch aenv (Int -> e)
-    }
-    -> IRDelayed arch aenv (Array sh e)
-
-data IRManifest arch aenv a where
-  IRManifest :: Arrays arrs => Idx aenv arrs -> IRManifest arch aenv arrs
 
 
 -- | The datatype 'IR' represents the LLVM IR producing a value of type 'a'.

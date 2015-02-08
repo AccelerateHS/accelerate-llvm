@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE RoleAnnotations #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR-boot
+-- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar-boot
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -10,7 +10,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.IR
+module Data.Array.Accelerate.LLVM.CodeGen.Sugar
   where
 
 type role IROpenAcc phantom phantom phantom     -- temporary

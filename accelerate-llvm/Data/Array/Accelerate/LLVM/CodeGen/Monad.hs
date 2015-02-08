@@ -37,16 +37,16 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 import Control.Applicative
 import Control.Monad.State.Strict
 import Data.Function
--- import Data.Map                                                 ( Map )
-import Data.Sequence                                            ( Seq )
--- import Data.HashMap.Strict                                      ( HashMap )
+-- import Data.Map                                                         ( Map )
+import Data.Sequence                                                    ( Seq )
+-- import Data.HashMap.Strict                                              ( HashMap )
 -- import Data.String
 import Data.Word
-import qualified Data.Sequence                                  as Seq
+import qualified Data.Sequence                                          as Seq
 
 -- accelerate
 import Data.Array.Accelerate.Error
-import qualified Data.Array.Accelerate.Debug                    as Debug
+import qualified Data.Array.Accelerate.Debug                            as Debug
 
 -- accelerate-llvm
 import LLVM.General.AST.Type.Instruction
@@ -59,10 +59,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import {-# SOURCE #-}  Data.Array.Accelerate.LLVM.CodeGen.IR
+import {-# SOURCE #-}  Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- llvm-general-pure
-import qualified LLVM.General.AST.Instruction                   as L
+import qualified LLVM.General.AST.Instruction                           as L
 
 
 -- Code generation

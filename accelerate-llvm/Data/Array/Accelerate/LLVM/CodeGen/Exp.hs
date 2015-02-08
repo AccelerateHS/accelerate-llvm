@@ -34,6 +34,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 

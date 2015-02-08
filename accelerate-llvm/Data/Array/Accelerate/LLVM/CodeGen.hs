@@ -39,6 +39,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- standard library
 import Prelude                                                  hiding ( map, scanl, scanl1, scanr, scanr1 )
