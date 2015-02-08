@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   -- basic blocks
   Block,
-  newBlock, setBlock, beginBlock, -- createBlocks,
+  newBlock, setBlock, beginBlock, createBlocks,
 
   -- instructions
   instr, do_, return_, retval_, br, cbr, phi, phi',
@@ -41,7 +41,9 @@ import Data.Function
 import Data.Sequence                                                    ( Seq )
 -- import Data.HashMap.Strict                                              ( HashMap )
 -- import Data.String
+import Text.Printf
 import Data.Word
+import qualified Data.Foldable                                          as Seq
 import qualified Data.Sequence                                          as Seq
 
 -- accelerate
@@ -62,7 +64,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import {-# SOURCE #-}  Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- llvm-general-pure
-import qualified LLVM.General.AST.Instruction                           as L
+import qualified LLVM.General.AST.Global                                as LLVM
+import qualified LLVM.General.AST.Instruction                           as LLVM
 
 
 -- Code generation
@@ -84,9 +87,9 @@ data CodeGenState = CodeGenState
 
 data Block = Block
   { blockLabel          :: Label                                -- block label
-  , instructions        :: Seq (L.Named L.Instruction)          -- stack of instructions
-  , terminator          :: L.Named L.Terminator                 -- block terminator
---  , returnType          :: L.Type
+  , instructions        :: Seq (LLVM.Named LLVM.Instruction)    -- stack of instructions
+  , terminator          :: LLVM.Terminator                      -- block terminator
+--  , returnType          :: LLVM.Type
   }
   deriving Show
 
@@ -100,9 +103,9 @@ runLLVM
     -> Module arch aenv a
 runLLVM  ll =
   let
-      (r, st)   = runState (runCodeGen ll) initCodeGenState
+      (_r, _st)   = runState (runCodeGen ll) initCodeGenState
   in
-  undefined
+  error "TODO: runLLVM"
 
 initCodeGenState :: CodeGenState
 initCodeGenState = CodeGenState
@@ -175,6 +178,24 @@ beginBlock nm = do
   _    <- br next
   setBlock next
   return next
+
+
+-- | Extract the block state and construct the basic blocks that form a function
+-- body. The block stream is re-initialised, but module-level state such as the
+-- global symbol table is left intact.
+--
+createBlocks :: CodeGen [LLVM.BasicBlock]
+createBlocks
+  = state
+  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+              blocks = makeBlock `fmap` blockChain s
+              m      = Seq.length (blockChain s)
+              n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
+          in
+          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
+  where
+    makeBlock Block{..} =
+      LLVM.BasicBlock (downcast blockLabel) (Seq.toList instructions) (LLVM.Do terminator)
 
 
 -- Instructions
@@ -266,7 +287,7 @@ terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "terminate" "empty block chain"
-      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = L.Do (downcast term) } } )
+      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
 
 
 -- Debug
