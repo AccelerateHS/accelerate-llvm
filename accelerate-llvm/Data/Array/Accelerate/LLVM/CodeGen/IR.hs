@@ -22,7 +22,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.IR (
 import LLVM.General.AST.Type.Operand
 
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 
 
