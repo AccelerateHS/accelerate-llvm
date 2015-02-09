@@ -25,11 +25,14 @@ import qualified Data.IntMap                                    as IM
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple )
+import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Array
+import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -95,32 +98,37 @@ llvmOfOpenExp
     -> IROpenExp arch env aenv _t
 llvmOfOpenExp arch top env aenv = cvtE top
   where
+    cvtM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
+    cvtM (Manifest (Avar ix)) = IRManifest ix
+    cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
+
     cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
-        Let bnd body            -> do x <- cvtE bnd
-                                      llvmOfOpenExp arch body (env `Push` x) aenv
-        Var ix                  -> return $ prj ix env
-        Const c                 -> return $ IR (constant (eltType (undefined::t)) c)
-        PrimConst c             -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
-        PrimApp f x             -> llvmOfPrimFun f =<< cvtE x
-        IndexNil                -> return indexNil
-        IndexAny                -> return indexAny
-        IndexCons sh sz         -> indexCons <$> cvtE sh <*> cvtE sz
-        IndexHead ix            -> indexHead <$> cvtE ix
-        IndexTail ix            -> indexTail <$> cvtE ix
-        Prj ix tup              -> prjT ix <$> cvtE tup
-        Tuple tup               -> cvtT tup
-        Foreign asm native x    -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
+        Let bnd body                -> do x <- cvtE bnd
+                                          llvmOfOpenExp arch body (env `Push` x) aenv
+        Var ix                      -> return $ prj ix env
+        Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
+        PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
+        PrimApp f x                 -> llvmOfPrimFun f =<< cvtE x
+        IndexNil                    -> return indexNil
+        IndexAny                    -> return indexAny
+        IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
+        IndexHead ix                -> indexHead <$> cvtE ix
+        IndexTail ix                -> indexTail <$> cvtE ix
+        Prj ix tup                  -> prjT ix <$> cvtE tup
+        Tuple tup                   -> cvtT tup
+        Foreign asm native x        -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
+        Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
 
-        IndexSlice _slice _slix _sh     -> error "IndexSlice"
-        IndexFull _slice _slix _sh      -> error "IndexFull"
+        IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
+        IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
+
         ToIndex _sh _ix                 -> error "ToIndex"
         FromIndex _sh _ix               -> error "FromIndex"
-        Cond _c _t _e                   -> error "Cond"
         While _c _f _x                  -> error "While"
         Index _acc _ix                  -> error "Index"
-        LinearIndex _acc _ix            -> error "LinearIndex"
+        LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
         Shape _acc                      -> error "Shape"
         ShapeSize _sh                   -> error "ShapeSize"
         Intersect _sh1 _sh2             -> error "Intersect"
@@ -141,6 +149,37 @@ llvmOfOpenExp arch top env aenv = cvtE top
 
     indexTail :: IR (sh :. sz) -> IR sh
     indexTail (IR (OP_Pair sh _)) = IR sh
+
+    indexSlice :: (Shape sh, Shape sl, Elt slix)
+               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+               -> IR slix
+               -> IR sh
+               -> IR sl
+    indexSlice slice (IR slix) (IR sh) = IR $ restrict slice slix sh
+      where
+        restrict :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
+        restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
+        restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
+          let sl' = restrict sliceIdx slx sl
+          in  OP_Pair sl' sz
+        restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
+          restrict sliceIdx slx sl
+
+    indexFull :: (Shape sh, Shape sl, Elt slix)
+              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+              -> IR slix
+              -> IR sl
+              -> IR sh
+    indexFull slice (IR slix) (IR sh) = IR $ extend slice slix sh
+      where
+        extend :: SliceIndex slix sl co sh -> Operands slix -> Operands sl -> Operands sh
+        extend SliceNil              OP_Unit               OP_Unit         = OP_Unit
+        extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
+          let sh' = extend sliceIdx slx sl
+          in  OP_Pair sh' sz
+        extend (SliceFixed sliceIdx) (OP_Pair slx sz) sl                   =
+          let sh' = extend sliceIdx slx sl
+          in  OP_Pair sh' sz
 
     prjT :: forall t e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IR e
     prjT tix (IR ops) = IR $ go tix (eltType (undefined::t)) ops
@@ -166,6 +205,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
                return $ OP_Pair a' b'
 
         go _ _ = $internalError "cvtT" "impossible evaluation"
+
+    linearIndex :: (Shape sh, Elt e)
+                => IRManifest arch aenv (Array sh e)
+                -> IR Int
+                -> CodeGen (IR e)
+    linearIndex (IRManifest v) ix =
+      readArray (arrayData (aprj v aenv)) ix
 
 
 -- Primitive functions
