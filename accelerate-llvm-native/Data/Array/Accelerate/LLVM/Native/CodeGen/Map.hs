@@ -29,6 +29,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+import LLVM.General.AST.Type.Name
+
 
 -- C Code
 -- ======
@@ -80,7 +82,7 @@ mkMap :: forall arch aenv sh a b. Elt b
 mkMap aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray (undefined::Array sh b) "out"
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
       paramEnv                  = envParam aenv
   in do
   makeOpenAcc "map" (paramGang ++ paramOut ++ paramEnv) $ do

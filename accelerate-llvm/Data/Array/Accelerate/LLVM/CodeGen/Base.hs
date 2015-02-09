@@ -49,25 +49,33 @@ global t x = ir t (ConstantOperand (GlobalReference t x))
 
 -- | Names of array data components
 --
-arrayName :: String -> Int -> Name a
-arrayName name i = Name (name ++ ".ad" ++ show i)
+arrayName :: Name (Array sh e) -> Int -> Name e'
+arrayName (Name n) i = Name (n ++ ".ad" ++ show i)
 
 -- | Names of shape components
 --
-shapeName :: String -> Int -> Name a
-shapeName name i = Name (name ++ ".sh" ++ show i)
+shapeName :: Name (Array sh e) -> Int -> Name sh'
+shapeName (Name name) i = Name (name ++ ".sh" ++ show i)
+
+-- | Names of array data elements
+--
+arrayData :: forall sh e. (Shape sh, Elt e)
+          => Name (Array sh e)
+          -> IRArray (Array sh e)
+arrayData n
+  = IRArray (travTypeToIR (undefined::e) (\t i -> LocalReference t (arrayName n i)))
+
 
 -- | Generate typed local names for array data components as well as function
 -- parameters to bind those names
 --
 mutableArray
     :: forall sh e. (Shape sh, Elt e)
-    => Array sh e {- dummy -}
-    -> Label
+    => Name (Array sh e)
     -> (IRArray (Array sh e), [LLVM.Parameter])
-mutableArray arr label@(Label l) =
-  ( IRArray (travTypeToIR (undefined::e) (\t i -> LocalReference t (arrayName l i)))
-  , arrayParam arr label )
+mutableArray name =
+  ( arrayData  name
+  , arrayParam name )
 
 
 
@@ -116,21 +124,20 @@ ptrParameter t x = downcast (PtrParameter t x)
 -- accessed by the function.
 --
 envParam :: forall aenv. Gamma aenv -> [LLVM.Parameter]
-envParam aenv = concatMap (\(n, Idx' v) -> toParam v n) (IM.elems aenv)
+envParam aenv = concatMap (\(Label n, Idx' v) -> toParam v (Name n)) (IM.elems aenv)
   where
-    toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Label -> [LLVM.Parameter]
-    toParam _ name = arrayParam (undefined::Array sh e) name
+    toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Name (Array sh e) -> [LLVM.Parameter]
+    toParam _ name = arrayParam name
 
 
 -- | Generate function parameters for an Array with given base name.
 --
 arrayParam
     :: forall sh e. (Shape sh, Elt e)
-    => Array sh e {- dummy -}
-    -> Label
+    => Name (Array sh e)
     -> [LLVM.Parameter]
-arrayParam _ (Label base) = ad ++ sh
+arrayParam name = ad ++ sh
   where
-    ad = travTypeToList (undefined :: e)  (\t i -> ptrParameter    t (arrayName base i))
-    sh = travTypeToList (undefined :: sh) (\t i -> scalarParameter t (shapeName base i))
+    ad = travTypeToList (undefined :: e)  (\t i -> ptrParameter    t (arrayName name i))
+    sh = travTypeToList (undefined :: sh) (\t i -> scalarParameter t (shapeName name i))
 
