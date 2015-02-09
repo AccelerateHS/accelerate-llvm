@@ -27,6 +27,7 @@ import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Flags
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
@@ -54,6 +55,10 @@ class Downcast a b where
 
 instance Downcast a a' => Downcast [a] [a'] where
   downcast = map downcast
+
+instance Downcast a a' => Downcast (Maybe a) (Maybe a') where
+  downcast Nothing  = Nothing
+  downcast (Just x) = Just (downcast x)
 
 instance (Downcast a a', Downcast b b') => Downcast (a,b) (a',b') where
   downcast (a,b) = (downcast a, downcast b)
@@ -191,7 +196,15 @@ instance Downcast (Constant a) LC.Constant where
 instance Downcast (Operand a) L.Operand where
   downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)
   downcast (ConstantOperand c)       = L.ConstantOperand (downcast c)
---  downcast (MetadataStringOperand s) = L.MetadataStringOperand s
+
+instance Downcast Metadata L.Operand where
+  downcast (MetadataStringOperand s) = L.MetadataStringOperand s
+  downcast (MetadataOperand o)       = downcast o
+  downcast (MetadataNodeOperand n)   = L.MetadataNodeOperand (downcast n)
+
+instance Downcast MetadataNode L.MetadataNode where
+  downcast (MetadataNode n)          = L.MetadataNode (downcast n)
+  downcast (MetadataNodeReference r) = L.MetadataNodeReference r
 
 instance Downcast (Terminator a) L.Terminator where
   downcast Ret                  = L.Ret Nothing md
