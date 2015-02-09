@@ -61,7 +61,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import {-# SOURCE #-}  Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- llvm-general-pure
 import qualified LLVM.General.AST.Global                                as LLVM
