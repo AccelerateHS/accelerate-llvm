@@ -17,7 +17,7 @@ import Data.Array.Accelerate.LLVM.CodeGen
 
 import Data.Array.Accelerate.LLVM.Native.Target
 -- import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
--- import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 -- import Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
@@ -25,7 +25,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 
 instance Skeleton Native where
   map _         = mkMap
---  generate _    = mkGenerate
+  generate _    = mkGenerate
 --  transform _   = mkTransform
 --  fold _        = mkFold
 --  fold1 _       = mkFold1

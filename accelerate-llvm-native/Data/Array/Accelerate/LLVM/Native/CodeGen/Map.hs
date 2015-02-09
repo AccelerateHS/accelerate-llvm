@@ -29,8 +29,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import LLVM.General.AST.Type.Name
-
 
 -- C Code
 -- ======
