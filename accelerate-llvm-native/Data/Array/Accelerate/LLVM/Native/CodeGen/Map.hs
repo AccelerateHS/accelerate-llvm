@@ -23,7 +23,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
@@ -77,20 +76,19 @@ mkMap :: forall arch aenv sh a b. Elt b
       => Aval aenv
       -> IRFun1    arch aenv (a -> b)
       -> IRDelayed arch aenv (Array sh a)
-      -> CodeGen (Kernel arch aenv (Array sh b))
+      -> CodeGen (IROpenAcc arch aenv (Array sh b))
 mkMap aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
-  in
-  makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  in do
+  makeOpenAcc "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       xs <- app1 delayedLinearIndex i
       ys <- app1 apply xs
       writeArray arrOut i ys
-      return ()
 
     return_
 

@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 
 -- | Generate function parameters that will specify the first and last (linear)
@@ -50,6 +51,13 @@ gangId =
   in
   (local t tid, [ scalarParameter t tid ] )
 
+
+-- | Create a single kernel program
+--
+makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc arch aenv a)
+makeOpenAcc name param kernel = do
+  body <- makeKernel name param kernel
+  return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
