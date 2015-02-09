@@ -67,7 +67,7 @@ llvmOfFun1
     :: (Skeleton arch, Expression arch)
     => arch
     -> DelayedFun aenv (a -> b)
-    -> Aval aenv
+    -> Gamma aenv
     -> IRFun1 arch aenv (a -> b)
 llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body (Empty `Push` x) aenv
 llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
@@ -76,7 +76,7 @@ llvmOfFun2
     :: (Skeleton arch, Expression arch)
     => arch
     -> DelayedFun aenv (a -> b -> c)
-    -> Aval aenv
+    -> Gamma aenv
     -> IRFun2 arch aenv (a -> b -> c)
 llvmOfFun2 arch (Lam (Lam (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp arch body (Empty `Push` x `Push` y) aenv
 llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impossible evaluation"
@@ -91,7 +91,7 @@ llvmOfOpenExp
     => arch
     -> DelayedOpenExp env aenv _t
     -> Val env
-    -> Aval aenv
+    -> Gamma aenv
     -> IROpenExp arch env aenv _t
 llvmOfOpenExp arch top env aenv = cvtE top
   where

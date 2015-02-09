@@ -55,8 +55,7 @@ prj _            _            = $internalError "prj" "inconsistent valuation"
 -- result is still sensitive to the order of let bindings, but not of any
 -- intermediate (unused) free array variables.
 --
-type Aval aenv  = IntMap (Label, Idx' aenv)
-type Gamma aenv = IntMap (Idx' aenv)
+type Gamma aenv = IntMap (Label, Idx' aenv)
 
 data Idx' aenv where
   Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
@@ -65,7 +64,7 @@ data Idx' aenv where
 -- This returns a pair of operands to access the shape and array data
 -- respectively.
 --
-aprj :: Idx aenv t -> Aval aenv -> Name t
+aprj :: Idx aenv t -> Gamma aenv -> Name t
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
     Nothing             -> $internalError "aprj" "free variable not registered"
@@ -75,15 +74,15 @@ aprj ix aenv =
 -- | Construct the array environment index, will be used by code generation to
 -- map free array variable indices to names in the generated code.
 --
-makeAval :: Gamma aenv -> Aval aenv
-makeAval = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
+makeGamma :: IntMap (Idx' aenv) -> Gamma aenv
+makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
   where
     toAval :: Int -> Idx' aenv -> (Label, Idx' aenv)
     toAval n ix = (Label ("fv" ++ show n), ix)
 
 -- | A free variable
 --
-freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Gamma aenv
+freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
 freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
 
 

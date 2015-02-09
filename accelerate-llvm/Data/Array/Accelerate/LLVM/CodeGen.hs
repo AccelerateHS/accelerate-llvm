@@ -51,7 +51,7 @@ llvmOfOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Expression arch)
     => arch
     -> DelayedOpenAcc aenv arrs
-    -> Aval aenv
+    -> Gamma aenv
     -> Module arch aenv arrs
 llvmOfOpenAcc _    Delayed{}       _    = $internalError "llvmOfOpenAcc" "expected manifest array"
 llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $

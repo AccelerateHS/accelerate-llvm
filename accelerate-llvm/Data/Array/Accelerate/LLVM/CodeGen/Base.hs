@@ -115,7 +115,7 @@ ptrParameter t x = downcast (PtrParameter t x)
 -- The environment here refers only to the actual free array variables that are
 -- accessed by the function.
 --
-envParam :: forall aenv. Aval aenv -> [LLVM.Parameter]
+envParam :: forall aenv. Gamma aenv -> [LLVM.Parameter]
 envParam aenv = concatMap (\(n, Idx' v) -> toParam v n) (IM.elems aenv)
   where
     toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Label -> [LLVM.Parameter]

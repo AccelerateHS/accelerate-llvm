@@ -45,13 +45,13 @@ class Skeleton arch where
 
   generate      :: (Shape sh, Elt e)
                 => arch
-                -> Aval aenv
+                -> Gamma       aenv
                 -> IRFun1 arch aenv (sh -> e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh e))
 
   transform     :: (Shape sh, Shape sh', Elt a, Elt b)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun1    arch aenv (sh' -> sh)
                 -> IRFun1    arch aenv (a -> b)
                 -> IRDelayed arch aenv (Array sh a)
@@ -59,14 +59,14 @@ class Skeleton arch where
 
   map           :: (Shape sh, Elt a, Elt b)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun1    arch aenv (a -> b)
                 -> IRDelayed arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
   fold          :: (Shape sh, Elt e)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Array (sh:.Int) e)
@@ -74,14 +74,14 @@ class Skeleton arch where
 
   fold1         :: (Shape sh, Elt e)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRDelayed arch aenv (Array (sh:.Int) e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh e))
 
   foldSeg       :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Array (sh:.Int) e)
@@ -90,7 +90,7 @@ class Skeleton arch where
 
   fold1Seg      :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRDelayed arch aenv (Array (sh:.Int) e)
                 -> IRDelayed arch aenv (Segments i)
@@ -98,7 +98,7 @@ class Skeleton arch where
 
   scanl         :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Vector e)
@@ -106,7 +106,7 @@ class Skeleton arch where
 
   scanl'        :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Vector e)
@@ -114,14 +114,14 @@ class Skeleton arch where
 
   scanl1        :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRDelayed arch aenv (Vector e)
                 -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   scanr         :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Vector e)
@@ -129,7 +129,7 @@ class Skeleton arch where
 
   scanr'        :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
                 -> IRDelayed arch aenv (Vector e)
@@ -137,14 +137,14 @@ class Skeleton arch where
 
   scanr1        :: Elt e
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRDelayed arch aenv (Vector e)
                 -> CodeGen (IROpenAcc arch aenv (Vector e))
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRFun1    arch aenv (sh -> sh')
                 -> IRDelayed arch aenv (Array sh e)
@@ -152,14 +152,14 @@ class Skeleton arch where
 
   backpermute   :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Aval aenv
+                -> Gamma          aenv
                 -> IRFun1    arch aenv (sh' -> sh)
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
   stencil       :: (Elt a, Elt b, Stencil sh a stencil)
                 => arch
-                -> Aval aenv
+                -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
                 -> Boundary (IRExp arch aenv a)
                 -> IRManifest arch aenv (Array sh a)
@@ -167,7 +167,7 @@ class Skeleton arch where
 
   stencil2      :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
                 => arch
-                -> Aval aenv
+                -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
                 -> Boundary (IRExp arch aenv a)
                 -> IRManifest arch aenv (Array sh a)

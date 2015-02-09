@@ -73,7 +73,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- Apply the given unary function to each element of an array.
 --
 mkMap :: forall arch aenv sh a b. Elt b
-      => Aval aenv
+      => Gamma          aenv
       -> IRFun1    arch aenv (a -> b)
       -> IRDelayed arch aenv (Array sh a)
       -> CodeGen (IROpenAcc arch aenv (Array sh b))

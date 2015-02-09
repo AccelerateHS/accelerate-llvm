@@ -51,7 +51,7 @@ class Compile arch where
   --
   compileForTarget
       :: DelayedOpenAcc aenv a
-      -> Aval aenv
+      -> Gamma aenv
       -> LLVM arch (ExecutableR arch)
 
 
@@ -60,7 +60,7 @@ class Compile arch where
 --
 data ExecOpenAcc arch aenv a where
   ExecAcc  :: ExecutableR arch
-           -> Aval aenv
+           -> Gamma aenv
            -> PreOpenAcc (ExecOpenAcc arch) aenv a
            -> ExecOpenAcc arch aenv a
 
@@ -196,7 +196,7 @@ compileOpenAcc = traverseAcc
         exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
              -> LLVM arch (ExecOpenAcc arch aenv arrs)
         exec (aenv, eacc) = do
-          let aval = makeAval aenv
+          let aval = makeGamma aenv
           kernel <- build topAcc aval
           return $! ExecAcc kernel aval eacc
 
@@ -296,7 +296,7 @@ compileOpenAcc = traverseAcc
 --
 build :: forall arch aenv a. Compile arch
       => DelayedOpenAcc aenv a
-      -> Aval aenv
+      -> Gamma aenv
       -> LLVM arch (ExecutableR arch)
 build acc aenv =
   compileForTarget acc aenv
