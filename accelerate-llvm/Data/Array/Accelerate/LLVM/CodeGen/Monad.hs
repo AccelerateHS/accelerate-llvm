@@ -66,8 +66,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- llvm-general-pure
+import qualified LLVM.General.AST                                       as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
-import qualified LLVM.General.AST.Instruction                           as LLVM
+-- import qualified LLVM.General.AST.Instruction                           as LLVM
 
 
 -- Code generation
@@ -79,21 +80,19 @@ import qualified LLVM.General.AST.Instruction                           as LLVM
 -- AST, and one for each of the basic blocks that are generated during the walk.
 --
 data CodeGenState = CodeGenState
-  { blockChain          :: Seq Block                            -- blocks for this function
---  , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
---  , metadataTable       :: HashMap String (Seq [Maybe Operand]) -- module metadata to be collected
---  , intrinsicTable      :: HashMap String Name                  -- standard math intrinsic functions
-  , next                :: {-# UNPACK #-} !Word                 -- a name supply
+  { blockChain          :: Seq Block                                    -- blocks for this function
+  , symbolTable         :: Map Label LLVM.Global                        -- global (external) function declarations
+  , metadataTable       :: HashMap String (Seq [Maybe Metadata])        -- module metadata to be collected
+  , intrinsicTable      :: HashMap String Label                         -- standard math intrinsic functions
+  , next                :: {-# UNPACK #-} !Word                         -- a name supply
   }
-  deriving Show
 
 data Block = Block
-  { blockLabel          :: Label                                -- block label
-  , instructions        :: Seq (LLVM.Named LLVM.Instruction)    -- stack of instructions
-  , terminator          :: LLVM.Terminator                      -- block terminator
+  { blockLabel          :: Label                                        -- block label
+  , instructions        :: Seq (LLVM.Named LLVM.Instruction)            -- stack of instructions
+  , terminator          :: LLVM.Terminator                              -- block terminator
 --  , returnType          :: LLVM.Type
   }
-  deriving Show
 
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
@@ -105,14 +104,32 @@ runLLVM
     -> Module arch aenv a
 runLLVM  ll =
   let
-      (_r, _st)   = runState (runCodeGen ll) initCodeGenState
+      (kernels, st)     = case runState (runCodeGen ll) initCodeGenState of
+                            (IROpenAcc r, s) -> (map unKernel r, s)
+      defs              = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+                       ++ createMetadata (metadataTable st)
+
+      name | x:_               <- kernels
+           , f@LLVM.Function{} <- x
+           , LLVM.Name s <- LLVM.name f = s
+           | otherwise                  = "<undefined>"
+
   in
-  error "TODO: runLLVM"
+  Module $ LLVM.Module
+    { LLVM.moduleName         = name
+    , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
+    , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
+    , LLVM.moduleDefinitions  = defs
+    }
+
 
 initCodeGenState :: CodeGenState
 initCodeGenState = CodeGenState
-  { blockChain  = initBlockChain
-  , next        = 0
+  { blockChain          = initBlockChain
+  , symbolTable         = Map.empty
+  , metadataTable       = HashMap.empty
+  , intrinsicTable      = HashMap.empty
+  , next                = 0
   }
 
 

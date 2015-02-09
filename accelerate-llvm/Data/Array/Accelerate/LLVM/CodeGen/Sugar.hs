@@ -1,5 +1,4 @@
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE ImpredicativeTypes   #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -49,7 +48,7 @@ data IROpenFun2 arch env aenv t where
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
 data IROpenAcc arch aenv arrs where
-  IROpenAcc :: [forall a. Kernel arch aenv a]           -- TLM: ??
+  IROpenAcc :: [Kernel arch aenv a]                             -- TLM: ???
             -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where
