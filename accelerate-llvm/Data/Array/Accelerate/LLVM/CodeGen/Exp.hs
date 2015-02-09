@@ -20,11 +20,12 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
 import Control.Applicative                                      hiding ( Const )
+import Control.Monad
 import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple )
+import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple, shape )
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
@@ -120,16 +121,15 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Tuple tup                   -> cvtT tup
         Foreign asm native x        -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
-
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
-
-        ToIndex _sh _ix                 -> error "ToIndex"
-        FromIndex _sh _ix               -> error "FromIndex"
-        While _c _f _x                  -> error "While"
-        Index _acc _ix                  -> error "Index"
+        ToIndex sh ix               -> join $ intOfIndex <$> cvtE sh <*> cvtE ix
+        FromIndex sh ix             -> join $ indexOfInt <$> cvtE sh <*> cvtE ix
+        Index acc ix                -> index (cvtM acc)       =<< cvtE ix
         LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
-        Shape _acc                      -> error "Shape"
+
+        While _c _f _x                  -> error "While"
+        Shape acc                   -> return $ shape (cvtM acc)
         ShapeSize _sh                   -> error "ShapeSize"
         Intersect _sh1 _sh2             -> error "Intersect"
         Union _sh1 _sh2                 -> error "Union"
@@ -206,12 +206,67 @@ llvmOfOpenExp arch top env aenv = cvtE top
 
         go _ _ = $internalError "cvtT" "impossible evaluation"
 
-    linearIndex :: (Shape sh, Elt e)
-                => IRManifest arch aenv (Array sh e)
-                -> IR Int
-                -> CodeGen (IR e)
+    linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
     linearIndex (IRManifest v) ix =
-      readArray (arrayData (aprj v aenv)) ix
+      readArray (irArray (aprj v aenv)) ix
+
+    index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> CodeGen (IR e)
+    index (IRManifest v) ix =
+      let arr = irArray (aprj v aenv)
+      in  readArray arr =<< intOfIndex (irArrayShape arr) ix
+
+    shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
+    shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
+
+
+-- | Convert a multidimensional array index into a linear index
+--
+intOfIndex :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR Int)
+intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
+  where
+    cvt :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Int)
+    cvt UnitTuple OP_Unit OP_Unit
+      = return $ IR (constant (eltType (undefined :: Int)) 0)
+
+    cvt (SingleTuple t) (OP_Scalar _) (OP_Scalar i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return $ ir t i
+
+    cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
+      | Just REFL <- matchTupleType t (eltType (undefined::Int))
+      = do
+           a <- cvt tsh sh ix
+           b <- A.mul numType a (IR sz)
+           c <- A.add numType b (IR i)
+           return c
+
+    cvt _ _ _
+      = $internalError "intOfIndex" "expected shape with Int components"
+
+
+-- | Convert a linear index into into a multidimensional index
+--
+indexOfInt :: forall sh. Shape sh => IR sh -> IR Int -> CodeGen (IR sh)
+indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
+  where
+    cvt :: TupleType t -> Operands t -> IR Int -> CodeGen (Operands t)
+    cvt UnitTuple OP_Unit _
+      = return OP_Unit
+
+    cvt (SingleTuple t) (OP_Scalar _) (IR i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return i
+
+    cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
+      | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
+      = do
+           i'    <- A.quot integralType i (IR sz)
+           IR r  <- A.rem  integralType i (IR sz)
+           sh'   <- cvt tsh sh i'
+           return $ OP_Pair sh' r
+
+    cvt _ _ _
+      = $internalError "indexOfInt" "expected shape with Int components"
 
 
 -- Primitive functions
