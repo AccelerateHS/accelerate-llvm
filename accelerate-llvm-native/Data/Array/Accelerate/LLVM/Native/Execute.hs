@@ -186,7 +186,7 @@ permuteOp kernel gamma aenv () shIn dfs = do
   let
       barrier :: Vector Word8
       barrier@(Array _ adata)   = allocateArray (Z :. n)
-      ((), ptr)                 = ptrsOfArrayData adata
+      ptr                       = ptrsOfArrayData adata
       n                         = size (shape dfs)
       unlocked                  = 0
   --
