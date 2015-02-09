@@ -29,7 +29,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   instr, do_, return_, retval_, br, cbr, phi, phi',
 
   -- metadata
-  -- addMetadata
+  addMetadata,
 
 ) where
 
@@ -37,13 +37,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 import Control.Applicative
 import Control.Monad.State.Strict
 import Data.Function
--- import Data.Map                                                         ( Map )
+import Data.HashMap.Strict                                              ( HashMap )
+import Data.Map                                                         ( Map )
 import Data.Sequence                                                    ( Seq )
--- import Data.HashMap.Strict                                              ( HashMap )
--- import Data.String
-import Text.Printf
 import Data.Word
+import Text.Printf
 import qualified Data.Foldable                                          as Seq
+import qualified Data.HashMap.Strict                                    as HashMap
+import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
 
 -- accelerate
@@ -52,6 +53,7 @@ import qualified Data.Array.Accelerate.Debug                            as Debug
 
 -- accelerate-llvm
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
@@ -288,6 +290,44 @@ terminate term =
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "terminate" "empty block chain"
       bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
+
+
+-- Metadata
+-- ========
+
+-- | Insert a metadata key/value pair into the current module.
+--
+addMetadata :: String -> [Maybe Metadata] -> CodeGen ()
+addMetadata key val =
+  modify $ \s ->
+    s { metadataTable = HashMap.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }
+
+
+-- | Generate the metadata definitions for the file. Every key in the map
+-- represents a named metadata definition. The values associated with that key
+-- represent the metadata node definitions that will be attached to that
+-- definition.
+--
+createMetadata :: HashMap String (Seq [Maybe Metadata]) -> [LLVM.Definition]
+createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
+  where
+    build :: [(String, Seq [Maybe Metadata])]
+          -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
+          -> [LLVM.Definition]
+    build []     (k,d) = Seq.toList (k Seq.>< d)
+    build (x:xs) (k,d) =
+      let (k',d') = meta (Seq.length d) x
+      in  build xs (k Seq.|> k', d Seq.>< d')
+
+    meta :: Int                                         -- number of metadata node definitions so far
+         -> (String, Seq [Maybe Metadata])              -- current assoc of the metadata map
+         -> (LLVM.Definition, Seq LLVM.Definition)
+    meta n (key, vals)
+      = let node i      = LLVM.MetadataNodeID (fromIntegral (i+n))
+            nodes       = Seq.mapWithIndex (\i x -> LLVM.MetadataNodeDefinition (node i) (downcast (Seq.toList x))) vals
+            name        = LLVM.NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
+        in
+        (name, nodes)
 
 
 -- Debug
