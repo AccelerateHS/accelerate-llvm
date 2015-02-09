@@ -219,7 +219,8 @@ data Instruction a where
                 -> Instruction ()
 
   -- | <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
-  GetElementPtr :: Operand a
+  --
+  GetElementPtr :: Operand a                    -- Operand (Ptr a), Name a ??
                 -> [Operand Int]
                 -> Instruction (Ptr a)
 

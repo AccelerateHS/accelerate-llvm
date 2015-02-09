@@ -44,49 +44,21 @@ global :: ScalarType a -> Name a -> IR a
 global t x = ir t (ConstantOperand (GlobalReference t x))
 
 
--- Names
--- -----
+-- Generating names for things
+-- ---------------------------
 
+-- | Names of array data components
+--
 arrayName :: String -> Int -> Name a
 arrayName name i = Name (name ++ ".ad" ++ show i)
 
+-- | Names of shape components
+--
 shapeName :: String -> Int -> Name a
 shapeName name i = Name (name ++ ".sh" ++ show i)
 
-travTypeToList :: forall t a. Elt t
-    => t {- dummy -}
-    -> (forall t'. ScalarType t' -> Int -> a)
-    -> [a]
-travTypeToList _ f = snd $ go (eltType (undefined::t)) 0
-  where
-    go :: TupleType s -> Int -> (Int, [a])
-    go UnitTuple         i = (i,   [])
-    go (SingleTuple t)   i = (i+1, [f t i])
-    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
-                                 (i2, r2) = go t2 i1
-                             in
-                             (i2, r2 ++ r1)
-
-travTypeToIR
-    :: forall t. Elt t
-    => t {- dummy -}
-    -> (forall t'. ScalarType t' -> Int -> Operand t')
-    -> IR t
-travTypeToIR _ f = IR . snd $ go (eltType (undefined::t)) 0
-  where
-    go :: TupleType s -> Int -> (Int, Operands s)
-    go UnitTuple         i = (i,   OP_Unit)
-    go (SingleTuple t)   i = (i+1, OP_Scalar $ f t i)
-    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
-                                 (i2, r2) = go t2 i1
-                             in
-                             (i2, OP_Pair r2 r1)
-
-
--- Function parameters
--- -------------------
-
--- | Arrays
+-- | Generate typed local names for array data components as well as function
+-- parameters to bind those names
 --
 mutableArray
     :: forall sh e. (Shape sh, Elt e)
@@ -97,6 +69,40 @@ mutableArray arr label@(Label l) =
   ( IRArray (travTypeToIR (undefined::e) (\t i -> LocalReference t (arrayName l i)))
   , arrayParam arr label )
 
+
+
+travTypeToList :: forall t a. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> a)
+    -> [a]
+travTypeToList t f = snd $ go (eltType t) 0
+  where
+    go :: TupleType s -> Int -> (Int, [a])
+    go UnitTuple         i = (i,   [])
+    go (SingleTuple t')  i = (i+1, [f t' i])
+    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+                                 (i2, r2) = go t2 i1
+                             in
+                             (i2, r2 ++ r1)
+
+travTypeToIR
+    :: forall t. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> Operand t')
+    -> IR t
+travTypeToIR t f = IR . snd $ go (eltType t) 0
+  where
+    go :: TupleType s -> Int -> (Int, Operands s)
+    go UnitTuple         i = (i,   OP_Unit)
+    go (SingleTuple t')  i = (i+1, OP_Scalar $ f t' i)
+    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+                                 (i2, r2) = go t2 i1
+                             in
+                             (i2, OP_Pair r2 r1)
+
+
+-- Function parameters
+-- -------------------
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (ScalarParameter t x)
