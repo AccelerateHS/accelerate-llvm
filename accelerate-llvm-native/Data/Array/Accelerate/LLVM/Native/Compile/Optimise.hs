@@ -41,10 +41,12 @@ optimiseModule
 optimiseModule datalayout machine libinfo mdl = do
 
   let p1 = defaultCuratedPassSetSpec
-            { optLevel                  = Just 3
-            , curatedDataLayout         = datalayout
-            , curatedTargetMachine      = machine
-            , curatedTargetLibraryInfo  = libinfo
+            { optLevel                           = Just 3
+            , dataLayout                         = datalayout
+            , targetMachine                      = machine
+            , targetLibraryInfo                  = libinfo
+            , loopVectorize                      = Just True
+            , superwordLevelParallelismVectorize = Just True
             }
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
