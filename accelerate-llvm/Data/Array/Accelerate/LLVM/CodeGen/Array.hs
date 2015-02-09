@@ -36,7 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 -- | Read a value from an array at the given index
 --
 readArray :: forall sh e. IRArray (Array sh e) -> IR Int -> CodeGen (IR e)
-readArray (IRArray (IR adata)) (op integralType -> ix) =
+readArray (IRArray _ (IR adata)) (op integralType -> ix) =
   IR <$> readArrayData NonVolatile ix (eltType (undefined::e)) adata
 
 readArrayData :: Volatile -> Operand Int -> TupleType t -> Operands t -> CodeGen (Operands t)
@@ -57,7 +57,7 @@ readArrayPrim volatile arr i = do
 -- | Write a value into an array at the given index
 --
 writeArray :: forall sh e. IRArray (Array sh e) -> IR Int -> IR e -> CodeGen ()
-writeArray (IRArray (IR adata)) (op integralType -> ix) (IR val) =
+writeArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
   writeArrayData NonVolatile ix (eltType (undefined::e)) adata val
 
 

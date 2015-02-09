@@ -11,9 +11,22 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Base
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
+  -- References
+  Name(..),
+  local, global,
+
+  -- Arrays
+  irArray,
+  mutableArray,
+
+  -- Parameters
+  scalarParameter, ptrParameter,
+  envParam,
+  arrayParam,
+
+) where
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
@@ -49,21 +62,24 @@ global t x = ir t (ConstantOperand (GlobalReference t x))
 
 -- | Names of array data components
 --
-arrayName :: Name (Array sh e) -> Int -> Name e'
-arrayName (Name n) i = Name (n ++ ".ad" ++ show i)
+arrayName :: Name (Array sh e) -> Int -> Name e'        -- for the i-th component of the ArrayData
+arrayName (Name n)   i = Name (n ++ ".ad" ++ show i)
+arrayName (UnName n) i = arrayName (Name (show n)) i
 
 -- | Names of shape components
 --
-shapeName :: Name (Array sh e) -> Int -> Name sh'
-shapeName (Name name) i = Name (name ++ ".sh" ++ show i)
+shapeName :: Name (Array sh e) -> Int -> Name sh'       -- for the i-th component of the shape structure
+shapeName (Name n)   i = Name (n ++ ".sh" ++ show i)
+shapeName (UnName n) i = shapeName (Name (show n)) i
 
 -- | Names of array data elements
 --
-arrayData :: forall sh e. (Shape sh, Elt e)
+irArray :: forall sh e. (Shape sh, Elt e)
           => Name (Array sh e)
           -> IRArray (Array sh e)
-arrayData n
-  = IRArray (travTypeToIR (undefined::e) (\t i -> LocalReference t (arrayName n i)))
+irArray n
+  = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference t (shapeName n i)))
+            (travTypeToIR (undefined::e)  (\t i -> LocalReference t (arrayName n i)))
 
 
 -- | Generate typed local names for array data components as well as function
@@ -74,9 +90,8 @@ mutableArray
     => Name (Array sh e)
     -> (IRArray (Array sh e), [LLVM.Parameter])
 mutableArray name =
-  ( arrayData  name
+  ( irArray name
   , arrayParam name )
-
 
 
 travTypeToList :: forall t a. Elt t
@@ -85,6 +100,7 @@ travTypeToList :: forall t a. Elt t
     -> [a]
 travTypeToList t f = snd $ go (eltType t) 0
   where
+    -- DANGER: [1] must traverse in the same order as [2]
     go :: TupleType s -> Int -> (Int, [a])
     go UnitTuple         i = (i,   [])
     go (SingleTuple t')  i = (i+1, [f t' i])
@@ -100,6 +116,7 @@ travTypeToIR
     -> IR t
 travTypeToIR t f = IR . snd $ go (eltType t) 0
   where
+    -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
     go UnitTuple         i = (i,   OP_Unit)
     go (SingleTuple t')  i = (i+1, OP_Scalar $ f t' i)
