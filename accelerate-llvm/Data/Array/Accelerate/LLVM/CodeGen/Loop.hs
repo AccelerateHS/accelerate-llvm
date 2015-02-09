@@ -47,7 +47,7 @@ for start test incr body = do
   c'    <- test i'
   bot   <- cbr (op nonNumType c') loop exit
 
-  -- append the phi instruction at the loop head to set the loop count
+  -- append a phi instruction at the loop head to set the incoming trip count
   _     <- phi' loop ci [(op integralType i',bot), (op integralType start, top)]
 
   setBlock exit
