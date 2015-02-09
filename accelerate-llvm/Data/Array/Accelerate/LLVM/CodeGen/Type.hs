@@ -83,6 +83,9 @@ instance TypeOf Instruction where
       BAnd t _ _        -> NumScalarType (IntegralNumType t)
       BOr t _ _         -> NumScalarType (IntegralNumType t)
       BXor t _ _        -> NumScalarType (IntegralNumType t)
+--      Load _ x          -> typeOf x
+--      Store _ _ x       -> typeOf x
+--      GetElementPtr x _ -> typeOf x
       Trunc _ t _       -> NumScalarType (IntegralNumType t)
       FTrunc _ t _      -> NumScalarType (FloatingNumType t)
       Ext _ t _         -> NumScalarType (IntegralNumType t)

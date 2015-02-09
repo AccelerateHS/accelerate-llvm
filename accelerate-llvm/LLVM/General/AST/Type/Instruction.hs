@@ -23,6 +23,8 @@ import LLVM.General.AST.Type.Constant
 
 import Data.Array.Accelerate.Type
 
+import Foreign.Ptr
+
 
 -- | <http://llvm.org/docs/LangRef.html#metadata-nodes-and-metadata-strings>
 --
@@ -80,6 +82,7 @@ data FunctionAttribute
   | ReadOnly
   | ReadNone
 
+data Volatile = Volatile | NonVolatile
 
 -- | Non-terminating instructions
 --
@@ -201,9 +204,25 @@ data Instruction a where
   -- Memory Access and Addressing Operations
   -- <http://llvm.org/docs/LangRef.html#memory-access-and-addressing-operations>
   -- Alloca
-  -- Load
-  -- Store
-  -- GetElementPtr
+
+  -- | <http://llvm.org/docs/LangRef.html#load-instruction>
+  --
+  Load          :: Volatile
+                -> Operand (Ptr a)
+                -> Instruction a
+
+  -- | <http://llvm.org/docs/LangRef.html#store-instruction>
+  --
+  Store         :: Volatile
+                -> Operand (Ptr a)
+                -> Operand a
+                -> Instruction ()
+
+  -- | <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
+  GetElementPtr :: Operand a
+                -> [Operand Int]
+                -> Instruction (Ptr a)
+
   -- Fence
   -- CmpXchg
   -- AtomicRMW
