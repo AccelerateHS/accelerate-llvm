@@ -43,7 +43,7 @@ sub :: NumType a -> IR a -> IR a -> CodeGen (IR a)
 sub = binop Sub
 
 mul :: NumType a -> IR a -> IR a -> CodeGen (IR a)
-mul = binop Sub
+mul = binop Mul
 
 negate :: NumType a -> IR a -> CodeGen (IR a)
 negate t x =
