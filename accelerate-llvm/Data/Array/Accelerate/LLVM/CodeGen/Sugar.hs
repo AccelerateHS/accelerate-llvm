@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE ImpredicativeTypes   #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -47,9 +48,9 @@ data IROpenFun2 arch env aenv t where
   IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
-data IROpenAcc arch aenv a where
-  IROpenAcc :: () {- ??? -}
-            -> IROpenAcc arch aenv a
+data IROpenAcc arch aenv arrs where
+  IROpenAcc :: [forall a. Kernel arch aenv a]           -- TLM: ??
+            -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where
   IRDelayed :: (Shape sh, Elt e) =>

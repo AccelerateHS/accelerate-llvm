@@ -5,7 +5,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2014..2015] Trevor L. McDonell
+--               [2014] Sean Lee, Vinod Grover, NVIDIA Corporation
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -19,11 +20,12 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 
+import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
@@ -71,24 +73,24 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 -- Apply the given unary function to each element of an array.
 --
-mkMap :: forall t aenv sh a b. Elt b
-      => Gamma aenv
-      -> IRFun1    aenv (a -> b)
-      -> IRDelayed aenv (Array sh a)
-      -> CodeGen [Kernel t aenv (Array sh b)]
+mkMap :: forall arch aenv sh a b. Elt b
+      => Aval aenv
+      -> IRFun1    arch aenv (a -> b)
+      -> IRDelayed arch aenv (Array sh a)
+      -> CodeGen (Kernel arch aenv (Array sh b))
 mkMap aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
-      arrOut                    = arrayData  (undefined::Array sh b) "out"
-      paramOut                  = arrayParam (undefined::Array sh b) "out"
+      (arrOut, paramOut)        = mutableArray (undefined::Array sh b) "out"
       paramEnv                  = envParam aenv
   in
   makeKernel "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
-      xs <- delayedLinearIndex [i]
-      ys <- apply xs
+      xs <- app1 delayedLinearIndex i
+      ys <- app1 apply xs
       writeArray arrOut i ys
+      return ()
 
     return_
 
