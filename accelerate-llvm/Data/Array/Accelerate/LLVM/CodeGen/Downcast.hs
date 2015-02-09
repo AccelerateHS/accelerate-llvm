@@ -13,8 +13,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Downcast
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Downcast (
+
+  Downcast(..)
+
+) where
 
 import Prelude                                                  hiding ( Ordering(..) )
 import Data.Bits
