@@ -263,7 +263,7 @@ cbr :: IR Bool -> Block -> Block -> CodeGen Block
 cbr p = M.cbr (op nonNumType p)
 
 phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
-phi ir = IR <$> go (eltType (undefined::a)) [ (o, b) | (IR o, b) <- ir ]
+phi incoming = IR <$> go (eltType (undefined::a)) [ (o, b) | (IR o, b) <- incoming ]
   where
     go :: TupleType t -> [(Operands t, Block)] -> CodeGen (Operands t)
     go UnitTuple         _   = return OP_Unit
