@@ -28,10 +28,9 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Array.Sugar                        ( Arrays(..), Array, Shape, Elt, Foreign )
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -252,6 +251,7 @@ compileOpenAcc = traverseAcc
         Shape a                 -> liftA  Shape                 <$> travA a
         ShapeSize e             -> liftA  ShapeSize             <$> travE e
         Intersect x y           -> liftA2 Intersect             <$> travE x <*> travE y
+        Union x y               -> liftA2 Union                 <$> travE x <*> travE y
 
       where
         travA :: (Shape sh, Elt e)
