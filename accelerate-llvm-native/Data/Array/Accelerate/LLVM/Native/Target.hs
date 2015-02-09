@@ -32,7 +32,7 @@ import Control.Parallel.Meta                                    ( Executable )
 import Control.Parallel.Meta.Worker                             ( Gang )
 
 -- standard library
-import Control.Monad.Error
+import Control.Monad.Except
 import System.IO.Unsafe
 
 
@@ -69,7 +69,7 @@ nativeDataLayout :: DataLayout
 nativeDataLayout
   = unsafePerformIO
   $ fmap (either ($internalError "nativeDataLayout") id)
-  $ runErrorT (withDefaultTargetMachine getTargetMachineDataLayout)
+  $ runExceptT (withDefaultTargetMachine getTargetMachineDataLayout)
 
 
 -- | Bracket the creation and destruction of a target machine for the native
@@ -77,6 +77,6 @@ nativeDataLayout
 --
 withNativeTargetMachine
     :: (TargetMachine -> IO a)
-    -> ErrorT String IO a
+    -> ExceptT String IO a
 withNativeTargetMachine = withDefaultTargetMachine
 
