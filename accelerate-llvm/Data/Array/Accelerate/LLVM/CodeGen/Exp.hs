@@ -20,6 +20,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
 import Control.Applicative                                      hiding ( Const )
+import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
@@ -110,7 +111,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexTail ix            -> indexTail <$> cvtE ix
         Prj ix tup              -> prjT ix <$> cvtE tup
         Tuple tup               -> cvtT tup
-        Foreign asm native x    -> eforeign arch asm (llvmOfFun1 arch native Empty) (cvtE x)
+        Foreign asm native x    -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
 
         IndexSlice _slice _slix _sh     -> error "IndexSlice"
         IndexFull _slice _slix _sh      -> error "IndexFull"
