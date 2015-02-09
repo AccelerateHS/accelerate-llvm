@@ -197,7 +197,7 @@ ceiling tf ti x = error "ceiling"
 -- ---------------------------------
 
 cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
-cmp op ty x y = error "cmp"
+cmp p dict (op dict -> x) (op dict -> y) = ir scalarType <$> instr (Cmp dict p x y)
 
 lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 lt = cmp LT
