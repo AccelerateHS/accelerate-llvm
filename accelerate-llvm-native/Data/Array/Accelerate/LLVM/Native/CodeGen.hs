@@ -31,3 +31,5 @@ instance Skeleton Native where
 --  fold1 _       = mkFold1
 --  permute _     = mkPermute
 
+instance Expression Native
+
