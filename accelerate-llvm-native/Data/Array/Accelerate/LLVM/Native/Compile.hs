@@ -72,7 +72,7 @@ compileForNativeTarget acc aenv = do
   target <- gets llvmTarget
 
   -- Generate code for this Acc operation
-  let Module ast = llvmOfAcc target acc aenv
+  let Module ast = llvmOfOpenAcc target acc aenv
       triple     = fromMaybe "" (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 
