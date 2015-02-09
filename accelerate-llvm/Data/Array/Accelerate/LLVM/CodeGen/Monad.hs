@@ -68,7 +68,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 -- llvm-general-pure
 import qualified LLVM.General.AST                                       as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
--- import qualified LLVM.General.AST.Instruction                           as LLVM
 
 
 -- Code generation
