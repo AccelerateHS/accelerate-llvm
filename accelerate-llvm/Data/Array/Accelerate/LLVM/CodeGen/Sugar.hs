@@ -18,6 +18,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
   IROpenExp, IROpenFun1(..), IROpenFun2(..),
   IROpenAcc(..), IRDelayed(..), IRManifest(..),
 
+  IRArray(..),
+
 ) where
 
 import Data.Array.Accelerate.AST
@@ -59,4 +61,10 @@ data IRDelayed arch aenv a where
 
 data IRManifest arch aenv a where
   IRManifest :: Arrays arrs => Idx aenv arrs -> IRManifest arch aenv arrs
+
+
+data IRArray a where
+  IRArray :: (Shape sh, Elt e)
+          => IR e                       -- TLM: local operand name for array(s) containing elements of type 'e'
+          -> IRArray (Array sh e)
 

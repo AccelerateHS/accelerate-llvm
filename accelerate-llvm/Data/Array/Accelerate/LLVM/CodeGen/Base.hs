@@ -27,6 +27,7 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import qualified LLVM.General.AST.Global                                as LLVM
 
@@ -46,8 +47,17 @@ global t x = ir t (ConstantOperand (GlobalReference t x))
 -- Names
 -- -----
 
-travTupleType :: forall t a. Elt t => t {- dummy -} -> (forall t'. ScalarType t' -> Int -> a) -> [a]
-travTupleType _ f = snd $ go (eltType (undefined::t)) 0
+arrayName :: String -> Int -> Name a
+arrayName name i = Name (name ++ ".ad" ++ show i)
+
+shapeName :: String -> Int -> Name a
+shapeName name i = Name (name ++ ".sh" ++ show i)
+
+travTypeToList :: forall t a. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> a)
+    -> [a]
+travTypeToList _ f = snd $ go (eltType (undefined::t)) 0
   where
     go :: TupleType s -> Int -> (Int, [a])
     go UnitTuple         i = (i,   [])
@@ -57,16 +67,36 @@ travTupleType _ f = snd $ go (eltType (undefined::t)) 0
                              in
                              (i2, r2 ++ r1)
 
+travTypeToIR
+    :: forall t. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> Operand t')
+    -> IR t
+travTypeToIR _ f = IR . snd $ go (eltType (undefined::t)) 0
+  where
+    go :: TupleType s -> Int -> (Int, Operands s)
+    go UnitTuple         i = (i,   OP_Unit)
+    go (SingleTuple t)   i = (i+1, OP_Scalar $ f t i)
+    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+                                 (i2, r2) = go t2 i1
+                             in
+                             (i2, OP_Pair r2 r1)
 
--- names :: Elt a => a -> Label -> [Label]
--- names t (Label n) = travT t (\_ i -> Label (n ++ show i))
+
+-- Function parameters
+-- -------------------
+
+-- | Arrays
 --
--- arrayData :: forall sh e. Elt e => Array sh e -> Label -> [Label]
--- arrayData _ (Label n) = names (undefined::e) (Label (n++".ad"))
+mutableArray
+    :: forall sh e. (Shape sh, Elt e)
+    => Array sh e {- dummy -}
+    -> Label
+    -> (IRArray (Array sh e), [LLVM.Parameter])
+mutableArray arr label@(Label l) =
+  ( IRArray (travTypeToIR (undefined::e) (\t i -> LocalReference t (arrayName l i)))
+  , arrayParam arr label )
 
-
--- Functions
--- ---------
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (ScalarParameter t x)
@@ -88,9 +118,13 @@ envParam aenv = concatMap (\(n, Idx' v) -> toParam v n) (IM.elems aenv)
 
 -- | Generate function parameters for an Array with given base name.
 --
-arrayParam :: forall sh e. (Shape sh, Elt e) => Array sh e -> Label -> [LLVM.Parameter]
-arrayParam _ (Label name) = ad ++ sh
+arrayParam
+    :: forall sh e. (Shape sh, Elt e)
+    => Array sh e {- dummy -}
+    -> Label
+    -> [LLVM.Parameter]
+arrayParam _ (Label base) = ad ++ sh
   where
-    ad = travTupleType (undefined :: e)  (\t i -> ptrParameter    t (Name (name ++ ".ad" ++ show i)))
-    sh = travTupleType (undefined :: sh) (\t i -> scalarParameter t (Name (name ++ ".sh" ++ show i)))
+    ad = travTypeToList (undefined :: e)  (\t i -> ptrParameter    t (arrayName base i))
+    sh = travTypeToList (undefined :: sh) (\t i -> scalarParameter t (shapeName base i))
 
