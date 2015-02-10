@@ -25,19 +25,23 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 import LLVM.General.Context
 import LLVM.General.Module                                      as LLVM
 
-import LLVM.General.AST                                         as AST
+import LLVM.General.AST                                         as AST ( Module(..), Definition(..), defaultModule )
+import LLVM.General.AST.Instruction                             as AST ( Named(..) )
 import LLVM.General.AST.Attribute
-import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.Global                                  as G
+import qualified LLVM.General.AST.Name                          as AST
 
 -- accelerate
+import LLVM.General.AST.Type.Name                               ( Label(..) )
+import LLVM.General.AST.Type.Instruction                        ( Terminator(..) )
+
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 () -- instance IsString Name
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -45,7 +49,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Foreign.CUDA.Analysis
 
 -- standard library
-import Control.Monad.Error
+import Control.Monad.Except
 import Data.ByteString                                          ( ByteString )
 import Data.HashMap.Strict                                      ( HashMap )
 import Data.List
@@ -95,17 +99,13 @@ instance NVVMReflect (String, ByteString) where
 --
 nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
-  let i32   = typeOf (integralType :: IntegralType Int32)
-      i8p   = PointerType (typeOf (integralType :: IntegralType Int8)) (AddrSpace 0)
-  in
-  defaultModule {
+  AST.defaultModule {
     moduleDefinitions = [GlobalDefinition $ functionDefaults
-      { name                 = "__nvvm_reflect"
-      , returnType           = i32
-      , parameters           = ( [Parameter i8p (UnName 0) []], False )
+      { name                 =  AST.Name "__nvvm_reflect"
+      , returnType           = downcast (integralType :: IntegralType Int32)
+      , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )
       , G.functionAttributes = [NoUnwind, ReadNone, AlwaysInline]
-      , basicBlocks          = [
-          BasicBlock "" [] (Do $ Ret (Just (constOp (num int32 0))) []) ]
+      , basicBlocks          = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
       }]
     }
 
@@ -116,7 +116,7 @@ nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
     runError  $ withModuleFromAST ctx nvvmReflectPass_mdl (return . B8.pack <=< moduleLLVMAssembly)
   where
     name     = "__nvvm_reflect"
-    runError = either ($internalError "nvvmReflectPass") return <=< runErrorT
+    runError = either ($internalError "nvvmReflectPass") return <=< runExceptT
 #if !MIN_VERSION_llvm_general(3,3,0)
     moduleLLVMAssembly = moduleString
 #endif
@@ -192,7 +192,7 @@ libdeviceModule arch = do
   --
   Module{..} <- withContext $ \ctx ->
     either ($internalError "libdeviceModule") id `fmap`
-    runErrorT (withModuleFromBitcode ctx bc moduleAST)
+    runExceptT (withModuleFromBitcode ctx bc moduleAST)
 
   -- This is to avoid the warning message:
   --
@@ -254,9 +254,9 @@ instance Intrinsic PTX where
 -- named consistently based on the standard mathematical functions they
 -- implement, with the "__nv_" prefix stripped.
 --
-libdeviceIndex :: HashMap String Name
+libdeviceIndex :: HashMap String Label
 libdeviceIndex =
-  let nv base   = (base, Name $ "__nv_" ++ base)
+  let nv base   = (base, Label $ "__nv_" ++ base)
   in
   HashMap.fromList $ map nv
     [ "abs"

@@ -55,7 +55,7 @@ import qualified Foreign.LibNVVM                                as NVVM
 
 -- standard library
 import Data.ByteString                                          ( ByteString )
-import Control.Monad.Error
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Text.Printf
@@ -89,7 +89,7 @@ compileForPTX
 compileForPTX acc aenv = do
   target <- gets llvmTarget
   ctx    <- asks llvmContext
-  let Module ast = llvmOfAcc target acc aenv
+  let Module ast = llvmOfOpenAcc target acc aenv
       dev        = ptxDeviceProperties target
       globals    = globalFunctions (moduleDefinitions ast)
 
@@ -157,7 +157,7 @@ compileModuleNVPTX dev name mdl =
     --       code is generated for multidimensional folds.
     --
     let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 2 }
-        runError e = either ($internalError "compileModuleNVPTX") id `fmap` runErrorT e
+        runError e = either ($internalError "compileModuleNVPTX") id `fmap` runExceptT e
 
     LLVM.withPassManager pss $ \pm -> do
 #ifdef ACCELERATE_INTERNAL_CHECKS

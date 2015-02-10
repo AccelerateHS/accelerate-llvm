@@ -38,7 +38,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import Foreign.CUDA.Analysis
 
 -- standard library
-import Control.Monad.Error
+import Control.Monad.Except
 import Data.ByteString                                          ( ByteString )
 import Data.HashSet                                             ( HashSet )
 import Data.List
@@ -91,7 +91,7 @@ withLibdeviceNVPTX dev ctx ast next =
     externs     = analyse ast
 
     arch        = computeCapability dev
-    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runErrorT
+    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (Set.toList externs)
@@ -123,7 +123,7 @@ withLibdeviceNVVM dev ctx ast next =
         | otherwise     = []
 
     arch        = computeCapability dev
-    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runErrorT
+    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (Set.toList externs)
