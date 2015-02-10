@@ -25,7 +25,7 @@ import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple, shape )
+import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple, shape, intersect, union )
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
@@ -129,9 +129,8 @@ llvmOfOpenExp arch top env aenv = cvtE top
         LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
         ShapeSize sh                -> shapeSize              =<< cvtE sh
         Shape acc                   -> return $ shape (cvtM acc)
-
-        Intersect _sh1 _sh2             -> error "Intersect"
-        Union _sh1 _sh2                 -> error "Union"
+        Intersect sh1 sh2           -> join $ intersect <$> cvtE sh1 <*> cvtE sh2
+        Union sh1 sh2               -> join $ union     <$> cvtE sh1 <*> cvtE sh2
         While _c _f _x                  -> error "While"
 
     indexNil :: IR Z
@@ -224,20 +223,53 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go :: TupleType t -> Operands t -> CodeGen (IR Int)
         go UnitTuple OP_Unit
           = return $ IR (constant (eltType (undefined :: Int)) 1)
-
         go (SingleTuple t) (OP_Scalar i)
           | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
           = return $ ir t i
-
         go (PairTuple tsh t) (OP_Pair sh sz)
           | Just REFL <- matchTupleType t (eltType (undefined::Int))
           = do
                a <- go tsh sh
                b <- A.mul numType a (IR sz)
                return b
-
         go _ _
           = $internalError "shapeSize" "expected shape with Int components"
+
+    intersect :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+      where
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go UnitTuple OP_Unit OP_Unit
+          = return OP_Unit
+        go (SingleTuple t) sh1 sh2
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          = do IR x <- A.min t (IR sh1) (IR sh2)
+               return x
+        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+          = do
+               sz' <- go tsz sz1 sz2
+               sh' <- go tsh sh1 sh2
+               return $ OP_Pair sh' sz'
+        go _ _ _
+          = $internalError "intersect" "expected shape with Int components"
+
+    union :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    union (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+      where
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go UnitTuple OP_Unit OP_Unit
+          = return OP_Unit
+        go (SingleTuple t) sh1 sh2
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          = do IR x <- A.max t (IR sh1) (IR sh2)
+               return x
+        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+          = do
+               sz' <- go tsz sz1 sz2
+               sh' <- go tsh sh1 sh2
+               return $ OP_Pair sh' sz'
+        go _ _ _
+          = $internalError "union" "expected shape with Int components"
 
 
 -- | Convert a multidimensional array index into a linear index
