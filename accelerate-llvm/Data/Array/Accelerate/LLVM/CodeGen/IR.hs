@@ -1,7 +1,6 @@
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE GADTs        #-}
+{-# LANGUAGE RankNTypes   #-}
+{-# LANGUAGE TypeFamilies #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
 -- Copyright   : [2015] Trevor L. McDonell
