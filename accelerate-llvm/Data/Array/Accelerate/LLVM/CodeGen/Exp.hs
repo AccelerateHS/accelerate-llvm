@@ -127,12 +127,12 @@ llvmOfOpenExp arch top env aenv = cvtE top
         FromIndex sh ix             -> join $ indexOfInt <$> cvtE sh <*> cvtE ix
         Index acc ix                -> index (cvtM acc)       =<< cvtE ix
         LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
-
-        While _c _f _x                  -> error "While"
+        ShapeSize sh                -> shapeSize              =<< cvtE sh
         Shape acc                   -> return $ shape (cvtM acc)
-        ShapeSize _sh                   -> error "ShapeSize"
+
         Intersect _sh1 _sh2             -> error "Intersect"
         Union _sh1 _sh2                 -> error "Union"
+        While _c _f _x                  -> error "While"
 
     indexNil :: IR Z
     indexNil = IR (constant (eltType Z) (fromElt Z))
@@ -217,6 +217,27 @@ llvmOfOpenExp arch top env aenv = cvtE top
 
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
+
+    shapeSize :: forall sh. Shape sh => IR sh -> CodeGen (IR Int)
+    shapeSize (IR extent) = go (eltType (undefined::sh)) extent
+      where
+        go :: TupleType t -> Operands t -> CodeGen (IR Int)
+        go UnitTuple OP_Unit
+          = return $ IR (constant (eltType (undefined :: Int)) 1)
+
+        go (SingleTuple t) (OP_Scalar i)
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          = return $ ir t i
+
+        go (PairTuple tsh t) (OP_Pair sh sz)
+          | Just REFL <- matchTupleType t (eltType (undefined::Int))
+          = do
+               a <- go tsh sh
+               b <- A.mul numType a (IR sz)
+               return b
+
+        go _ _
+          = $internalError "shapeSize" "expected shape with Int components"
 
 
 -- | Convert a multidimensional array index into a linear index
