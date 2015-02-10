@@ -126,7 +126,7 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (BXor _ x y)         = L.Xor (downcast x) (downcast y) md
   downcast (Load v p)           = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)        = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
-  downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md
+  downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- in bounds??
   downcast (Trunc _ t x)        = L.Trunc (downcast x) (downcast t) md
   downcast (FTrunc _ t x)       = L.FPTrunc (downcast x) (downcast t) md
   downcast (Ext _ t x)
@@ -240,10 +240,11 @@ instance Downcast (GlobalFunction args t) [(L.Operand, [L.ParameterAttribute])] 
   downcast (Lam _ x l) = (downcast x, []) : downcast l
 
 instance Downcast FunctionAttribute L.FunctionAttribute where
-  downcast NoReturn = L.NoReturn
-  downcast NoUnwind = L.NoUnwind
-  downcast ReadOnly = L.ReadOnly
-  downcast ReadNone = L.ReadNone
+  downcast NoReturn     = L.NoReturn
+  downcast NoUnwind     = L.NoUnwind
+  downcast ReadOnly     = L.ReadOnly
+  downcast ReadNone     = L.ReadNone
+  downcast AlwaysInline = L.AlwaysInline
 
 instance Downcast Volatile Bool where
   downcast Volatile    = True

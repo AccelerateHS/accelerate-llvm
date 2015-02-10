@@ -81,6 +81,7 @@ data FunctionAttribute
   | NoUnwind
   | ReadOnly
   | ReadNone
+  | AlwaysInline
 
 data Volatile = Volatile | NonVolatile
 
