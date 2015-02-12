@@ -143,31 +143,31 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
   -- Either (1) multidimensional reduction; or
   --        (2) sequential reduction
   if dim sh > 0 || gangSize theGang == 1
-     then do let out = allocateArray sh
-                 ppt = defaultSmallPPT `max` (defaultLargePPT `div` sz)
-             --
-             liftIO $ do
-               executeFunction k                                 $ \f ->
-                 runExecutable fillP ppt (IE 0 (size sh)) mempty $ \start end _ ->
-                   callFFI f retVoid =<< marshal native () (start, end, sz, out, (gamma,aenv))
+     then let ppt = defaultSmallPPT `max` (defaultLargePPT `div` sz)
+          in
+          liftIO $ do
+            out <- allocateArray sh
+            executeFunction k                                 $ \f ->
+              runExecutable fillP ppt (IE 0 (size sh)) mempty $ \start end _ ->
+                callFFI f retVoid =<< marshal native () (start, end, sz, out, (gamma,aenv))
 
-             return out
+            return out
 
   -- Parallel reduction
-     else do let chunks = gangSize theGang
-                 tmp    = allocateArray (sh :. chunks)  :: Array (sh:.Int) e
-                 out    = allocateArray sh
-                 n      = sz `min` chunks
-             --
-             liftIO $ do
-               executeNamedFunction k "fold1"                                     $ \f ->
-                 runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) mempty $ \start end tid ->
-                   callFFI f retVoid =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+     else let chunks = gangSize theGang
+              n      = sz `min` chunks
+          in
+          liftIO $ do
+            tmp <- allocateArray (sh :. chunks)         :: IO (Array (sh:.Int) e)
+            out <- allocateArray sh
+            executeNamedFunction k "fold1"                                     $ \f ->
+              runExecutable fillP defaultLargePPT (IE 0 (size sh * sz)) mempty $ \start end tid ->
+                callFFI f retVoid =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
 
-               executeNamedFunction k "foldAll" $ \f ->
-                 callFFI f retVoid =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
+            executeNamedFunction k "foldAll" $ \f ->
+              callFFI f retVoid =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
 
-             return out
+            return out
 
 
 -- Forward permutation, specified by an indexing mapping into an array and a
@@ -183,17 +183,14 @@ permuteOp
     -> Array sh' e
     -> LLVM Native (Array sh' e)
 permuteOp kernel gamma aenv () shIn dfs = do
-  let
-      barrier :: Vector Word8
-      barrier@(Array _ adata)   = allocateArray (Z :. n)
-      ptr                       = ptrsOfArrayData adata
-      n                         = size (shape dfs)
+  let n                         = size (shape dfs)
       unlocked                  = 0
   --
   out    <- cloneArray dfs
   native <- gets llvmTarget
   liftIO $ do
-    memset ptr unlocked n
+    barrier@(Array _ adata) <- liftIO $ allocateArray (Z :. n)  :: IO (Vector Word8)
+    memset (ptrsOfArrayData adata) unlocked n
     executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
   return out
 
@@ -213,30 +210,30 @@ scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
 
   -- sequential reduction
   if gangSize theGang == 1 || sz < defaultLargePPT
-     then do let out = allocateArray (Z :. sz)
-             --
-             liftIO $ do
-               executeNamedFunction k "scanl1Seq" $ \f ->
-                 callFFI f retVoid =<< marshal native () (0::Int, sz, out, (gamma,aenv))
+     then liftIO $ do
+            out <- allocateArray (Z :. sz)
+            executeNamedFunction k "scanl1Seq" $ \f ->
+              callFFI f retVoid =<< marshal native () (0::Int, sz, out, (gamma,aenv))
 
-             return out
+            return out
 
   -- Parallel reduction
-     else do let chunkSize = defaultLargePPT
-                 chunks    = sz `div` chunkSize
-                 tmp       = allocateArray (Z :. (chunks-1)) :: Vector e
-                 out       = allocateArray (Z :. sz)
-             --
-             liftIO $ do
-               executeNamedFunction k "scanl1Pre"           $ \f -> do
-                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                   callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
+     else let chunkSize = defaultLargePPT
+              chunks    = sz `div` chunkSize
+          in
+          liftIO $ do
+            tmp <- allocateArray (Z :. (chunks-1))      :: IO (Vector e)
+            out <- allocateArray (Z :. sz)
 
-               executeNamedFunction k "scanl1Post"          $ \f ->
-                 runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                   callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
+            executeNamedFunction k "scanl1Pre"           $ \f -> do
+              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
+                callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
 
-             return out
+            executeNamedFunction k "scanl1Post"          $ \f ->
+              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
+                callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
+
+            return out
 
 
 -- Skeleton execution
@@ -253,10 +250,11 @@ simpleOp
     -> sh
     -> LLVM Native (Array sh e)
 simpleOp kernel gamma aenv () sh = do
-  let out = allocateArray sh
   native <- gets llvmTarget
-  liftIO  $ executeOp native kernel mempty gamma aenv (IE 0 (size sh)) out
-  return out
+  liftIO $ do
+    out <- liftIO $ allocateArray sh
+    executeOp native kernel mempty gamma aenv (IE 0 (size sh)) out
+    return out
 
 
 -- JIT compile the LLVM code representing this kernel, link to the running

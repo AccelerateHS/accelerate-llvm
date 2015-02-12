@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
 import Control.Monad
+import Control.Monad.Trans
 import Data.Typeable
 import Foreign.C.Types
 import Foreign.Ptr
@@ -52,7 +53,7 @@ class Async arch => Remote arch where
   --
   {-# INLINEABLE allocateRemote #-}
   allocateRemote :: (Shape sh, Elt e) => sh -> LLVM arch (Array sh e)
-  allocateRemote sh = return $ allocateArray sh
+  allocateRemote sh = liftIO $ allocateArray sh
 
   -- | Upload a section of an array from the host to the remote device. Only the
   -- elements between the given indices (inclusive left, exclusive right) are
