@@ -18,8 +18,6 @@ maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 
-extra-source-files:     include/accelerate.h
-
 
 -- Configuration flags
 -- -------------------
@@ -68,17 +66,17 @@ Library
 
     Data.Array.Accelerate.LLVM.Native.CodeGen
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
     Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
     Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
-    Data.Array.Accelerate.LLVM.Native.Execute.Fill
-    Data.Array.Accelerate.LLVM.Native.Execute.Gang
+--    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+--    Data.Array.Accelerate.LLVM.Native.Execute.Gang
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
@@ -99,7 +97,6 @@ Library
   default-language:
     Haskell2010
 
-  include-dirs:                 include
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
   if flag(debug)

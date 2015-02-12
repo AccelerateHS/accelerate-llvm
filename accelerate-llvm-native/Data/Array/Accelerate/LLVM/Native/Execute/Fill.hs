@@ -43,7 +43,7 @@ fillP len fill
             end         = splitIx (thread + 1)
         in
         when (start < end) $ do
-          Debug.message Debug.dump_gang (printf "gang/fillP: thread %d -> [%d,%d)" thread start end)
+          Debug.traceIO Debug.dump_sched (printf "gang/fillP: thread %d -> [%d,%d)" thread start end)
           fill start end thread
   where
     -- Decide now to split the work across the threads. If the length of the
