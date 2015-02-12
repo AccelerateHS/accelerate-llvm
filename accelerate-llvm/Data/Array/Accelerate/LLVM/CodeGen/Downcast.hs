@@ -33,6 +33,7 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Terminator
 
 import qualified LLVM.General.AST.AddrSpace                     as L
 import qualified LLVM.General.AST.Attribute                     as L
