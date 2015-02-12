@@ -13,8 +13,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Skeleton
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Skeleton (
+
+  Skeleton(..),
+
+) where
 
 import Prelude                                                  hiding ( id )
 
@@ -177,18 +180,48 @@ class Skeleton arch where
 
   -- Default instances
   -- -----------------
-  map arch aenv f a             = transform arch aenv id f a
-  backpermute arch aenv p a     = transform arch aenv p id a
-  transform arch aenv p f IRDelayed{..} =
-    generate arch aenv . IRFun1 $ \ix -> do
-      ix' <- app1 p ix
-      a   <- app1 delayedIndex ix'
-      app1 f a
+  map           = defaultMap
+  backpermute   = defaultBackpermute
+  transform     = defaultTransform
 
-  stencil                       = $internalError "stencil1" "no default instance yet"
-  stencil2                      = $internalError "stencil2" "no default instance yet"
+  stencil       = $internalError "stencil1" "no default instance yet"
+  stencil2      = $internalError "stencil2" "no default instance yet"
 
 
 id :: forall arch aenv a. IRFun1 arch aenv (a -> a)
 id = IRFun1 return
+
+defaultMap
+    :: (Skeleton arch, Shape sh, Elt a, Elt b)
+    => arch
+    -> Gamma          aenv
+    -> IRFun1    arch aenv (a -> b)
+    -> IRDelayed arch aenv (Array sh a)
+    -> CodeGen (IROpenAcc arch aenv (Array sh b))
+defaultMap arch aenv f a
+  = transform arch aenv id f a
+
+defaultBackpermute
+    :: (Skeleton arch, Shape sh, Shape sh', Elt e)
+    => arch
+    -> Gamma          aenv
+    -> IRFun1    arch aenv (sh' -> sh)
+    -> IRDelayed arch aenv (Array sh e)
+    -> CodeGen (IROpenAcc arch aenv (Array sh' e))
+defaultBackpermute arch aenv p a
+  = transform arch aenv p id a
+
+defaultTransform
+    :: (Skeleton arch, Shape sh, Shape sh', Elt a, Elt b)
+    => arch
+    -> Gamma          aenv
+    -> IRFun1    arch aenv (sh' -> sh)
+    -> IRFun1    arch aenv (a -> b)
+    -> IRDelayed arch aenv (Array sh a)
+    -> CodeGen (IROpenAcc arch aenv (Array sh' b))
+defaultTransform arch aenv p f IRDelayed{..}
+  = generate arch aenv . IRFun1 $ \ix -> do
+      ix' <- app1 p ix
+      a   <- app1 delayedIndex ix'
+      app1 f a
 
