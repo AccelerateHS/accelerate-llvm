@@ -326,6 +326,10 @@ data Instruction a where
 
 -- | A global function definition
 --
+-- Note that because we just use the reified dictionary structure of Accelerate
+-- types, our functions are limited to operating over scalar types only; no
+-- pointers to functions and nothing that returns void.
+--
 data GlobalFunction args t where
   Body :: ScalarType r -> Label                              -> GlobalFunction '[]         r
   Lam  :: ScalarType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
