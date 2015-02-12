@@ -56,7 +56,7 @@ new :: CUDA.Device
 new dev prp flags = do
   ctx   <- CUDA.create dev flags
   weak  <- mkWeakContext ctx $ do
-    Debug.message Debug.dump_gc ("gc: finalise context " ++ show (CUDA.useContext ctx))
+    Debug.traceIO Debug.dump_gc ("gc: finalise context " ++ show (CUDA.useContext ctx))
     CUDA.destroy ctx
 
   -- The kernels don't use much shared memory, so for devices that support it
@@ -65,7 +65,7 @@ new dev prp flags = do
        (CUDA.setCacheConfig CUDA.PreferL1)
 
   -- Display information about the selected device
-  Debug.message Debug.verbose (deviceInfo dev prp)
+  Debug.traceIO Debug.verbose (deviceInfo dev prp)
 
   _     <- CUDA.pop
   return $! Context prp ctx weak
@@ -77,7 +77,7 @@ new dev prp flags = do
 {-# INLINE destroy #-}
 destroy :: Context -> IO ()
 destroy Context{..} = do
-  Debug.message Debug.dump_gc $
+  Debug.traceIO Debug.dump_gc $
     "gc: destroy context: " ++ show (CUDA.useContext deviceContext)
   CUDA.destroy deviceContext
 
@@ -88,7 +88,7 @@ destroy Context{..} = do
 {-# INLINE push #-}
 push :: Context -> IO ()
 push Context{..} = do
-  Debug.message Debug.dump_gc $
+  Debug.traceIO Debug.dump_gc $
     "gc: push context: " ++ show (CUDA.useContext deviceContext)
   CUDA.push deviceContext
 
@@ -99,7 +99,7 @@ push Context{..} = do
 pop :: IO ()
 pop = do
   ctx <- CUDA.pop
-  Debug.message Debug.dump_gc $
+  Debug.traceIO Debug.dump_gc $
     "gc: pop context: " ++ show (CUDA.useContext ctx)
 
 

@@ -24,7 +24,7 @@ import qualified Data.Traversable                               as Seq
 import qualified Data.IntMap.Strict                             as IM
 
 -- accelerate
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 
 -- | The nursery is primarily designed as a place to store device memory arrays
@@ -96,7 +96,7 @@ cleanup delete !ref = do
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
-trace msg next = Debug.message Debug.dump_gc ("gc: " ++ msg) >> next
+trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
 
 {-# INLINE message #-}
 message :: String -> IO ()

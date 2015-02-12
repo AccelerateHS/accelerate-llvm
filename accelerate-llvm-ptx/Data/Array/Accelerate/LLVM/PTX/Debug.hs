@@ -12,18 +12,17 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Debug (
 
-  module Data.Array.Accelerate.LLVM.Debug,
+  module Data.Array.Accelerate.Debug,
   module Data.Array.Accelerate.LLVM.PTX.Debug,
 
 ) where
 
-import Data.Array.Accelerate.LLVM.Debug
+import Data.Array.Accelerate.Debug
 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event
 
 import Control.Concurrent
-import Control.Monad.Trans
 import Data.Label
 import Data.Time.Clock
 import Text.Printf
@@ -31,31 +30,50 @@ import Text.Printf
 import GHC.Float
 
 
-{-# INLINE timed #-}
+-- | Conditional execution of a monadic debugging expression
+--
+when :: Mode -> IO () -> IO ()
+when f s = do
+  yes <- queryFlag f
+  if yes then s
+         else return ()
+
+-- | The opposite of 'when'
+--
+unless :: Mode -> IO () -> IO ()
+unless f s = do
+  yes <- queryFlag f
+  if yes then return () else s
+
+
+-- | Execute an action and time the results. The second argument specifies how
+-- to format the output string given elapsed GPU and CPU time respectively
+--
 timed
-    :: MonadIO m
-    => (Flags :-> Bool)
+    :: (Flags :-> Bool)
     -> (Double -> Double -> String)
     -> Maybe Stream
-    -> m ()
-    -> m ()
-timed _f _str _stream action
+    -> IO ()
+    -> IO ()
 #ifdef ACCELERATE_DEBUG
-  | mode _f
-  = do
-      gpuBegin  <- liftIO $ Event.create []
-      gpuEnd    <- liftIO $ Event.create []
-      wallBegin <- liftIO getCurrentTime
-      liftIO $ Event.record gpuBegin _stream
+{-# INLINE timed #-}
+timed f str stream action = do
+  enabled <- queryFlag f
+  if enabled
+    then do
+      gpuBegin  <- Event.create []
+      gpuEnd    <- Event.create []
+      wallBegin <- getCurrentTime
+      Event.record gpuBegin stream
       action
-      liftIO $ Event.record gpuEnd _stream
-      wallEnd   <- liftIO getCurrentTime
+      Event.record gpuEnd stream
+      wallEnd   <- getCurrentTime
 
       -- Wait for the GPU to finish executing then display the timing execution
       -- message. Do this in a separate thread so that the remaining kernels can
       -- be queued asynchronously.
       --
-      _         <- liftIO . forkIO $ do
+      _         <- forkIO $ do
         Event.block gpuEnd
         diff    <- Event.elapsedTime gpuBegin gpuEnd
         let gpuTime  = float2Double $ diff * 1E-3       -- milliseconds
@@ -64,13 +82,16 @@ timed _f _str _stream action
         Event.destroy gpuBegin
         Event.destroy gpuEnd
         --
-        message _f (_str gpuTime wallTime)
+        traceIO f (str gpuTime wallTime)
       --
       return ()
 
-  | otherwise
+    else
+      action
+#else
+{-# INLINE timed #-}
+timed _ _ _ = action
 #endif
-  = action
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String

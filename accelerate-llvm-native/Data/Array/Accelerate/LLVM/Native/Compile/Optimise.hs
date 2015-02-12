@@ -50,7 +50,7 @@ optimiseModule datalayout machine libinfo mdl = do
             }
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
-  Debug.message Debug.dump_llvm $
+  Debug.traceIO Debug.dump_cc $
     printf "llvm: optimisation did work? %s" (show b1)
 
 {--

@@ -102,7 +102,7 @@ balancedParIO gang =
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
-  Debug.message Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
+  Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
   createTarget [0 .. numCapabilities - 1]
 
 

@@ -1,5 +1,5 @@
+{-# LANGUAGE CPP           #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Debug
 -- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
@@ -12,49 +12,68 @@
 
 module Data.Array.Accelerate.LLVM.Native.Debug (
 
-  module Data.Array.Accelerate.LLVM.Debug,
+  module Data.Array.Accelerate.Debug,
   module Data.Array.Accelerate.LLVM.Native.Debug,
 
 ) where
 
-import Data.Array.Accelerate.LLVM.Debug
+import Data.Array.Accelerate.Debug
 
-import Control.Monad.Trans
 import Data.Label
 import Data.Time.Clock
 import System.CPUTime
 import Text.Printf
 
 
-{-# INLINE timed #-}
-timed :: MonadIO m
-      => (Flags :-> Bool)
+-- | Conditional execution of a monadic debugging expression
+--
+when :: Mode -> IO () -> IO ()
+when f s = do
+  yes <- queryFlag f
+  if yes then s
+         else return ()
+
+-- | The opposite of 'when'
+--
+unless :: Mode -> IO () -> IO ()
+unless f s = do
+  yes <- queryFlag f
+  if yes then return () else s
+
+
+-- | Execute an action and time the results.
+timed :: (Flags :-> Bool)
       -> (Double -> Double -> String)
-      -> m ()
-      -> m ()
-timed _f _msg action
+      -> IO ()
+      -> IO ()
 #ifdef ACCELERATE_DEBUG
-  | mode _f
-  = do
-        -- We will measure both wall clock as well as CPU time.
-        wall0   <- liftIO getCurrentTime
-        cpu0    <- liftIO getCPUTime
+{-# NOINLINE timed #-}
+timed f msg action = do
+  enabled <- queryFlag f
+  if enabled
+    then do
+      -- We will measure both wall clock as well as CPU time.
+      wall0     <- getCurrentTime
+      cpu0      <- getCPUTime
 
-        -- Run the action in the main thread. For the native backend there is no
-        -- need to time this asynchronously.
-        action
+      -- Run the action in the main thread. For the native backend there is no
+      -- need to time this asynchronously.
+      action
 
-        wall1   <- liftIO getCurrentTime
-        cpu1    <- liftIO getCPUTime
+      wall1     <- getCurrentTime
+      cpu1      <- getCPUTime
 
-        let wallTime = realToFrac (diffUTCTime wall1 wall0)
-            cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+      let wallTime = realToFrac (diffUTCTime wall1 wall0)
+          cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
 
-        message _f (_msg wallTime cpuTime)
+      traceIO f (msg wallTime cpuTime)
 
-  | otherwise
+    else
+      action
+#else
+{-# INLINE timed #-}
+timed _ _ action = action
 #endif
-  = action
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String

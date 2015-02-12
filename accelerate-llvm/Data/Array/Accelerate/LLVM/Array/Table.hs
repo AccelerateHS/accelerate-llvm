@@ -29,7 +29,7 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.LLVM.Array.Nursery                 ( Nursery(..), NRS )
 import qualified Data.Array.Accelerate.LLVM.Array.Nursery       as Nursery
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- standard library
 import Prelude                                                  hiding ( lookup )
@@ -372,7 +372,7 @@ cleanup freeRemote !MemoryTable{..} = do
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
-trace msg next = Debug.message Debug.dump_gc ("gc: " ++ msg) >> next
+trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
 
 {-# INLINE message #-}
 message :: String -> IO ()

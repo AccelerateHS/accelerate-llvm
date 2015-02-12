@@ -92,8 +92,8 @@ compileForNativeTarget acc aenv = do
         optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
         Debug.when Debug.verbose $ do
-          Debug.message Debug.dump_llvm =<< moduleLLVMAssembly mdl
-          Debug.message Debug.dump_asm  =<< runExcept (moduleTargetAssembly machine mdl)
+          Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
+          Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
         withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
          withModuleInEngine mcjit mdl        $ \exe   -> do

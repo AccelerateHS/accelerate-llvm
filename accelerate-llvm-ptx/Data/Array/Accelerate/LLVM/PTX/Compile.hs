@@ -137,9 +137,9 @@ compileModuleNVVM dev name libdevice mdl = do
   ptx   <- NVVM.compileModules ((name,B.pack ll):libdevice) flags verify
 
   -- Debugging
-  Debug.when Debug.dump_llvm $ do
-    Debug.message Debug.verbose ll
-    Debug.message Debug.dump_llvm $ "llvm: " ++ B.unpack (NVVM.nvvmLog ptx)
+  Debug.when Debug.dump_cc $ do
+    Debug.traceIO Debug.verbose ll
+    Debug.traceIO Debug.dump_cc $ "llvm: " ++ B.unpack (NVVM.nvvmLog ptx)
 
   -- Link into a new CUDA module in the current context
   linkPTX name (NVVM.nvvmResult ptx)
@@ -166,9 +166,9 @@ compileModuleNVPTX dev name mdl =
       b1      <- LLVM.runPassManager pm mdl
 
       -- debug printout
-      Debug.when Debug.dump_llvm $ do
-        Debug.message Debug.dump_llvm $ printf "llvm: optimisation did work? %s" (show b1)
-        Debug.message Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
+      Debug.when Debug.dump_cc $ do
+        Debug.traceIO Debug.dump_cc $ printf "llvm: optimisation did work? %s" (show b1)
+        Debug.traceIO Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
       ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
@@ -182,15 +182,18 @@ compileModuleNVPTX dev name mdl =
 --
 linkPTX :: String -> ByteString -> IO CUDA.Module
 linkPTX name ptx = do
-  let v         = if Debug.mode Debug.verbose then [ CUDA.Verbose ]                                  else []
-      d         = if Debug.mode Debug.debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
+  _verbose      <- Debug.queryFlag Debug.verbose
+  _debug        <- Debug.queryFlag Debug.debug_cc
+  --
+  let v         = if _verbose then [ CUDA.Verbose ]                                  else []
+      d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
       flags     = concat [v,d]
   --
   jit   <- CUDA.loadDataEx ptx flags
 
   Debug.when Debug.dump_asm $ do
-    Debug.message Debug.verbose (B.unpack ptx)
-    Debug.message Debug.dump_asm $
+    Debug.traceIO Debug.verbose (B.unpack ptx)
+    Debug.traceIO Debug.dump_asm $
       printf "ptx: compiled entry function \"%s\" in %s\n%s"
              name
              (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
@@ -231,7 +234,7 @@ linkFunction acc dev mdl name = do
                       (CUDA.activeWarps occ)
                       (CUDA.activeThreadBlocks occ)
 
-  Debug.message Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
+  Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
   return $ Kernel f occ smem cta blocks name
 
 
