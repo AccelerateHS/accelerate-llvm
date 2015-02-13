@@ -45,12 +45,12 @@ readArrayData volatile ix = read
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
     read UnitTuple          OP_Unit        = return OP_Unit
     read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair   <$> read t2 a2 <*> read t1 a1
-    read (SingleTuple _t)  (OP_Scalar arr) = OP_Scalar <$> readArrayPrim volatile arr ix
+    read (SingleTuple t)   (OP_Scalar arr) = OP_Scalar <$> readArrayPrim t volatile arr ix
 
-readArrayPrim :: Volatile -> Operand e -> Operand Int -> CodeGen (Operand e)
-readArrayPrim volatile arr i = do
+readArrayPrim :: ScalarType e -> Volatile -> Operand e -> Operand Int -> CodeGen (Operand e)
+readArrayPrim t volatile arr i = do
   ptr   <- instr $ GetElementPtr arr [i]
-  v     <- instr $ Load volatile ptr
+  v     <- instr $ Load t volatile ptr
   return v
 
 

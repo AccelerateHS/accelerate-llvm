@@ -154,7 +154,8 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#load-instruction>
   --
-  Load          :: Volatile
+  Load          :: ScalarType a
+                -> Volatile
                 -> Operand (Ptr a)
                 -> Instruction a
 

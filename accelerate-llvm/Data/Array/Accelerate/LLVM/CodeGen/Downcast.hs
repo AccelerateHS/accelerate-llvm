@@ -125,7 +125,7 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (BAnd _ x y)         = L.And (downcast x) (downcast y) md
   downcast (BOr _ x y)          = L.Or (downcast x) (downcast y) md
   downcast (BXor _ x y)         = L.Xor (downcast x) (downcast y) md
-  downcast (Load v p)           = L.Load (downcast v) (downcast p) Nothing 0 md
+  downcast (Load _ v p)         = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)        = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
   downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- in bounds??
   downcast (Trunc _ t x)        = L.Trunc (downcast x) (downcast t) md
