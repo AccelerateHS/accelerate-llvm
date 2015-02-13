@@ -95,7 +95,6 @@ data Block = Block
   { blockLabel          :: Label                                        -- block label
   , instructions        :: Seq (LLVM.Named LLVM.Instruction)            -- stack of instructions
   , terminator          :: LLVM.Terminator                              -- block terminator
---  , returnType          :: LLVM.Type
   }
 
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
@@ -223,8 +222,15 @@ createBlocks
 -- Instructions
 -- ------------
 
+-- | Generate a fresh local reference
+--
 fresh :: forall a. Elt a => CodeGen (IR a)
-fresh = undefined
+fresh = IR <$> go (eltType (undefined::a))
+  where
+    go :: TupleType t -> CodeGen (Operands t)
+    go UnitTuple         = return OP_Unit
+    go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
+    go (SingleTuple t)   = OP_Scalar . LocalReference t <$> freshName
 
 -- | Generate a fresh (un)name.
 --
