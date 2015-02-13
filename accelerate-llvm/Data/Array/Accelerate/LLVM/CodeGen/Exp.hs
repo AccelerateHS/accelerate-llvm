@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as L
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 
@@ -61,7 +62,8 @@ class Expression arch where
                 -> IROpenFun1 arch env aenv (a -> a)
                 -> IROpenExp  arch env aenv a
                 -> IROpenExp  arch env aenv a
-  while = $internalError "while" "default instance not implemented yet"
+  while p f x =
+    L.while (app1 p) (app1 f) =<< x
 
 
 -- Scalar expressions
@@ -103,6 +105,10 @@ llvmOfOpenExp arch top env aenv = cvtE top
     cvtM (Manifest (Avar ix)) = IRManifest ix
     cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
 
+    cvtF1 :: DelayedOpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
+    cvtF1 (Lam (Body body)) = IRFun1 $ \x -> llvmOfOpenExp arch body (env `Push` x) aenv
+    cvtF1 _                 = $internalError "cvtF1" "impossible evaluation"
+
     cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
@@ -131,7 +137,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Shape acc                   -> return $ shape (cvtM acc)
         Intersect sh1 sh2           -> join $ intersect <$> cvtE sh1 <*> cvtE sh2
         Union sh1 sh2               -> join $ union     <$> cvtE sh1 <*> cvtE sh2
-        While _c _f _x                  -> error "While"
+        While c f x                 -> while (cvtF1 c) (cvtF1 f) (cvtE x)
 
     indexNil :: IR Z
     indexNil = IR (constant (eltType Z) (fromElt Z))

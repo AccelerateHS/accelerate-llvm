@@ -15,7 +15,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
-import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
@@ -35,20 +34,54 @@ for start test incr body = do
 
   -- entry
   p     <- test start
-  top   <- cbr (op nonNumType p) loop exit
+  top   <- cbr p loop exit
 
   -- loop body
   setBlock loop
-  ci    <- freshName
-  let i  = local scalarType ci
+  i     <- fresh
 
   _     <- body i
   i'    <- incr i
   c'    <- test i'
-  bot   <- cbr (op nonNumType c') loop exit
+  bot   <- cbr c' loop exit
 
   -- append a phi instruction at the loop head to set the incoming trip count
-  _     <- phi' loop ci [(op integralType i',bot), (op integralType start, top)]
+  _     <- phi' loop i [(i',bot), (start, top)]
 
   setBlock exit
+
+
+-- | A standard 'while' loop
+--
+while :: Elt a
+      => (IR a -> CodeGen (IR Bool))
+      -> (IR a -> CodeGen (IR a))
+      -> IR a
+      -> CodeGen (IR a)
+while test body x = do
+  loop <- newBlock "while.top"
+  exit <- newBlock "while.exit"
+  _    <- beginBlock "while.entry"
+
+  -- Entry: generate the initial value
+  c    <- test x
+  top  <- cbr c loop exit
+
+  -- Create the critical variable that will be used to accumulate the results
+  prev <- fresh
+
+  -- Generate the loop body. Afterwards, we insert a phi node at the head of the
+  -- instruction stream, which selects the input value depending on which edge
+  -- we entered the loop from: top or bottom.
+  --
+  setBlock loop
+  next <- body prev
+  c'   <- test next
+  bot  <- cbr c' loop exit
+
+  _    <- phi' loop prev [(x,top), (next,bot)]
+
+  -- Now the loop exit
+  setBlock exit
+  phi [(x,top), (next,bot)]
 
