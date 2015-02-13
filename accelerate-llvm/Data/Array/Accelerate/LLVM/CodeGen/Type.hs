@@ -15,6 +15,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.Type
 
 import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Operand
 

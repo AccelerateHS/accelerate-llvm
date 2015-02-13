@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
-{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeOperators  #-}
 -- |
@@ -19,7 +18,7 @@ module LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Bits
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
 
 import Data.Array.Accelerate.Type
 
@@ -29,15 +28,6 @@ import Foreign.Ptr
 -- | Predicate for comparison instruction
 --
 data Predicate = EQ | NE | LT | LE | GT | GE
-
--- | Attributes for the function call instruction
---
-data FunctionAttribute
-  = NoReturn
-  | NoUnwind
-  | ReadOnly
-  | ReadNone
-  | AlwaysInline
 
 data Volatile = Volatile | NonVolatile
 
@@ -278,21 +268,6 @@ data Instruction a where
 
   -- VAArg
   -- LandingPad
-
-
--- | A global function definition
---
--- Note that because we just use the reified dictionary structure of Accelerate
--- types, our functions are limited to operating over scalar types only; no
--- pointers to functions and nothing that returns void.
---
-data GlobalFunction args t where
-  Body :: ScalarType r -> Label                              -> GlobalFunction '[]         r
-  Lam  :: ScalarType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
-
-data HList (l :: [*]) where
-  HNil  ::                 HList '[]
-  HCons :: e -> HList l -> HList (e ': l)
 
 
 -- | Instances of instructions may be given a name, allowing their results to be
