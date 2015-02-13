@@ -26,6 +26,7 @@ import Foreign.C.Types
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Flags
@@ -68,6 +69,10 @@ instance Downcast a a' => Downcast (Maybe a) (Maybe a') where
 instance (Downcast a a', Downcast b b') => Downcast (a,b) (a',b') where
   downcast (a,b) = (downcast a, downcast b)
 
+
+-- LLVM.General.AST.Type.Flags
+-- ---------------------------
+
 nsw :: Bool
 nsw = False
 
@@ -92,13 +97,19 @@ instance Downcast NSW Bool where
 instance Downcast FastMathFlags L.FastMathFlags where
   downcast = id
 
+
+-- LLVM.General.AST.Type.Name
+-- --------------------------
+
 instance Downcast (Name a) L.Name where
   downcast (Name s)   = L.Name s
   downcast (UnName n) = L.UnName n
 
-instance (Downcast (i a) i') => Downcast (Named i a) (L.Named i') where
-  downcast (x := op) = downcast x L.:= downcast op
-  downcast (Do op)   = L.Do (downcast op)
+
+-- LLVM.General.AST.Type.Instruction
+-- ---------------------------------
+
+-- Instructions
 
 instance Downcast (Instruction a) L.Instruction where
   downcast (Add t x y) =
@@ -176,6 +187,22 @@ instance Downcast (Instruction a) L.Instruction where
       _ | signed t                      -> L.ICmp (si p) (downcast x) (downcast y) md
         | otherwise                     -> L.ICmp (ui p) (downcast x) (downcast y) md
 
+instance Downcast Volatile Bool where
+  downcast Volatile    = True
+  downcast NonVolatile = False
+
+instance (Downcast (i a) i') => Downcast (Named i a) (L.Named i') where
+  downcast (x := op) = downcast x L.:= downcast op
+  downcast (Do op)   = L.Do (downcast op)
+
+instance Downcast a b => Downcast (L.Named a) (L.Named b) where
+  downcast (l L.:= r)   = l L.:= downcast r
+  downcast (L.Do x)     = L.Do (downcast x)
+
+
+-- LLVM.General.AST.Type.Constant
+-- ------------------------------
+
 instance Downcast (Constant a) LC.Constant where
   downcast (ScalarConstant (NumScalarType (IntegralNumType t)) x)
     | IntegralDict <- integralDict t
@@ -201,9 +228,17 @@ instance Downcast (Constant a) LC.Constant where
   downcast (GlobalReference t n)
     = LC.GlobalReference (downcast t) (downcast n)
 
+
+-- LLVM.General.AST.Type.Operand
+-- -----------------------------
+
 instance Downcast (Operand a) L.Operand where
   downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)
   downcast (ConstantOperand c)       = L.ConstantOperand (downcast c)
+
+
+-- LLVM.General.AST.Type.Metadata
+-- ------------------------------
 
 instance Downcast Metadata L.Operand where
   downcast (MetadataStringOperand s) = L.MetadataStringOperand s
@@ -214,6 +249,10 @@ instance Downcast MetadataNode L.MetadataNode where
   downcast (MetadataNode n)          = L.MetadataNode (downcast n)
   downcast (MetadataNodeReference r) = L.MetadataNodeReference r
 
+
+-- LLVM.General.AST.Type.Terminator
+-- --------------------------------
+
 instance Downcast (Terminator a) L.Terminator where
   downcast Ret                  = L.Ret Nothing md
   downcast (RetVal x)           = L.Ret (Just (downcast x)) md
@@ -221,13 +260,23 @@ instance Downcast (Terminator a) L.Terminator where
   downcast (CondBr p t f)       = L.CondBr (downcast p) (downcast t) (downcast f) md
   downcast (Switch p d a)       = L.Switch (downcast p) (downcast d) (downcast a) md
 
-instance Downcast a b => Downcast (L.Named a) (L.Named b) where
-  downcast (l L.:= r)   = l L.:= downcast r
-  downcast (L.Do x)     = L.Do (downcast x)
+
+-- LLVM.General.AST.Type.Name
+-- --------------------------
 
 instance Downcast Label L.Name where
   downcast (Label l)    = L.Name l
 
+
+-- LLVM.General.AST.Type.Global
+-- ----------------------------
+
+instance Downcast (Parameter a) L.Parameter where
+  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                 (downcast x) []
+  downcast (PtrParameter t x)    = L.Parameter (L.PointerType (downcast t) (L.AddrSpace 0)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
+
+-- Function -> callable operands (for Call instruction)
+--
 instance Downcast (GlobalFunction args t) L.CallableOperand where
   downcast f
     = let trav :: GlobalFunction args t -> ([L.Type], L.Type, L.Name)
@@ -268,13 +317,10 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast ReadNone     = L.ReadNone
   downcast AlwaysInline = L.AlwaysInline
 
-instance Downcast Volatile Bool where
-  downcast Volatile    = True
-  downcast NonVolatile = False
 
-instance Downcast (Parameter a) L.Parameter where
-  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                 (downcast x) []
-  downcast (PtrParameter t x)    = L.Parameter (L.PointerType (downcast t) (L.AddrSpace 0)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
+
+-- Data.Array.Accelerate.Type
+-- --------------------------
 
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t
