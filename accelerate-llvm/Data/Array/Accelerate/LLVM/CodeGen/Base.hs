@@ -21,7 +21,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
   irArray,
   mutableArray,
 
-  -- Parameters
+  -- Functions & parameters
+  call,
   scalarParameter, ptrParameter,
   envParam,
   arrayParam,
@@ -30,6 +31,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
+import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
@@ -40,6 +42,7 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import qualified LLVM.General.AST.Global                                as LLVM
@@ -128,6 +131,17 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 
 -- Function parameters
 -- -------------------
+
+-- | Call a global function. The function declaration is inserted into the
+-- symbol table.
+--
+call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (Operand t)
+call f attrs = do
+  let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs }
+  --
+  declare decl
+  instr (Call f attrs)
+
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (ScalarParameter t x)

@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ParallelListComp      #-}
 {-# LANGUAGE TemplateHaskell       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Downcast
@@ -242,6 +243,23 @@ instance Downcast (GlobalFunction args t) L.CallableOperand where
 instance Downcast (GlobalFunction args t) [(L.Operand, [L.ParameterAttribute])] where
   downcast Body{}      = []
   downcast (Lam _ x l) = (downcast x, []) : downcast l
+
+-- Function -> global declaration
+--
+instance Downcast (GlobalFunction args t) L.Global where
+  downcast f
+    = let trav :: GlobalFunction args t -> ([L.Type], L.Type, L.Name)
+          trav (Body t n)  = ([], downcast t, downcast n)
+          trav (Lam t _ l) = let (t',r, n) = trav l
+                             in  (downcast t : t', r, n)
+
+          (args, result, name)  = trav f
+          params                = [ L.Parameter t (L.UnName i) [] | t <- args | i <- [0..] ]
+      in
+      L.functionDefaults { L.name       = name
+                         , L.returnType = result
+                         , L.parameters = (params,False)
+                         }
 
 instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast NoReturn     = L.NoReturn

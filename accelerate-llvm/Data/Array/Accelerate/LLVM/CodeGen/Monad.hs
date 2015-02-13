@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  freshName, -- declare, intrinsic,
+  freshName, declare, intrinsic,
 
   -- basic blocks
   Block,
@@ -307,6 +307,33 @@ terminate term =
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "terminate" "empty block chain"
       bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
+
+
+-- | Add a global declaration to the symbol table
+--
+declare :: LLVM.Global -> CodeGen ()
+declare g =
+  let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
+                      | otherwise = Just g
+      unique _                    = Just g
+
+      name = case LLVM.name g of
+               LLVM.Name n      -> Label n
+               LLVM.UnName n    -> Label (show n)
+  in
+  modify (\s -> s { symbolTable = Map.alter unique name (symbolTable s) })
+
+
+-- | Get name of the corresponding intrinsic function implementing a given C
+-- function. If there is no mapping, the C function name is used.
+--
+intrinsic :: String -> CodeGen Label
+intrinsic key =
+  state $ \s ->
+    let name = HashMap.lookupDefault (Label key) key (intrinsicTable s)
+    in  trace (show (HashMap.toList (intrinsicTable s)))
+          $ (name, s)
+
 
 
 -- Metadata
