@@ -104,9 +104,18 @@ runLLVM
     -> Module arch aenv a
 runLLVM  ll =
   let
-      (kernels, st)     = case runState (runCodeGen ll) initCodeGenState of
+      (kernels, st)     = case runState (runCodeGen ll) initialState of
                             (IROpenAcc r, s) -> (map unKernel r, s)
-      defs              = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+
+      initialState      = CodeGenState
+                            { blockChain        = initBlockChain
+                            , symbolTable       = Map.empty
+                            , metadataTable     = HashMap.empty
+                            , intrinsicTable    = intrinsicForTarget (undefined::arch)
+                            , next              = 0
+                            }
+
+      definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
@@ -119,18 +128,8 @@ runLLVM  ll =
     { LLVM.moduleName         = name
     , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
     , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
-    , LLVM.moduleDefinitions  = defs
+    , LLVM.moduleDefinitions  = definitions
     }
-
-
-initCodeGenState :: CodeGenState
-initCodeGenState = CodeGenState
-  { blockChain          = initBlockChain
-  , symbolTable         = Map.empty
-  , metadataTable       = HashMap.empty
-  , intrinsicTable      = HashMap.empty
-  , next                = 0
-  }
 
 
 -- Basic Blocks
