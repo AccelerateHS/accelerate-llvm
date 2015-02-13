@@ -123,8 +123,11 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (ShiftRL _ x i)      = L.LShr False (downcast x) (downcast i) md
   downcast (ShiftRA _ x i)      = L.AShr False (downcast x) (downcast i) md
   downcast (BAnd _ x y)         = L.And (downcast x) (downcast y) md
+  downcast (LAnd x y)           = L.And (downcast x) (downcast y) md
   downcast (BOr _ x y)          = L.Or (downcast x) (downcast y) md
+  downcast (LOr x y)            = L.Or (downcast x) (downcast y) md
   downcast (BXor _ x y)         = L.Xor (downcast x) (downcast y) md
+  downcast (LNot x)             = L.Xor (downcast x) (downcast (scalar scalarType True)) md
   downcast (Load _ v p)         = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)        = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
   downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- in bounds??

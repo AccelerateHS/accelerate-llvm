@@ -123,6 +123,10 @@ data Instruction a where
                 -> Operand a
                 -> Instruction a
 
+  LAnd          :: Operand Bool
+                -> Operand Bool
+                -> Instruction Bool
+
   -- | <http://llvm.org/docs/LangRef.html#or-instruction>
   --
   BOr           :: IntegralType a
@@ -130,12 +134,19 @@ data Instruction a where
                 -> Operand a
                 -> Instruction a
 
+  LOr           :: Operand Bool
+                -> Operand Bool
+                -> Instruction Bool
+
   -- | <http://llvm.org/docs/LangRef.html#xor-instruction>
   --
   BXor          :: IntegralType a
                 -> Operand a
                 -> Operand a
                 -> Instruction a
+
+  LNot          :: Operand Bool
+                -> Instruction Bool
 
   -- Vector Operations
   -- <http://llvm.org/docs/LangRef.html#vector-operations>
