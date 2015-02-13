@@ -15,7 +15,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Num, Char, Bool, String, ($), (++), error, undefined, return, otherwise, flip )
+import Prelude                                                  ( Eq, Num, Char, String, Bool(..), ($), (++), (==), error, undefined, return, otherwise, flip )
 import Data.Bits                                                ( finiteBitSize )
 import Control.Applicative
 import qualified Data.Ord                                       as Ord
@@ -25,6 +25,7 @@ import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 -- accelerate-llvm
+import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
@@ -167,16 +168,21 @@ sqrt = mathf "sqrt"
 log :: FloatingType a -> IR a -> CodeGen (IR a)
 log = mathf "log"
 
--- TODO: specialise for log2 and log10
---
 logBase :: forall a. FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-logBase t x y | FloatingDict <- floatingDict t = logBase'
+logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
   where
-    logBase' :: Num a => CodeGen (IR a)
-    logBase' = do
-      x' <- log t x
-      y' <- log t y
-      fdiv t x' y'
+    match :: Eq t => Operand t -> Operand t -> Bool
+    match (ConstantOperand (ScalarConstant _ u))
+          (ConstantOperand (ScalarConstant _ v)) = u == v
+    match _ _                                    = False
+
+    logBase' :: (Num a, Eq a) => CodeGen (IR a)
+    logBase' | match base (floating t 2)  = mathf "log2"  t y
+             | match base (floating t 10) = mathf "log10" t y
+             | otherwise
+             = do x' <- log t x
+                  y' <- log t y
+                  fdiv t y' x'
 
 
 -- Operators from RealFloat
