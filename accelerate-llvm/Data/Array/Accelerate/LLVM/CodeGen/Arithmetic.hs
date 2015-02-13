@@ -1,5 +1,8 @@
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -15,13 +18,17 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Char, String, Bool(..), ($), (++), (==), error, undefined, return, otherwise, flip )
+import Prelude                                                  ( Eq, Num, Char, Bool(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
 import Data.Bits                                                ( finiteBitSize )
+import Data.String
 import Control.Applicative
+import Control.Monad
+import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
 -- accelerate
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
 -- accelerate-llvm
@@ -53,12 +60,20 @@ mul = binop Mul
 negate :: NumType a -> IR a -> CodeGen (IR a)
 negate t x =
   case t of
-    IntegralNumType i | unsigned i                     -> return x
-    IntegralNumType i | IntegralDict <- integralDict i -> mul t x (ir t (num t (-1)))
-    FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (-1)))
+    IntegralNumType i | IntegralDict <- integralDict i -> mul t x (ir t (num t (P.negate 1)))
+    FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (P.negate 1)))
 
-abs :: NumType a -> IR a -> CodeGen (IR a)
-abs = error "abs"
+abs :: forall a. NumType a -> IR a -> CodeGen (IR a)
+abs t x =
+  case t of
+    FloatingNumType f                  -> mathf "fabs" f x
+    IntegralNumType i
+      | unsigned i                     -> return x
+      | IntegralDict <- integralDict i ->
+          let t' = NumScalarType t in
+          case finiteBitSize (undefined :: a) of
+            64 -> call (Lam t' (op t x) (Body t' "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam t' (op t x) (Body t' "abs"))   [NoUnwind, ReadNone]
 
 signum :: NumType a -> IR a -> CodeGen (IR a)
 signum = error "signum"
@@ -79,8 +94,46 @@ quotRem = error "quotRem"
 idiv :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
 idiv = error "idiv"
 
-mod :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
-mod = error "mod"
+mod :: Elt a => IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+mod t x y
+  | unsigned t                     = rem t x y
+  | IntegralDict <- integralDict t =
+    do
+       let nt = IntegralNumType t
+           st = NumScalarType nt
+           _0 = ir t (integral t 0)
+       --
+       ifOr     <- newBlock "mod.or"
+       ifTrue   <- newBlock "mod.true"
+       ifEnd    <- newBlock "mod.end"
+
+       r        <- rem t x y
+       c1       <- join $ land <$> gt st x _0 <*> lt st y _0
+       _        <- cbr c1 ifTrue ifOr
+
+       setBlock ifOr
+       c2       <- join $ land <$> lt st x _0 <*> gt st y _0
+       false    <- cbr c2 ifTrue ifEnd
+
+       setBlock ifTrue
+       c3       <- eq st r _0
+       s        <- add nt r y
+       v        <- instr $ Select st (op scalarType c3) (op t _0) (op t s)
+       true     <- br ifEnd
+
+       setBlock ifEnd
+       phi [(v,true), (r,false)]
+
+{--
+       if join $ lor <$> (join $ land <$> gt st x _0 <*> lt st y _0)
+                     <*> (join $ land <$> lt st x _0 <*> gt st y _0)
+          then
+               if neq st r _0
+                  then add nt r y
+                  else return _0
+          else return r
+--}
+
 
 divMod :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
 divMod = error "divMod"
@@ -95,7 +148,7 @@ xor :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
 xor = binop BXor
 
 complement :: IntegralType a -> IR a -> CodeGen (IR a)
-complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (-1)))
+complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (P.negate 1)))
 
 shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
 shiftL t x i = do
@@ -105,9 +158,9 @@ shiftL t x i = do
 shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
 shiftR t x i = do
   i' <- fromIntegral integralType (IntegralNumType t) i
-  if signed t
-     then binop ShiftRA t x i'
-     else binop ShiftRL t x i'
+  case signed t of                      -- we are using rebindable syntax for if-then-else
+    True  -> binop ShiftRA t x i'
+    False -> binop ShiftRL t x i'
 
 rotateL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
 rotateL = error "rotateL"
