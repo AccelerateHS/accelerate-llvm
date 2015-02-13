@@ -15,20 +15,25 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Num, Char, Bool, String, ($), error, undefined, return, otherwise )
+import Prelude                                                  ( Num, Char, Bool, String, ($), (++), error, undefined, return, otherwise, flip )
+import Data.Bits                                                ( finiteBitSize )
 import Control.Applicative
+import qualified Data.Ord                                       as Ord
 
 -- accelerate
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 -- accelerate-llvm
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
+import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 hiding ( cbr, phi )
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                 hiding ( cbr, phi, intrinsic )
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Monad       as M
 
@@ -121,80 +126,89 @@ recip :: FloatingType a -> IR a -> CodeGen (IR a)
 recip t x | FloatingDict <- floatingDict t = fdiv t (ir t (floating t 1)) x
 
 sin :: FloatingType a -> IR a -> CodeGen (IR a)
-sin t x = error "sin" -- mathf "sin" t [x]
+sin = mathf "sin"
 
 cos :: FloatingType a -> IR a -> CodeGen (IR a)
-cos t x = error "cos" -- mathf "cos" t [x]
+cos = mathf "cos"
 
 tan :: FloatingType a -> IR a -> CodeGen (IR a)
-tan t x = error "tan" -- mathf "tan" t [x]
+tan = mathf "tan"
 
 asin :: FloatingType a -> IR a -> CodeGen (IR a)
-asin t x = error "asin" -- mathf "asin" t [x]
+asin = mathf "asin"
 
 acos :: FloatingType a -> IR a -> CodeGen (IR a)
-acos t x = error "acos" -- mathf "acos" t [x]
+acos = mathf "acos"
 
 atan :: FloatingType a -> IR a -> CodeGen (IR a)
-atan t x = error "atan" -- mathf "atan" t [x]
+atan = mathf "atan"
 
 asinh :: FloatingType a -> IR a -> CodeGen (IR a)
-asinh t x = error "asinh" -- mathf "asinh" t [x]
+asinh = mathf "asinh"
 
 acosh :: FloatingType a -> IR a -> CodeGen (IR a)
-acosh t x = error "acosh" -- mathf "acosh" t [x]
+acosh = mathf "acosh"
 
 atanh :: FloatingType a -> IR a -> CodeGen (IR a)
-atanh t x = error "atanh" -- mathf "atanh" t [x]
+atanh = mathf "atanh"
 
 atan2 :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-atan2 t x y = error "atan2" -- mathf "atan2" t [x,y]
+atan2 = mathf' "atan2"
 
 exp :: FloatingType a -> IR a -> CodeGen (IR a)
-exp t x = error "exp" -- mathf "exp" t [x]
+exp = mathf "exp"
 
 fpow :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-fpow t x y = error "pow" -- mathf "pow" t [x,y]
+fpow = mathf' "pow"
 
 sqrt :: FloatingType a -> IR a -> CodeGen (IR a)
-sqrt t x = error "sqrt" -- mathf "sqrt" t [x]
+sqrt = mathf "sqrt"
 
 log :: FloatingType a -> IR a -> CodeGen (IR a)
-log t x = error "log" -- mathf "log" t [x]
+log = mathf "log"
 
-logBase :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-logBase t x y | FloatingDict <- floatingDict t = error "logBase" -- logBase' t x y
+-- TODO: specialise for log2 and log10
+--
+logBase :: forall a. FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+logBase t x y | FloatingDict <- floatingDict t = logBase'
+  where
+    logBase' :: Num a => CodeGen (IR a)
+    logBase' = do
+      x' <- log t x
+      y' <- log t y
+      fdiv t x' y'
 
 
 -- Operators from RealFloat
 -- ------------------------
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isNaN = error "isNaN"
+isNaN t (op t -> x) = do
+  name <- M.intrinsic "isnan"
+  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body scalarType name)) [NoUnwind, ReadOnly]
+  return $ ir scalarType r
 
 
 -- Operators from RealFrac
 -- -----------------------
 
 truncate :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
-truncate _ i x = error "truncate"
---  | signedIntegralNum i = instr $ FPToSI x (typeOf i) []
---  | otherwise           = instr $ FPToUI x (typeOf i) []
+truncate tf ti (op tf -> x) = ir ti <$> instr (FPToInt tf ti x)
 
 round :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
-round tf ti x = error "round"
---  i <- mathf "round" tf [x]
---  truncate tf ti i
+round tf ti x = do
+  i <- mathf "round" tf x
+  truncate tf ti i
 
 floor :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
-floor tf ti x = error "floor"
---  i <- mathf "floor" tf [x]
---  truncate tf ti i
+floor tf ti x = do
+  i <- mathf "floor" tf x
+  truncate tf ti i
 
 ceiling :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
-ceiling tf ti x = error "ceiling"
---  i <- mathf "ceil" tf [x]
---  truncate tf ti i
+ceiling tf ti x = do
+  i <- mathf "ceil" tf x
+  truncate tf ti i
 
 
 -- Relational and Equality operators
@@ -222,23 +236,31 @@ neq :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 neq = cmp NE
 
 max :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
-max ty x y = error "max"
+max ty x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmax" f x y
+  | otherwise                               = do c <- op scalarType <$> gte ty x y
+                                                 binop (flip Select c) ty x y
 
 min :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
-min ty x y = error "min"
+min ty x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmin" f x y
+  | otherwise                               = do c <- op scalarType <$> lte ty x y
+                                                 binop (flip Select c) ty x y
 
 
 -- Logical operators
 -- -----------------
 
 land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-land = error "land"
+land (op scalarType -> x) (op scalarType -> y)
+  = ir scalarType <$> instr (LAnd x y)
 
 lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-lor = error "lor"
+lor (op scalarType -> x) (op scalarType -> y)
+  = ir scalarType <$> instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen (IR Bool)
-lnot = error "lnot"
+lnot (op scalarType -> x) = ir scalarType <$> instr (LNot x)
 
 
 -- Type conversions
@@ -253,8 +275,22 @@ chr = error "chr"
 boolToInt :: IR Bool -> CodeGen (IR Int)
 boolToInt = error "boolToInt"
 
-fromIntegral :: IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
-fromIntegral = error "fromIntegral"
+fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
+fromIntegral i1 n (op i1 -> x) =
+  case n of
+    FloatingNumType f -> ir n <$> instr (IntToFP i1 f x)
+
+    IntegralNumType (i2 :: IntegralType b)
+      | IntegralDict <- integralDict i1
+      , IntegralDict <- integralDict i2
+      -> let
+             bits_a = finiteBitSize (undefined::a)
+             bits_b = finiteBitSize (undefined::b)
+         in
+         case Ord.compare bits_a bits_b of
+           Ord.EQ -> ir n <$> instr (BitCast (NumScalarType n) x)
+           Ord.GT -> ir n <$> instr (Trunc i1 i2 x)
+           Ord.LT -> ir n <$> instr (Ext i1 i2 x)
 
 
 -- Utility functions
@@ -301,4 +337,38 @@ ifThenElse test yes no = do
 
   setBlock ifExit
   phi [(tv, tb), (fv, fb)]
+
+
+-- Call a function from the standard C math library. This is a wrapper around
+-- the 'call' function from CodeGen.Base since:
+--
+--   (1) The parameter and return types are all the same; and
+--   (2) We check if there is an intrinsic implementation of this function
+--
+-- TLM: We should really be able to construct functions of any arity.
+--
+mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
+mathf n t (op t -> x) = do
+  let st  = NumScalarType (FloatingNumType t)
+  --
+  name <- intrinsic t n
+  r    <- call (Lam st x (Body st name)) [NoUnwind, ReadOnly]
+  return $ ir t r
+
+
+mathf' :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf' n t (op t -> x) (op t -> y) = do
+  let st = NumScalarType (FloatingNumType t)
+  --
+  name <- intrinsic t n
+  r    <- call (Lam st x (Lam st y (Body st name))) [NoUnwind, ReadOnly]
+  return $ ir t r
+
+intrinsic :: FloatingType t -> String -> CodeGen Label
+intrinsic t n =
+  M.intrinsic $ case t of
+                  TypeFloat{}   -> n++"f"
+                  TypeCFloat{}  -> n++"f"
+                  TypeDouble{}  -> n
+                  TypeCDouble{} -> n
 

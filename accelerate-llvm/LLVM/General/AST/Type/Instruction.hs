@@ -179,7 +179,7 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr :: Operand a                    -- Operand (Ptr a), Name a ??
+  GetElementPtr :: Operand a            -- Operand (Ptr a), Name a ??
                 -> [Operand Int]
                 -> Instruction (Ptr a)
 
@@ -189,9 +189,8 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#trunc-to-instruction>
   --
-  Trunc         :: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
-                => IntegralType a               -- Integral OR Char OR Bool ):
-                -> IntegralType b
+  Trunc         :: IntegralType a       -- req: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
+                -> IntegralType b       -- Integral OR Char OR Bool ):
                 -> Operand a
                 -> Instruction b
 
@@ -206,9 +205,8 @@ data Instruction a where
   -- | <http://llvm.org/docs/LangRef.html#zext-to-instruction>
   --   <http://llvm.org/docs/LangRef.html#sext-to-instruction>
   --
-  Ext           :: (BitSize a < BitSize b)
-                => IntegralType a               -- Integral OR Char OR Bool ):
-                -> IntegralType b
+  Ext           :: IntegralType a       -- Req: (BitSize a < BitSize b)
+                -> IntegralType b       -- Integral OR Char OR Bool ):
                 -> Operand a
                 -> Instruction b
 
@@ -238,8 +236,7 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#bitcast-to-instruction>
   --
-  BitCast       :: (BitSizeEq a b ~ True)
-                => ScalarType b
+  BitCast       :: ScalarType b         -- precondition: (BitSizeEq a b ~ True)
                 -> Operand a
                 -> Instruction b
 
