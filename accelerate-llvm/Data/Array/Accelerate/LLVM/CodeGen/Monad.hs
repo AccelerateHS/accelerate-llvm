@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -19,14 +20,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  freshName, declare, intrinsic,
+  fresh, declare, intrinsic,
 
   -- basic blocks
   Block,
   newBlock, setBlock, beginBlock, createBlocks,
 
   -- instructions
-  instr, do_, return_, retval_, br, cbr, phi, phi',
+  instr, instr', do_, return_, retval_, br, cbr, phi, phi',
 
   -- metadata
   addMetadata,
@@ -48,7 +49,9 @@ import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
 
 -- accelerate
+import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Sugar                                ( Elt, eltType )
 import qualified Data.Array.Accelerate.Debug                            as Debug
 
 -- accelerate-llvm
@@ -60,6 +63,7 @@ import LLVM.General.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
@@ -219,6 +223,9 @@ createBlocks
 -- Instructions
 -- ------------
 
+fresh :: forall a. Elt a => CodeGen (IR a)
+fresh = undefined
+
 -- | Generate a fresh (un)name.
 --
 freshName :: CodeGen (Name a)
@@ -229,8 +236,11 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- computed, and return the operand (LocalReference) that can be used to later
 -- refer to it.
 --
-instr :: Instruction a -> CodeGen (Operand a)
-instr ins = do
+instr :: Instruction a -> CodeGen (IR a)
+instr ins = ir (typeOf ins) <$> instr' ins
+
+instr' :: Instruction a -> CodeGen (Operand a)
+instr' ins = do
   name  <- freshName
   state $ \s ->
     case Seq.viewr (blockChain s) of
@@ -268,24 +278,38 @@ br target = terminate $ Br (blockLabel target)
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: Operand Bool -> Block -> Block -> CodeGen Block
-cbr cond t f = terminate $ CondBr cond (blockLabel t) (blockLabel f)
+cbr :: IR Bool -> Block -> Block -> CodeGen Block
+cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
 
 -- | Add a phi node to the top of the current block
 --
-phi :: [(Operand a, Block)] -> CodeGen (Operand a)
+phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
 phi incoming = do
-  crit  <- freshName
+  crit  <- fresh
   block <- state $ \s -> case Seq.viewr (blockChain s) of
                            Seq.EmptyR -> $internalError "phi" "empty block chain"
                            _ Seq.:> b -> ( b, s )
   phi' block crit incoming
 
-phi' :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
-phi' target crit incoming =
+phi' :: forall a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen (IR a)
+phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b) | (IR o, b) <- incoming ]
+  where
+    go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen (Operands t)
+    go UnitTuple OP_Unit _
+      = return OP_Unit
+    go (PairTuple t2 t1) (OP_Pair n2 n1) ops
+      = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- ops ]
+                <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- ops ]
+    go (SingleTuple _)   (OP_Scalar n)   ops
+      | LocalReference _ v <- n = OP_Scalar <$> phi1 target v [ (x, b) | (OP_Scalar x, b) <- ops ]
+      | otherwise               = $internalError "phi" "expected critical variable to be local reference"
+
+
+phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
+phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
-      update b  = b { instructions = downcast (crit := Phi ty [ (op,blockLabel) | (op,Block{..}) <- incoming ]) Seq.<| instructions b }
+      update b  = b { instructions = downcast (crit := Phi ty [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
       ty        = case incoming of
                     []        -> $internalError "phi" "no incoming values specified"
                     (o,_):_   -> typeOf o

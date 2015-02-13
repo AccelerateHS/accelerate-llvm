@@ -49,8 +49,8 @@ readArrayData volatile ix = read
 
 readArrayPrim :: ScalarType e -> Volatile -> Operand e -> Operand Int -> CodeGen (Operand e)
 readArrayPrim t volatile arr i = do
-  ptr   <- instr $ GetElementPtr arr [i]
-  v     <- instr $ Load t volatile ptr
+  ptr   <- instr' $ GetElementPtr arr [i]
+  v     <- instr' $ Load t volatile ptr
   return v
 
 
@@ -71,7 +71,7 @@ writeArrayData volatile ix = write
 
 writeArrayPrim :: Volatile -> Operand e -> Operand Int -> Operand e -> CodeGen ()
 writeArrayPrim volatile arr i v = do
-  ptr   <- instr $ GetElementPtr arr [i]
-  _     <- instr $ Store volatile ptr v
+  ptr   <- instr' $ GetElementPtr arr [i]
+  _     <- instr' $ Store volatile ptr v
   return ()
 

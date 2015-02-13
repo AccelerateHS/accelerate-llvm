@@ -34,9 +34,8 @@ import LLVM.General.AST.Type.Operand
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 hiding ( cbr, phi, intrinsic )
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Monad       as M
 
 
 -- Operations from Num
@@ -190,16 +189,16 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
 isNaN t (op t -> x) = do
-  name <- M.intrinsic "isnan"
+  name <- intrinsic "isnan"
   r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body scalarType name)) [NoUnwind, ReadOnly]
-  return $ ir scalarType r
+  return r
 
 
 -- Operators from RealFrac
 -- -----------------------
 
 truncate :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
-truncate tf ti (op tf -> x) = ir ti <$> instr (FPToInt tf ti x)
+truncate tf ti (op tf -> x) = instr (FPToInt tf ti x)
 
 round :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
 round tf ti x = do
@@ -221,7 +220,7 @@ ceiling tf ti x = do
 -- ---------------------------------
 
 cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
-cmp p dict (op dict -> x) (op dict -> y) = ir scalarType <$> instr (Cmp dict p x y)
+cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
 lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 lt = cmp LT
@@ -259,14 +258,14 @@ min ty x y
 
 land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 land (op scalarType -> x) (op scalarType -> y)
-  = ir scalarType <$> instr (LAnd x y)
+  = instr (LAnd x y)
 
 lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 lor (op scalarType -> x) (op scalarType -> y)
-  = ir scalarType <$> instr (LOr x y)
+  = instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen (IR Bool)
-lnot (op scalarType -> x) = ir scalarType <$> instr (LNot x)
+lnot (op scalarType -> x) = instr (LNot x)
 
 
 -- Type conversions
@@ -284,7 +283,7 @@ boolToInt = error "boolToInt"
 fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
 fromIntegral i1 n (op i1 -> x) =
   case n of
-    FloatingNumType f -> ir n <$> instr (IntToFP i1 f x)
+    FloatingNumType f -> instr (IntToFP i1 f x)
 
     IntegralNumType (i2 :: IntegralType b)
       | IntegralDict <- integralDict i1
@@ -294,28 +293,16 @@ fromIntegral i1 n (op i1 -> x) =
              bits_b = finiteBitSize (undefined::b)
          in
          case Ord.compare bits_a bits_b of
-           Ord.EQ -> ir n <$> instr (BitCast (NumScalarType n) x)
-           Ord.GT -> ir n <$> instr (Trunc i1 i2 x)
-           Ord.LT -> ir n <$> instr (Ext i1 i2 x)
+           Ord.EQ -> instr (BitCast (NumScalarType n) x)
+           Ord.GT -> instr (Trunc i1 i2 x)
+           Ord.LT -> instr (Ext i1 i2 x)
 
 
 -- Utility functions
 -- -----------------
 
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
-binop f dict (op dict -> x) (op dict -> y) = ir dict <$> instr (f dict x y)
-
-cbr :: IR Bool -> Block -> Block -> CodeGen Block
-cbr p = M.cbr (op nonNumType p)
-
-phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
-phi incoming = IR <$> go (eltType (undefined::a)) [ (o, b) | (IR o, b) <- incoming ]
-  where
-    go :: TupleType t -> [(Operands t, Block)] -> CodeGen (Operands t)
-    go UnitTuple         _   = return OP_Unit
-    go (SingleTuple _)   ops = OP_Scalar <$> M.phi [ (x, b) | (OP_Scalar x, b) <- ops ]
-    go (PairTuple t1 t2) ops = OP_Pair   <$> go t1 [ (x, b) | (OP_Pair x _, b) <- ops ]
-                                         <*> go t2 [ (y, b) | (OP_Pair _ y, b) <- ops ]
+binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
 ifThenElse
@@ -357,24 +344,25 @@ mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
 mathf n t (op t -> x) = do
   let st  = NumScalarType (FloatingNumType t)
   --
-  name <- intrinsic t n
+  name <- lm t n
   r    <- call (Lam st x (Body st name)) [NoUnwind, ReadOnly]
-  return $ ir t r
+  return r
 
 
 mathf' :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
 mathf' n t (op t -> x) (op t -> y) = do
   let st = NumScalarType (FloatingNumType t)
   --
-  name <- intrinsic t n
+  name <- lm t n
   r    <- call (Lam st x (Lam st y (Body st name))) [NoUnwind, ReadOnly]
-  return $ ir t r
+  return r
 
-intrinsic :: FloatingType t -> String -> CodeGen Label
-intrinsic t n =
-  M.intrinsic $ case t of
-                  TypeFloat{}   -> n++"f"
-                  TypeCFloat{}  -> n++"f"
-                  TypeDouble{}  -> n
-                  TypeCDouble{} -> n
+lm :: FloatingType t -> String -> CodeGen Label
+lm t n
+  = intrinsic
+  $ case t of
+      TypeFloat{}   -> n++"f"
+      TypeCFloat{}  -> n++"f"
+      TypeDouble{}  -> n
+      TypeCDouble{} -> n
 

@@ -135,7 +135,7 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 -- | Call a global function. The function declaration is inserted into the
 -- symbol table.
 --
-call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (Operand t)
+call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (IR t)
 call f attrs = do
   let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs }
   --
