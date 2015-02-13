@@ -85,10 +85,10 @@ compileForNativeTarget acc aenv = do
   -- 'withContext'.
   --
   fun <- liftIO . startFunction $ \loop ->
-    withContext                          $ \ctx     ->
+    withContext                           $ \ctx     ->
     runExcept $ withModuleFromAST ctx ast $ \mdl     ->
     runExcept $ withNativeTargetMachine   $ \machine ->
-      withTargetLibraryInfo triple       $ \libinfo -> do
+      withTargetLibraryInfo triple        $ \libinfo -> do
         optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
         Debug.when Debug.verbose $ do
