@@ -330,8 +330,7 @@ intrinsic :: String -> CodeGen Label
 intrinsic key =
   state $ \s ->
     let name = HashMap.lookupDefault (Label key) key (intrinsicTable s)
-    in  trace (show (HashMap.toList (intrinsicTable s)))
-          $ (name, s)
+    in  (name, s)
 
 
 
