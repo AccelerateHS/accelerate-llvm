@@ -93,12 +93,16 @@ complement :: IntegralType a -> IR a -> CodeGen (IR a)
 complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (-1)))
 
 shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
-shiftL t (op t -> x) (op integralType -> i) = ir t <$> instr (ShiftL t x i)
+shiftL t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  binop ShiftL t x i'
 
 shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
-shiftR t (op t -> x) (op integralType -> i)
-  | signed t  = ir t <$> instr (ShiftRA t x i)
-  | otherwise = ir t <$> instr (ShiftRL t x i)
+shiftR t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  if signed t
+     then binop ShiftRA t x i'
+     else binop ShiftRL t x i'
 
 rotateL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
 rotateL = error "rotateL"

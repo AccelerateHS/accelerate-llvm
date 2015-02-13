@@ -97,20 +97,20 @@ data Instruction a where
   --
   ShiftL        :: IntegralType a
                 -> Operand a
-                -> Operand Int
+                -> Operand a
                 -> Instruction a
 
   -- | <http://llvm.org/docs/LangRef.html#lshr-instruction>
   --
   ShiftRL       :: IntegralType a
                 -> Operand a
-                -> Operand Int
+                -> Operand a
                 -> Instruction a
 
   -- | <http://llvm.org/docs/LangRef.html#ashr-instruction>
   ShiftRA       :: IntegralType a
                 -> Operand a
-                -> Operand Int
+                -> Operand a
                 -> Instruction a
 
   -- Bitwise Binary Operations
