@@ -326,6 +326,10 @@ instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t
   downcast (NonNumScalarType t) = downcast t
 
+instance Downcast (BoundedType t) L.Type where
+  downcast (IntegralBoundedType t) = downcast t
+  downcast (NonNumBoundedType t)   = downcast t
+
 instance Downcast (NumType a) L.Type where
   downcast (IntegralNumType t) = downcast t
   downcast (FloatingNumType t) = downcast t

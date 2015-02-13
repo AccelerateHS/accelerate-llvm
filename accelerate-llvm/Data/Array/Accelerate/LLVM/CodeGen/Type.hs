@@ -33,6 +33,10 @@ instance IsSigned ScalarType where
   signed (NumScalarType t)    = signed t
   signed (NonNumScalarType t) = signed t
 
+instance IsSigned BoundedType where
+  signed (IntegralBoundedType t) = signed t
+  signed (NonNumBoundedType t)   = signed t
+
 instance IsSigned NumType where
   signed (IntegralNumType t) = signed t
   signed (FloatingNumType t) = signed t
@@ -72,28 +76,32 @@ class TypeOf op where
 instance TypeOf Instruction where
   typeOf ins =
     case ins of
-      Add t _ _         -> NumScalarType t
-      Sub t _ _         -> NumScalarType t
-      Mul t _ _         -> NumScalarType t
-      Quot t _ _        -> NumScalarType (IntegralNumType t)
-      Rem t _ _         -> NumScalarType (IntegralNumType t)
-      Div t _ _         -> NumScalarType (FloatingNumType t)
-      ShiftL t _ _      -> NumScalarType (IntegralNumType t)
-      ShiftRL t _ _     -> NumScalarType (IntegralNumType t)
-      ShiftRA t _ _     -> NumScalarType (IntegralNumType t)
-      BAnd t _ _        -> NumScalarType (IntegralNumType t)
-      BOr t _ _         -> NumScalarType (IntegralNumType t)
-      BXor t _ _        -> NumScalarType (IntegralNumType t)
+      Add _ x _         -> typeOf x
+      Sub _ x _         -> typeOf x
+      Mul _ x _         -> typeOf x
+      Quot _ x _        -> typeOf x
+      Rem _ x _         -> typeOf x
+      Div _ x _         -> typeOf x
+      ShiftL _ x _      -> typeOf x
+      ShiftRL _ x _     -> typeOf x
+      ShiftRA _ x _     -> typeOf x
+      BAnd _ x _        -> typeOf x
+      BOr _ x _         -> typeOf x
+      BXor _ x _        -> typeOf x
       LAnd _ _          -> scalarType
       LOr _ _           -> scalarType
       LNot _            -> scalarType
       Load t _ _        -> t
 --      Store _ _ x       -> typeOf x
 --      GetElementPtr x _ -> typeOf x
-      Trunc _ t _       -> NumScalarType (IntegralNumType t)
       FTrunc _ t _      -> NumScalarType (FloatingNumType t)
-      Ext _ t _         -> NumScalarType (IntegralNumType t)
       FExt _ t _        -> NumScalarType (FloatingNumType t)
+      Trunc _ t _       -> case t of
+                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
+                             NonNumBoundedType n   -> NonNumScalarType n
+      Ext _ t _         -> case t of
+                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
+                             NonNumBoundedType n   -> NonNumScalarType n
       FPToInt _ t _     -> NumScalarType (IntegralNumType t)
       IntToFP _ t _     -> NumScalarType (FloatingNumType t)
       BitCast t _       -> t

@@ -189,8 +189,8 @@ data Instruction a where
 
   -- | <http://llvm.org/docs/LangRef.html#trunc-to-instruction>
   --
-  Trunc         :: IntegralType a       -- req: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
-                -> IntegralType b       -- Integral OR Char OR Bool ):
+  Trunc         :: BoundedType a        -- req: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
+                -> BoundedType b
                 -> Operand a
                 -> Instruction b
 
@@ -205,8 +205,8 @@ data Instruction a where
   -- | <http://llvm.org/docs/LangRef.html#zext-to-instruction>
   --   <http://llvm.org/docs/LangRef.html#sext-to-instruction>
   --
-  Ext           :: IntegralType a       -- Req: (BitSize a < BitSize b)
-                -> IntegralType b       -- Integral OR Char OR Bool ):
+  Ext           :: BoundedType a        -- Req: (BitSize a < BitSize b)
+                -> BoundedType b
                 -> Operand a
                 -> Instruction b
 

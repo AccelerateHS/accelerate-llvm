@@ -272,13 +272,21 @@ lnot (op scalarType -> x) = instr (LNot x)
 -- ----------------
 
 ord :: IR Char -> CodeGen (IR Int)
-ord = error "ord"
+ord (op scalarType -> x) =
+  case finiteBitSize (undefined :: Int) of
+    32 -> instr (BitCast scalarType x)
+    64 -> instr (Trunc boundedType boundedType x)
+    _  -> $internalError "ord" "I don't know what architecture I am"
 
 chr :: IR Int -> CodeGen (IR Char)
-chr = error "chr"
+chr (op integralType -> x) =
+  case finiteBitSize (undefined :: Int) of
+    32 -> instr (BitCast scalarType x)
+    64 -> instr (Ext boundedType boundedType x)
+    _  -> $internalError "chr" "I don't know what architecture I am"
 
 boolToInt :: IR Bool -> CodeGen (IR Int)
-boolToInt = error "boolToInt"
+boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
 
 fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
 fromIntegral i1 n (op i1 -> x) =
@@ -294,8 +302,8 @@ fromIntegral i1 n (op i1 -> x) =
          in
          case Ord.compare bits_a bits_b of
            Ord.EQ -> instr (BitCast (NumScalarType n) x)
-           Ord.GT -> instr (Trunc i1 i2 x)
-           Ord.LT -> instr (Ext i1 i2 x)
+           Ord.GT -> instr (Trunc (IntegralBoundedType i1) (IntegralBoundedType i2) x)
+           Ord.LT -> instr (Ext (IntegralBoundedType i1) (IntegralBoundedType i2) x)
 
 
 -- Utility functions
