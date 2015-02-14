@@ -145,9 +145,9 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- in bounds??
   downcast (Trunc _ t x)        = L.Trunc (downcast x) (downcast t) md
   downcast (FTrunc _ t x)       = L.FPTrunc (downcast x) (downcast t) md
-  downcast (Ext _ t x)
-    | signed t                  = L.SExt (downcast x) (downcast t) md
-    | otherwise                 = L.ZExt (downcast x) (downcast t) md
+  downcast (Ext t t' x)
+    | signed t                  = L.SExt (downcast x) (downcast t') md
+    | otherwise                 = L.ZExt (downcast x) (downcast t') md
   downcast (FExt _ t x)         = L.FPExt (downcast x) (downcast t) md
   downcast (FPToInt _ t x)
     | signed t                  = L.FPToSI (downcast x) (downcast t) md
