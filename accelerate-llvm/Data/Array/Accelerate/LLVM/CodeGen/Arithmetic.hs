@@ -107,6 +107,7 @@ mod t x y
        ifTrue   <- newBlock "mod.true"
        ifEnd    <- newBlock "mod.end"
 
+       _        <- beginBlock "mod.entry"
        r        <- rem t x y
        c1       <- join $ land <$> gt st x _0 <*> lt st y _0
        _        <- cbr c1 ifTrue ifOr
@@ -116,23 +117,13 @@ mod t x y
        false    <- cbr c2 ifTrue ifEnd
 
        setBlock ifTrue
-       c3       <- eq st r _0
+       c3       <- neq st r _0
        s        <- add nt r y
-       v        <- instr $ Select st (op scalarType c3) (op t _0) (op t s)
+       v        <- instr $ Select st (op scalarType c3) (op t s) (op t _0)
        true     <- br ifEnd
 
        setBlock ifEnd
        phi [(v,true), (r,false)]
-
-{--
-       if join $ lor <$> (join $ land <$> gt st x _0 <*> lt st y _0)
-                     <*> (join $ land <$> lt st x _0 <*> gt st y _0)
-          then
-               if neq st r _0
-                  then add nt r y
-                  else return _0
-          else return r
---}
 
 
 divMod :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
