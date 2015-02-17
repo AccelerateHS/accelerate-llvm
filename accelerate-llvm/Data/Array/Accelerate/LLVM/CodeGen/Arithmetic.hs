@@ -147,17 +147,39 @@ shiftL t x i = do
   binop ShiftL t x i'
 
 shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
-shiftR t x i = do
-  i' <- fromIntegral integralType (IntegralNumType t) i
-  case signed t of                      -- we are using rebindable syntax for if-then-else
-    True  -> binop ShiftRA t x i'
-    False -> binop ShiftRL t x i'
+shiftR t
+  | signed t  = shiftRA t
+  | otherwise = shiftRL t
 
-rotateL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
-rotateL = error "rotateL"
+shiftRL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRL t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  r  <- binop ShiftRL t x i'
+  return r
+
+shiftRA :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRA t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  r  <- binop ShiftRA t x i'
+  return r
+
+rotateL :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+rotateL t x i
+  | IntegralDict <- integralDict t
+  = do let wsib = finiteBitSize (undefined::a)
+       i1 <- band integralType i (ir integralType (integral integralType (wsib P.- 1)))
+       i2 <- sub numType (ir numType (integral integralType wsib)) i1
+       --
+       a  <- shiftL t x i1
+       b  <- shiftRL t x i2
+       c  <- bor t a b
+       return c
 
 rotateR :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
-rotateR = error "rotateR"
+rotateR t x i = do
+  i' <- negate numType i
+  r  <- rotateL t x i'
+  return r
 
 
 -- Operators from Fractional and Floating
