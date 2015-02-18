@@ -320,7 +320,11 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
       | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
       = do
            i'    <- A.quot integralType i (IR sz)
-           IR r  <- A.rem  integralType i (IR sz)
+           -- If we assume the index is in range, there is no point computing
+           -- the remainder of the highest dimension since (i < sz) must hold
+           IR r  <- case matchTupleType tsh (eltType (undefined::Z)) of
+                      Just REFL -> return i     -- TODO: in debug mode assert (i < sz)
+                      Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
 
