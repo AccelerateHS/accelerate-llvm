@@ -56,8 +56,8 @@ import qualified LLVM.General.AST.Type                          as L
 -- represented only at the value level. We use the type-level information to
 -- generate the appropriate value-level types.
 --
-class Downcast a b where
-  downcast :: a -> b
+class Downcast typed untyped where
+  downcast :: typed -> untyped
 
 instance Downcast a a' => Downcast [a] [a'] where
   downcast = map downcast
