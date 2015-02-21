@@ -12,6 +12,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Type
   where
 
+import Data.Maybe
+
 import Data.Array.Accelerate.Type
 
 import LLVM.General.AST.Type.Constant
@@ -112,7 +114,7 @@ instance TypeOf Instruction where
         where
           funResultType :: GlobalFunction args t -> ScalarType t
           funResultType (Lam _ _ l) = funResultType l
-          funResultType (Body t _)  = t
+          funResultType (Body t _)  = fromJust t
 
 instance TypeOf Operand where
   typeOf op =
@@ -124,5 +126,5 @@ instance TypeOf Constant where
   typeOf c =
     case c of
       ScalarConstant t _        -> t
-      GlobalReference t _       -> t
+      GlobalReference t _       -> fromJust t
 

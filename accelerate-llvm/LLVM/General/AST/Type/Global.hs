@@ -45,8 +45,8 @@ data FunctionAttribute
 -- pointers to functions and nothing that returns void.
 --
 data GlobalFunction args t where
-  Body :: ScalarType r -> Label                              -> GlobalFunction '[]         r
-  Lam  :: ScalarType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
+  Body :: Maybe (ScalarType r) -> Label                              -> GlobalFunction '[]         r
+  Lam  :: ScalarType a         -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
 
 data HList (l :: [*]) where
   HNil  ::                 HList '[]

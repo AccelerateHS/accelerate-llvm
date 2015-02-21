@@ -57,7 +57,7 @@ local :: ScalarType a -> Name a -> IR a
 local t x = ir t (LocalReference t x)
 
 global :: ScalarType a -> Name a -> IR a
-global t x = ir t (ConstantOperand (GlobalReference t x))
+global t x = ir t (ConstantOperand (GlobalReference (Just t) x))
 
 
 -- Generating names for things

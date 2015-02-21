@@ -322,6 +322,10 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
 -- Data.Array.Accelerate.Type
 -- --------------------------
 
+instance Downcast (dict a) L.Type => Downcast (Maybe (dict a)) L.Type where
+  downcast (Just t) = downcast t
+  downcast Nothing  = L.VoidType
+
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t
   downcast (NonNumScalarType t) = downcast t

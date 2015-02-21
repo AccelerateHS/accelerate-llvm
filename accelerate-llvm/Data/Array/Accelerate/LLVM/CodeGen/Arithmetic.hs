@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Char, Bool(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, Char, Bool(..), Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
 import Data.Bits                                                ( finiteBitSize )
 import Data.String
 import Control.Applicative
@@ -72,8 +72,8 @@ abs t x =
       | IntegralDict <- integralDict i ->
           let t' = NumScalarType t in
           case finiteBitSize (undefined :: a) of
-            64 -> call (Lam t' (op t x) (Body t' "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam t' (op t x) (Body t' "abs"))   [NoUnwind, ReadNone]
+            64 -> call (Lam t' (op t x) (Body (Just t') "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam t' (op t x) (Body (Just t') "abs"))   [NoUnwind, ReadNone]
 
 signum :: NumType a -> IR a -> CodeGen (IR a)
 signum = error "signum"
@@ -256,7 +256,7 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
 isNaN t (op t -> x) = do
   name <- intrinsic "isnan"
-  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body scalarType name)) [NoUnwind, ReadOnly]
+  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body (Just scalarType) name)) [NoUnwind, ReadOnly]
   return r
 
 
@@ -419,7 +419,7 @@ mathf n t (op t -> x) = do
   let st  = NumScalarType (FloatingNumType t)
   --
   name <- lm t n
-  r    <- call (Lam st x (Body st name)) [NoUnwind, ReadOnly]
+  r    <- call (Lam st x (Body (Just st) name)) [NoUnwind, ReadOnly]
   return r
 
 
@@ -428,7 +428,7 @@ mathf' n t (op t -> x) (op t -> y) = do
   let st = NumScalarType (FloatingNumType t)
   --
   name <- lm t n
-  r    <- call (Lam st x (Lam st y (Body st name))) [NoUnwind, ReadOnly]
+  r    <- call (Lam st x (Lam st y (Body (Just st) name))) [NoUnwind, ReadOnly]
   return r
 
 lm :: FloatingType t -> String -> CodeGen Label

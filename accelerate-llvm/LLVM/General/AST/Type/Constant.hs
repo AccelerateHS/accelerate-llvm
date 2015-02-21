@@ -33,7 +33,7 @@ data Constant a where
                         -> a
                         -> Constant a
 
-  GlobalReference       :: ScalarType a
+  GlobalReference       :: Maybe (ScalarType a)
                         -> Name a
                         -> Constant a
 
