@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
@@ -43,6 +42,7 @@ mkGenerate aenv apply =
       paramEnv                  = envParam aenv
   in
   makeOpenAcc "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+
     imapFromTo start end $ \i -> do
       ix <- indexOfInt (irArrayShape arrOut) i  -- convert to multidimensional index
       r  <- app1 apply ix                       -- apply generator function
