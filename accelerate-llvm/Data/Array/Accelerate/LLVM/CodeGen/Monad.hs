@@ -230,7 +230,7 @@ fresh = IR <$> go (eltType (undefined::a))
     go :: TupleType t -> CodeGen (Operands t)
     go UnitTuple         = return OP_Unit
     go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (SingleTuple t)   = OP_Scalar . LocalReference t <$> freshName
+    go (SingleTuple t)   = pack t . LocalReference t <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -304,11 +304,15 @@ phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b)
     go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen (Operands t)
     go UnitTuple OP_Unit _
       = return OP_Unit
-    go (PairTuple t2 t1) (OP_Pair n2 n1) ops
-      = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- ops ]
-                <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- ops ]
-    go (SingleTuple _)   (OP_Scalar n)   ops
-      | LocalReference _ v <- n = OP_Scalar <$> phi1 target v [ (x, b) | (OP_Scalar x, b) <- ops ]
+    go (PairTuple t2 t1) (OP_Pair n2 n1) inc
+      = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- inc ]
+                <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
+    go (SingleTuple t) op inc
+      | LocalReference _ v <- unpack t op = pack t <$> phi1 target v [ (unpack t x, b) | (x, b) <- inc ]
+      | otherwise                         = $internalError "phi" "expected critical variable to be local reference"
+
+--    go (SingleTuple _)   (OP_Scalar n)   ops
+--      | LocalReference _ v <- n = OP_Scalar <$> phi1 target v [ (x, b) | (OP_Scalar x, b) <- ops ]
       | otherwise               = $internalError "phi" "expected critical variable to be local reference"
 
 
