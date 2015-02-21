@@ -113,13 +113,8 @@ stream f arrs = map go arrs
 -- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
 --
 config :: Phase
-config =  Phase
-  { recoverAccSharing      = True
-  , recoverExpSharing      = True
-  , floatOutAccFromExp     = True
-  , enableAccFusion        = True
-  , convertOffsetOfSegment = numCapabilities > 1
-  , recoverSeqSharing      = True
+config =  phases
+  { convertOffsetOfSegment = numCapabilities > 1
   }
 
 
