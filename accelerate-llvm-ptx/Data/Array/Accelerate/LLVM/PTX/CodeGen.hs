@@ -16,15 +16,15 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen
 
 -- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
--- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
--- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 -- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
---  map           = mkMap
---  generate      = mkGenerate
+  map _         = mkMap
+  generate _    = mkGenerate
 --  transform     = mkTransform
 --  fold          = mkFold
 --  fold1         = mkFold1

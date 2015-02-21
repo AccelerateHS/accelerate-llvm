@@ -33,7 +33,7 @@ import qualified LLVM.General.AST.Name                          as AST
 
 -- accelerate
 import LLVM.General.AST.Type.Name                               ( Label(..) )
-import LLVM.General.AST.Type.Instruction                        ( Terminator(..) )
+import LLVM.General.AST.Type.Terminator                         ( Terminator(..) )
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
