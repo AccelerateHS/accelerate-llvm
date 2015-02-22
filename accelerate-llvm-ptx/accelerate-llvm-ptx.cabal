@@ -98,7 +98,7 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , mtl                           >= 2.0
+        , mtl                           >= 2.2.1
         , pretty                        >= 1.1
         , time                          >= 1.4
         , unordered-containers          >= 0.2

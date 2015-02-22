@@ -91,7 +91,7 @@ Library
         , libffi                        >= 0.1
         , llvm-general                  >= 3.2
         , llvm-general-pure             >= 3.2
-        , mtl                           >= 2.0
+        , mtl                           >= 2.2.1
         , time                          >= 1.4
 
   default-language:
