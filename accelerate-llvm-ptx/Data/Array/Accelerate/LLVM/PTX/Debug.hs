@@ -30,22 +30,6 @@ import Text.Printf
 import GHC.Float
 
 
--- | Conditional execution of a monadic debugging expression
---
-when :: Mode -> IO () -> IO ()
-when f s = do
-  yes <- queryFlag f
-  if yes then s
-         else return ()
-
--- | The opposite of 'when'
---
-unless :: Mode -> IO () -> IO ()
-unless f s = do
-  yes <- queryFlag f
-  if yes then return () else s
-
-
 -- | Execute an action and time the results. The second argument specifies how
 -- to format the output string given elapsed GPU and CPU time respectively
 --

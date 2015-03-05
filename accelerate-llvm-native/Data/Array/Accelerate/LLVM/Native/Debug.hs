@@ -25,22 +25,6 @@ import System.CPUTime
 import Text.Printf
 
 
--- | Conditional execution of a monadic debugging expression
---
-when :: Mode -> IO () -> IO ()
-when f s = do
-  yes <- queryFlag f
-  if yes then s
-         else return ()
-
--- | The opposite of 'when'
---
-unless :: Mode -> IO () -> IO ()
-unless f s = do
-  yes <- queryFlag f
-  if yes then return () else s
-
-
 -- | Execute an action and time the results.
 timed :: (Flags :-> Bool)
       -> (Double -> Double -> String)
