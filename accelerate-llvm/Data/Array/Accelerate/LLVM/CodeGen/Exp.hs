@@ -203,6 +203,9 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple NilTup
           = return OP_Unit
         go (PairTuple ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
+          -- We must assert that the reified type 'tb' of 'b' is actually
+          -- equivalent to the type of 'b'. This can not fail, but is necessary
+          -- because 'tb' observes the representation type of surface type 'b'.
           | Just REFL <- matchTupleType tb (eltType (undefined::b))
           = do a'    <- go ta a
                IR b' <- cvtE b
