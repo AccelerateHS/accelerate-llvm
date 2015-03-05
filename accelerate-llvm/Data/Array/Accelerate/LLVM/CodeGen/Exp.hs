@@ -202,13 +202,11 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
         go UnitTuple NilTup
           = return OP_Unit
-
         go (PairTuple ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
           | Just REFL <- matchTupleType tb (eltType (undefined::b))
           = do a'    <- go ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
-
         go _ _ = $internalError "cvtT" "impossible evaluation"
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
@@ -229,15 +227,15 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go :: TupleType t -> Operands t -> CodeGen (IR Int)
         go UnitTuple OP_Unit
           = return $ IR (constant (eltType (undefined :: Int)) 1)
-        go (SingleTuple t) (OP_Scalar i)
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
-          = return $ ir t i
         go (PairTuple tsh t) (OP_Pair sh sz)
           | Just REFL <- matchTupleType t (eltType (undefined::Int))
           = do
                a <- go tsh sh
                b <- A.mul numType a (IR sz)
                return b
+        go (SingleTuple t) (op' t -> i)
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          = return $ ir t i
         go _ _
           = $internalError "shapeSize" "expected shape with Int components"
 
@@ -287,10 +285,6 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
     cvt UnitTuple OP_Unit OP_Unit
       = return $ IR (constant (eltType (undefined :: Int)) 0)
 
-    cvt (SingleTuple t) (OP_Scalar _) (OP_Scalar i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
-      = return $ ir t i
-
     cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
       | Just REFL <- matchTupleType t (eltType (undefined::Int))
       = do
@@ -298,6 +292,10 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
            b <- A.mul numType a (IR sz)
            c <- A.add numType b (IR i)
            return c
+
+    cvt (SingleTuple t) _ (op' t -> i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return $ ir t i
 
     cvt _ _ _
       = $internalError "intOfIndex" "expected shape with Int components"
@@ -312,10 +310,6 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
     cvt UnitTuple OP_Unit _
       = return OP_Unit
 
-    cvt (SingleTuple t) (OP_Scalar _) (IR i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
-      = return i
-
     cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
       | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
       = do
@@ -327,6 +321,10 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
                       Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
+
+    cvt (SingleTuple t) _ (IR i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return i
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"

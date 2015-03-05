@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Downcast (
 
 ) where
 
-import Prelude                                                  hiding ( Ordering(..) )
+import Prelude                                                  hiding ( Ordering(..), const )
 import Data.Bits
 import Foreign.C.Types
 

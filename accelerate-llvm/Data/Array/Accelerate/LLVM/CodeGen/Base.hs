@@ -122,7 +122,7 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
     go UnitTuple         i = (i,   OP_Unit)
-    go (SingleTuple t')  i = (i+1, OP_Scalar $ f t' i)
+    go (SingleTuple t')  i = (i+1, ir' t' $ f t' i)
     go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
                                  (i2, r2) = go t2 i1
                              in

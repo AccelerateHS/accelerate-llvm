@@ -68,33 +68,37 @@ data instance Operands CUChar   = OP_CUChar  (Operand CUChar)
 data instance Operands (a,b)    = OP_Pair    (Operands a) (Operands b)
 
 
--- TLM TODO:
---   Just use two classes, with IROP having the same members and type as at the
---   moment, and the OPS class just doing pack/unpack. Better names would be
---   good, but at least we should be able to make IROP simpler and not have to
---   dispatch on every type case.
---
-
 -- | Given some evidence that 'IR a' represents a scalar type, it can be
 -- converted between the IR and Operand data types.
 --
 class IROP dict where
   op :: dict a -> IR a -> Operand a
   ir :: dict a -> Operand a -> IR a
+  --
+  ir' :: dict a -> Operand a -> Operands a
+  op' :: dict a -> Operands a -> Operand a
 
 instance IROP ScalarType where
   op (NumScalarType t)    = op t
   op (NonNumScalarType t) = op t
-  --
   ir (NumScalarType t)    = ir t
   ir (NonNumScalarType t) = ir t
+  --
+  op' (NumScalarType t)    = op' t
+  op' (NonNumScalarType t) = op' t
+  ir' (NumScalarType t)    = ir' t
+  ir' (NonNumScalarType t) = ir' t
 
 instance IROP NumType where
   op (IntegralNumType t) = op t
   op (FloatingNumType t) = op t
-  --
   ir (IntegralNumType t) = ir t
   ir (FloatingNumType t) = ir t
+  --
+  op' (IntegralNumType t) = op' t
+  op' (FloatingNumType t) = op' t
+  ir' (IntegralNumType t) = ir' t
+  ir' (FloatingNumType t) = ir' t
 
 instance IROP IntegralType where
   op (TypeInt     _) (IR (OP_Int     x)) = x
@@ -134,6 +138,44 @@ instance IROP IntegralType where
   ir (TypeCULong  _) = IR . OP_CULong
   ir (TypeCLLong  _) = IR . OP_CLLong
   ir (TypeCULLong _) = IR . OP_CULLong
+  --
+  op' (TypeInt     _) (OP_Int     x) = x
+  op' (TypeInt8    _) (OP_Int8    x) = x
+  op' (TypeInt16   _) (OP_Int16   x) = x
+  op' (TypeInt32   _) (OP_Int32   x) = x
+  op' (TypeInt64   _) (OP_Int64   x) = x
+  op' (TypeWord    _) (OP_Word    x) = x
+  op' (TypeWord8   _) (OP_Word8   x) = x
+  op' (TypeWord16  _) (OP_Word16  x) = x
+  op' (TypeWord32  _) (OP_Word32  x) = x
+  op' (TypeWord64  _) (OP_Word64  x) = x
+  op' (TypeCShort  _) (OP_CShort  x) = x
+  op' (TypeCUShort _) (OP_CUShort x) = x
+  op' (TypeCInt    _) (OP_CInt    x) = x
+  op' (TypeCUInt   _) (OP_CUInt   x) = x
+  op' (TypeCLong   _) (OP_CLong   x) = x
+  op' (TypeCULong  _) (OP_CULong  x) = x
+  op' (TypeCLLong  _) (OP_CLLong  x) = x
+  op' (TypeCULLong _) (OP_CULLong x) = x
+  --
+  ir' (TypeInt     _) = OP_Int
+  ir' (TypeInt8    _) = OP_Int8
+  ir' (TypeInt16   _) = OP_Int16
+  ir' (TypeInt32   _) = OP_Int32
+  ir' (TypeInt64   _) = OP_Int64
+  ir' (TypeWord    _) = OP_Word
+  ir' (TypeWord8   _) = OP_Word8
+  ir' (TypeWord16  _) = OP_Word16
+  ir' (TypeWord32  _) = OP_Word32
+  ir' (TypeWord64  _) = OP_Word64
+  ir' (TypeCShort  _) = OP_CShort
+  ir' (TypeCUShort _) = OP_CUShort
+  ir' (TypeCInt    _) = OP_CInt
+  ir' (TypeCUInt   _) = OP_CUInt
+  ir' (TypeCLong   _) = OP_CLong
+  ir' (TypeCULong  _) = OP_CULong
+  ir' (TypeCLLong  _) = OP_CLLong
+  ir' (TypeCULLong _) = OP_CULLong
 
 instance IROP FloatingType where
   op (TypeFloat   _) (IR (OP_Float   x)) = x
@@ -145,6 +187,16 @@ instance IROP FloatingType where
   ir (TypeDouble  _) = IR . OP_Double
   ir (TypeCFloat  _) = IR . OP_CFloat
   ir (TypeCDouble _) = IR . OP_CDouble
+  --
+  op' (TypeFloat   _) (OP_Float   x) = x
+  op' (TypeDouble  _) (OP_Double  x) = x
+  op' (TypeCFloat  _) (OP_CFloat  x) = x
+  op' (TypeCDouble _) (OP_CDouble x) = x
+  --
+  ir' (TypeFloat   _) = OP_Float
+  ir' (TypeDouble  _) = OP_Double
+  ir' (TypeCFloat  _) = OP_CFloat
+  ir' (TypeCDouble _) = OP_CDouble
 
 instance IROP NonNumType where
   op (TypeBool   _) (IR (OP_Bool   x)) = x
@@ -158,90 +210,16 @@ instance IROP NonNumType where
   ir (TypeCChar  _) = IR . OP_CChar
   ir (TypeCSChar _) = IR . OP_CSChar
   ir (TypeCUChar _) = IR . OP_CUChar
-
-
-{--
--- | Given some evidence that 'a' represents a scalar type, it can be
--- converted to and from the 'Operands' data family.
---
-class OPS dict where
-  unpack :: dict a -> Operands a -> Operand a
-  pack   :: dict a -> Operand a -> Operands a
-
-instance OPS ScalarType where
-  unpack (NumScalarType t)    = unpack t
-  unpack (NonNumScalarType t) = unpack t
   --
-  pack (NumScalarType t)    = pack t
-  pack (NonNumScalarType t) = pack t
-
-instance OPS NumType where
-  unpack (IntegralNumType t) = unpack t
-  unpack (FloatingNumType t) = unpack t
+  op' (TypeBool   _) (OP_Bool   x) = x
+  op' (TypeChar   _) (OP_Char   x) = x
+  op' (TypeCChar  _) (OP_CChar  x) = x
+  op' (TypeCSChar _) (OP_CSChar x) = x
+  op' (TypeCUChar _) (OP_CUChar x) = x
   --
-  pack (IntegralNumType t) = pack t
-  pack (FloatingNumType t) = pack t
+  ir' (TypeBool   _) = OP_Bool
+  ir' (TypeChar   _) = OP_Char
+  ir' (TypeCChar  _) = OP_CChar
+  ir' (TypeCSChar _) = OP_CSChar
+  ir' (TypeCUChar _) = OP_CUChar
 
-instance OPS IntegralType where
-  unpack (TypeInt     _) (OP_Int x)     = x
-  unpack (TypeInt8    _) (OP_Int8 x)    = x
-  unpack (TypeInt16   _) (OP_Int16 x)   = x
-  unpack (TypeInt32   _) (OP_Int32 x)   = x
-  unpack (TypeInt64   _) (OP_Int64 x)   = x
-  unpack (TypeWord    _) (OP_Word  x)   = x
-  unpack (TypeWord8   _) (OP_Word8  x)  = x
-  unpack (TypeWord16  _) (OP_Word16 x)  = x
-  unpack (TypeWord32  _) (OP_Word32 x)  = x
-  unpack (TypeWord64  _) (OP_Word64 x)  = x
-  unpack (TypeCShort  _) (OP_CShort x)  = x
-  unpack (TypeCUShort _) (OP_CUShort x) = x
-  unpack (TypeCInt    _) (OP_CInt x)    = x
-  unpack (TypeCUInt   _) (OP_CUInt x)   = x
-  unpack (TypeCLong   _) (OP_CLong x)   = x
-  unpack (TypeCULong  _) (OP_CULong x)  = x
-  unpack (TypeCLLong  _) (OP_CLLong x)  = x
-  unpack (TypeCULLong _) (OP_CULLong x) = x
-  --
-  pack (TypeInt     _) = OP_Int
-  pack (TypeInt8    _) = OP_Int8
-  pack (TypeInt16   _) = OP_Int16
-  pack (TypeInt32   _) = OP_Int32
-  pack (TypeInt64   _) = OP_Int64
-  pack (TypeWord    _) = OP_Word
-  pack (TypeWord8   _) = OP_Word8
-  pack (TypeWord16  _) = OP_Word16
-  pack (TypeWord32  _) = OP_Word32
-  pack (TypeWord64  _) = OP_Word64
-  pack (TypeCShort  _) = OP_CShort
-  pack (TypeCUShort _) = OP_CUShort
-  pack (TypeCInt    _) = OP_CInt
-  pack (TypeCUInt   _) = OP_CUInt
-  pack (TypeCLong   _) = OP_CLong
-  pack (TypeCULong  _) = OP_CULong
-  pack (TypeCLLong  _) = OP_CLLong
-  pack (TypeCULLong _) = OP_CULLong
-
-instance OPS FloatingType where
-  unpack (TypeFloat   _) (OP_Float x) = x
-  unpack (TypeDouble  _) (OP_Double x) = x
-  unpack (TypeCFloat  _) (OP_CFloat x) = x
-  unpack (TypeCDouble _) (OP_CDouble x) = x
-  --
-  pack (TypeFloat   _) = OP_Float
-  pack (TypeDouble  _) = OP_Double
-  pack (TypeCFloat  _) = OP_CFloat
-  pack (TypeCDouble _) = OP_CDouble
-
-instance OPS NonNumType where
-  unpack (TypeBool   _) (OP_Bool x) = x
-  unpack (TypeChar   _) (OP_Char x) = x
-  unpack (TypeCChar  _) (OP_CChar x) = x
-  unpack (TypeCSChar _) (OP_CSChar x) = x
-  unpack (TypeCUChar _) (OP_CUChar x) = x
-  --
-  pack (TypeBool   _) = OP_Bool
-  pack (TypeChar   _) = OP_Char
-  pack (TypeCChar  _) = OP_CChar
-  pack (TypeCSChar _) = OP_CSChar
-  pack (TypeCUChar _) = OP_CUChar
---}

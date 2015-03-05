@@ -45,7 +45,7 @@ readArrayData volatile ix = read
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
     read UnitTuple          OP_Unit        = return OP_Unit
     read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair   <$> read t2 a2 <*> read t1 a1
-    read (SingleTuple t)   (OP_Scalar arr) = OP_Scalar <$> readArrayPrim t volatile arr ix
+    read (SingleTuple t)   (op' t -> arr)  = ir' t <$> readArrayPrim t volatile arr ix
 
 readArrayPrim :: ScalarType e -> Volatile -> Operand e -> Operand Int -> CodeGen (Operand e)
 readArrayPrim t volatile arr i = do
@@ -67,7 +67,7 @@ writeArrayData volatile ix = write
     write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
     write UnitTuple          OP_Unit         OP_Unit        = return ()
     write (PairTuple t2 t1) (OP_Pair a2 a1) (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (SingleTuple _t)  (OP_Scalar arr) (OP_Scalar val) = writeArrayPrim volatile arr ix val
+    write (SingleTuple t)   (op' t -> arr)  (op' t -> val)  = writeArrayPrim volatile arr ix val
 
 writeArrayPrim :: Volatile -> Operand e -> Operand Int -> Operand e -> CodeGen ()
 writeArrayPrim volatile arr i v = do
