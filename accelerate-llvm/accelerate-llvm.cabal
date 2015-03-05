@@ -91,7 +91,6 @@ Library
     LLVM.General.AST.Type.Operand
     LLVM.General.AST.Type.Terminator
 
-
     -- Scheduler
     Control.Parallel.Meta
     Control.Parallel.Meta.Worker

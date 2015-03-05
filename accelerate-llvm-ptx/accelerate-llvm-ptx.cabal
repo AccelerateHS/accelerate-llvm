@@ -54,21 +54,20 @@ Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.PTX
 
-    -- required for accelerate-llvm-multidev
-    Data.Array.Accelerate.LLVM.PTX.Context
-    Data.Array.Accelerate.LLVM.PTX.Target
-    Data.Array.Accelerate.LLVM.PTX.State
-    Data.Array.Accelerate.LLVM.PTX.Execute
-    Data.Array.Accelerate.LLVM.PTX.Execute.Async
-    Data.Array.Accelerate.LLVM.PTX.Execute.Stream
-
   other-modules:
     Data.Array.Accelerate.LLVM.PTX.Analysis.Device
     Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
     Data.Array.Accelerate.LLVM.PTX.Array.Data
     Data.Array.Accelerate.LLVM.PTX.Array.Prim
     Data.Array.Accelerate.LLVM.PTX.Array.Table
+    Data.Array.Accelerate.LLVM.PTX.Context
     Data.Array.Accelerate.LLVM.PTX.Debug
+    Data.Array.Accelerate.LLVM.PTX.State
+    Data.Array.Accelerate.LLVM.PTX.Target
+
+    Data.Array.Accelerate.LLVM.PTX.Execute
+    Data.Array.Accelerate.LLVM.PTX.Execute.Async
+    Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
     Data.Array.Accelerate.LLVM.PTX.CodeGen
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
