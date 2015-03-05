@@ -13,14 +13,11 @@ tracker][Issues] of the main repository.
 Dependencies
 ------------
 
-You will need the following packages from github:
+Haskell dependencies are available from Hackage. There are several external
+dependencies that you will need to install as well:
 
-  * [llvm-general](https://github.com/tvh/llvm-general/tree/curatedTargetMachine)
-  * [lib-nvvm](https://github.com/nvidia-compiler-sdk/hsnvvm) (optional)
-
-The version of `llvm-general` available on Hackage is not suitable due to an
-outstanding [pull-request][llvm-general-issue101]. Add a comment to that pull
-request to nudge the maintainer along...
+ * [LLVM](http://llvm.org)
+ * [libFFI](http://sourceware.org/libffi/)
 
 
 Installation
@@ -58,30 +55,21 @@ TODOs
 
 These are some TODOs and notes that pop into my head from time to time...
 
-**General**
-
-
-**Code generation**
-
-  * It would be good to have a typed version of the LLVM IR, and then a
-    type-preserving conversion from Accelerate to LLVM terms.
-
-
 **Native backend**
 
   * Complete coverage of skeleton operations
-- [x] map
-- [x] generate/zipWith
-- [x] backpermute/transform
-- [x] slice/replicate
-- [x] reshape
-- [x] fold (multidimensional)
-- [x] foldAll (parallel optimisation)
+- [ ] map
+- [ ] generate/zipWith
+- [ ] backpermute/transform
+- [ ] slice/replicate
+- [ ] reshape
+- [ ] fold (multidimensional)
+- [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
 - [ ] scanl1, scanr1
 - [ ] scanl', scanr'
 - [ ] foldSeg
-- [x] permute
+- [ ] permute
 - [ ] stencil
 - [ ] stencil2
 - [ ] foreign functions
@@ -90,13 +78,13 @@ These are some TODOs and notes that pop into my head from time to time...
 **PTX backend**
 
   * Complete coverage of skeleton operations
-- [x] map
-- [x] generate/zipWith
-- [x] backpermute/transform
-- [x] slice/replicate
-- [x] reshape
-- [x] fold (multidimensional)
-- [x] foldAll (parallel optimisation)
+- [ ] map
+- [ ] generate/zipWith
+- [ ] backpermute/transform
+- [ ] slice/replicate
+- [ ] reshape
+- [ ] fold (multidimensional)
+- [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
 - [ ] scanl1, scanr1
 - [ ] scanl', scanr'

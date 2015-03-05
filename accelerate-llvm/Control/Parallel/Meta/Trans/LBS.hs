@@ -24,7 +24,7 @@ import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
 import qualified Data.Range.Range                               as R
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 import Control.Monad
 import Text.Printf
@@ -117,5 +117,5 @@ mkWorkSearch ppt steal =
 
 {-# INLINE message #-}
 message :: Int -> String -> IO ()
-message tid msg = Debug.message Debug.dump_sched (printf "sched/lbs: [%d] %s" tid msg)
+message tid msg = Debug.traceIO Debug.dump_sched (printf "sched/lbs: [%d] %s" tid msg)
 

@@ -132,7 +132,7 @@ showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
-trace msg next = Debug.message Debug.dump_gc ("gc: " ++ msg) >> next
+trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
 
 {-# INLINE message #-}
 message :: String -> IO ()

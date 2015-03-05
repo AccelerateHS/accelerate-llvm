@@ -1,8 +1,7 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Constant
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -10,81 +9,60 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Constant
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
--- llvm-general
-import LLVM.General.AST
-import LLVM.General.AST.Constant                        ( Constant )
-import qualified LLVM.General.AST.Constant              as C
+  primConst,
+  constant, scalar, num, integral, floating, nonnum,
 
--- accelerate
-import Data.Array.Accelerate.AST
+) where
+
+
+import Data.Array.Accelerate.AST                                ( PrimConst(..) )
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 
-import Data.Array.Accelerate.LLVM.CodeGen.Type
+import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Operand
 
 
--- Constants
--- =========
-
--- | Helper to view a constant as an operand
+-- | Primitive constant values
 --
-constOp :: Constant -> Operand
-constOp = ConstantOperand
-
--- | Primitive constants
---
-primConst :: PrimConst t -> Constant
+primConst :: PrimConst t -> t
 primConst (PrimMinBound t) = primMinBound t
 primConst (PrimMaxBound t) = primMaxBound t
 primConst (PrimPi t)       = primPi t
 
-primMinBound :: forall a. BoundedType a -> Constant
-primMinBound (IntegralBoundedType t) | IntegralDict <- integralDict t = integral t minBound
-primMinBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = nonnum t minBound
+primMinBound :: BoundedType a -> a
+primMinBound (IntegralBoundedType t) | IntegralDict <- integralDict t = minBound
+primMinBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = minBound
 
-primMaxBound :: forall a. BoundedType a -> Constant
-primMaxBound (IntegralBoundedType t) | IntegralDict <- integralDict t = integral t maxBound
-primMaxBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = nonnum t maxBound
+primMaxBound :: BoundedType a -> a
+primMaxBound (IntegralBoundedType t) | IntegralDict <- integralDict t = maxBound
+primMaxBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = maxBound
 
-primPi :: forall a. FloatingType a -> Constant
-primPi t | FloatingDict <- floatingDict t = floating t pi
+primPi :: FloatingType a -> a
+primPi t | FloatingDict <- floatingDict t = pi
 
 
--- | A constant value. Note that this follows the EltRepr representation of the
--- type, meaning that any nested tupling of the surface type is flattened.
+-- | A constant value
 --
-constant :: TupleType a -> a -> [Constant]
-constant UnitTuple         _       = []
-constant (SingleTuple t)   c       = [scalar t c]
-constant (PairTuple t1 t2) (c1,c2) = constant t1 c1 ++ constant t2 c2
+constant :: TupleType a -> a -> Operands a
+constant UnitTuple         ()    = OP_Unit
+constant (PairTuple ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
+constant (SingleTuple t)   a     = ir' t (scalar t a)
 
+scalar :: ScalarType a -> a -> Operand a
+scalar t = ConstantOperand . ScalarConstant t
 
--- | A constant scalar value
---
-scalar :: ScalarType a -> a -> Constant
-scalar (NumScalarType t)    = num t
-scalar (NonNumScalarType t) = nonnum t
+num :: NumType a -> a -> Operand a
+num t = scalar (NumScalarType t)
 
--- | A constant numeric value
---
-num :: NumType a -> a -> Constant
-num (IntegralNumType t) c = integral t c
-num (FloatingNumType t) c = floating t c
+integral :: IntegralType a -> a -> Operand a
+integral t = num (IntegralNumType t)
 
--- | A constant integral value
---
-integral :: IntegralType a -> a -> Constant
-integral t c | IntegralDict <- integralDict t = C.Int (typeBits (llvmOfIntegralType t)) (toInteger c)
+floating :: FloatingType a -> a -> Operand a
+floating t = num (FloatingNumType t)
 
--- | A constant floating-point value
---
-floating :: FloatingType a -> a -> Constant
-floating t c = C.Float (someFloat t c)
-
--- | A constant non-numeric value
---
-nonnum :: NonNumType a -> a -> Constant
-nonnum t c | NonNumDict <- nonNumDict t = C.Int (typeBits (llvmOfNonNumType t)) (fromIntegral (fromEnum c))
+nonnum :: NonNumType a -> a -> Operand a
+nonnum t = scalar (NonNumScalarType t)
 

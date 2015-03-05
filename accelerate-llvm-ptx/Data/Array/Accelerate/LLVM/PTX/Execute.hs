@@ -228,9 +228,10 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp ptx@PTX{..} kernel finish gamma aenv stream r args = do
-  runExecutable fillP defaultPPT r finish $ \start end _ ->
-    launch kernel stream (end-start) =<< marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
+executeOp ptx@PTX{..} kernel finish gamma aenv stream r args =
+  runExecutable fillP defaultPPT r finish $ \start end _ -> do
+    argv <- marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
+    launch kernel stream (end-start) argv
 
 
 -- Execute a device function with the given thread configuration and function

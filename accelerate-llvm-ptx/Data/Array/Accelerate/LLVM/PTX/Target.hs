@@ -44,7 +44,7 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Reservoir )
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- standard library
-import Control.Monad.Error
+import Control.Monad.Except
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                       as Map
@@ -150,5 +150,5 @@ withPTXTargetMachine dev go =
 ptxTarget :: LLVM.Target
 ptxTarget = unsafePerformIO $ do
   initializeAllTargets
-  either error fst `fmap` runErrorT (lookupTarget Nothing ptxTargetTriple)
+  either error fst `fmap` runExceptT (lookupTarget Nothing ptxTargetTriple)
 

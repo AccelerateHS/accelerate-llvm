@@ -1,13 +1,12 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE NoImplicitPrelude   #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -15,540 +14,429 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
--- llvm-general
-import LLVM.General.AST                                         hiding ( nuw, nsw )
-import LLVM.General.AST.Attribute
-import LLVM.General.AST.Constant                                ( Constant )
-import qualified LLVM.General.AST.Constant                      as C
-import qualified LLVM.General.AST.IntegerPredicate              as IP
-import qualified LLVM.General.AST.FloatingPointPredicate        as FP
-
--- accelerate
-import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
-
-import Data.Array.Accelerate.LLVM.Util
-import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
-
--- standard library
-import Prelude                                                  ( Num, String, ($), (++), (-), (==), undefined, map )
-import Data.Bool
-import Data.Char                                                ( Char )
+-- standard/external libraries
+import Prelude                                                  ( Eq, Num, Char, Bool(..), Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
+import Data.Bits                                                ( finiteBitSize )
+import Data.String
 import Control.Applicative
 import Control.Monad
 import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
+-- accelerate
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Sugar
 
--- Configuration
--- =============
+-- accelerate-llvm
+import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
+import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Operand
 
--- | nuw and nsw stand for "No Unsigned Wrap" and "No Signed Wrap",
--- respectively. If the nuw and/or nsw keywords are present, the result value of
--- the instruction is a poison value if unsigned and/or signed overflow,
--- respectively, occurs.
---
-nuw :: Bool
-nuw = False
-
-nsw :: Bool
-nsw = False
-
--- | fast-math flags are optimization hints to enable otherwise unsafe
--- floating point optimizations
---
-fmflags :: FastMathFlags
-fmflags = UnsafeAlgebra
-
--- Primitive operations
--- ====================
-
--- Call a function from the standard C math library. This is a wrapper around
--- the standard function 'call', because:
---
---   (a) The parameter and return types are all the same; and
---   (b) We check if there is an intrinsic implementation of this function
---
-mathf :: String -> FloatingType t -> [Operand] -> CodeGen Operand
-mathf n f args = do
-  name <- intrinsic key
-  call name t (toArgs args) [NoUnwind, ReadOnly]
-  where
-    t      = typeOf f
-    toArgs = map (t,)
-    key    = case typeBits t of
-               32  -> n ++ "f"
-               64  -> n
-               128 -> n ++ "l"     -- long double
-               _   -> $internalError "mathf" "unsupported floating point size"
+import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 
 -- Operations from Num
 -- -------------------
 
-add :: NumType a -> Operand -> Operand -> CodeGen Operand
-add (IntegralNumType _) x y = instr $ Add nuw nsw x y []
-add (FloatingNumType _) x y = instr $ FAdd fmflags x y []
+add :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+add = binop Add
 
-sub :: NumType a -> Operand -> Operand -> CodeGen Operand
-sub (IntegralNumType _) x y = instr $ Sub nuw nsw x y []
-sub (FloatingNumType _) x y = instr $ FSub fmflags x y []
+sub :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+sub = binop Sub
 
-mul :: NumType a -> Operand -> Operand -> CodeGen Operand
-mul (IntegralNumType _) x y = instr $ Mul nuw nsw x y []
-mul (FloatingNumType _) x y = instr $ FMul fmflags x y []
+mul :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+mul = binop Mul
 
-negate :: forall a. NumType a -> Operand -> CodeGen Operand
+negate :: NumType a -> IR a -> CodeGen (IR a)
 negate t x =
   case t of
-    IntegralNumType i | unsignedIntegralNum i          -> return x
-    IntegralNumType i | IntegralDict <- integralDict i -> mul t x (constOp (num t (-1)))
-    FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (constOp (num t (-1)))
+    IntegralNumType i | IntegralDict <- integralDict i -> mul t x (ir t (num t (P.negate 1)))
+    FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (P.negate 1)))
 
-abs :: forall a. NumType a -> Operand -> CodeGen Operand
+abs :: forall a. NumType a -> IR a -> CodeGen (IR a)
 abs t x =
   case t of
-    FloatingNumType f                  -> mathf "fabs" f [x]
+    FloatingNumType f                  -> mathf "fabs" f x
     IntegralNumType i
-      | unsignedIntegralNum i          -> return x
-      | IntegralDict <- integralDict i -> case bitSize (undefined :: a) of
-                                            64 -> call "llabs" (typeOf i) [(typeOf i, x)] [NoUnwind, ReadNone]
-                                            _  -> call "abs"   (typeOf i) [(typeOf i, x)] [NoUnwind, ReadNone]
+      | unsigned i                     -> return x
+      | IntegralDict <- integralDict i ->
+          let t' = NumScalarType t in
+          case finiteBitSize (undefined :: a) of
+            64 -> call (Lam t' (op t x) (Body (Just t') "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam t' (op t x) (Body (Just t') "abs"))   [NoUnwind, ReadNone]
 
-signum :: NumType a -> Operand -> CodeGen Operand
-signum t x =
-  case t of
-    FloatingNumType f | FloatingDict <- floatingDict f -> signum' t x
-    IntegralNumType i | IntegralDict <- integralDict i ->
-      if signedIntegralNum i
-         then signum' t x
-         else let t' = NumScalarType t
-              in  zext t' =<< neq t' x (constOp (num t 0))
-
-signum' :: Num a => NumType a -> Operand -> CodeGen Operand
-signum' t x = do
-  let t'    = NumScalarType t
-      zero  = constOp (num t 0)
-      mone  = constOp (num t (-1))
-  --
-  ifFalse       <- newBlock "signum.false"
-  ifEnd         <- newBlock "signum.end"
-
-  c1            <- lt t' x zero
-  top           <- cbr c1 ifEnd ifFalse
-
-  setBlock ifFalse
-  c2            <- neq t' x zero
-  s             <- zext t' c2
-  bot           <- br ifEnd
-
-  setBlock ifEnd
-  phi' (typeOf t) [(mone,top), (s,bot)]
+signum :: NumType a -> IR a -> CodeGen (IR a)
+signum = error "signum"
 
 
 -- Operations from Integral and Bits
 -- ---------------------------------
 
-quot :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-quot t x y
-  | signedIntegralNum t = instr $ SDiv False x y []
-  | otherwise           = instr $ UDiv False x y []
+quot :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+quot = binop Quot
 
-rem :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-rem t x y
-  | signedIntegralNum t = instr $ SRem x y []
-  | otherwise           = instr $ URem x y []
+rem :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+rem = binop Rem
 
--- Integer division, truncated towards negative infinity
---
-idiv :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-idiv t x y
-  | unsignedIntegralNum t          = quot t x y
-  | IntegralDict <- integralDict t = do
-      let tn   = IntegralNumType t
-          ts   = NumScalarType tn
-          mone = constOp (integral t (-1))
-          zero = constOp (integral t 0)
-          one  = constOp (integral t 1)
+quotRem :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
+quotRem = error "quotRem"
 
-      ifThen    <- newBlock "idiv.then"
-      ifOr      <- newBlock "idiv.or"
-      ifElse    <- newBlock "idiv.else"
-      ifFalse   <- newBlock "idiv.false"
-      ifEnd     <- newBlock "idiv.end"
+idiv :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+idiv = error "idiv"
 
-      c1        <- join $ land <$> gt ts x zero <*> lt ts y zero
-      _         <- cbr c1 ifThen ifOr
-
-      setBlock ifThen
-      t1        <- add tn x mone
-      t2        <- quot t t1 y
-      v1        <- add tn t2 mone
-      bthen     <- br ifEnd
-
-      setBlock ifOr
-      c2        <- join $ land <$> lt ts x zero <*> gt ts y zero
-      _         <- cbr c2 ifElse ifFalse
-
-      setBlock ifElse
-      e1        <- add tn x one
-      e2        <- quot t e1 y
-      v2        <- add tn e2 mone
-      belse     <- br ifEnd
-
-      setBlock ifFalse
-      v3        <- quot t x y
-      bfalse    <- br ifEnd
-
-      setBlock ifEnd
-      phi' (typeOf t) [(v1,bthen), (v2,belse), (v3,bfalse)]
-
-
--- Integer modules, satisfying: (x `div` y)*y + (x `mod` y) == x
---
--- > mod x y =
--- >   if ((x > 0 && y < 0) || (x < 0 && y > 0))
--- >      then if (r /= 0)
--- >              then r + y
--- >              else 0
--- >      else r
--- >   where r = x `rem` y
---
-mod :: forall a. IntegralType a -> Operand -> Operand -> CodeGen Operand
+mod :: Elt a => IntegralType a -> IR a -> IR a -> CodeGen (IR a)
 mod t x y
-  | unsignedIntegralNum t          = rem t x y
-  | IntegralDict <- integralDict t = do
-      let t'   = NumScalarType (IntegralNumType t)
-          zero = constOp (scalar t' 0)
-      ifOr      <- newBlock "mod.or"
-      ifTrue    <- newBlock "mod.true"
-      ifEnd     <- newBlock "mod.end"
+  | unsigned t                     = rem t x y
+  | IntegralDict <- integralDict t =
+    do
+       let nt = IntegralNumType t
+           st = NumScalarType nt
+           _0 = ir t (integral t 0)
+       --
+       ifOr     <- newBlock "mod.or"
+       ifTrue   <- newBlock "mod.true"
+       ifEnd    <- newBlock "mod.end"
 
-      r         <- rem t x y
-      c1        <- join $ land <$> gt t' x zero <*> lt t' y zero
-      _         <- cbr c1 ifTrue ifOr
+       _        <- beginBlock "mod.entry"
+       r        <- rem t x y
+       c1       <- join $ land <$> gt st x _0 <*> lt st y _0
+       _        <- cbr c1 ifTrue ifOr
 
-      setBlock ifOr
-      c2        <- join $ land <$> lt t' x zero <*> gt t' y zero
-      false     <- cbr c2 ifTrue ifEnd
+       setBlock ifOr
+       c2       <- join $ land <$> lt st x _0 <*> gt st y _0
+       false    <- cbr c2 ifTrue ifEnd
 
-      setBlock ifTrue
-      c3        <- eq t' r zero
-      v'        <- add (IntegralNumType t) r y
-      v         <- instr $ Select c3 zero v' []
-      true      <- br ifEnd
+       setBlock ifTrue
+       c3       <- neq st r _0
+       s        <- add nt r y
+       v        <- instr $ Select st (op scalarType c3) (op t s) (op t _0)
+       true     <- br ifEnd
 
-      setBlock ifEnd
-      phi' (typeOf t) [(v,true), (r,false)]
+       setBlock ifEnd
+       phi [(v,true), (r,false)]
 
 
-band :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-band _ x y = instr $ And x y []
+divMod :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
+divMod = error "divMod"
 
-bor :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-bor _ x y = instr $ Or x y []
+band :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+band = binop BAnd
 
-xor :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-xor _ x y = instr $ Xor x y []
+bor :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+bor = binop BOr
 
-complement :: IntegralType a -> Operand -> CodeGen Operand
-complement t x | IntegralDict <- integralDict t = xor t x (constOp (integral t (-1)))
+xor :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+xor = binop BXor
 
-shiftL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
+complement :: IntegralType a -> IR a -> CodeGen (IR a)
+complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (P.negate 1)))
+
+shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
 shiftL t x i = do
-  i'   <- fromIntegral int (IntegralNumType t) i
-  instr $ Shl nsw nuw x i' []
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  binop ShiftL t x i'
 
-shiftR :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-shiftR t x i = do
-  i'   <- fromIntegral int (IntegralNumType t) i
-  instr $ if signedIntegralNum t
-             then AShr False x i' []
-             else LShr False x i' []
+shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftR t
+  | signed t  = shiftRA t
+  | otherwise = shiftRL t
 
-rotateL :: IntegralType a -> Operand -> Operand -> CodeGen Operand
-rotateL t x i | IntegralDict <- integralDict t = do
-  let bits = P.fromIntegral (typeBits (typeOf t))
-  --
-  i'    <- fromIntegral int (IntegralNumType t) i
-  v1    <- band t i' (constOp $ integral t (bits - 1))
-  v2    <- shiftL t x v1
-  v3    <- sub (IntegralNumType t) (constOp $ integral t bits) v1
-  v4    <- instr $ LShr False x v3 []           -- require unsigned shift here
-  bor t v4 v2
+shiftRL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRL t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  r  <- binop ShiftRL t x i'
+  return r
+
+shiftRA :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRA t x i = do
+  i' <- fromIntegral integralType (IntegralNumType t) i
+  r  <- binop ShiftRA t x i'
+  return r
+
+rotateL :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+rotateL t x i
+  | IntegralDict <- integralDict t
+  = do let wsib = finiteBitSize (undefined::a)
+       i1 <- band integralType i (ir integralType (integral integralType (wsib P.- 1)))
+       i2 <- sub numType (ir numType (integral integralType wsib)) i1
+       --
+       a  <- shiftL t x i1
+       b  <- shiftRL t x i2
+       c  <- bor t a b
+       return c
+
+rotateR :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+rotateR t x i = do
+  i' <- negate numType i
+  r  <- rotateL t x i'
+  return r
 
 
-rotateR :: forall a. IntegralType a -> Operand -> Operand -> CodeGen Operand
-rotateR t x i | IntegralDict <- integralDict t = do
-  let bits = P.fromIntegral (typeBits (typeOf t))
-  --
-  i'    <- fromIntegral int (IntegralNumType t) i
-  v1    <- band t i' (constOp $ integral t (bits - 1))
-  v2    <- instr $ LShr False x v1 []           -- require unsigned shift here
-  v3    <- sub (IntegralNumType t) (constOp $ integral t bits) v1
-  v4    <- shiftL t x v3
-  bor t v4 v2
+-- Operators from Fractional and Floating
+-- --------------------------------------
+
+fdiv :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+fdiv = binop Div
+
+recip :: FloatingType a -> IR a -> CodeGen (IR a)
+recip t x | FloatingDict <- floatingDict t = fdiv t (ir t (floating t 1)) x
+
+sin :: FloatingType a -> IR a -> CodeGen (IR a)
+sin = mathf "sin"
+
+cos :: FloatingType a -> IR a -> CodeGen (IR a)
+cos = mathf "cos"
+
+tan :: FloatingType a -> IR a -> CodeGen (IR a)
+tan = mathf "tan"
+
+asin :: FloatingType a -> IR a -> CodeGen (IR a)
+asin = mathf "asin"
+
+acos :: FloatingType a -> IR a -> CodeGen (IR a)
+acos = mathf "acos"
+
+atan :: FloatingType a -> IR a -> CodeGen (IR a)
+atan = mathf "atan"
+
+asinh :: FloatingType a -> IR a -> CodeGen (IR a)
+asinh = mathf "asinh"
+
+acosh :: FloatingType a -> IR a -> CodeGen (IR a)
+acosh = mathf "acosh"
+
+atanh :: FloatingType a -> IR a -> CodeGen (IR a)
+atanh = mathf "atanh"
+
+atan2 :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+atan2 = mathf' "atan2"
+
+exp :: FloatingType a -> IR a -> CodeGen (IR a)
+exp = mathf "exp"
+
+fpow :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+fpow = mathf' "pow"
+
+sqrt :: FloatingType a -> IR a -> CodeGen (IR a)
+sqrt = mathf "sqrt"
+
+log :: FloatingType a -> IR a -> CodeGen (IR a)
+log = mathf "log"
+
+logBase :: forall a. FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
+  where
+    match :: Eq t => Operand t -> Operand t -> Bool
+    match (ConstantOperand (ScalarConstant _ u))
+          (ConstantOperand (ScalarConstant _ v)) = u == v
+    match _ _                                    = False
+
+    logBase' :: (Num a, Eq a) => CodeGen (IR a)
+    logBase' | match base (floating t 2)  = mathf "log2"  t y
+             | match base (floating t 10) = mathf "log10" t y
+             | otherwise
+             = do x' <- log t x
+                  y' <- log t y
+                  fdiv t y' x'
 
 
--- Operators from Fractional, Floating, RealFrac & RealFloat
--- ---------------------------------------------------------
+-- Operators from RealFloat
+-- ------------------------
 
-fdiv :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-fdiv _ x y = instr $ FDiv fmflags x y []
+isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
+isNaN t (op t -> x) = do
+  name <- intrinsic "isnan"
+  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body (Just scalarType) name)) [NoUnwind, ReadOnly]
+  return r
 
-recip :: FloatingType a -> Operand -> CodeGen Operand
-recip t x | FloatingDict <- floatingDict t = fdiv t (constOp (floating t (-1))) x
 
-sin :: FloatingType a -> Operand -> CodeGen Operand
-sin t x = mathf "sin" t [x]
+-- Operators from RealFrac
+-- -----------------------
 
-cos :: FloatingType a -> Operand -> CodeGen Operand
-cos t x = mathf "cos" t [x]
+truncate :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
+truncate tf ti (op tf -> x) = instr (FPToInt tf ti x)
 
-tan :: FloatingType a -> Operand -> CodeGen Operand
-tan t x = mathf "tan" t [x]
-
-asin :: FloatingType a -> Operand -> CodeGen Operand
-asin t x = mathf "asin" t [x]
-
-acos :: FloatingType a -> Operand -> CodeGen Operand
-acos t x = mathf "acos" t [x]
-
-atan :: FloatingType a -> Operand -> CodeGen Operand
-atan t x = mathf "atan" t [x]
-
-asinh :: FloatingType a -> Operand -> CodeGen Operand
-asinh t x = mathf "asinh" t [x]
-
-acosh :: FloatingType a -> Operand -> CodeGen Operand
-acosh t x = mathf "acosh" t [x]
-
-atanh :: FloatingType a -> Operand -> CodeGen Operand
-atanh t x = mathf "atanh" t [x]
-
-atan2 :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-atan2 t x y = mathf "atan2" t [x,y]
-
-exp :: FloatingType a -> Operand -> CodeGen Operand
-exp t x = mathf "exp" t [x]
-
-fpow :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-fpow t x y = mathf "pow" t [x,y]
-
-sqrt :: FloatingType a -> Operand -> CodeGen Operand
-sqrt t x = mathf "sqrt" t [x]
-
-log :: FloatingType a -> Operand -> CodeGen Operand
-log t x = mathf "log" t [x]
-
-logBase :: FloatingType a -> Operand -> Operand -> CodeGen Operand
-logBase t x y | FloatingDict <- floatingDict t = logBase' t x y
-
-logBase' :: Num a => FloatingType a -> Operand -> Operand -> CodeGen Operand
-logBase' t x y
-  | constOp (floating t 2)  == x = mathf "log2"  t [y]
-  | constOp (floating t 10) == x = mathf "log10" t [y]
-  | otherwise                    = do x' <- log t x
-                                      y' <- log t y
-                                      fdiv t x' y'
-
-truncate :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
-truncate _ i x
-  | signedIntegralNum i = instr $ FPToSI x (typeOf i) []
-  | otherwise           = instr $ FPToUI x (typeOf i) []
-
-round :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
+round :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
 round tf ti x = do
-  i <- mathf "round" tf [x]
+  i <- mathf "round" tf x
   truncate tf ti i
 
-floor :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
+floor :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
 floor tf ti x = do
-  i <- mathf "floor" tf [x]
+  i <- mathf "floor" tf x
   truncate tf ti i
 
-ceiling :: FloatingType a -> IntegralType b -> Operand -> CodeGen Operand
+ceiling :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
 ceiling tf ti x = do
-  i <- mathf "ceil" tf [x]
+  i <- mathf "ceil" tf x
   truncate tf ti i
 
 
--- Relational and equality operators
+-- Relational and Equality operators
 -- ---------------------------------
 
-data Predicate = EQ | NE | LT | LE | GT | GE
+cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
-lt :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 lt = cmp LT
 
-gt :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+gt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 gt = cmp GT
 
-lte :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+lte :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 lte = cmp LE
 
-gte :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+gte :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 gte = cmp GE
 
-eq :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+eq :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 eq = cmp EQ
 
-neq :: ScalarType a -> Operand -> Operand -> CodeGen Operand
+neq :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 neq = cmp NE
 
-max :: ScalarType a -> Operand -> Operand -> CodeGen Operand
-max ty x y =
-  case ty of
-    NumScalarType (FloatingNumType f)   -> mathf "fmax" f [x,y]
-    _                                   -> do c <- gte ty x y
-                                              instr $ Select c x y []
+max :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
+max ty x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmax" f x y
+  | otherwise                               = do c <- op scalarType <$> gte ty x y
+                                                 binop (flip Select c) ty x y
 
-min :: ScalarType a -> Operand -> Operand -> CodeGen Operand
-min ty x y =
-  case ty of
-    NumScalarType (FloatingNumType f)   -> mathf "fmin" f [x,y]
-    _                                   -> do c <- lte ty x y
-                                              instr $ Select c x y []
+min :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
+min ty x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmin" f x y
+  | otherwise                               = do c <- op scalarType <$> lte ty x y
+                                                 binop (flip Select c) ty x y
 
-cmp :: Predicate -> ScalarType t -> Operand -> Operand -> CodeGen Operand
-cmp op ty x y =
-  case ty of
-    NumScalarType (FloatingNumType _) -> instr $ FCmp (floatingP op) x y []
-
-    NumScalarType (IntegralNumType i)
-      | signedIntegralNum i           -> instr $ ICmp (signedP op) x y []
-      | otherwise                     -> instr $ ICmp (unsignedP op) x y []
-
-    NonNumScalarType (TypeBool _)     -> instr $ ICmp (unsignedP op) x y []
-    NonNumScalarType (TypeChar _)     -> instr $ ICmp (unsignedP op) x y []
-    NonNumScalarType (TypeCUChar _)   -> instr $ ICmp (unsignedP op) x y []
-    NonNumScalarType (TypeCSChar _)   -> instr $ ICmp (signedP op) x y []
-    NonNumScalarType (TypeCChar _)    -> instr $ ICmp (signedP op) x y []
-  where
-    signedP :: Predicate -> IP.IntegerPredicate
-    signedP EQ = IP.EQ
-    signedP NE = IP.NE
-    signedP LT = IP.SLT
-    signedP LE = IP.SLE
-    signedP GT = IP.SGT
-    signedP GE = IP.SGE
-
-    unsignedP :: Predicate -> IP.IntegerPredicate
-    unsignedP EQ = IP.EQ
-    unsignedP NE = IP.NE
-    unsignedP LT = IP.ULT
-    unsignedP LE = IP.ULE
-    unsignedP GT = IP.UGT
-    unsignedP GE = IP.UGE
-
-    floatingP :: Predicate -> FP.FloatingPointPredicate
-    floatingP EQ = FP.OEQ
-    floatingP NE = FP.ONE
-    floatingP LT = FP.OLT
-    floatingP LE = FP.OLE
-    floatingP GT = FP.OGT
-    floatingP GE = FP.OGE
 
 -- Logical operators
 -- -----------------
 
-land :: Operand -> Operand -> CodeGen Operand
-land x y = do
-  let i1    = scalarType :: ScalarType Bool
-      false = constOp (scalar i1 False)
-  --
-  u    <- neq i1 x false
-  v    <- neq i1 y false
-  instr $ And u v []
+land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+land (op scalarType -> x) (op scalarType -> y)
+  = instr (LAnd x y)
 
-lor  :: Operand -> Operand -> CodeGen Operand
-lor x y = do
-  let i1   = scalarType :: ScalarType Bool
-      false = constOp (scalar i1 False)
-  --
-  u <- instr $ Or x y []
-  neq i1 u false
+lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor (op scalarType -> x) (op scalarType -> y)
+  = instr (LOr x y)
 
-lnot :: Operand -> CodeGen Operand
-lnot x =
-  let i1    = scalarType :: ScalarType Bool
-      false = constOp (scalar i1 False)
-  in  eq i1 x false
+lnot :: IR Bool -> CodeGen (IR Bool)
+lnot (op scalarType -> x) = instr (LNot x)
 
 
 -- Type conversions
 -- ----------------
 
--- Truncate the operand to the given type. The bit size of the value must be
--- larger than the bit size of the destination. Equal sized types are not
--- allowed
---
-trunc :: ScalarType a -> Operand -> CodeGen Operand
-trunc t x = instr $ Trunc x (typeOf t) []
-
--- Sign extend a value to the given type. The bit size of the value must be
--- smaller than the bit size of the destination type.
---
-sext :: ScalarType a -> Operand -> CodeGen Operand
-sext t x = instr $ SExt x (typeOf t) []
-
--- Zero extend a value to the given type. The bit size of the value must be
--- smaller than the bit size of the destination type.
---
-zext :: ScalarType a -> Operand -> CodeGen Operand
-zext t x = instr $ ZExt x (typeOf t) []
-
-
-ord :: Operand -> CodeGen Operand
-ord x =
-  case bitSize (undefined :: Int) of
-    32 -> return x
-    64 -> instr $ SExt x (typeOf (integralType :: IntegralType Int)) []
+ord :: IR Char -> CodeGen (IR Int)
+ord (op scalarType -> x) =
+  case finiteBitSize (undefined :: Int) of
+    32 -> instr (BitCast scalarType x)
+    64 -> instr (Trunc boundedType boundedType x)
     _  -> $internalError "ord" "I don't know what architecture I am"
 
-chr :: Operand -> CodeGen Operand
-chr x =
-  case bitSize (undefined :: Int) of
-    32 -> return x
-    64 -> trunc (scalarType :: ScalarType Char) x
-    _  -> $internalError "ord" "I don't know what architecture I am"
+chr :: IR Int -> CodeGen (IR Char)
+chr (op integralType -> x) =
+  case finiteBitSize (undefined :: Int) of
+    32 -> instr (BitCast scalarType x)
+    64 -> instr (Ext boundedType boundedType x)
+    _  -> $internalError "chr" "I don't know what architecture I am"
 
-boolToInt :: Operand -> CodeGen Operand
-boolToInt x = zext (scalarType :: ScalarType Int) x
+boolToInt :: IR Bool -> CodeGen (IR Int)
+boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
 
-fromIntegral :: forall a b. IntegralType a -> NumType b -> Operand -> CodeGen Operand
-fromIntegral i1 t x =
-  case t of
-    -- Integral to floating point conversions have appropriate instructions
-    FloatingNumType f
-      | signedIntegralNum i1 -> instr $ SIToFP x (typeOf f) []
-      | otherwise            -> instr $ UIToFP x (typeOf f) []
+fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
+fromIntegral i1 n (op i1 -> x) =
+  case n of
+    FloatingNumType f -> instr (IntToFP i1 f x)
 
-    -- Conversion between integral types requires either a truncation (if the
-    -- destination bitsize is smaller) or signed/unsigned extension.
-    IntegralNumType i2       ->
-      let b1 = typeBits (typeOf i1)
-          b2 = typeBits (typeOf i2)
-          r  = NumScalarType t
-      in
-      case Ord.compare b1 b2 of
-        Ord.EQ                        -> return x
-        Ord.GT                        -> trunc r x
-        Ord.LT | signedIntegralNum i1 -> sext r x
-               | otherwise            -> zext r x
+    IntegralNumType (i2 :: IntegralType b)
+      | IntegralDict <- integralDict i1
+      , IntegralDict <- integralDict i2
+      -> let
+             bits_a = finiteBitSize (undefined::a)
+             bits_b = finiteBitSize (undefined::b)
+         in
+         case Ord.compare bits_a bits_b of
+           Ord.EQ -> instr (BitCast (NumScalarType n) x)
+           Ord.GT -> instr (Trunc (IntegralBoundedType i1) (IntegralBoundedType i2) x)
+           Ord.LT -> instr (Ext (IntegralBoundedType i1) (IntegralBoundedType i2) x)
 
 
--- Constant operands
--- =================
+-- Utility functions
+-- -----------------
 
-cadd :: NumType a -> Constant -> Constant -> CodeGen Operand
-cadd (IntegralNumType _) x y = return $ ConstantOperand $ C.Add nuw nsw x y
-cadd (FloatingNumType _) x y = return $ ConstantOperand $ C.FAdd x y
+binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
+binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
+
+
+ifThenElse
+    :: Elt a
+    => CodeGen (IR Bool)
+    -> CodeGen (IR a)
+    -> CodeGen (IR a)
+    -> CodeGen (IR a)
+ifThenElse test yes no = do
+  ifThen <- newBlock "if.then"
+  ifElse <- newBlock "if.else"
+  ifExit <- newBlock "if.exit"
+
+  _  <- beginBlock "if.entry"
+  p  <- test
+  _  <- cbr p ifThen ifElse
+
+  setBlock ifThen
+  tv <- yes
+  tb <- br ifExit
+
+  setBlock ifElse
+  fv <- no
+  fb <- br ifExit
+
+  setBlock ifExit
+  phi [(tv, tb), (fv, fb)]
+
+
+-- Call a function from the standard C math library. This is a wrapper around
+-- the 'call' function from CodeGen.Base since:
+--
+--   (1) The parameter and return types are all the same; and
+--   (2) We check if there is an intrinsic implementation of this function
+--
+-- TLM: We should really be able to construct functions of any arity.
+--
+mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
+mathf n t (op t -> x) = do
+  let st  = NumScalarType (FloatingNumType t)
+  --
+  name <- lm t n
+  r    <- call (Lam st x (Body (Just st) name)) [NoUnwind, ReadOnly]
+  return r
+
+
+mathf' :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf' n t (op t -> x) (op t -> y) = do
+  let st = NumScalarType (FloatingNumType t)
+  --
+  name <- lm t n
+  r    <- call (Lam st x (Lam st y (Body (Just st) name))) [NoUnwind, ReadOnly]
+  return r
+
+lm :: FloatingType t -> String -> CodeGen Label
+lm t n
+  = intrinsic
+  $ case t of
+      TypeFloat{}   -> n++"f"
+      TypeCFloat{}  -> n++"f"
+      TypeDouble{}  -> n
+      TypeCDouble{} -> n
 

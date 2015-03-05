@@ -1,14 +1,9 @@
 {-# LANGUAGE GADTs               #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ParallelListComp    #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Base
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -16,160 +11,164 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Base
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
--- accelerate
-import Data.Array.Accelerate.AST                                ( Idx )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, eltType )
+  -- References
+  Name(..),
+  local, global,
 
+  -- Arrays
+  irArray,
+  mutableArray,
+
+  -- Functions & parameters
+  call,
+  scalarParameter, ptrParameter,
+  envParam,
+  arrayParam,
+
+) where
+
+import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
+import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Operand
+
+import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
+
+import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
--- llvm-general
-import LLVM.General.AST
-import LLVM.General.AST.AddrSpace
-import LLVM.General.AST.Attribute
-import LLVM.General.AST.CallingConvention
-import LLVM.General.AST.Constant
-import LLVM.General.AST.Global                                  as G
+import qualified LLVM.General.AST.Global                                as LLVM
 
--- standard library
-import qualified Data.IntMap                                    as IM
+import qualified Data.IntMap                                            as IM
 
-
--- Names & Operands
--- ================
-
--- Generate some names from a given base name and type
---
-varNames :: Elt a => a -> String -> [Name]
-varNames t base = [ Name (base ++ show i) | i <- [n-1, n-2 .. 0] ]
-  where
-    n = length (llvmOfTupleType (eltType t))
-
-arrayData :: forall sh e. Elt e => Array sh e -> Name -> [Name]
-arrayData _ base = varNames (undefined::e) (s ++ ".ad")
-  where
-    s = case base of
-          UnName v -> (show v)
-          Name v   -> v
-
-arrayShape :: forall sh e. Shape sh => Array sh e -> Name -> [Name]
-arrayShape _ base = varNames (undefined::sh) (s ++ ".sh")
-  where
-    s = case base of
-          UnName v -> (show v)
-          Name v   -> v
 
 -- References
+-- ----------
+
+local :: ScalarType a -> Name a -> IR a
+local t x = ir t (LocalReference t x)
+
+global :: ScalarType a -> Name a -> IR a
+global t x = ir t (ConstantOperand (GlobalReference (Just t) x))
+
+
+-- Generating names for things
+-- ---------------------------
+
+-- | Names of array data components
 --
-local :: Name -> Operand
-local = LocalReference
+arrayName :: Name (Array sh e) -> Int -> Name e'        -- for the i-th component of the ArrayData
+arrayName (Name n)   i = Name (n ++ ".ad" ++ show i)
+arrayName (UnName n) i = arrayName (Name (show n)) i
 
-global :: Name -> Operand
-global = ConstantOperand . GlobalReference
-
-class Rvalue a where
-  rvalue :: a -> Operand
-
-instance Rvalue Name where
-  rvalue = local
-
-instance Rvalue Operand where
-  rvalue = id
-
-instance Rvalue Constant where
-  rvalue = ConstantOperand
-
-
--- Code generation
--- ===============
-
--- | The code generator produces a sequence of operands representing the LLVM
--- instructions needed to execute the expression of type `t` in surrounding
--- environment `env`. These are just phantom types.
+-- | Names of shape components
 --
--- The result consists of a list of operands, each representing the single field
--- of a (flattened) tuple expression down to atomic types.
+shapeName :: Name (Array sh e) -> Int -> Name sh'       -- for the i-th component of the shape structure
+shapeName (Name n)   i = Name (n ++ ".sh" ++ show i)
+shapeName (UnName n) i = shapeName (Name (show n)) i
+
+-- | Names of array data elements
 --
-type IR env aenv t = [Operand]
-
-type IRExp aenv t  = CodeGen [Operand]
-
-class IROperand a where
-  toIRExp :: a -> CodeGen [Operand]
-
-instance IROperand [Operand] where
-  toIRExp = return
+irArray :: forall sh e. (Shape sh, Elt e)
+          => Name (Array sh e)
+          -> IRArray (Array sh e)
+irArray n
+  = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference t (shapeName n i)))
+            (travTypeToIR (undefined::e)  (\t i -> LocalReference t (arrayName n i)))
 
 
--- | The code generator for scalar functions emits monadic operations. Since
--- LLVM IR is static single assignment, we need to generate new operand names
--- each time the function is applied.
+-- | Generate typed local names for array data components as well as function
+-- parameters to bind those names
 --
-type IRFun1 aenv f = forall a. IROperand a
-                     => a      -> CodeGen [Operand]
-type IRFun2 aenv f = forall a b. (IROperand a, IROperand b)
-                     => a -> b -> CodeGen [Operand]
+mutableArray
+    :: forall sh e. (Shape sh, Elt e)
+    => Name (Array sh e)
+    -> (IRArray (Array sh e), [LLVM.Parameter])
+mutableArray name =
+  ( irArray name
+  , arrayParam name )
 
--- | A wrapper representing the state of code generation for a delayed array
+
+travTypeToList :: forall t a. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> a)
+    -> [a]
+travTypeToList t f = snd $ go (eltType t) 0
+  where
+    -- DANGER: [1] must traverse in the same order as [2]
+    go :: TupleType s -> Int -> (Int, [a])
+    go UnitTuple         i = (i,   [])
+    go (SingleTuple t')  i = (i+1, [f t' i])
+    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+                                 (i2, r2) = go t2 i1
+                             in
+                             (i2, r2 ++ r1)
+
+travTypeToIR
+    :: forall t. Elt t
+    => t {- dummy -}
+    -> (forall t'. ScalarType t' -> Int -> Operand t')
+    -> IR t
+travTypeToIR t f = IR . snd $ go (eltType t) 0
+  where
+    -- DANGER: [2] must traverse in the same order as [1]
+    go :: TupleType s -> Int -> (Int, Operands s)
+    go UnitTuple         i = (i,   OP_Unit)
+    go (SingleTuple t')  i = (i+1, ir' t' $ f t' i)
+    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+                                 (i2, r2) = go t2 i1
+                             in
+                             (i2, OP_Pair r2 r1)
+
+
+-- Function parameters
+-- -------------------
+
+-- | Call a global function. The function declaration is inserted into the
+-- symbol table.
 --
-data IRDelayed aenv a where
-  IRDelayed :: (Shape sh, Elt e) =>
-    { delayedExtent       :: IRExp  aenv sh
-    , delayedIndex        :: IRFun1 aenv (sh  -> e)
-    , delayedLinearIndex  :: IRFun1 aenv (Int -> e)
-    }                     -> IRDelayed aenv (Array sh e)
-
-
--- Functions & Declarations
--- ========================
-
--- | Call a global function. A function declaration is inserted into the symbol
--- table.
---
-call :: Name                    -- ^ function name
-     -> Type                    -- ^ return type
-     -> [(Type, Operand)]       -- ^ list of function argument types and input operand
-     -> [FunctionAttribute]     -- ^ optional function attributes list (only: noreturn, nounwind, readonly, readnone)
-     -> CodeGen Operand
-call fn rt tyargs attrs = do
-  let (ty,args) = unzip tyargs
-      params    = [ Parameter t (UnName n) [] | t <- ty | n <- [0..] ]
-      toArgs    = map (,[])
-      decl      = functionDefaults { name                 = fn
-                                   , returnType           = rt
-                                   , parameters           = (params,False)
-                                   , G.functionAttributes = attrs }
+call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (IR t)
+call f attrs = do
+  let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs }
   --
   declare decl
-  instr $ Call False C [] (Right (global fn)) (toArgs args) attrs []
+  instr (Call f attrs)
+
+
+scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
+scalarParameter t x = downcast (ScalarParameter t x)
+
+ptrParameter :: ScalarType t -> Name t -> LLVM.Parameter
+ptrParameter t x = downcast (PtrParameter t x)
 
 
 -- | Unpack the array environment into a set of input parameters to a function.
 -- The environment here refers only to the actual free array variables that are
 -- accessed by the function.
 --
-envParam :: forall aenv. Gamma aenv -> [Parameter]
-envParam aenv = concatMap (\(n, Idx' v) -> toParam v n) (IM.elems aenv)
+envParam :: forall aenv. Gamma aenv -> [LLVM.Parameter]
+envParam aenv = concatMap (\(Label n, Idx' v) -> toParam v (Name n)) (IM.elems aenv)
   where
-    toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Name -> [Parameter]
-    toParam _ name = arrayParam (undefined::Array sh e) name
+    toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Name (Array sh e) -> [LLVM.Parameter]
+    toParam _ name = arrayParam name
 
 
--- | Specify an array of particular type and base name as an input parameter to
--- a function.
+-- | Generate function parameters for an Array with given base name.
 --
-arrayParam :: forall sh e. (Shape sh, Elt e) => Array sh e -> Name -> [Parameter]
-arrayParam _ name =
-  let ptr t = PointerType t (AddrSpace 0)
-  in
-  [ Parameter (ptr t) v [NoAlias, NoCapture]                  -- accelerate arrays won't alias
-      | t <- llvmOfTupleType (eltType (undefined::e))
-      | v <- arrayData (undefined::Array sh e) name ] ++
-  [ Parameter t v []
-      | t <- llvmOfTupleType (eltType (undefined::sh))
-      | v <- arrayShape (undefined::Array sh e) name ]
+arrayParam
+    :: forall sh e. (Shape sh, Elt e)
+    => Name (Array sh e)
+    -> [LLVM.Parameter]
+arrayParam name = ad ++ sh
+  where
+    ad = travTypeToList (undefined :: e)  (\t i -> ptrParameter    t (arrayName name i))
+    sh = travTypeToList (undefined :: sh) (\t i -> scalarParameter t (shapeName name i))
 

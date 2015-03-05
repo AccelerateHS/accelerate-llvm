@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-ptx
-version:                0.16.0.0
+version:                2.0.0.0
 cabal-version:          >= 1.10
 tested-with:            GHC == 7.8.*
 build-type:             Simple
@@ -72,11 +72,11 @@ Library
 
     Data.Array.Accelerate.LLVM.PTX.CodeGen
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-    Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
+--    Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
-    Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
+--    Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Link
@@ -88,8 +88,8 @@ Library
 
   build-depends:
           base                          == 4.7.*
-        , accelerate                    >= 0.16
-        , accelerate-llvm               == 0.16.*
+        , accelerate                    == 2.0.*
+        , accelerate-llvm               == 2.0.*
         , bytestring                    >= 0.9
         , containers                    >= 0.5 && <0.6
         , cuda                          >= 0.5
@@ -98,7 +98,7 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , mtl                           >= 2.0
+        , mtl                           >= 2.2.1
         , pretty                        >= 1.1
         , time                          >= 1.4
         , unordered-containers          >= 0.2

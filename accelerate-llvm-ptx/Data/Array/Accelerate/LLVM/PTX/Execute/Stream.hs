@@ -152,7 +152,7 @@ destroy _ctx !ref !stream = do
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-  Debug.when Debug.verbose $ Debug.message Debug.dump_exec ("stream: " ++ msg)
+  Debug.when Debug.verbose $ Debug.traceIO Debug.dump_exec ("stream: " ++ msg)
   next
 
 {-# INLINE message #-}

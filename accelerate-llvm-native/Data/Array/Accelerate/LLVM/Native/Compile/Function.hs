@@ -174,5 +174,5 @@ finaliseFunction varReq varDone
 
 {-# INLINE message #-}
 message :: String -> IO ()
-message str = Debug.message Debug.dump_exec ("exec: " ++ str)
+message str = Debug.traceIO Debug.dump_exec ("exec: " ++ str)
 

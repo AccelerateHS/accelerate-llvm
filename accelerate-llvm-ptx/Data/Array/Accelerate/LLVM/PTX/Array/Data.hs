@@ -37,10 +37,11 @@ instance Remote PTX where
 
   {-# INLINEABLE allocateRemote #-}
   allocateRemote sh = do
-    let arr = Sugar.allocateArray sh
     PTX{..} <- gets llvmTarget
-    liftIO   $ runArray (void . Prim.mallocArray ptxContext ptxMemoryTable (size sh)) arr
-    return arr
+    liftIO   $ do
+      arr <- Sugar.allocateArray sh
+      runArray (void . Prim.mallocArray ptxContext ptxMemoryTable (size sh)) arr
+      return arr
 
   {-# INLINEABLE copyToRemoteR #-}
   copyToRemoteR from to ms arr@(Array sh _) = do

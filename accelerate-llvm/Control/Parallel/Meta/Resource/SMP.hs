@@ -28,7 +28,7 @@ module Control.Parallel.Meta.Resource.SMP (
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 
-import qualified Data.Array.Accelerate.LLVM.Debug       as Debug
+import qualified Data.Array.Accelerate.Debug            as Debug
 
 -- standard library
 import Data.Concurrent.Deque.Class
@@ -103,5 +103,5 @@ mkWorkSearch retries gang =
 
 {-# INLINE message #-}
 message :: Int -> String -> IO ()
-message tid msg = Debug.message Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
+message tid msg = Debug.traceIO Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
 

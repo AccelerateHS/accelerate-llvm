@@ -1,14 +1,12 @@
-{-# LANGUAGE CPP                        #-}
-{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -16,21 +14,20 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-
 module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   CodeGen,
   runLLVM,
 
   -- declarations
-  freshName, declare, intrinsic,
+  fresh, declare, intrinsic,
 
   -- basic blocks
   Block,
-  newBlock, setBlock, createBlocks, beginGroup,
+  newBlock, setBlock, beginBlock, createBlocks,
 
   -- instructions
-  instr, do_, return_, phi, phi', br, cbr,
+  instr, instr', do_, return_, retval_, br, cbr, phi, phi',
 
   -- metadata
   addMetadata,
@@ -40,47 +37,46 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 -- standard library
 import Control.Applicative
 import Control.Monad.State.Strict
-import Data.Maybe
-import Data.Map                                                 ( Map )
-import Data.Sequence                                            ( Seq )
-import Data.HashMap.Strict                                      ( HashMap )
-import Data.String
+import Data.Function
+import Data.HashMap.Strict                                              ( HashMap )
+import Data.Map                                                         ( Map )
+import Data.Sequence                                                    ( Seq )
 import Data.Word
 import Text.Printf
-import System.IO.Unsafe
-import qualified Data.Foldable                                  as Seq
-import qualified Data.HashMap.Strict                            as HashMap
-import qualified Data.Map                                       as Map
-import qualified Data.Sequence                                  as Seq
-
--- llvm-general
-import LLVM.General.AST                                         hiding ( Module )
-import qualified LLVM.General.AST                               as AST
-import qualified LLVM.General.AST.Global                        as AST
+import qualified Data.Foldable                                          as Seq
+import qualified Data.HashMap.Strict                                    as HashMap
+import qualified Data.Map                                               as Map
+import qualified Data.Sequence                                          as Seq
 
 -- accelerate
+import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Sugar                                ( Elt, eltType )
+import qualified Data.Array.Accelerate.Debug                            as Debug
+
+-- accelerate-llvm
+import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Metadata
+import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.CodeGen.Downcast
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.CodeGen.Type
+
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+
+-- llvm-general-pure
+import qualified LLVM.General.AST                                       as LLVM
+import qualified LLVM.General.AST.Global                                as LLVM
 
 
--- Names
--- =====
-
-instance IsString Name where
-  fromString = Name . fromString
-
--- | Generate a fresh (un)name.
---
-freshName :: CodeGen Name
-freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
-
-
--- Code generation operations
--- ==========================
+-- Code generation
+-- ===============
 
 -- | The code generation state for scalar functions and expressions.
 --
@@ -88,187 +84,67 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- AST, and one for each of the basic blocks that are generated during the walk.
 --
 data CodeGenState = CodeGenState
-  { blockChain          :: Seq Block                            -- blocks for this function
-  , symbolTable         :: Map Name AST.Global                  -- global (external) function declarations
-  , metadataTable       :: HashMap String (Seq [Maybe Operand]) -- module metadata to be collected
-  , intrinsicTable      :: HashMap String Name                  -- standard math intrinsic functions
-  , next                :: {-# UNPACK #-} !Word                 -- a name supply
+  { blockChain          :: Seq Block                                    -- blocks for this function
+  , symbolTable         :: Map Label LLVM.Global                        -- global (external) function declarations
+  , metadataTable       :: HashMap String (Seq [Maybe Metadata])        -- module metadata to be collected
+  , intrinsicTable      :: HashMap String Label                         -- standard math intrinsic functions
+  , next                :: {-# UNPACK #-} !Word                         -- a name supply
   }
-  deriving Show
 
 data Block = Block
-  { blockLabel          :: Name                         -- block label
-  , instructions        :: Seq (Named Instruction)      -- stack of instructions
-  , terminator          :: Maybe (Named Terminator)     -- block terminator
+  { blockLabel          :: Label                                        -- block label
+  , instructions        :: Seq (LLVM.Named LLVM.Instruction)            -- stack of instructions
+  , terminator          :: LLVM.Terminator                              -- block terminator
   }
-  deriving Show
 
 newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
 
 runLLVM
-    :: forall t aenv a. (Target t, Intrinsic t)
-    => CodeGen [Kernel t aenv a]
-    -> Module t aenv a
-runLLVM ll =
+    :: forall arch aenv a. (Target arch, Intrinsic arch)
+    => CodeGen (IROpenAcc arch aenv a)
+    -> Module arch aenv a
+runLLVM  ll =
   let
-      (r, st)   = runState (runCodeGen ll) $ CodeGenState
-                    { blockChain        = initBlockChain
-                    , symbolTable       = Map.empty
-                    , metadataTable     = HashMap.empty
-                    , intrinsicTable    = intrinsicForTarget (undefined::t)
-                    , next              = 0
-                    }
+      (kernels, st)     = case runState (runCodeGen ll) initialState of
+                            (IROpenAcc r, s) -> (map unKernel r, s)
 
-      kernels   = map unKernel r
-      defs      = map GlobalDefinition (kernels ++ Map.elems (symbolTable st))
-               ++ createMetadata (metadataTable st)
+      initialState      = CodeGenState
+                            { blockChain        = initBlockChain
+                            , symbolTable       = Map.empty
+                            , metadataTable     = HashMap.empty
+                            , intrinsicTable    = intrinsicForTarget (undefined::arch)
+                            , next              = 0
+                            }
 
-      name | x:_          <- kernels
-           , f@Function{} <- x
-           , Name s <- AST.name f = s
-           | otherwise            = "<undefined>"
+      definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+                       ++ createMetadata (metadataTable st)
+
+      name | x:_               <- kernels
+           , f@LLVM.Function{} <- x
+           , LLVM.Name s <- LLVM.name f = s
+           | otherwise                  = "<undefined>"
+
   in
-  Module $ AST.Module
-    { moduleName         = name
-    , moduleDataLayout   = targetDataLayout (undefined::t)
-    , moduleTargetTriple = targetTriple (undefined::t)
-    , moduleDefinitions  = defs
+  Module $ LLVM.Module
+    { LLVM.moduleName         = name
+    , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
+    , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
+    , LLVM.moduleDefinitions  = definitions
     }
 
+
+-- Basic Blocks
+-- ============
 
 -- | An initial block chain
 --
 initBlockChain :: Seq Block
-initBlockChain =
-  Seq.singleton $ Block "entry" Seq.empty Nothing
+initBlockChain
+  = Seq.singleton
+  $ Block "entry" Seq.empty ($internalError "entry" "block has no terminator")
 
-
--- | Extract the block state and construct the basic blocks to form a function
--- body. This also clears the block stream, ready for a new function to be
--- generated.
---
-createBlocks :: CodeGen [BasicBlock]
-createBlocks
-  = state
-  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
-              blocks = makeBlock `fmap` blockChain s
-              m      = Seq.length (blockChain s)
-              n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
-          in
-          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
-  where
-    makeBlock Block{..} =
-      let err   = $internalError "createBlocks" $ "Block has no terminator (" ++ show blockLabel ++ ")"
-          term  = fromMaybe err terminator
-          ins   = Seq.toList instructions
-      in
-      BasicBlock blockLabel ins term
-
-
--- Instructions
--- ------------
-
--- | Add an instruction to the state of the currently active block so that it is
--- computed, and return the operand (LocalReference) that can be used to later
--- refer to it.
---
-instr :: Instruction -> CodeGen Operand
-instr op = do
-  name  <- freshName
-  state $ \s ->
-    case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "instr" "empty block chain"
-      bs Seq.:> b -> ( LocalReference name
-                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> name := op } } )
-
--- | Execute an unnamed instruction
---
-do_ :: Instruction -> CodeGen ()
-do_ op = do
-  modify $ \s ->
-    case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "do_" "empty block chain"
-      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> Do op } }
-
-
--- | Return void from a basic block
---
-return_ :: CodeGen ()
-return_ = void $ terminate (Do (Ret Nothing []))
-
-
--- | Add a phi node to the top of the specified block
---
-phi :: Block                    -- ^ the basic block to modify
-    -> Name                     -- ^ the name of the critical variable (to assign the result of the phi instruction)
-    -> Type                     -- ^ type of the critical variable
-    -> [(Operand, Block)]       -- ^ list of incoming operands and the precursor basic block they come from
-    -> CodeGen Operand
-phi target crit t incoming =
-  let op          = Phi t [ (o,blockLabel) | (o,Block{..}) <- incoming ] []
-      search this = blockLabel this == blockLabel target
-  in
-  state $ \s ->
-    case Seq.findIndexR search (blockChain s) of
-      Nothing -> $internalError "phi" "unknown basic block"
-      Just i  -> ( LocalReference crit
-                 , s { blockChain = Seq.adjust (\b -> b { instructions = crit := op Seq.<| instructions b }) i (blockChain s) } )
-
-phi' :: Type -> [(Operand,Block)] -> CodeGen Operand
-phi' t incoming = do
-  crit  <- freshName
-  block <- state $ \s -> case Seq.viewr (blockChain s) of
-                           Seq.EmptyR -> $internalError "phi'" "empty block chain"
-                           _ Seq.:> b -> ( b, s )
-  phi block crit t incoming
-
-
--- | Unconditional branch. Return the name of the block that was branched from.
---
-br :: Block -> CodeGen Block
-br target = terminate $ Do (Br (blockLabel target) [])
-
--- | Conditional branch. Return the name of the block that was branched from.
---
-cbr :: Operand -> Block -> Block -> CodeGen Block
-cbr cond t f = terminate $ Do (CondBr cond (blockLabel t) (blockLabel f) [])
-
--- | Add a termination condition to the current instruction stream. Return the
--- name of the block chain that was just terminated.
---
-terminate :: Named Terminator -> CodeGen Block
-terminate target =
-  state $ \s ->
-    case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "terminate" "empty block chain"
-      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = Just target } } )
-
-
--- | Add a global declaration to the symbol table
---
-declare :: Global -> CodeGen ()
-declare g =
-  let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
-                      | otherwise = Just g
-      unique _                    = Just g
-  in
-  modify (\s -> s { symbolTable = Map.alter unique (AST.name g) (symbolTable s) })
-
-
--- | Get name of the corresponding intrinsic function implementing a given C
--- function. If there is no mapping, the C function name is used.
---
-intrinsic :: String -> CodeGen Name
-intrinsic key =
-  state $ \s ->
-    let name = HashMap.lookupDefault (Name key) key (intrinsicTable s)
-    in  (name, s)
-
-
--- Block chain
--- ===========
 
 -- | Create a new basic block, but don't yet add it to the block chain. You need
 -- to call 'setBlock' to append it to the chain, so that subsequent instructions
@@ -300,10 +176,12 @@ newBlock :: String -> CodeGen Block
 newBlock nm =
   state $ \s ->
     let idx     = Seq.length (blockChain s)
-        label   = Name $ let (h,t) = break (== '.') nm in (h ++ shows idx t)
-        next    = Block label Seq.empty Nothing
+        label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
+        next    = Block (Label label) Seq.empty err
+        err     = $internalError label "Block has no terminator"
     in
     ( next, s )
+
 
 -- | Add this block to the block stream. Any instructions pushed onto the stream
 -- by 'instr' and friends will now apply to this block.
@@ -312,15 +190,178 @@ setBlock :: Block -> CodeGen ()
 setBlock next =
   modify $ \s -> s { blockChain = blockChain s Seq.|> next }
 
--- | Generate a new block and branch unconditionally to it. This is used to
--- ensure a block group is initialised before recursively walking the AST. See
--- note: [Basic blocks].
+
+-- | Generate a new block and branch unconditionally to it.
 --
-beginGroup :: String -> CodeGen ()
-beginGroup nm = do
-  next <- newBlock (nm ++ ".entry")
+beginBlock :: String -> CodeGen Block
+beginBlock nm = do
+  next <- newBlock nm
   _    <- br next
   setBlock next
+  return next
+
+
+-- | Extract the block state and construct the basic blocks that form a function
+-- body. The block stream is re-initialised, but module-level state such as the
+-- global symbol table is left intact.
+--
+createBlocks :: CodeGen [LLVM.BasicBlock]
+createBlocks
+  = state
+  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+              blocks = makeBlock `fmap` blockChain s
+              m      = Seq.length (blockChain s)
+              n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
+          in
+          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
+  where
+    makeBlock Block{..} =
+      LLVM.BasicBlock (downcast blockLabel) (Seq.toList instructions) (LLVM.Do terminator)
+
+
+-- Instructions
+-- ------------
+
+-- | Generate a fresh local reference
+--
+fresh :: forall a. Elt a => CodeGen (IR a)
+fresh = IR <$> go (eltType (undefined::a))
+  where
+    go :: TupleType t -> CodeGen (Operands t)
+    go UnitTuple         = return OP_Unit
+    go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
+    go (SingleTuple t)   = ir' t . LocalReference t <$> freshName
+
+-- | Generate a fresh (un)name.
+--
+freshName :: CodeGen (Name a)
+freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
+
+
+-- | Add an instruction to the state of the currently active block so that it is
+-- computed, and return the operand (LocalReference) that can be used to later
+-- refer to it.
+--
+instr :: Instruction a -> CodeGen (IR a)
+instr ins = ir (typeOf ins) <$> instr' ins
+
+instr' :: Instruction a -> CodeGen (Operand a)
+instr' ins = do
+  name  <- freshName
+  state $ \s ->
+    case Seq.viewr (blockChain s) of
+      Seq.EmptyR  -> $internalError "instr" "empty block chain"
+      bs Seq.:> b -> ( LocalReference (typeOf ins) name
+                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (name := ins) } } )
+
+
+-- | Execute an unnamed instruction
+--
+do_ :: Instruction () -> CodeGen ()
+do_ ins =
+  modify $ \s ->
+    case Seq.viewr (blockChain s) of
+      Seq.EmptyR  -> $internalError "do_" "empty block chain"
+      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (Do ins) } }
+
+
+-- | Return void from a basic block
+--
+return_ :: CodeGen ()
+return_ = void $ terminate Ret
+
+-- | Return a value from a basic block
+--
+retval_ :: Operand a -> CodeGen ()
+retval_ x = void $ terminate (RetVal x)
+
+
+-- | Unconditional branch. Return the name of the block that was branched from.
+--
+br :: Block -> CodeGen Block
+br target = terminate $ Br (blockLabel target)
+
+
+-- | Conditional branch. Return the name of the block that was branched from.
+--
+cbr :: IR Bool -> Block -> Block -> CodeGen Block
+cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
+
+
+-- | Add a phi node to the top of the current block
+--
+phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
+phi incoming = do
+  crit  <- fresh
+  block <- state $ \s -> case Seq.viewr (blockChain s) of
+                           Seq.EmptyR -> $internalError "phi" "empty block chain"
+                           _ Seq.:> b -> ( b, s )
+  phi' block crit incoming
+
+phi' :: forall a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen (IR a)
+phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b) | (IR o, b) <- incoming ]
+  where
+    go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen (Operands t)
+    go UnitTuple OP_Unit _
+      = return OP_Unit
+    go (PairTuple t2 t1) (OP_Pair n2 n1) inc
+      = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- inc ]
+                <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
+    go (SingleTuple t) tup inc
+      | LocalReference _ v <- op' t tup = ir' t <$> phi1 target v [ (op' t x, b) | (x, b) <- inc ]
+      | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
+
+
+phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
+phi1 target crit incoming =
+  let cmp       = (==) `on` blockLabel
+      update b  = b { instructions = downcast (crit := Phi ty [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
+      ty        = case incoming of
+                    []        -> $internalError "phi" "no incoming values specified"
+                    (o,_):_   -> typeOf o
+  in
+  state $ \s ->
+    case Seq.findIndexR (cmp target) (blockChain s) of
+      Nothing -> $internalError "phi" "unknown basic block"
+      Just i  -> ( LocalReference ty crit
+                 , s { blockChain = Seq.adjust update i (blockChain s) } )
+
+
+-- | Add a termination condition to the current instruction stream. Also return
+-- the block that was just terminated.
+--
+terminate :: Terminator a -> CodeGen Block
+terminate term =
+  state $ \s ->
+    case Seq.viewr (blockChain s) of
+      Seq.EmptyR  -> $internalError "terminate" "empty block chain"
+      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
+
+
+-- | Add a global declaration to the symbol table
+--
+declare :: LLVM.Global -> CodeGen ()
+declare g =
+  let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
+                      | otherwise = Just g
+      unique _                    = Just g
+
+      name = case LLVM.name g of
+               LLVM.Name n      -> Label n
+               LLVM.UnName n    -> Label (show n)
+  in
+  modify (\s -> s { symbolTable = Map.alter unique name (symbolTable s) })
+
+
+-- | Get name of the corresponding intrinsic function implementing a given C
+-- function. If there is no mapping, the C function name is used.
+--
+intrinsic :: String -> CodeGen Label
+intrinsic key =
+  state $ \s ->
+    let name = HashMap.lookupDefault (Label key) key (intrinsicTable s)
+    in  (name, s)
+
 
 
 -- Metadata
@@ -328,7 +369,7 @@ beginGroup nm = do
 
 -- | Insert a metadata key/value pair into the current module.
 --
-addMetadata :: String -> [Maybe Operand] -> CodeGen ()
+addMetadata :: String -> [Maybe Metadata] -> CodeGen ()
 addMetadata key val =
   modify $ \s ->
     s { metadataTable = HashMap.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }
@@ -339,24 +380,24 @@ addMetadata key val =
 -- represent the metadata node definitions that will be attached to that
 -- definition.
 --
-createMetadata :: HashMap String (Seq [Maybe Operand]) -> [Definition]
+createMetadata :: HashMap String (Seq [Maybe Metadata]) -> [LLVM.Definition]
 createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
   where
-    build :: [(String, Seq [Maybe Operand])]
-          -> (Seq Definition, Seq Definition)   -- accumulator of (names, metadata)
-          -> [Definition]
+    build :: [(String, Seq [Maybe Metadata])]
+          -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
+          -> [LLVM.Definition]
     build []     (k,d) = Seq.toList (k Seq.>< d)
     build (x:xs) (k,d) =
       let (k',d') = meta (Seq.length d) x
       in  build xs (k Seq.|> k', d Seq.>< d')
 
-    meta :: Int                                 -- number of metadata node definitions so far
-         -> (String, Seq [Maybe Operand])       -- current assoc of the metadata map
-         -> (Definition, Seq Definition)
+    meta :: Int                                         -- number of metadata node definitions so far
+         -> (String, Seq [Maybe Metadata])              -- current assoc of the metadata map
+         -> (LLVM.Definition, Seq LLVM.Definition)
     meta n (key, vals)
-      = let node i      = MetadataNodeID (fromIntegral (i+n))
-            nodes       = Seq.mapWithIndex (\i x -> MetadataNodeDefinition (node i) (Seq.toList x)) vals
-            name        = NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
+      = let node i      = LLVM.MetadataNodeID (fromIntegral (i+n))
+            nodes       = Seq.mapWithIndex (\i x -> LLVM.MetadataNodeDefinition (node i) (downcast (Seq.toList x))) vals
+            name        = LLVM.NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
         in
         (name, nodes)
 
@@ -366,7 +407,5 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
 
 {-# INLINE trace #-}
 trace :: String -> a -> a
-trace msg next = unsafePerformIO $ do
-  Debug.message Debug.dump_llvm ("llvm: " ++ msg)
-  return next
+trace msg = Debug.trace Debug.dump_cc ("llvm: " ++ msg)
 

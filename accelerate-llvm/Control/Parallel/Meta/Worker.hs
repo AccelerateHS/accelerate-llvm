@@ -19,7 +19,7 @@ module Control.Parallel.Meta.Worker (
 ) where
 
 -- accelerate
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- standard library
 import Control.Applicative
@@ -204,5 +204,5 @@ exhausted gang =
 
 {-# INLINE message #-}
 message :: String -> IO ()
-message msg = Debug.message Debug.dump_gang ("gang: " ++ msg)
+message msg = Debug.traceIO Debug.dump_sched ("gang: " ++ msg)
 

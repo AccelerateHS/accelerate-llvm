@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-native
-version:                0.16.0.0
+version:                2.0.0.0
 cabal-version:          >= 1.10
 tested-with:            GHC == 7.8.*
 build-type:             Simple
@@ -17,8 +17,6 @@ author:                 Trevor L. McDonell
 maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
-
-extra-source-files:     include/accelerate.h
 
 
 -- Configuration flags
@@ -68,24 +66,24 @@ Library
 
     Data.Array.Accelerate.LLVM.Native.CodeGen
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
     Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
     Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
-    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+--    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
-    Data.Array.Accelerate.LLVM.Native.Execute.Fill
-    Data.Array.Accelerate.LLVM.Native.Execute.Gang
+--    Data.Array.Accelerate.LLVM.Native.Execute.Fill
+--    Data.Array.Accelerate.LLVM.Native.Execute.Gang
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
-          base                          >= 4.6 && <5.0
-        , accelerate                    >= 0.16
-        , accelerate-llvm               == 0.16.*
+          base                          == 4.7.*
+        , accelerate                    == 2.0.*
+        , accelerate-llvm               == 2.0.*
         , containers                    >= 0.5 && <0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
@@ -93,13 +91,12 @@ Library
         , libffi                        >= 0.1
         , llvm-general                  >= 3.2
         , llvm-general-pure             >= 3.2
-        , mtl                           >= 2.0
+        , mtl                           >= 2.2.1
         , time                          >= 1.4
 
   default-language:
     Haskell2010
 
-  include-dirs:                 include
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
   if flag(debug)

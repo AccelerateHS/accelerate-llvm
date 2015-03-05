@@ -27,7 +27,6 @@ import GHC.Conc                                                 ( forkOn, numCap
 import GHC.IO
 import GHC.ST
 
-import Data.Array.Accelerate.LLVM.Native.Debug                  ( dump_gang, dump_exec )
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 
@@ -216,7 +215,7 @@ seqIO _gang _action
 --
 parIO :: Gang -> (Int -> IO ()) -> IO ()
 parIO Gang{..} action
-  = Debug.timed dump_exec elapsed
+  = Debug.timed Debug.dump_exec elapsed
   $ do
         event "parIO start"
 
@@ -240,7 +239,7 @@ gangST g p = unsafeIOToST . gangIO g $ unsafeSTToIO . p
 
 {-# INLINE message #-}
 message :: String -> IO ()
-message str = Debug.message dump_gang ("gang: " ++ str)
+message str = Debug.traceIO Debug.dump_sched ("gang: " ++ str)
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String
@@ -248,5 +247,5 @@ elapsed x y = "exec: " ++ Debug.elapsed x y
 
 {-# INLINE event #-}
 event :: String -> IO ()
-event str = Debug.event dump_exec ("exec: " ++ str)
+event str = Debug.traceEventIO Debug.dump_exec ("exec: " ++ str)
 

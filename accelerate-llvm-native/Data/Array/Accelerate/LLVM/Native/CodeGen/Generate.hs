@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
@@ -17,11 +16,12 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
+import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
-import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
@@ -33,20 +33,19 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 mkGenerate
     :: forall arch aenv sh e. (Shape sh, Elt e)
     => Gamma aenv
-    -> IRFun1 aenv (sh -> e)
-    -> CodeGen [Kernel arch aenv (Array sh e)]
+    -> IRFun1 arch aenv (sh -> e)
+    -> CodeGen (IROpenAcc arch aenv (Array sh e))
 mkGenerate aenv apply =
   let
-      arrOut                      = arrayData  (undefined::Array sh e) "out"
-      shOut                       = arrayShape (undefined::Array sh e) "out"
-      paramOut                    = arrayParam (undefined::Array sh e) "out"
-      paramEnv                    = envParam aenv
-      (start, end, paramGang)     = gangParam
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
   in
-  makeKernel "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+
     imapFromTo start end $ \i -> do
-      ix <- indexOfInt shOut i                  -- convert to multidimensional index
-      r  <- apply ix                            -- apply generator function
+      ix <- indexOfInt (irArrayShape arrOut) i  -- convert to multidimensional index
+      r  <- app1 apply ix                       -- apply generator function
       writeArray arrOut i r                     -- store result
 
     return_

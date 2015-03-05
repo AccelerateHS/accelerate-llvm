@@ -1,9 +1,8 @@
-{-# LANGUAGE CPP             #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -14,17 +13,35 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Environment
   where
 
--- llvm-general
-import LLVM.General.AST
+import Data.IntMap                                              ( IntMap )
+import qualified Data.IntMap                                    as IM
 
--- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
+import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt )
 import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
--- standard library
-import Data.IntMap                                              ( IntMap )
-import qualified Data.IntMap                                    as IM
+import Data.Array.Accelerate.LLVM.CodeGen.IR
+
+import LLVM.General.AST.Type.Name
+
+
+-- Scalar environment
+-- ==================
+
+-- | An environment for local scalar expression bindings, encoded at the value
+-- level as a heterogenous snoc list, and on the type level as nested tuples.
+--
+data Val env where
+  Empty ::                    Val ()
+  Push  :: Val env -> IR t -> Val (env, t)
+
+-- | Projection of a value from the valuation environment using a de Bruijn
+-- index.
+--
+prj :: Idx env t -> Val env -> IR t
+prj ZeroIdx      (Push _   v) = v
+prj (SuccIdx ix) (Push val _) = prj ix val
+prj _            _            = $internalError "prj" "inconsistent valuation"
 
 
 -- Array environment
@@ -38,21 +55,20 @@ import qualified Data.IntMap                                    as IM
 -- result is still sensitive to the order of let bindings, but not of any
 -- intermediate (unused) free array variables.
 --
-type Gamma aenv = IntMap (Name, Idx' aenv)
+type Gamma aenv = IntMap (Label, Idx' aenv)
+
+data Idx' aenv where
+  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
 
 -- Projection of a value from the array environment using a de Bruijn index.
 -- This returns a pair of operands to access the shape and array data
 -- respectively.
 --
-aprj :: Idx aenv t -> Gamma aenv -> Name
+aprj :: Idx aenv t -> Gamma aenv -> Name t
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
-    Just (n,_)  -> n
-    Nothing     -> $internalError "aprj" "inconsistent valuation"
-
-
-data Idx' aenv where
-  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
+    Nothing             -> $internalError "aprj" "free variable not registered"
+    Just (Label n,_)    -> Name n
 
 
 -- | Construct the array environment index, will be used by code generation to
@@ -61,28 +77,12 @@ data Idx' aenv where
 makeGamma :: IntMap (Idx' aenv) -> Gamma aenv
 makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
   where
-    toAval :: Int -> Idx' aenv -> (Name, Idx' aenv)
-    toAval n ix = (Name ("fv" ++ show n), ix)
+    toAval :: Int -> Idx' aenv -> (Label, Idx' aenv)
+    toAval n ix = (Label ("fv" ++ show n), ix)
 
+-- | A free variable
+--
 freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
 freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
 
-
--- Scalar environment
--- ==================
-
--- | An environment for local scalar expression bindings, encoded at the value
--- level as a heterogenous snoc list, and on the type level as nested tuples.
---
-data Val env where
-  Empty ::                         Val ()
-  Push  :: Val env -> [Operand] -> Val (env, t)
-                        -- ^ Idx env t ~ IR env aenv t
-
--- Projection of a value from the valuation environment using a de Bruijn index.
---
-prj :: Idx env t -> Val env -> [Operand]
-prj ZeroIdx      (Push _   v) = v
-prj (SuccIdx ix) (Push val _) = prj ix val
-prj _            _            = $internalError "prj" "inconsistent valuation"
 

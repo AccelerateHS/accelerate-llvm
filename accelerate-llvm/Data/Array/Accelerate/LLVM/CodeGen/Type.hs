@@ -1,9 +1,7 @@
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE RecordWildCards     #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -14,136 +12,119 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Type
   where
 
--- accelerate
+import Data.Maybe
+
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.Util
-
--- llvm-general
-import LLVM.General.AST.Float
-import LLVM.General.AST.Type
-
--- standard library
-import Foreign.C.Types
+import LLVM.General.AST.Type.Constant
+import LLVM.General.AST.Type.Global
+import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Operand
 
 
--- Generate the LLVM type for atomic types
+-- | Does the concrete type represent signed or unsigned values?
 --
-class TypeOf a where
-  typeOf :: a -> Type
+class IsSigned dict where
+  signed   :: dict a -> Bool
+  unsigned :: dict a -> Bool
 
-instance TypeOf (ScalarType a) where
-  typeOf = llvmOfScalarType
+  signed   = not . unsigned
+  unsigned = not . signed
 
-instance TypeOf (NumType a) where
-  typeOf = llvmOfNumType
+instance IsSigned ScalarType where
+  signed (NumScalarType t)    = signed t
+  signed (NonNumScalarType t) = signed t
 
-instance TypeOf (IntegralType a) where
-  typeOf = llvmOfIntegralType
+instance IsSigned BoundedType where
+  signed (IntegralBoundedType t) = signed t
+  signed (NonNumBoundedType t)   = signed t
 
-instance TypeOf (FloatingType a) where
-  typeOf = llvmOfFloatingType
+instance IsSigned NumType where
+  signed (IntegralNumType t) = signed t
+  signed (FloatingNumType t) = signed t
 
-instance TypeOf (NonNumType a) where
-  typeOf = llvmOfNonNumType
+instance IsSigned IntegralType where
+  signed t =
+    case t of
+      TypeInt _    -> True
+      TypeInt8 _   -> True
+      TypeInt16 _  -> True
+      TypeInt32 _  -> True
+      TypeInt64 _  -> True
+      TypeCShort _ -> True
+      TypeCInt _   -> True
+      TypeCLong _  -> True
+      TypeCLLong _ -> True
+      _            -> False
+
+instance IsSigned FloatingType where
+  signed _ = True
+
+instance IsSigned NonNumType where
+  signed t =
+    case t of
+      TypeBool _        -> False
+      TypeChar _        -> False
+      TypeCUChar _      -> False
+      TypeCSChar _      -> True
+      TypeCChar _       -> True
 
 
--- In order to use operations from Arithemetic.hs when defining skeletons, we
--- often need integer types
+-- | Extract the reified scalar type dictionary of an operation
 --
-class IntType c where
-  int   :: c Int
-  int32 :: c Int32
+class TypeOf op where
+  typeOf :: op a -> ScalarType a
 
-instance IntType ScalarType where
-  int   = scalarType
-  int32 = scalarType
+instance TypeOf Instruction where
+  typeOf ins =
+    case ins of
+      Add _ x _         -> typeOf x
+      Sub _ x _         -> typeOf x
+      Mul _ x _         -> typeOf x
+      Quot _ x _        -> typeOf x
+      Rem _ x _         -> typeOf x
+      Div _ x _         -> typeOf x
+      ShiftL _ x _      -> typeOf x
+      ShiftRL _ x _     -> typeOf x
+      ShiftRA _ x _     -> typeOf x
+      BAnd _ x _        -> typeOf x
+      BOr _ x _         -> typeOf x
+      BXor _ x _        -> typeOf x
+      LAnd _ _          -> scalarType
+      LOr _ _           -> scalarType
+      LNot _            -> scalarType
+      Load t _ _        -> t
+--      Store _ _ x       -> typeOf x
+--      GetElementPtr x _ -> typeOf x
+      FTrunc _ t _      -> NumScalarType (FloatingNumType t)
+      FExt _ t _        -> NumScalarType (FloatingNumType t)
+      Trunc _ t _       -> case t of
+                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
+                             NonNumBoundedType n   -> NonNumScalarType n
+      Ext _ t _         -> case t of
+                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
+                             NonNumBoundedType n   -> NonNumScalarType n
+      FPToInt _ t _     -> NumScalarType (IntegralNumType t)
+      IntToFP _ t _     -> NumScalarType (FloatingNumType t)
+      BitCast t _       -> t
+      Cmp{}             -> scalarType
+      Select t _ _ _    -> t
+      Phi t _           -> t
+      Call f _          -> funResultType f
+        where
+          funResultType :: GlobalFunction args t -> ScalarType t
+          funResultType (Lam _ _ l) = funResultType l
+          funResultType (Body t _)  = fromJust t
 
-instance IntType NumType where
-  int   = numType
-  int32 = numType
+instance TypeOf Operand where
+  typeOf op =
+    case op of
+      LocalReference t _        -> t
+      ConstantOperand c         -> typeOf c
 
-instance IntType IntegralType where
-  int   = integralType
-  int32 = integralType
+instance TypeOf Constant where
+  typeOf c =
+    case c of
+      ScalarConstant t _        -> t
+      GlobalReference t _       -> fromJust t
 
-
-llvmOfTupleType :: TupleType a -> [Type]
-llvmOfTupleType UnitTuple         = []
-llvmOfTupleType (SingleTuple t)   = [llvmOfScalarType t]
-llvmOfTupleType (PairTuple t1 t2) = llvmOfTupleType t1 ++ llvmOfTupleType t2
-
-llvmOfScalarType :: ScalarType a -> Type
-llvmOfScalarType (NumScalarType t)    = llvmOfNumType t
-llvmOfScalarType (NonNumScalarType t) = llvmOfNonNumType t
-
-
-llvmOfNumType :: NumType a -> Type
-llvmOfNumType (IntegralNumType i) = llvmOfIntegralType i
-llvmOfNumType (FloatingNumType f) = llvmOfFloatingType f
-
-llvmOfIntegralType :: forall a. IntegralType a -> Type
-llvmOfIntegralType i | IntegralDict <- integralDict i = IntegerType (bitSize (undefined::a))
-
-llvmOfFloatingType :: FloatingType a -> Type
-llvmOfFloatingType f =
-  case f of
-    TypeFloat  _  -> FloatingPointType 32 IEEE
-    TypeCFloat _  -> FloatingPointType 32 IEEE
-    TypeDouble _  -> FloatingPointType 64 IEEE
-    TypeCDouble _ -> FloatingPointType 64 IEEE
-
-
-llvmOfNonNumType :: NonNumType t -> Type
-llvmOfNonNumType t =
-  case t of
-    TypeBool _ -> IntegerType 1         -- data layout ensures 8-bits are actually used
-    TypeChar _ -> IntegerType 32        -- Haskell char
-    _          -> IntegerType 8         -- signed and unsigned C characters
-
-
-signedIntegralNum :: IntegralType a -> Bool
-signedIntegralNum t =
-  case t of
-    TypeInt _    -> True
-    TypeInt8 _   -> True
-    TypeInt16 _  -> True
-    TypeInt32 _  -> True
-    TypeInt64 _  -> True
-    TypeCShort _ -> True
-    TypeCInt _   -> True
-    TypeCLong _  -> True
-    TypeCLLong _ -> True
-    _            -> False
-
-unsignedIntegralNum :: IntegralType a -> Bool
-unsignedIntegralNum = not . signedIntegralNum
-
-someFloat :: FloatingType a -> a -> SomeFloat
-someFloat t f =
-  case t of
-    TypeFloat  _                    -> Single f
-    TypeDouble _                    -> Double f
-    TypeCFloat _  | CFloat f'  <- f -> Single f'
-    TypeCDouble _ | CDouble f' <- f -> Double f'
-
-
-
--- | The size of an LLVM type representation. Note that this does not currently
--- handle with all types, such as function types or named type synonyms.
---
-bitSizeOfType :: Type -> Word32
-bitSizeOfType t =
-  case t of
-    VoidType            -> 0
-    IntegerType{}       -> typeBits t                   -- Bool returns 1, but 8-bits are actually used as per data layout
-    FloatingPointType{} -> typeBits t
-    PointerType{}       -> bitSize (undefined::Int)     -- Native word size
-    VectorType{..}      -> nVectorElements * bitSizeOfType elementType
-    ArrayType{..}       -> nArrayElements' * bitSizeOfType elementType where nArrayElements' = fromIntegral nArrayElements
-    StructureType{..}
-      | isPacked        -> sum [ bitSizeOfType f | f <- elementTypes ]
-      | otherwise       -> error "bitSizeOf StructureType (with alignment)"
-    FunctionType{}      -> error "bitSizeOf FunctionType"
-    NamedTypeReference{}-> error "bitSizeOf NamedTypeReference"
-    MetadataType        -> error "bitSizeOf MetadataType"

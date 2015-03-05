@@ -45,12 +45,12 @@ instance Remote Native
 --
 cloneArray :: (Shape sh, Elt e) => Array sh e -> LLVM Native (Array sh e)
 cloneArray arr@(Array _ src) = liftIO $ do
+  out@(Array _ dst)    <- allocateArray sh
   copyR arrayElt src dst
   return out
   where
     sh                  = shape arr
     n                   = size sh
-    out@(Array _ dst)   = allocateArray sh
 
     copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> IO ()
     copyR ArrayEltRunit             _   _   = return ()

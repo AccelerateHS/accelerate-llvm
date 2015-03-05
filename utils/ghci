@@ -7,6 +7,7 @@ GHC="cabal exec ghc --"
 
 GHC_FLAGS="$GHC_FLAGS
     --interactive
+    -i../accelerate
     -DACCELERATE_BOUNDS_CHECKS
     -DACCELERATE_INTERNAL_CHECKS
     -DACCELERATE_DEBUG

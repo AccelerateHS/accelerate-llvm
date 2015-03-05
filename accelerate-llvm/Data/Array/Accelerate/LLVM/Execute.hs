@@ -16,7 +16,7 @@
 
 module Data.Array.Accelerate.LLVM.Execute (
 
-  Execute(..),Gamma,
+  Execute(..), Gamma,
   executeAcc, executeAfun1,
 
 ) where
@@ -27,7 +27,6 @@ import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..)
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
-import Data.Array.Accelerate.Product
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -262,8 +261,8 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Avar ix                     -> after stream (aprj ix aenv)
     Alet bnd body               -> streaming (executeOpenAcc bnd aenv) (\x -> executeOpenAcc body (aenv `Apush` x) stream)
     Apply f a                   -> streaming (executeOpenAcc a aenv)   (executeOpenAfun1 f aenv)
-    Atuple tup                  -> toTuple <$> travT tup
-    Aprj ix tup                 -> evalPrj ix . fromTuple <$> travA tup
+    Atuple tup                  -> toAtuple <$> travT tup
+    Aprj ix tup                 -> evalPrj ix . fromAtuple <$> travA tup
     Acond p t e                 -> acond t e =<< travE p
     Awhile p f a                -> awhile p f =<< travA a
 
@@ -386,6 +385,7 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       ToIndex sh ix             -> toIndex   <$> travE sh  <*> travE ix
       FromIndex sh ix           -> fromIndex <$> travE sh  <*> travE ix
       Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
+      Union sh1 sh2             -> union <$> travE sh1 <*> travE sh2
       ShapeSize sh              -> size  <$> travE sh
       Shape acc                 -> shape <$> travA acc
       Index acc ix              -> join $ index       <$> travA acc <*> travE ix

@@ -46,7 +46,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
-import Control.Monad.Error
+import Control.Monad.Except                                     ( runExceptT )
 import Control.Monad.State
 import Data.Maybe
 
@@ -72,7 +72,7 @@ compileForNativeTarget acc aenv = do
   target <- gets llvmTarget
 
   -- Generate code for this Acc operation
-  let Module ast = llvmOfAcc target acc aenv
+  let Module ast = llvmOfOpenAcc target acc aenv
       triple     = fromMaybe "" (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 
@@ -85,15 +85,15 @@ compileForNativeTarget acc aenv = do
   -- 'withContext'.
   --
   fun <- liftIO . startFunction $ \loop ->
-    withContext                          $ \ctx     ->
-    runError $ withModuleFromAST ctx ast $ \mdl     ->
-    runError $ withNativeTargetMachine   $ \machine ->
-      withTargetLibraryInfo triple       $ \libinfo -> do
+    withContext                           $ \ctx     ->
+    runExcept $ withModuleFromAST ctx ast $ \mdl     ->
+    runExcept $ withNativeTargetMachine   $ \machine ->
+      withTargetLibraryInfo triple        $ \libinfo -> do
         optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
         Debug.when Debug.verbose $ do
-          Debug.message Debug.dump_llvm =<< moduleLLVMAssembly mdl
-          Debug.message Debug.dump_asm  =<< runError (moduleTargetAssembly machine mdl)
+          Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
+          Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
         withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
          withModuleInEngine mcjit mdl        $ \exe   -> do
@@ -102,7 +102,7 @@ compileForNativeTarget acc aenv = do
 
   return $! NativeR fun
   where
-    runError    = either ($internalError "compileForNativeTarget") return <=< runErrorT
+    runExcept   = either ($internalError "compileForNativeTarget") return <=< runExceptT
 
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
@@ -128,7 +128,7 @@ moduleTargetAssembly :: TargetMachine -> LLVM.Module -> ErrorT String IO String
 moduleTargetAssembly machine mdl = ErrorT $ do
   tmp    <- getTemporaryDirectory
   (fp,h) <- openTempFile tmp "accelerate-llvm.asm"
-  ok     <- runErrorT $ LLVM.writeAssemblyToFile machine fp mdl
+  ok     <- runExceptT $ LLVM.writeAssemblyToFile machine fp mdl
   case ok of
     Left e   -> return (Left e)
     Right () -> Right `fmap` hGetContents h

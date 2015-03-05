@@ -1,14 +1,13 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ParallelListComp    #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Exp
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -19,531 +18,396 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Exp
   where
 
--- llvm-general
-import LLVM.General.AST
+import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
+import Control.Applicative                                      hiding ( Const )
+import Control.Monad
+import qualified Data.IntMap                                    as IM
 
--- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
-import Data.Array.Accelerate.Analysis.Type                      ( preExpType, delayedAccType )
-import Data.Array.Accelerate.Array.Representation               hiding ( Shape )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, EltRepr, Foreign, (:.), eltType )
+import Data.Array.Accelerate.Analysis.Match
+import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple, shape, intersect, union )
+import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Type
+import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
+import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as L
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
--- standard library
-import Control.Applicative                                      ( (<$>), (<*>) )
-import Control.Monad.State
 
-
--- Scalar functions
--- ================
-
--- | Convert a closed function of one argument into a sequence of LLVM basic
--- blocks.
+-- | A class covering code generation for a subset of the scalar operations.
+-- All operations (except Foreign) have a default instance, but this allows a
+-- backend to specialise the implementation for the more complex operations.
 --
-llvmOfFun1 :: DelayedFun aenv (a -> b) -> Gamma aenv -> IRFun1 aenv (a -> b)
-llvmOfFun1 (Lam (Body f)) aenv xs = do
-  xs' <- toIRExp xs
-  llvmOfOpenExp f (Empty `Push` xs') aenv
-llvmOfFun1 _              _    _  = error "dooo~ you knoooow~ what it's liiike"
+class Expression arch where
+  eforeign      :: (Foreign f, Elt x, Elt y)
+                => arch
+                -> f x y
+                -> IRFun1    arch ()   (x -> y)
+                -> IROpenExp arch env aenv x
+                -> IROpenExp arch env aenv y
+  eforeign = $internalError "eforeign" "default instance not implemented yet"
 
-llvmOfFun2 :: DelayedFun aenv (a -> b -> c) -> Gamma aenv -> IRFun2 aenv (a -> b -> c)
-llvmOfFun2 (Lam (Lam (Body f))) aenv xs ys = do
-  xs' <- toIRExp xs
-  ys' <- toIRExp ys
-  llvmOfOpenExp f (Empty `Push` xs' `Push` ys') aenv
-llvmOfFun2 _                    _    _  _  = error "when the world seems to chaaaange~ overniiight"
+  while         :: Elt a
+                => IROpenFun1 arch env aenv (a -> Bool)
+                -> IROpenFun1 arch env aenv (a -> a)
+                -> IROpenExp  arch env aenv a
+                -> IROpenExp  arch env aenv a
+  while p f x =
+    L.while (app1 p) (app1 f) =<< x
 
 
 -- Scalar expressions
 -- ==================
+
+llvmOfFun1
+    :: (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedFun aenv (a -> b)
+    -> Gamma aenv
+    -> IRFun1 arch aenv (a -> b)
+llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body (Empty `Push` x) aenv
+llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
+
+llvmOfFun2
+    :: (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedFun aenv (a -> b -> c)
+    -> Gamma aenv
+    -> IRFun2 arch aenv (a -> b -> c)
+llvmOfFun2 arch (Lam (Lam (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp arch body (Empty `Push` x `Push` y) aenv
+llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impossible evaluation"
+
 
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
 --
 llvmOfOpenExp
-    :: forall _env aenv _t.
-       DelayedOpenExp _env aenv _t
-    -> Val _env
+    :: forall arch env aenv _t. (Skeleton arch, Expression arch)
+    => arch
+    -> DelayedOpenExp env aenv _t
+    -> Val env
     -> Gamma aenv
-    -> CodeGen (IR _env aenv _t)
-llvmOfOpenExp exp env aenv = cvtE exp env
+    -> IROpenExp arch env aenv _t
+llvmOfOpenExp arch top env aenv = cvtE top
   where
-    cvtE :: forall env t. DelayedOpenExp env aenv t -> Val env -> CodeGen (IR env aenv t)
-    cvtE exp env =
+    cvtM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
+    cvtM (Manifest (Avar ix)) = IRManifest ix
+    cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
+
+    cvtF1 :: DelayedOpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
+    cvtF1 (Lam (Body body)) = IRFun1 $ \x -> llvmOfOpenExp arch body (env `Push` x) aenv
+    cvtF1 _                 = $internalError "cvtF1" "impossible evaluation"
+
+    cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
+    cvtE exp =
       case exp of
-        Let bnd body            -> elet bnd body env
-        Var ix                  -> return $ prj ix env
-        PrimConst c             -> return $ [constOp (primConst c)]
-        Const c                 -> return $ map constOp (constant (eltType (undefined::t)) c)
-        PrimApp f arg           -> cvtE arg env >>= llvmOfPrimFun f >>= return . return
-        Tuple t                 -> cvtT t env
-        Prj i t                 -> prjT i t exp env
-        Cond p t e              -> cond p t e env
-        While p f x             -> while p f x env
+        Let bnd body                -> do x <- cvtE bnd
+                                          llvmOfOpenExp arch body (env `Push` x) aenv
+        Var ix                      -> return $ prj ix env
+        Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
+        PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
+        PrimApp f x                 -> llvmOfPrimFun f =<< cvtE x
+        IndexNil                    -> return indexNil
+        IndexAny                    -> return indexAny
+        IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
+        IndexHead ix                -> indexHead <$> cvtE ix
+        IndexTail ix                -> indexTail <$> cvtE ix
+        Prj ix tup                  -> prjT ix <$> cvtE tup
+        Tuple tup                   -> cvtT tup
+        Foreign asm native x        -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
+        Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
+        IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
+        IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
+        ToIndex sh ix               -> join $ intOfIndex <$> cvtE sh <*> cvtE ix
+        FromIndex sh ix             -> join $ indexOfInt <$> cvtE sh <*> cvtE ix
+        Index acc ix                -> index (cvtM acc)       =<< cvtE ix
+        LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
+        ShapeSize sh                -> shapeSize              =<< cvtE sh
+        Shape acc                   -> return $ shape (cvtM acc)
+        Intersect sh1 sh2           -> join $ intersect <$> cvtE sh1 <*> cvtE sh2
+        Union sh1 sh2               -> join $ union     <$> cvtE sh1 <*> cvtE sh2
+        While c f x                 -> while (cvtF1 c) (cvtF1 f) (cvtE x)
 
-        -- Shapes and indices
-        IndexNil                -> return []
-        IndexAny                -> return []
-        IndexCons sh sz         -> (++) <$> cvtE sh env <*> cvtE sz env
-        IndexHead ix            -> indexHead <$> cvtE ix env
-        IndexTail ix            -> indexTail <$> cvtE ix env
-        IndexSlice ix slix sh   -> indexSlice ix slix sh env
-        IndexFull  ix slix sl   -> indexFull  ix slix sl env
-        ToIndex sh ix           -> toIndex   sh ix env
-        FromIndex sh ix         -> fromIndex sh ix env
+    indexNil :: IR Z
+    indexNil = IR (constant (eltType Z) (fromElt Z))
 
-        -- Arrays and indexing
-        Index acc ix            -> index acc ix env
-        LinearIndex acc ix      -> linearIndex acc ix env
-        Shape acc               -> shape acc
-        ShapeSize sh            -> shapeSize sh env
-        Intersect sh1 sh2       -> intersect sh1 sh2 env
+    indexAny :: forall sh. Shape sh => IR (Any sh)
+    indexAny = let any = Any :: Any sh
+               in  IR (constant (eltType any) (fromElt any))
 
-        --Foreign function
-        Foreign ff _ e          -> foreignE ff e env
+    indexHead :: IR (sh :. sz) -> IR sz
+    indexHead (IR (OP_Pair _ sz)) = IR sz
 
-    cvtF1 :: DelayedOpenFun env aenv (a -> b)
-          -> Val env
-          -> Gamma aenv
-          -> IR env aenv a
-          -> CodeGen (IR env aenv b)
-    cvtF1 (Lam (Body f)) env aenv xs = llvmOfOpenExp f (env `Push` xs) aenv
-    cvtF1 _              _   _    _  = error "impossible"
+    indexCons :: IR sh -> IR sz -> IR (sh :. sz)
+    indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 
-    -- The heavy lifting
-    -- -----------------
+    indexTail :: IR (sh :. sz) -> IR sh
+    indexTail (IR (OP_Pair sh _)) = IR sh
 
-    -- Scalar let expressions evaluate the binding and store the results into
-    -- new variables. These names are added to the environment so they can be
-    -- picked out by `Var`.
-    --
-    -- Note that there is no restriction to the scope of the new binding. Once
-    -- something is added to the instruction stream, it remains there forever.
-    --
-    elet :: DelayedOpenExp env       aenv bnd
-         -> DelayedOpenExp (env,bnd) aenv body
-         -> Val env
-         -> CodeGen (IR env aenv body)
-    elet bnd body env = do
-      x <- cvtE bnd env
-      cvtE body (env `Push` x)
+    indexSlice :: (Shape sh, Shape sl, Elt slix)
+               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+               -> IR slix
+               -> IR sh
+               -> IR sl
+    indexSlice slice (IR slix) (IR sh) = IR $ restrict slice slix sh
+      where
+        restrict :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
+        restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
+        restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
+          let sl' = restrict sliceIdx slx sl
+          in  OP_Pair sl' sz
+        restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
+          restrict sliceIdx slx sl
 
-    -- Convert an open expression into a sequence of C expressions. We retain
-    -- snoc-list ordering, so the element at tuple index zero is at the end of
-    -- the list. Note that nested tuple structures are flattened.
-    --
-    cvtT :: Tuple (DelayedOpenExp env aenv) t -> Val env -> CodeGen (IR env aenv t)
-    cvtT tup env =
-      case tup of
-        NilTup          -> return []
-        SnocTup t e     -> (++) <$> cvtT t env <*> cvtE e env
+    indexFull :: (Shape sh, Shape sl, Elt slix)
+              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+              -> IR slix
+              -> IR sl
+              -> IR sh
+    indexFull slice (IR slix) (IR sh) = IR $ extend slice slix sh
+      where
+        extend :: SliceIndex slix sl co sh -> Operands slix -> Operands sl -> Operands sh
+        extend SliceNil              OP_Unit               OP_Unit         = OP_Unit
+        extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
+          let sh' = extend sliceIdx slx sl
+          in  OP_Pair sh' sz
+        extend (SliceFixed sliceIdx) (OP_Pair slx sz) sl                   =
+          let sh' = extend sliceIdx slx sl
+          in  OP_Pair sh' sz
 
-    -- Project out a tuple index. Since the nested tuple structure is flattened,
-    -- this actually corresponds to slicing out a subset of the list of
-    -- expressions, rather than picking out a single element.
-    --
-    prjT :: TupleIdx (TupleRepr t) e
-         -> DelayedOpenExp env aenv t
-         -> DelayedOpenExp env aenv e
-         -> Val env
-         -> CodeGen (IR env aenv t)
-    prjT ix t e env =
-      let subset = reverse
-                 . take (length      $ llvmOfTupleType (preExpType delayedAccType e))
-                 . drop (prjToInt ix $ preExpType delayedAccType t)
-                 . reverse      -- as Accelerate expressions use a snoc-list representation
-      in
-      subset <$> cvtE t env
+    prjT :: forall t e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IR e
+    prjT tix (IR ops) = IR $ go tix (eltType (undefined::t)) ops
+      where
+        go :: TupleIdx v e -> TupleType t' -> Operands t' -> Operands (EltRepr e)
+        go ZeroTupIdx (PairTuple _ t) (OP_Pair _ v)
+          | Just REFL <- matchTupleType t (eltType (undefined :: e))
+          = v
+        go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _)      = go ix t tup
+        go _ _ _                                                = $internalError "prjT" "inconsistent valuation"
 
-    -- Convert a tuple index into the corresponding integer. Since the internal
-    -- representation is flat, be sure to walk over all sub components when indexing
-    -- past nested tuples.
-    --
-    prjToInt :: TupleIdx t e -> TupleType a -> Int
-    prjToInt ZeroTupIdx     _                 = 0
-    prjToInt (SuccTupIdx i) (b `PairTuple` a) = sizeTupleType a + prjToInt i b
-    prjToInt _              _                 = $internalError "prjToInt" "inconsistent valuation"
+    cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (IR t)
+    cvtT tup = IR <$> go (eltType (undefined::t)) tup
+      where
+        go :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
+        go UnitTuple NilTup
+          = return OP_Unit
+        go (PairTuple ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
+          -- We must assert that the reified type 'tb' of 'b' is actually
+          -- equivalent to the type of 'b'. This can not fail, but is necessary
+          -- because 'tb' observes the representation type of surface type 'b'.
+          | Just REFL <- matchTupleType tb (eltType (undefined::b))
+          = do a'    <- go ta a
+               IR b' <- cvtE b
+               return $ OP_Pair a' b'
+        go _ _ = $internalError "cvtT" "impossible evaluation"
 
-    sizeTupleType :: TupleType a -> Int
-    sizeTupleType UnitTuple       = 0
-    sizeTupleType (SingleTuple _) = 1
-    sizeTupleType (PairTuple a b) = sizeTupleType a + sizeTupleType b
+    linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
+    linearIndex (IRManifest v) ix =
+      readArray (irArray (aprj v aenv)) ix
 
-    -- Evaluate scalar conditions. We create three new basic blocks: one for
-    -- each side of the branch (true/false) and a new block both branches jump
-    -- to after evaluating their part.
-    --
-    -- The branch instructions 'br' and 'cbr' return the name of the basic block
-    -- that it terminates (branches from). This is because evaluation of the
-    -- branches can lead to new block labels being created as we walk the AST.
-    --
-    -- See note: [Basic blocks]
-    --
-    cond :: forall env t. Elt t
-         => DelayedOpenExp env aenv Bool
-         -> DelayedOpenExp env aenv t
-         -> DelayedOpenExp env aenv t
-         -> Val env
-         -> CodeGen (IR env aenv t)
-    cond test t e env = do
-      ifThen <- newBlock "if.then"
-      ifElse <- newBlock "if.else"
-      ifExit <- newBlock "if.exit"
-      beginGroup "if"
+    index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> CodeGen (IR e)
+    index (IRManifest v) ix =
+      let arr = irArray (aprj v aenv)
+      in  readArray arr =<< intOfIndex (irArrayShape arr) ix
 
-      -- Compute the conditional
-      p  <- single "cond" `fmap` cvtE test env
-      _  <- cbr p ifThen ifElse
+    shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
+    shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
 
-      -- Compute the true and false branches, then jump to the bottom
-      setBlock ifThen
-      tv   <- cvtE t env
-      true <- br ifExit
+    shapeSize :: forall sh. Shape sh => IR sh -> CodeGen (IR Int)
+    shapeSize (IR extent) = go (eltType (undefined::sh)) extent
+      where
+        go :: TupleType t -> Operands t -> CodeGen (IR Int)
+        go UnitTuple OP_Unit
+          = return $ IR (constant (eltType (undefined :: Int)) 1)
+        go (PairTuple tsh t) (OP_Pair sh sz)
+          | Just REFL <- matchTupleType t (eltType (undefined::Int))
+          = do
+               a <- go tsh sh
+               b <- A.mul numType a (IR sz)
+               return b
+        go (SingleTuple t) (op' t -> i)
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          = return $ ir t i
+        go _ _
+          = $internalError "shapeSize" "expected shape with Int components"
 
-      setBlock ifElse
-      fv    <- cvtE e env
-      false <- br ifExit
+    intersect :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+      where
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go UnitTuple OP_Unit OP_Unit
+          = return OP_Unit
+        go (SingleTuple t) sh1 sh2
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          = do IR x <- A.min t (IR sh1) (IR sh2)
+               return x
+        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+          = do
+               sz' <- go tsz sz1 sz2
+               sh' <- go tsh sh1 sh2
+               return $ OP_Pair sh' sz'
+        go _ _ _
+          = $internalError "intersect" "expected shape with Int components"
 
-      -- Select the right value using the phi node
-      setBlock ifExit
-      zipWithM phi' (llvmOfTupleType (eltType (undefined::t))) [ [(t,true), (f,false)] | t <- tv | f <- fv ]
-
-    -- Value recursion iterates a function while a conditional on that variable
-    -- remains true. See note: [Basic blocks]
-    while :: forall env a. Elt a
-          => DelayedOpenFun env aenv (a -> Bool)
-          -> DelayedOpenFun env aenv (a -> a)
-          -> DelayedOpenExp env aenv a
-          -> Val env
-          -> CodeGen (IR env aenv a)
-    while p f x env = do
-      let ty = llvmOfTupleType (eltType (undefined::a))
-      loop <- newBlock "while.top"
-      exit <- newBlock "while.exit"
-      beginGroup "while"
-
-      -- Generate the seed value
-      seed <-                       cvtE  x env
-      c    <- single "while" `fmap` cvtF1 p env aenv seed
-      top  <- cbr c loop exit
-
-      -- Create some temporary names. These will be used to store the operands
-      -- resulting from the phi node we will add to the top of the loop. We
-      -- can't use recursive do because the monadic effects are recursive.
-      ns   <- mapM (const freshName) ty
-      let prev = map local ns
-
-      -- Now generate the loop body. Afterwards, we insert a phi node at the
-      -- head of the instruction stream, which selects the input value depending
-      -- on which edge we entered the loop from (top or bottom).
-      setBlock loop
-      next <-                       cvtF1 f env aenv prev
-      c    <- single "while" `fmap` cvtF1 p env aenv next
-      bot  <- cbr c loop exit
-      _    <- sequence $ zipWith3 (phi loop) ns ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
-
-      -- Now the loop exit
-      setBlock exit
-      zipWithM phi' ty [ [(t,top), (b,bot)] | t <- seed | b <- next ]
+    union :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    union (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+      where
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go UnitTuple OP_Unit OP_Unit
+          = return OP_Unit
+        go (SingleTuple t) sh1 sh2
+          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          = do IR x <- A.max t (IR sh1) (IR sh2)
+               return x
+        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+          = do
+               sz' <- go tsz sz1 sz2
+               sh' <- go tsh sh1 sh2
+               return $ OP_Pair sh' sz'
+        go _ _ _
+          = $internalError "union" "expected shape with Int components"
 
 
-    -- Get the innermost index of a shape/index
-    indexHead :: IR env aenv (sh :. sz) -> IR env anv sz
-    indexHead = return . last
-
-    -- Get the tail of a shape/index
-    indexTail :: IR env aenv (sh :. sz) -> IR env aenv sh
-    indexTail = init
-
-    -- Restrict indices based on a slice specification. In the SliceAll case we
-    -- elide the presence of IndexAny from the head of slx, as this is not
-    -- represented (we use Any ~ [])
-    --
-    indexSlice :: SliceIndex (EltRepr slix) sl co (EltRepr sh)
-               -> DelayedOpenExp env aenv slix
-               -> DelayedOpenExp env aenv sh
-               -> Val env
-               -> CodeGen (IR env aenv sl)
-    indexSlice sliceIndex slix sh env =
-      let restrict :: SliceIndex slix sl co sh -> IR env aenv slix -> IR env aenv sh -> IR env aenv sl
-          restrict SliceNil              _       _       = []
-          restrict (SliceAll   sliceIdx) slx     (sz:sl) = sz : restrict sliceIdx slx sl
-          restrict (SliceFixed sliceIdx) (_:slx) ( _:sl) =      restrict sliceIdx slx sl
-          restrict _ _ _ = $internalError "IndexSlice" "unexpected shapes"
-          --
-          slice slix' sh' = reverse $ restrict sliceIndex (reverse slix') (reverse sh')
-      in
-      slice <$> cvtE slix env <*> cvtE sh env
-
-    -- Extend indices based on a slice specification. In the SliceAll case we
-    -- elide the presence of Any from the head of slx.
-    --
-    indexFull :: SliceIndex (EltRepr slix) (EltRepr sl) co sh
-              -> DelayedOpenExp env aenv slix
-              -> DelayedOpenExp env aenv sl
-              -> Val env
-              -> CodeGen (IR env aenv sh)
-    indexFull sliceIndex slix sl env =
-      let extend :: SliceIndex slix sl co sh -> IR env aenv slix -> IR env aenv sl -> IR env aenv sh
-          extend SliceNil              _        _       = []
-          extend (SliceAll   sliceIdx) slx      (sz:sh) = sz : extend sliceIdx slx sh
-          extend (SliceFixed sliceIdx) (sz:slx) sh      = sz : extend sliceIdx slx sh
-          extend _ _ _ = $internalError "IndexFull" "unexpected shapes"
-          --
-          replicate slix' sl' = reverse $ extend sliceIndex (reverse slix') (reverse sl')
-      in
-      replicate <$> cvtE slix env <*> cvtE sl env
-
-    -- Some terms demand we extract only simple scalar expressions
-    single :: String -> [a] -> a
-    single _   [x] = x
-    single loc _   = $internalError loc "expected single expression"
-
-    -- Generate the linear index of a multidimensional index and array shape
-    --
-    toIndex :: DelayedOpenExp env aenv sh       -- array extent
-            -> DelayedOpenExp env aenv sh       -- index
-            -> Val env
-            -> CodeGen (IR env aenv Int)
-    toIndex sh ix env = do
-      sh' <- cvtE sh env
-      ix' <- cvtE ix env
-      return `fmap` intOfIndex sh' ix'
-
-    -- Generate a multidimensional index from a linear index and array shape
-    --
-    fromIndex :: DelayedOpenExp env aenv sh     -- array extent
-              -> DelayedOpenExp env aenv Int    -- index
-              -> Val env
-              -> CodeGen (IR env aenv sh)
-    fromIndex sh ix env = do
-      sh' <-                           cvtE sh env
-      ix' <- single "fromIndex" `fmap` cvtE ix env
-      indexOfInt sh' ix'
-
-    -- Project out a single scalar element from an array. The array expression
-    -- does not contain any free scalar variables (strictly flat data
-    -- parallelism) and has been floated out by sharing recovery/array fusion to
-    -- be replaced by an array index.
-    --
-    index :: forall sh e env. (Shape sh, Elt e)
-          => DelayedOpenAcc     aenv (Array sh e)
-          -> DelayedOpenExp env aenv sh
-          -> Val env
-          -> CodeGen (IR env aenv e)
-    index (Manifest (Avar v)) ix env = do
-      let name  = aprj v aenv
-          ad    = arrayData  (undefined::Array sh e) name
-          sh    = arrayShape (undefined::Array sh e) name
-      --
-      ix' <- cvtE ix env
-      i   <- intOfIndex sh ix'
-      readArray ad i
-    index _ _ _ =
-      $internalError "index" "expected array variable"
-
-    linearIndex :: forall sh e env. Elt e
-                => DelayedOpenAcc     aenv (Array sh e)
-                -> DelayedOpenExp env aenv Int
-                -> Val env
-                -> CodeGen (IR env aenv e)
-    linearIndex (Manifest (Avar v)) ix env = do
-      let name  = aprj v aenv
-          ad    = arrayData  (undefined::Array sh e) name
-      --
-      i   <- single "linearIndex" `fmap` cvtE ix env
-      readArray ad i
-    linearIndex _ _ _ =
-      $internalError "linearIndex" "expected array variable"
-
-    -- Array shapes created in this method refer to the shape of a free array
-    -- variable, and are always passed as arguments to the function.
-    --
-    shape :: forall env sh e. Shape sh
-          => DelayedOpenAcc aenv (Array sh e)
-          -> CodeGen (IR env aenv sh)
-    shape (Manifest (Avar v)) =
-      let name  = aprj v aenv
-          sh    = arrayShape (undefined::Array sh e) name
-      in
-      return (map local sh)
-    shape _ =
-      $internalError "shape" "expected array variable"
-
-    shapeSize :: DelayedOpenExp env aenv sh
-              -> Val env
-              -> CodeGen (IR env aenv sh)
-    shapeSize sh env = do
-      let int           = numType :: NumType Int
-          size []       = return $ constOp (num int 1)
-          size [x]      = return x
-          size (x:xs)   = foldM (A.mul int) x xs
-      --
-      sh' <- cvtE sh env
-      sz  <- size sh'
-      return [sz]
-
-    -- Intersection of two shapes, taken as the minimum in each dimension.
-    --
-    intersect :: DelayedOpenExp env aenv sh
-              -> DelayedOpenExp env aenv sh
-              -> Val env
-              -> CodeGen (IR env aenv sh)
-    intersect sh1 sh2 env = do
-      sh1' <- cvtE sh1 env
-      sh2' <- cvtE sh2 env
-      zipWithM (A.min (scalarType :: ScalarType Int)) sh1' sh2'
-
-    -- Foreign scalar functions.
-    --
-    foreignE :: (Foreign f, Elt a, Elt b)
-             => f a b
-             -> DelayedOpenExp env aenv a
-             -> Val env
-             -> CodeGen (IR env aenv b)
-    foreignE = error "todo: codegen/foreign expressions"
-
-
--- Helper functions
--- ----------------
-
--- Read a value from an array.
--- TODO: attach metedata node "!invariant.load" ?
+-- | Convert a multidimensional array index into a linear index
 --
-readArray :: [Name] -> Operand -> CodeGen [Operand]
-readArray = readArray' False
-
-readVolatileArray :: [Name] -> Operand -> CodeGen [Operand]
-readVolatileArray = readArray' True
-
-readArray' :: Bool -> [Name] -> Operand -> CodeGen [Operand]
-readArray' volatile arr i =
-  forM arr $ \a -> do
-    p <- instr $ GetElementPtr False (local a) [i] []
-    v <- instr $ Load volatile p Nothing 0 []
-    return v
-
--- Write elements into an array.
---
-writeArray :: IROperand a => [Name] -> Operand -> a -> CodeGen ()
-writeArray = writeArray' False
-
-writeVolatileArray :: IROperand a => [Name] -> Operand -> a -> CodeGen ()
-writeVolatileArray = writeArray' True
-
-writeArray' :: IROperand a => Bool -> [Name] -> Operand -> a -> CodeGen ()
-writeArray' volatile arr i val' = do
-  val <- toIRExp val'
-  zipWithM_ (\a v -> do
-    p <- instr $ GetElementPtr False (local a) [i] []
-    do_        $ Store volatile p v Nothing 0 []) arr val
-
--- Convert a multidimensional array index into a linear index
---
-intOfIndex :: (Rvalue sh, Rvalue ix) => [sh] -> [ix] -> CodeGen Operand
-intOfIndex extent idx = cvt (reverseMap rvalue extent) (reverseMap rvalue idx)
+intOfIndex :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR Int)
+intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
   where
-    cvt []      []     = return (constOp $ num int 0)
-    cvt [_]     [i]    = return i
-    cvt (sz:sh) (i:ix) = do
-      a <- cvt sh ix
-      b <- A.mul (numType :: NumType Int) a sz
-      c <- A.add (numType :: NumType Int) b i
-      return c
-    cvt _       _      =
-      $internalError "cvt" "argument mismatch"
+    cvt :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Int)
+    cvt UnitTuple OP_Unit OP_Unit
+      = return $ IR (constant (eltType (undefined :: Int)) 0)
 
--- Convert a linear array index into a multidimensional array
+    cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
+      | Just REFL <- matchTupleType t (eltType (undefined::Int))
+      = do
+           a <- cvt tsh sh ix
+           b <- A.mul numType a (IR sz)
+           c <- A.add numType b (IR i)
+           return c
+
+    cvt (SingleTuple t) _ (op' t -> i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return $ ir t i
+
+    cvt _ _ _
+      = $internalError "intOfIndex" "expected shape with Int components"
+
+
+-- | Convert a linear index into into a multidimensional index
 --
-indexOfInt :: (Rvalue sh, Rvalue i) => [sh] -> i -> CodeGen [Operand]
-indexOfInt extent idx = reverse `fmap` cvt (reverseMap rvalue extent) (rvalue idx)
+indexOfInt :: forall sh. Shape sh => IR sh -> IR Int -> CodeGen (IR sh)
+indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
   where
-    cvt []      _ = return [constOp $ num int 0]
-    cvt [_]     i = return [i]  -- assert( i >= 0 && i < sh )
-    cvt (sz:sh) i = do
-      r  <- A.rem  int i sz
-      i' <- A.quot int i sz
-      rs <- cvt sh i'
-      return (r:rs)
+    cvt :: TupleType t -> Operands t -> IR Int -> CodeGen (Operands t)
+    cvt UnitTuple OP_Unit _
+      = return OP_Unit
 
-reverseMap :: (a -> b) -> [a] -> [b]
-reverseMap f = reverse . map f
+    cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
+      | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
+      = do
+           i'    <- A.quot integralType i (IR sz)
+           -- If we assume the index is in range, there is no point computing
+           -- the remainder of the highest dimension since (i < sz) must hold
+           IR r  <- case matchTupleType tsh (eltType (undefined::Z)) of
+                      Just REFL -> return i     -- TODO: in debug mode assert (i < sz)
+                      Nothing   -> A.rem  integralType i (IR sz)
+           sh'   <- cvt tsh sh i'
+           return $ OP_Pair sh' r
+
+    cvt (SingleTuple t) _ (IR i)
+      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      = return i
+
+    cvt _ _ _
+      = $internalError "indexOfInt" "expected shape with Int components"
 
 
 -- Primitive functions
 -- ===================
 
+fst :: IR (a, b) -> IR a
+fst (IR (OP_Pair (OP_Pair OP_Unit x) _)) = IR x
+
+snd :: IR (a, b) -> IR b
+snd (IR (OP_Pair _ y)) = IR y
+
+unpair :: IR (a, b) -> (IR a, IR b)
+unpair x = (fst x, snd x)
+
+uncurry :: (IR a -> IR b -> c) -> IR (a, b) -> c
+uncurry f (unpair -> (x,y)) = f x y
+
+
 -- | Generate llvm operations for primitive scalar functions
 --
-llvmOfPrimFun :: PrimFun f -> [Operand] -> CodeGen Operand
-llvmOfPrimFun (PrimAdd t)              [a,b] = A.add t a b
-llvmOfPrimFun (PrimSub t)              [a,b] = A.sub t a b
-llvmOfPrimFun (PrimMul t)              [a,b] = A.mul t a b
-llvmOfPrimFun (PrimNeg t)              [a]   = A.negate t a
-llvmOfPrimFun (PrimAbs t)              [a]   = A.abs t a
-llvmOfPrimFun (PrimSig t)              [a]   = A.signum t a
-llvmOfPrimFun (PrimQuot t)             [a,b] = A.quot t a b
-llvmOfPrimFun (PrimRem t)              [a,b] = A.rem t a b
-llvmOfPrimFun (PrimIDiv t)             [a,b] = A.idiv t a b
-llvmOfPrimFun (PrimMod t)              [a,b] = A.mod t a b
-llvmOfPrimFun (PrimBAnd t)             [a,b] = A.band t a b
-llvmOfPrimFun (PrimBOr t)              [a,b] = A.bor t a b
-llvmOfPrimFun (PrimBXor t)             [a,b] = A.xor t a b
-llvmOfPrimFun (PrimBNot t)             [a]   = A.complement t a
-llvmOfPrimFun (PrimBShiftL t)          [a,b] = A.shiftL t a b
-llvmOfPrimFun (PrimBShiftR t)          [a,b] = A.shiftR t a b
-llvmOfPrimFun (PrimBRotateL t)         [a,b] = A.rotateL t a b
-llvmOfPrimFun (PrimBRotateR t)         [a,b] = A.rotateR t a b
-llvmOfPrimFun (PrimFDiv t)             [a,b] = A.fdiv t a b
-llvmOfPrimFun (PrimRecip t)            [a]   = A.recip t a
-llvmOfPrimFun (PrimSin t)              [a]   = A.sin t a
-llvmOfPrimFun (PrimCos t)              [a]   = A.cos t a
-llvmOfPrimFun (PrimTan t)              [a]   = A.tan t a
-llvmOfPrimFun (PrimAsin t)             [a]   = A.asin t a
-llvmOfPrimFun (PrimAcos t)             [a]   = A.acos t a
-llvmOfPrimFun (PrimAtan t)             [a]   = A.atan t a
-llvmOfPrimFun (PrimAsinh t)            [a]   = A.asinh t a
-llvmOfPrimFun (PrimAcosh t)            [a]   = A.acosh t a
-llvmOfPrimFun (PrimAtanh t)            [a]   = A.atanh t a
-llvmOfPrimFun (PrimAtan2 t)            [a,b] = A.atan2 t a b
-llvmOfPrimFun (PrimExpFloating t)      [a]   = A.exp t a
-llvmOfPrimFun (PrimFPow t)             [a,b] = A.fpow t a b
-llvmOfPrimFun (PrimSqrt t)             [a]   = A.sqrt t a
-llvmOfPrimFun (PrimLog t)              [a]   = A.log t a
-llvmOfPrimFun (PrimLogBase t)          [a,b] = A.logBase t a b
-llvmOfPrimFun (PrimTruncate ta tb)     [a]   = A.truncate ta tb a
-llvmOfPrimFun (PrimRound ta tb)        [a]   = A.round ta tb a
-llvmOfPrimFun (PrimFloor ta tb)        [a]   = A.floor ta tb a
-llvmOfPrimFun (PrimCeiling ta tb)      [a]   = A.ceiling ta tb a
-llvmOfPrimFun (PrimLt t)               [a,b] = A.lt t a b
-llvmOfPrimFun (PrimGt t)               [a,b] = A.gt t a b
-llvmOfPrimFun (PrimLtEq t)             [a,b] = A.lte t a b
-llvmOfPrimFun (PrimGtEq t)             [a,b] = A.gte t a b
-llvmOfPrimFun (PrimEq t)               [a,b] = A.eq t a b
-llvmOfPrimFun (PrimNEq t)              [a,b] = A.neq t a b
-llvmOfPrimFun (PrimMax t)              [a,b] = A.max t a b
-llvmOfPrimFun (PrimMin t)              [a,b] = A.min t a b
-llvmOfPrimFun PrimLAnd                 [a,b] = A.land a b
-llvmOfPrimFun PrimLOr                  [a,b] = A.lor a b
-llvmOfPrimFun PrimLNot                 [a]   = A.lnot a
-llvmOfPrimFun PrimOrd                  [a]   = A.ord a
-llvmOfPrimFun PrimChr                  [a]   = A.chr a
-llvmOfPrimFun PrimBoolToInt            [a]   = A.boolToInt a
-llvmOfPrimFun (PrimFromIntegral ta tb) [a]   = A.fromIntegral ta tb a
-
--- If the argument lists are not the correct length
-llvmOfPrimFun _ _ =
-  $internalError "llvmOfPrimFun" "inconsistent valuation"
-
+llvmOfPrimFun :: (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
+llvmOfPrimFun (PrimAdd t)               = uncurry (A.add t)
+llvmOfPrimFun (PrimSub t)               = uncurry (A.sub t)
+llvmOfPrimFun (PrimMul t)               = uncurry (A.mul t)
+llvmOfPrimFun (PrimNeg t)               = A.negate t
+llvmOfPrimFun (PrimAbs t)               = A.abs t
+llvmOfPrimFun (PrimSig t)               = A.signum t
+llvmOfPrimFun (PrimQuot t)              = uncurry (A.quot t)
+llvmOfPrimFun (PrimRem t)               = uncurry (A.rem t)
+llvmOfPrimFun (PrimQuotRem t)           = uncurry (A.quotRem t)
+llvmOfPrimFun (PrimIDiv t)              = uncurry (A.idiv t)
+llvmOfPrimFun (PrimMod t)               = uncurry (A.mod t)
+llvmOfPrimFun (PrimDivMod t)            = uncurry (A.divMod t)
+llvmOfPrimFun (PrimBAnd t)              = uncurry (A.band t)
+llvmOfPrimFun (PrimBOr t)               = uncurry (A.bor t)
+llvmOfPrimFun (PrimBXor t)              = uncurry (A.xor t)
+llvmOfPrimFun (PrimBNot t)              = A.complement t
+llvmOfPrimFun (PrimBShiftL t)           = uncurry (A.shiftL t)
+llvmOfPrimFun (PrimBShiftR t)           = uncurry (A.shiftR t)
+llvmOfPrimFun (PrimBRotateL t)          = uncurry (A.rotateL t)
+llvmOfPrimFun (PrimBRotateR t)          = uncurry (A.rotateR t)
+llvmOfPrimFun (PrimFDiv t)              = uncurry (A.fdiv t)
+llvmOfPrimFun (PrimRecip t)             = A.recip t
+llvmOfPrimFun (PrimSin t)               = A.sin t
+llvmOfPrimFun (PrimCos t)               = A.cos t
+llvmOfPrimFun (PrimTan t)               = A.tan t
+llvmOfPrimFun (PrimAsin t)              = A.asin t
+llvmOfPrimFun (PrimAcos t)              = A.acos t
+llvmOfPrimFun (PrimAtan t)              = A.atan t
+llvmOfPrimFun (PrimAsinh t)             = A.asinh t
+llvmOfPrimFun (PrimAcosh t)             = A.acosh t
+llvmOfPrimFun (PrimAtanh t)             = A.atanh t
+llvmOfPrimFun (PrimAtan2 t)             = uncurry (A.atan2 t)
+llvmOfPrimFun (PrimExpFloating t)       = A.exp t
+llvmOfPrimFun (PrimFPow t)              = uncurry (A.fpow t)
+llvmOfPrimFun (PrimSqrt t)              = A.sqrt t
+llvmOfPrimFun (PrimLog t)               = A.log t
+llvmOfPrimFun (PrimLogBase t)           = uncurry (A.logBase t)
+llvmOfPrimFun (PrimTruncate ta tb)      = A.truncate ta tb
+llvmOfPrimFun (PrimRound ta tb)         = A.round ta tb
+llvmOfPrimFun (PrimFloor ta tb)         = A.floor ta tb
+llvmOfPrimFun (PrimCeiling ta tb)       = A.ceiling ta tb
+llvmOfPrimFun (PrimIsNaN t)             = A.isNaN t
+llvmOfPrimFun (PrimLt t)                = uncurry (A.lt t)
+llvmOfPrimFun (PrimGt t)                = uncurry (A.gt t)
+llvmOfPrimFun (PrimLtEq t)              = uncurry (A.lte t)
+llvmOfPrimFun (PrimGtEq t)              = uncurry (A.gte t)
+llvmOfPrimFun (PrimEq t)                = uncurry (A.eq t)
+llvmOfPrimFun (PrimNEq t)               = uncurry (A.neq t)
+llvmOfPrimFun (PrimMax t)               = uncurry (A.max t)
+llvmOfPrimFun (PrimMin t)               = uncurry (A.min t)
+llvmOfPrimFun PrimLAnd                  = uncurry A.land
+llvmOfPrimFun PrimLOr                   = uncurry A.lor
+llvmOfPrimFun PrimLNot                  = A.lnot
+llvmOfPrimFun PrimOrd                   = A.ord
+llvmOfPrimFun PrimChr                   = A.chr
+llvmOfPrimFun PrimBoolToInt             = A.boolToInt
+llvmOfPrimFun (PrimFromIntegral ta tb)  = A.fromIntegral ta tb
+  -- no missing patterns, whoo!
 

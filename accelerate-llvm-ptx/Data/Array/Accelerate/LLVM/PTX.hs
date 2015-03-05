@@ -111,12 +111,8 @@ stream f arrs = map go arrs
 -- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
 --
 config :: Phase
-config =  Phase
-  { recoverAccSharing      = True
-  , recoverExpSharing      = True
-  , floatOutAccFromExp     = True
-  , enableAccFusion        = True
-  , convertOffsetOfSegment = True
+config =  phases
+  { convertOffsetOfSegment = True
   }
 
 
@@ -124,7 +120,7 @@ dumpStats :: MonadIO m => a -> m a
 #if ACCELERATE_DEBUG
 dumpStats next = do
   stats <- liftIO simplCount
-  liftIO $ traceMessage dump_simpl_stats (show stats)
+  liftIO $ traceIO dump_simpl_stats (show stats)
   liftIO $ resetSimplCount
   return next
 #else
