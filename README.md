@@ -50,19 +50,17 @@ which may impact CPU performance. If you wish to use libNVVM, supply the flag
 `-flibnvvm` to cabal when installing `accelerate-llvm`.
 
 
-TODOs
------
-
-These are some TODOs and notes that pop into my head from time to time...
+Current status
+--------------
 
 **Native backend**
 
-  * Complete coverage of skeleton operations
-- [ ] map
-- [ ] generate/zipWith
-- [ ] backpermute/transform
-- [ ] slice/replicate
-- [ ] reshape
+  * Coverage of skeleton operations
+- [x] map
+- [x] generate/zipWith
+- [x] backpermute/transform
+- [x] slice/replicate
+- [x] reshape
 - [ ] fold (multidimensional)
 - [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
@@ -77,12 +75,12 @@ These are some TODOs and notes that pop into my head from time to time...
 
 **PTX backend**
 
-  * Complete coverage of skeleton operations
-- [ ] map
-- [ ] generate/zipWith
-- [ ] backpermute/transform
-- [ ] slice/replicate
-- [ ] reshape
+  * Coverage of skeleton operations
+- [x] map
+- [x] generate/zipWith
+- [x] backpermute/transform
+- [x] slice/replicate
+- [x] reshape
 - [ ] fold (multidimensional)
 - [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
