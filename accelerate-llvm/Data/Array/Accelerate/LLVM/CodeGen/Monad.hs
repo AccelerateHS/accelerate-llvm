@@ -43,7 +43,8 @@ import Data.Map                                                         ( Map )
 import Data.Sequence                                                    ( Seq )
 import Data.Word
 import Text.Printf
-import qualified Data.Foldable                                          as Seq
+import Prelude
+import qualified Data.Foldable                                          as F
 import qualified Data.HashMap.Strict                                    as HashMap
 import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
@@ -175,7 +176,7 @@ initBlockChain
 newBlock :: String -> CodeGen Block
 newBlock nm =
   state $ \s ->
-    let idx     = Seq.length (blockChain s)
+    let idx     = F.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (Label label) Seq.empty err
         err     = $internalError label "Block has no terminator"
@@ -211,12 +212,12 @@ createBlocks
   $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
               blocks = makeBlock `fmap` blockChain s
               m      = Seq.length (blockChain s)
-              n      = Seq.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
+              n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
           in
-          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( Seq.toList blocks , s' )
+          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
-      LLVM.BasicBlock (downcast blockLabel) (Seq.toList instructions) (LLVM.Do terminator)
+      LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)
 
 
 -- Instructions
@@ -386,7 +387,7 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
     build :: [(String, Seq [Maybe Metadata])]
           -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
           -> [LLVM.Definition]
-    build []     (k,d) = Seq.toList (k Seq.>< d)
+    build []     (k,d) = F.toList (k Seq.>< d)
     build (x:xs) (k,d) =
       let (k',d') = meta (Seq.length d) x
       in  build xs (k Seq.|> k', d Seq.>< d')
@@ -396,7 +397,7 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
          -> (LLVM.Definition, Seq LLVM.Definition)
     meta n (key, vals)
       = let node i      = LLVM.MetadataNodeID (fromIntegral (i+n))
-            nodes       = Seq.mapWithIndex (\i x -> LLVM.MetadataNodeDefinition (node i) (downcast (Seq.toList x))) vals
+            nodes       = Seq.mapWithIndex (\i x -> LLVM.MetadataNodeDefinition (node i) (downcast (F.toList x))) vals
             name        = LLVM.NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
         in
         (name, nodes)

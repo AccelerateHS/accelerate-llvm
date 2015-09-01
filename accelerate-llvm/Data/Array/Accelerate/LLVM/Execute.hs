@@ -39,9 +39,9 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- library
-import Prelude                                                  hiding ( exp, map, scanl, scanr, scanl1, scanr1 )
-import Control.Applicative                                      hiding ( Const )
 import Control.Monad
+import Control.Applicative                                      hiding ( Const )
+import Prelude                                                  hiding ( exp, map, scanl, scanr, scanl1, scanr1 )
 
 
 class Remote arch => Execute arch where

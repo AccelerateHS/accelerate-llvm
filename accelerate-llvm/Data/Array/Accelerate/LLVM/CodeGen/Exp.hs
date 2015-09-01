@@ -18,9 +18,9 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Exp
   where
 
-import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
+import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
 import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )

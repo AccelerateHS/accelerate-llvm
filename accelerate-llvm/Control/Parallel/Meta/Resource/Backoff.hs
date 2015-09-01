@@ -23,10 +23,10 @@ module Control.Parallel.Meta.Resource.Backoff (
 
 ) where
 
+import Control.Concurrent
 import Data.IORef
 import Data.Monoid
-
-import Control.Concurrent
+import Prelude
 import Text.Printf
 
 import Control.Parallel.Meta

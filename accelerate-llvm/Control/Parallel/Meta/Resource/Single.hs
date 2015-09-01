@@ -18,6 +18,7 @@ import Control.Parallel.Meta.Worker
 -- library
 import Data.Monoid
 import Data.Concurrent.Deque.Class
+import Prelude
 
 
 -- | Create a resource where each thread works in isolation. The resource is not

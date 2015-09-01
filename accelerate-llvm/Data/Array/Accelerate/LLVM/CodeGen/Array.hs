@@ -18,8 +18,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 
 ) where
 
-import Prelude                                                          hiding ( read )
 import Control.Applicative
+import Prelude                                                          hiding ( read )
 
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Instruction

@@ -28,9 +28,10 @@ import Control.Monad
 import Data.IORef
 import Data.Range.Range
 import Data.Vector                                              ( Vector )
-import System.Random.MWC
 import System.IO.Unsafe
+import System.Random.MWC
 import Text.Printf
+import Prelude
 import qualified Data.Vector                                    as V
 
 import Data.Concurrent.Deque.Class

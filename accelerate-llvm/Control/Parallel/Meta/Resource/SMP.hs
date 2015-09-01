@@ -34,6 +34,7 @@ import qualified Data.Array.Accelerate.Debug            as Debug
 import Data.Concurrent.Deque.Class
 import Data.IORef
 import Data.Monoid
+import Prelude
 import System.Random.MWC
 import Text.Printf
 import qualified Data.Vector                            as V

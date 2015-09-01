@@ -37,14 +37,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
-import Prelude                                                  hiding ( exp )
-import Control.Applicative                                      hiding ( Const )
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
+import Control.Applicative                                      hiding ( Const )
+import Prelude                                                  hiding ( exp )
 
 
 class Compile arch where
-  data ExecutableR t
+  data ExecutableR arch
 
   -- | Compile an accelerate computation into some backend-specific executable format
   --

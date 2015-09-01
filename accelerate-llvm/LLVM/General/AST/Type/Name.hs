@@ -16,6 +16,7 @@ module LLVM.General.AST.Type.Name
 import Data.Data
 import Data.Word
 import Data.String
+import Prelude
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM
