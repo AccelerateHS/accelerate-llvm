@@ -49,11 +49,11 @@ import Control.Parallel.Meta.Worker                             ( gangSize )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
-import Prelude                                                  hiding ( map, scanl, scanr )
 import Data.Monoid                                              ( mempty )
 import Data.Word                                                ( Word8 )
 import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
+import Prelude                                                  hiding ( map, scanl, scanr )
 import qualified Prelude                                        as P
 
 import Foreign.LibFFI                                           as FFI
