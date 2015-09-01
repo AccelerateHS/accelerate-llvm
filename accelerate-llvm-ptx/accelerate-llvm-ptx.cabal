@@ -86,7 +86,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 
   build-depends:
-          base                          == 4.7.*
+          base                          >= 4.7 && <4.9
         , accelerate                    == 2.0.*
         , accelerate-llvm               == 2.0.*
         , bytestring                    >= 0.9

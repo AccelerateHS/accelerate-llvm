@@ -49,11 +49,11 @@ import Control.Parallel.Meta                                    ( runExecutable,
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
-import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import Data.Int                                                 ( Int32 )
 import Data.Monoid                                              ( mempty )
 import Control.Monad.State                                      ( gets, liftIO )
 import Text.Printf
+import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import qualified Prelude                                        as P
 
 
