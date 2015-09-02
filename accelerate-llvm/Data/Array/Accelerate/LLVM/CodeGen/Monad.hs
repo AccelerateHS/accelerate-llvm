@@ -176,7 +176,7 @@ initBlockChain
 newBlock :: String -> CodeGen Block
 newBlock nm =
   state $ \s ->
-    let idx     = F.length (blockChain s)
+    let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (Label label) Seq.empty err
         err     = $internalError label "Block has no terminator"
