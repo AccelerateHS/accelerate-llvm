@@ -133,7 +133,7 @@ withPTXTargetMachine dev go =
         ptxTarget
         ptxTargetTriple
         sm
-        Set.empty               -- CPU features
+        Map.empty               -- CPU features
         options                 -- target options
         R.Default               -- relocation model
         CM.Default              -- code model

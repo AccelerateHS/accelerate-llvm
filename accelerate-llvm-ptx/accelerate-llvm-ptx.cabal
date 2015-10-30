@@ -115,7 +115,7 @@ Library
         , llvm-general-pure         == 3.2.*
   else
     build-depends:
-          llvm-general              >= 3.3
+          llvm-general              >= 3.3.15
         , llvm-general-pure         >= 3.3
 
   if flag(debug)
