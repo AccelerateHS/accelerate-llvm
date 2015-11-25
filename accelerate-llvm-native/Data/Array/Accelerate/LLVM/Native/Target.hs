@@ -69,7 +69,7 @@ nativeDataLayout :: DataLayout
 nativeDataLayout
   = unsafePerformIO
   $ fmap (either ($internalError "nativeDataLayout") id)
-  $ runExceptT (withDefaultTargetMachine getTargetMachineDataLayout)
+  $ runExceptT (withNativeTargetMachine getTargetMachineDataLayout)
 
 
 -- | Bracket the creation and destruction of a target machine for the native
@@ -78,5 +78,9 @@ nativeDataLayout
 withNativeTargetMachine
     :: (TargetMachine -> IO a)
     -> ExceptT String IO a
+#if !MIN_VERSION_llvm_general(3,4,6)
 withNativeTargetMachine = withDefaultTargetMachine
+#else
+withNativeTargetMachine = withHostTargetMachine
+#endif
 
