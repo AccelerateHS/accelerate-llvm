@@ -200,6 +200,15 @@ cos = mathf "cos"
 tan :: FloatingType a -> IR a -> CodeGen (IR a)
 tan = mathf "tan"
 
+sinh :: FloatingType a -> IR a -> CodeGen (IR a)
+sinh = mathf "sinh"
+
+cosh :: FloatingType a -> IR a -> CodeGen (IR a)
+cosh = mathf "cosh"
+
+tanh :: FloatingType a -> IR a -> CodeGen (IR a)
+tanh = mathf "tanh"
+
 asin :: FloatingType a -> IR a -> CodeGen (IR a)
 asin = mathf "asin"
 
