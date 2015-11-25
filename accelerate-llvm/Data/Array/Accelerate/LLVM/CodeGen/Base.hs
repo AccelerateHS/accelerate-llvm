@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -48,6 +49,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import qualified LLVM.General.AST.Global                                as LLVM
 
 import qualified Data.IntMap                                            as IM
+
+#if !MIN_VERSION_llvm_general_pure(3,4,0)
+#error "llvm-3.4 or later is required"
+#endif
 
 
 -- References
@@ -137,10 +142,15 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 --
 call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (IR t)
 call f attrs = do
-  let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs }
+  let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
+#if   MIN_VERSION_llvm_general_pure(3,5,0)
+      attrs'    = map Right attrs
+#elif MIN_VERSION_llvm_general_pure(3,4,0)
+      attrs'    = attrs
+#endif
   --
   declare decl
-  instr (Call f attrs)
+  instr (Call f attrs')
 
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter

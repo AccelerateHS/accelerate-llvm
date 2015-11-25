@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
@@ -265,7 +266,11 @@ data Instruction a where
   -- | <http://llvm.org/docs/LangRef.html#call-instruction>
   --
   Call          :: GlobalFunction args t
+#if   MIN_VERSION_llvm_general_pure(3,5,0)
+                -> [Either GroupID FunctionAttribute]
+#elif MIN_VERSION_llvm_general_pure(3,4,0)
                 -> [FunctionAttribute]
+#endif
                 -> Instruction t
 
   -- | <http://llvm.org/docs/LangRef.html#select-instruction>

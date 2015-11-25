@@ -38,6 +38,12 @@ data FunctionAttribute
   | ReadNone
   | AlwaysInline
 
+-- | Attribute groups are groups of attributes that are referenced by
+-- objects within the IR. To use an attribute group, an object must
+-- reference its GroupID.
+--
+data GroupID = GroupID !Word
+
 -- | A global function definition
 --
 -- Note that because we just use the reified dictionary structure of Accelerate

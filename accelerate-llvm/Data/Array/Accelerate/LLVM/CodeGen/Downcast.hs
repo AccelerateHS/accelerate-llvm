@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -69,6 +70,10 @@ instance Downcast a a' => Downcast (Maybe a) (Maybe a') where
 instance (Downcast a a', Downcast b b') => Downcast (a,b) (a',b') where
   downcast (a,b) = (downcast a, downcast b)
 
+instance (Downcast a a', Downcast b b') =>  Downcast (Either a b) (Either a' b') where
+  downcast (Left a)  = Left (downcast a)
+  downcast (Right b) = Right (downcast b)
+
 
 -- LLVM.General.AST.Type.Flags
 -- ---------------------------
@@ -108,6 +113,14 @@ instance Downcast (Name a) L.Name where
 
 -- LLVM.General.AST.Type.Instruction
 -- ---------------------------------
+
+#if   MIN_VERSION_llvm_general_pure(3,5,0)
+tailcall :: Maybe L.TailCallKind
+tailcall = Nothing
+#elif MIN_VERSION_llvm_general_pure(3,4,0)
+tailcall :: Bool
+tailcall = False
+#endif
 
 -- Instructions
 
@@ -158,7 +171,7 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (BitCast t x)        = L.BitCast (downcast x) (downcast t) md
   downcast (Phi t incoming)     = L.Phi (downcast t) (downcast incoming) md
   downcast (Select _ p x y)     = L.Select (downcast p) (downcast x) (downcast y) md
-  downcast (Call f attrs)       = L.Call False L.C [] (downcast f) (downcast f) (downcast attrs) md
+  downcast (Call f attrs)       = L.Call tailcall L.C [] (downcast f) (downcast f) (downcast attrs) md
   downcast (Cmp t p x y) =
     let
         fp EQ = FP.OEQ
@@ -317,6 +330,10 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast ReadNone     = L.ReadNone
   downcast AlwaysInline = L.AlwaysInline
 
+#if MIN_VERSION_llvm_general_pure(3,5,0)
+instance Downcast GroupID L.GroupID where
+  downcast (GroupID n) = L.GroupID n
+#endif
 
 
 -- Data.Array.Accelerate.Type
