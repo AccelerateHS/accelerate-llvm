@@ -91,7 +91,7 @@ Library
         , accelerate-llvm               == 2.0.*
         , bytestring                    >= 0.9
         , containers                    >= 0.5 && <0.6
-        , cuda                          >= 0.5
+        , cuda                          >= 0.7
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0

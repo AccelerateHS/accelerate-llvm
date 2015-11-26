@@ -25,6 +25,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Context                    as CUDA
+import qualified Foreign.CUDA.Driver.Device                     as CUDA
 
 import Control.Monad
 import Text.PrettyPrint
@@ -62,7 +63,7 @@ new dev prp flags = do
   -- The kernels don't use much shared memory, so for devices that support it
   -- prefer using those memory banks as an L1 cache.
   when (CUDA.computeCapability prp >= CUDA.Compute 2 0)
-       (CUDA.setCacheConfig CUDA.PreferL1)
+       (CUDA.setCache CUDA.PreferL1)
 
   -- Display information about the selected device
   Debug.traceIO Debug.verbose (deviceInfo dev prp)
