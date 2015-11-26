@@ -93,7 +93,13 @@ ptxDeviceProperties = deviceProperties . ptxContext
 --
 ptxDataLayout :: DataLayout
 ptxDataLayout = DataLayout
+#if   MIN_VERSION_llvm_general_pure(3,5,0)
+  { endianness          = LittleEndian
+  , mangling            = Nothing
+  , aggregateLayout     = AlignmentInfo 0 (Just 64)
+#else
   { endianness          = Just LittleEndian
+#endif
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
       [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize (Just wordSize))) ]

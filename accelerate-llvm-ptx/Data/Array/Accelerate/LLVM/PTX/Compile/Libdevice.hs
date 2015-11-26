@@ -104,7 +104,11 @@ nvvmReflectPass_mdl =
       { name                 =  AST.Name "__nvvm_reflect"
       , returnType           = downcast (integralType :: IntegralType Int32)
       , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )
+#if MIN_VERSION_llvm_general(3,5,0)
+      , G.functionAttributes = map Right [NoUnwind, ReadNone, AlwaysInline]
+#else
       , G.functionAttributes = [NoUnwind, ReadNone, AlwaysInline]
+#endif
       , basicBlocks          = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
       }]
     }
