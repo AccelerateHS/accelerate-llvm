@@ -36,6 +36,9 @@ install:
   - opt --version; true
   - llc --version; true
 
+  - travis_retry cabal update -v
+  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
+
   - cabal install ${MODE} deps/*
   - case $LLVM in
       3.4) cabal install llvm-general -fshared-llvm --constraint="llvm-general==3.4.*";;
