@@ -38,7 +38,7 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native(..) )
 import qualified Data.Array.Accelerate.LLVM.Native.State        as CPU
 import qualified Data.Array.Accelerate.LLVM.Native.Target       as CPU
 
-import qualified Data.Array.Accelerate.LLVM.Debug               as Debug
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- cuda
 import Foreign.CUDA.Driver.Error
@@ -85,7 +85,7 @@ createTarget native ptx = do
       -- The basic resources for the CPU and GPU. As we don't currently support
       -- multiple GPUs, the lone GPU knows of no other sources of work.
       --
-      gpuR      = Single.mkResource gpuGang
+      gpuR      = Single.mkResource
       cpuR      = SMP.mkResource (2 * gangSize cpuGang) cpuGang
 
       -- Construct the new Executable contexts for each backend, where the CPU
@@ -126,6 +126,6 @@ createTarget native ptx = do
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: Multi
 defaultTarget = unsafePerformIO $ do
-  Debug.message Debug.dump_gc "gc: initialise default multi target"
+  Debug.traceIO Debug.dump_gc "gc: initialise default multi target"
   createTarget CPU.defaultTarget PTX.defaultTarget
 

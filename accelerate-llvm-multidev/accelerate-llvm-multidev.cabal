@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-multidev
-version:                0.15.0.0
+version:                2.0.0.0
 cabal-version:          >=1.10
 tested-with:            GHC == 7.8.*
 build-type:             Simple
@@ -64,11 +64,11 @@ library
     Data.Array.Accelerate.LLVM.Multi.Execute.Environment
 
   build-depends:
-    accelerate                  == 0.15.*,
-    accelerate-llvm             == 0.15.*,
-    accelerate-llvm-native      == 0.15.*,
-    accelerate-llvm-ptx         == 0.15.*,
-    base                        == 4.7.*,
+    accelerate                  == 2.0.*,
+    accelerate-llvm             == 2.0.*,
+    accelerate-llvm-native      == 2.0.*,
+    accelerate-llvm-ptx         == 2.0.*,
+    base                        >= 4.7 && <4.9,
     cuda                        >= 0.5,
     dlist                       >= 0.6,
     mtl                         >= 2.0

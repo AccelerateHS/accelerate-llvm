@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi.Compile
@@ -11,7 +12,8 @@
 
 module Data.Array.Accelerate.LLVM.Multi.Compile (
 
-  module Data.Array.Accelerate.LLVM.Compile
+  ExecutableR(..),
+  module Data.Array.Accelerate.LLVM.Compile,
 
 ) where
 
@@ -23,14 +25,21 @@ import Data.Array.Accelerate.LLVM.Compile
 
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Multi.Target
-import Data.Array.Accelerate.LLVM.Native                        ()
-import Data.Array.Accelerate.LLVM.PTX                           ()
+import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
+import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
+import Data.Array.Accelerate.LLVM.Native.Compile                ()
+import Data.Array.Accelerate.LLVM.PTX.Compile                   ()
 
 -- standard library
 import Control.Applicative
 
 
 instance Compile Multi where
+  data ExecutableR Multi = MultiR {
+          ptxExecutable    :: ExecutableR PTX
+        , nativeExecutable :: ExecutableR Native
+        }
+  --
   compileForTarget = compileForMulti
 
 
