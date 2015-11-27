@@ -1,0 +1,72 @@
+# vim: nospell
+language: c
+sudo: true
+
+env:
+  global:
+    - SHA_ACCELERATE=e9d8c2f8dc57b369253525987c2a7bc61c58f647
+    - URL_ACCELERATE=https://github.com/AccelerateHS/accelerate.git
+
+matrix:
+  include:
+    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4
+      compiler: ": #GHC 7.8.4"
+      addons: {apt: {packages: [cabal-install-1.18,ghc-7.8.4], sources: [hvr-ghc]}}
+    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5
+      compiler: ": #GHC 7.10.2"
+      addons: {apt: {packages: [cabal-install-1.22,ghc-7.10.2,llvm-3.5], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
+
+  allow_failures:
+    - env: CABAL=head GHC=head LLVM=3.6
+
+before_install:
+  - unset CC
+  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+
+  # Fetch accelerate dependencies
+  - echo "Checking out dependencies"
+  - travis_retry git clone ${URL_ACCELERATE} deps/accelerate
+  - pushd deps/accelerate
+  - git reset --hard ${SHA_ACCELERATE}
+  - popd
+
+install:
+  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - cabal --version
+  - opt --version; true
+  - llc --version; true
+
+  - cabal install ${MODE} deps/*
+  - case $LLVM in
+      3.4) cabal install llvm-general -fshared-llvm --constraint="llvm-general==3.4.*";;
+      3.5) cabal install llvm-general -fshared-llvm --constraint="llvm-general==3.5.*";;
+    esac
+
+  - cabal install ${MODE} accelerate-llvm --only-dependencies --enable-tests
+
+script:
+  - |
+      for pkg in accelerate-llvm; do
+        echo "Building package: $pkg"
+        echo "================================================================================"
+
+        # Check the build
+        pushd $pkg
+        cabal configure -v2 -flib-Werror || exit 1
+        cabal build || exit 1
+        cabal haddock || exit 1
+
+        # Check the source distribution can be generated, built, and installed
+        cabal sdist || exit 1
+        export SRC_TGZ=$(cabal info . | awk '{print $2 ".tar.gz";exit}')
+        pushd dist
+        if [ -f "$SRC_TGZ" ]; then
+          cabal install --force-reinstalls ${SRC_TGZ} || exit 1
+        else
+            echo "'$SRC_TGZ': not found"
+            exit 1
+        fi
+        popd
+        popd
+      fi
+
