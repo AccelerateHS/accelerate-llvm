@@ -4,19 +4,19 @@ sudo: true
 
 matrix:
   include:
-    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
-      compiler: ": #GHC 7.8.4"
-      addons: {apt: {packages: [cabal-install-1.18,ghc-7.8.4,llvm-3.4-dev,happy-1.19.5,alex-3.1.4], sources: [hvr-ghc]}}
-    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
-      compiler: ": #GHC 7.10.2"
-      addons: {apt: {packages: [cabal-install-1.22,ghc-7.10.2,llvm-3.5-dev,happy-1.19.5,alex-3.1.4,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
+    - env: GHC=7.8 LLVM=3.4 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
+      compiler: ": #GHC 7.8"
+      addons: {apt: {packages: [llvm-3.4-dev,happy-1.19.5,alex-3.1.4], sources: [hvr-ghc]}}
+    - env: LLVM=3.5 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
+      compiler: ": #GHC 7.10"
+      addons: {apt: {packages: [llvm-3.5-dev,happy-1.19.5,alex-3.1.4,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
 
   allow_failures:
     - env: CABAL=head GHC=head LLVM=3.6
 
 before_install:
   - unset CC
-  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/opt/alex/$ALEX/bin:/opt/happy/$HAPPY/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+  - export PATH=/opt/alex/$ALEX/bin:/opt/happy/$HAPPY/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
   # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
   - |
@@ -30,10 +30,8 @@ before_install:
   - export PATH=$HOME/bin:$PATH
   - travis_retry curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
   - mv stack-*/stack $HOME/bin
-  - |
-      if [ ${GHC%.*} == 7.8 ]; then
-        stack --stack-yaml=stack-${GHC%.*}.yaml setup --upgrade-cabal
-      fi
+  - ln -s stack-${GHC}.yaml stack.yaml
+  - travis_retry stack setup --upgrade-cabal
 
   # Fetch CUDA
   - travis_retry wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1204/x86_64/cuda-repo-ubuntu1204_${CUDA}_amd64.deb
@@ -48,14 +46,13 @@ before_install:
   - export PATH=${CUDA_HOME}/bin:${PATH}
 
 install:
-  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
-  - cabal --version
+  - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - stack --version
   - opt --version; true
   - llc --version; true
-  - travis_retry stack --stack-yaml=stack-${GHC%.*}.yaml build --only-dependencies
+  - travis_retry stack build --only-dependencies
 
 script:
-  - stack --stack-yaml=stack-${GHC%.*}.yaml build
-  # - stack --stack-yaml=stack-${GHC%.*}.yaml haddock
+  - stack build
+  # - stack haddock
 
