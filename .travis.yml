@@ -32,7 +32,7 @@ before_install:
   - mv stack-*/stack $HOME/bin
   - |
       if [ ${GHC%.*} == 7.8 ]; then
-        stack setup --upgrade-cabal
+        stack --stack-yaml=stack-${GHC%.*}.yaml setup --upgrade-cabal
       fi
 
   # Fetch CUDA
