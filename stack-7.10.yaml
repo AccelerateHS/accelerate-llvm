@@ -1,0 +1,68 @@
+# For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
+# vim: nospell
+
+resolver: lts-3.15
+
+packages:
+- 'accelerate-llvm'
+# - 'accelerate-llvm-native'
+# - 'accelerate-llvm-ptx'
+# - 'accelerate-llvm-multidev'
+- location:
+    git:    https://github.com/AccelerateHS/accelerate.git
+    commit: e9d8c2f8dc57b369253525987c2a7bc61c58f647
+
+# required due to https://github.com/bscarlet/llvm-general/issues/155
+- location:
+    git:    https://github.com/bscarlet/llvm-general.git
+    commit: 1ee693cc7577aab2f3e11ec9bd7f4244a5182c89
+  subdirs:
+    - llvm-general
+
+extra-deps:
+- 'accelerate-2.0.0.0'
+- 'accelerate-llvm-2.0.0.0'
+# - 'accelerate-llvm-native-2.0.0.0'
+# - 'accelerate-llvm-multidev-2.0.0.0'
+
+# accelerate-llvm
+- 'chaselev-deque-0.5.0.5'
+- 'llvm-general-3.5.1.0'
+- 'llvm-general-pure-3.5.0.0'
+
+# accelerate-llvm-native
+# - 'libffi-0.1'
+
+# accelerate-llvm-ptx
+# - 'cuda-0.7.0.0'
+
+
+# Override default flag values for local packages and extra-deps
+flags:
+  accelerate:
+    unsafe-checks: false
+    bounds-checks: true
+    debug: false
+    internal-checks: false
+    more-pp: false
+  llvm-general:
+    shared-llvm: true
+
+# Extra package databases containing global packages
+extra-package-dbs: []
+
+# Control whether we use the GHC we find on the path
+# system-ghc: true
+
+# Require a specific version of stack, using version ranges
+# require-stack-version: -any # Default
+# require-stack-version: >= 0.1.4.0
+
+# Override the architecture used by stack, especially useful on Windows
+# arch: i386
+# arch: x86_64
+
+# Extra directories used by stack for building
+# extra-include-dirs: [/path/to/dir]
+# extra-lib-dirs: [/path/to/dir]
+

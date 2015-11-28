@@ -2,11 +2,6 @@
 language: c
 sudo: true
 
-env:
-  global:
-    - SHA_ACCELERATE=e9d8c2f8dc57b369253525987c2a7bc61c58f647
-    - URL_ACCELERATE=https://github.com/AccelerateHS/accelerate.git
-
 matrix:
   include:
     - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4
@@ -23,53 +18,21 @@ before_install:
   - unset CC
   - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
-  # Fetch accelerate dependencies
-  - echo "Checking out dependencies"
-  - travis_retry git clone ${URL_ACCELERATE} deps/accelerate
-  - pushd deps/accelerate
-  - git reset --hard ${SHA_ACCELERATE}
-  - popd
+  # Fetch stack
+  - mkdir $HOME/bin
+  - export PATH=$HOME/bin:$PATH
+  - curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
+  - mv stack-*/stack $HOME/bin
 
 install:
   - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
+  - stack --version
   - opt --version; true
   - llc --version; true
-
-  - travis_retry cabal update -v
-  - sed -i 's/^jobs:/-- jobs:/' ${HOME}/.cabal/config
-
-  - cabal install ${MODE} deps/*
-  - case $LLVM in
-      3.4) cabal install llvm-general -fshared-llvm --constraint="llvm-general==3.4.*";;
-      3.5) cabal install llvm-general -fshared-llvm --constraint="llvm-general==3.5.*";;
-    esac
-
-  - cabal install ${MODE} accelerate-llvm --only-dependencies --enable-tests
+  - stack --stack-yaml=stack-${GHC%.*}.yaml build --only-dependencies
 
 script:
-  - |
-      for pkg in accelerate-llvm; do
-        echo "Building package: $pkg"
-        echo "================================================================================"
-
-        # Check the build
-        pushd $pkg
-        cabal configure -v2 -flib-Werror || exit 1
-        cabal build || exit 1
-        cabal haddock || exit 1
-
-        # Check the source distribution can be generated, built, and installed
-        cabal sdist || exit 1
-        export SRC_TGZ=$(cabal info . | awk '{print $2 ".tar.gz";exit}')
-        pushd dist
-        if [ -f "$SRC_TGZ" ]; then
-          cabal install --force-reinstalls ${SRC_TGZ} || exit 1
-        else
-            echo "'$SRC_TGZ': not found"
-            exit 1
-        fi
-        popd
-        popd
-      fi
+  - stack --stack-yaml=stack-${GHC%.*}.yaml build
+  - stack --stack-yaml=stack-${GHC%.*}.yaml haddock
 
