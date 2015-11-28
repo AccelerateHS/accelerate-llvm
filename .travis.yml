@@ -4,10 +4,10 @@ sudo: true
 
 matrix:
   include:
-    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4
+    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4 CUDA=7.0-28
       compiler: ": #GHC 7.8.4"
       addons: {apt: {packages: [cabal-install-1.18,ghc-7.8.4,llvm-3.4-dev], sources: [hvr-ghc]}}
-    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5
+    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5 CUDA=7.0-28
       compiler: ": #GHC 7.10.2"
       addons: {apt: {packages: [cabal-install-1.22,ghc-7.10.2,llvm-3.5-dev,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
 
@@ -28,8 +28,20 @@ before_install:
   # Fetch stack
   - mkdir $HOME/bin
   - export PATH=$HOME/bin:$PATH
-  - curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
+  - travis_retry curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
   - mv stack-*/stack $HOME/bin
+
+  # Fetch CUDA
+  - travis_retry wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1204/x86_64/cuda-repo-ubuntu1204_${CUDA}_amd64.deb
+  - travis_retry sudo dpkg -i cuda-repo-ubuntu1204_${CUDA}_amd64.deb
+  - travis_retry sudo apt-get update -qq
+  - export CUDA_APT=${CUDA%-*}
+  - export CUDA_APT=${CUDA_APT/./-}
+  - travis_retry sudo apt-get install -y cuda-drivers cuda-core-${CUDA_APT} cuda-cudart-dev-${CUDA_APT}
+  - travis_retry sudo apt-get clean
+  - export CUDA_HOME=/usr/local/cuda-${CUDA%%-*}
+  - export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+  - export PATH=${CUDA_HOME}/bin:${PATH}
 
 install:
   - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
