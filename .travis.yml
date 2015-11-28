@@ -5,7 +5,7 @@ sudo: true
 matrix:
   include:
     - env: GHC=7.8 LLVM=3.4 CUDA=7.0-28
-      compiler: ": #GHC 7.8"
+      compiler: "#GHC 7.8"
       addons:
         apt:
           sources:
@@ -17,7 +17,7 @@ matrix:
             - llvm-3.4-dev
 
     - env: GHC=7.10 LLVM=3.5 CUDA=7.0-28
-      compiler: ": #GHC 7.10"
+      compiler: "#GHC 7.10"
       addons:
         apt:
           sources:
