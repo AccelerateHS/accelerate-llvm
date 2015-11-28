@@ -1,6 +1,6 @@
 # vim: nospell
 language: c
-sudo: true
+# sudo: true
 
 matrix:
   include:
