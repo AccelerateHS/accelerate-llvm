@@ -8,22 +8,23 @@ packages:
 # - 'accelerate-llvm-native'
 # - 'accelerate-llvm-ptx'
 # - 'accelerate-llvm-multidev'
+
+# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
     commit: e9d8c2f8dc57b369253525987c2a7bc61c58f647
+  extra-dep: true
 
 # required due to https://github.com/bscarlet/llvm-general/issues/155
 - location:
     git:    https://github.com/bscarlet/llvm-general.git
     commit: 1ee693cc7577aab2f3e11ec9bd7f4244a5182c89
+  extra-dep: true
   subdirs:
     - llvm-general
 
 extra-deps:
 - 'accelerate-2.0.0.0'
-- 'accelerate-llvm-2.0.0.0'
-# - 'accelerate-llvm-native-2.0.0.0'
-# - 'accelerate-llvm-multidev-2.0.0.0'
 
 # accelerate-llvm
 - 'chaselev-deque-0.5.0.5'
