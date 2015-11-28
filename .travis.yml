@@ -30,6 +30,10 @@ before_install:
   - export PATH=$HOME/bin:$PATH
   - travis_retry curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
   - mv stack-*/stack $HOME/bin
+  - |
+      if [ ${GHC%.*} == 7.8 ]; then
+        stack setup --upgrade-cabal
+      fi
 
   # Fetch CUDA
   - travis_retry wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1204/x86_64/cuda-repo-ubuntu1204_${CUDA}_amd64.deb
