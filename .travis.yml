@@ -37,7 +37,7 @@ install:
   - stack --version
   - opt --version; true
   - llc --version; true
-  - stack --stack-yaml=stack-${GHC%.*}.yaml build --only-dependencies
+  - travis_retry stack --stack-yaml=stack-${GHC%.*}.yaml build --only-dependencies
 
 script:
   - stack --stack-yaml=stack-${GHC%.*}.yaml build
