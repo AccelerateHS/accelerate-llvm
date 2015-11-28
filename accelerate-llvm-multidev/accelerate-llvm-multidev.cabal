@@ -47,9 +47,6 @@ Flag internal-checks
 -- -------------------
 
 library
-  buildable:
-    False
-
   exposed-modules:
     Data.Array.Accelerate.LLVM.Multi
 
