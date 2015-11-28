@@ -6,10 +6,30 @@ matrix:
   include:
     - env: GHC=7.8 LLVM=3.4 CUDA=7.0-28
       compiler: ": #GHC 7.8"
-      addons: {apt: {packages: [libgmp-dev,llvm-3.4-dev,happy-1.19.5,alex-3.1.4], sources: [hvr-ghc]}}
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+          packages:
+            - happy-1.19.5
+            - alex-3.1.4
+            - llvm-3.4-dev
+
     - env: GHC=7.10 LLVM=3.5 CUDA=7.0-28
       compiler: ": #GHC 7.10"
-      addons: {apt: {packages: [libgmp-dev,llvm-3.5-dev,happy-1.19.5,alex-3.1.4,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
+      addons:
+        apt:
+          sources:
+            - hvr-ghc
+            - llvm-toolchain-precise-3.5
+            - ubuntu-toolchain-r-test
+          packages:
+            - happy-1.19.5
+            - alex-3.1.4
+            - llvm-3.5-dev
+            - libedit-dev
+            - gcc-4.8
+            - g++-4.8
 
   allow_failures:
     - env: CABAL=head GHC=head LLVM=3.6
