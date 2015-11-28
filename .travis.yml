@@ -70,7 +70,7 @@ install:
   - stack --version
   - opt --version; true
   - llc --version; true
-  - travis_retry stack build --only-dependencies
+  - travis_retry stack build --only-dependencies -j2
 
 script:
   - stack build
