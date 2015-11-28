@@ -4,19 +4,19 @@ sudo: true
 
 matrix:
   include:
-    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4 CUDA=7.0-28
+    - env: CABAL=1.18 GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
       compiler: ": #GHC 7.8.4"
-      addons: {apt: {packages: [cabal-install-1.18,ghc-7.8.4,llvm-3.4-dev], sources: [hvr-ghc]}}
-    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5 CUDA=7.0-28
+      addons: {apt: {packages: [cabal-install-1.18,ghc-7.8.4,llvm-3.4-dev,happy-1.19.5,alex-3.1.4], sources: [hvr-ghc]}}
+    - env: CABAL=1.22 GHC=7.10.2 LLVM=3.5 CUDA=7.0-28 HAPPY=1.19.5 ALEX=3.1.4
       compiler: ": #GHC 7.10.2"
-      addons: {apt: {packages: [cabal-install-1.22,ghc-7.10.2,llvm-3.5-dev,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
+      addons: {apt: {packages: [cabal-install-1.22,ghc-7.10.2,llvm-3.5-dev,happy-1.19.5,alex-3.1.4,gcc-4.8,g++-4.8,libedit-dev], sources: [hvr-ghc,llvm-toolchain-precise-3.5,ubuntu-toolchain-r-test]}}
 
   allow_failures:
     - env: CABAL=head GHC=head LLVM=3.6
 
 before_install:
   - unset CC
-  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/opt/alex/$ALEX/bin:/opt/happy/$HAPPY/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
   # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
   - |
