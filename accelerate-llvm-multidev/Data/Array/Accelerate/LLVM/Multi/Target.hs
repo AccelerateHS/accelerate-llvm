@@ -15,12 +15,9 @@ module Data.Array.Accelerate.LLVM.Multi.Target
   where
 
 -- accelerate
-import Data.Array.Accelerate.Error
-
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Compile
-import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
+import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX )
+import Data.Array.Accelerate.LLVM.Native.Internal               ( Native )
 
 -- standard library
 import Control.Monad.Reader

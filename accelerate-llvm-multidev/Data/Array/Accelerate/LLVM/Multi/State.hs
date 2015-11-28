@@ -28,15 +28,10 @@ import qualified Control.Parallel.Meta.Resource.Single          as Single
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Multi.Target
-
-import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX(..) )
-import qualified Data.Array.Accelerate.LLVM.PTX.State           as PTX
-import qualified Data.Array.Accelerate.LLVM.PTX.Target          as PTX
-import qualified Data.Array.Accelerate.LLVM.PTX.Context         as Context
-
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native(..) )
-import qualified Data.Array.Accelerate.LLVM.Native.State        as CPU
-import qualified Data.Array.Accelerate.LLVM.Native.Target       as CPU
+import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX )
+import Data.Array.Accelerate.LLVM.Native.Internal               ( Native )
+import qualified Data.Array.Accelerate.LLVM.PTX.Internal        as PTX
+import qualified Data.Array.Accelerate.LLVM.Native.Internal     as CPU
 
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
@@ -60,8 +55,8 @@ evalMulti multi acc =
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
   where
-    setup       = Context.push (PTX.ptxContext (ptxTarget multi))
-    teardown    = performGC >> Context.pop
+    setup       = PTX.push (PTX.ptxContext (ptxTarget multi))
+    teardown    = performGC >> PTX.pop
     action      = evalLLVM multi acc
 
 
@@ -79,7 +74,7 @@ createTarget native ptx = do
   -- Although we only support one GPU (at the moment), we still need to spawn a
   -- worker thread so that it can take part in work stealing.
   gpuGang <- forkGang 1
-  cpuGang <- return (theGang native)
+  cpuGang <- return (CPU.theGang native)
 
   let
       -- The basic resources for the CPU and GPU. As we don't currently support

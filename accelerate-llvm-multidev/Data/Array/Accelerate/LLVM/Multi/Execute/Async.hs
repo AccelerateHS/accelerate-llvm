@@ -18,13 +18,12 @@ module Data.Array.Accelerate.LLVM.Multi.Execute.Async (
 
 ) where
 
--- accelerate
+-- accelerate-llvm
+import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX(..) )
+import qualified Data.Array.Accelerate.LLVM.PTX.Internal        as PTX
 import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Async   as PTX ( Async(..) )
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as PTX
 
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX(..) )
 import Data.Array.Accelerate.LLVM.Multi.Target
 
 -- standard library

@@ -25,7 +25,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 import Data.Array.Accelerate.Error                              ( internalError )
 
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Execute.Environment           ( AvalR(..) )
@@ -43,20 +42,10 @@ import Control.Parallel.Meta.Worker
 import Data.Array.Accelerate.Debug
 
 -- accelerate-llvm
-import Data.Array.Accelerate.LLVM.Compile                       ( ExecutableR )
-
--- accelerate-llvm-ptx
-import Data.Array.Accelerate.LLVM.PTX.Compile                   ( ptxKernel )
-import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async(..) )
-import qualified Data.Array.Accelerate.LLVM.PTX.Compile         as PTX
-import qualified Data.Array.Accelerate.LLVM.PTX.Context         as PTX
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute         as PTX
-import qualified Data.Array.Accelerate.LLVM.PTX.Target          as PTX
-
--- accelerate-llvm-native
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
-import qualified Data.Array.Accelerate.LLVM.Native.Execute      as Native
+import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX, Kernel, Async(..) )
+import Data.Array.Accelerate.LLVM.Native.Internal               ( Native )
+import qualified Data.Array.Accelerate.LLVM.PTX.Internal        as PTX
+import qualified Data.Array.Accelerate.LLVM.Native.Internal     as CPU
 
 -- standard library
 import Prelude                                                  hiding ( map, mapM_, scanl, scanr )
@@ -101,7 +90,7 @@ executeOp
     :: (Marshalable Native args, Marshalable PTX args)
     => Multi
     -> ExecutableR Native
-    -> PTX.Kernel
+    -> Kernel
     -> Gamma aenv
     -> Aval aenv
     -> Stream
@@ -125,8 +114,8 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
 
   liftIO . gangIO theGang $ \thread ->
     case thread of
-      0 -> Native.executeOp nativeTarget cpu (syncWith poke) gamma (avalForNative aval)        u args >> traceIO dump_sched "sched/multi: Native exiting"
-      1 -> PTX.executeOp    ptxTarget    ptx (syncWith peek) gamma (avalForPTX    aval) stream v args >> traceIO dump_sched "sched/multi: PTX exiting"
+      0 -> CPU.executeOp nativeTarget cpu (syncWith poke) gamma (avalForCPU aval)        u args >> traceIO dump_sched "sched/multi: Native exiting"
+      1 -> PTX.executeOp ptxTarget    ptx (syncWith peek) gamma (avalForPTX aval) stream v args >> traceIO dump_sched "sched/multi: PTX exiting"
       _ -> error "unpossible"
 
 
@@ -137,9 +126,9 @@ syncWith copy = Finalise $ mapM_ (\(IE from to) -> copy from to)
 -- Busywork to convert the array environment into a representation specific to
 -- each backend.
 --
-avalForNative :: Aval aenv -> AvalR Native aenv
-avalForNative Aempty                   = Aempty
-avalForNative (Apush aenv (Async _ a)) = avalForNative aenv `Apush` a
+avalForCPU :: Aval aenv -> AvalR Native aenv
+avalForCPU Aempty                   = Aempty
+avalForCPU (Apush aenv (Async _ a)) = avalForCPU aenv `Apush` a
 
 avalForPTX :: Aval aenv -> AvalR PTX aenv
 avalForPTX Aempty         = Aempty

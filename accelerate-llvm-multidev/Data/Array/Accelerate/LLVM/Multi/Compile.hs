@@ -23,12 +23,10 @@ import Data.Array.Accelerate.LLVM.State                         ( LLVM )
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.Compile
 
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Multi.Target
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
-import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
-import Data.Array.Accelerate.LLVM.Native.Compile                ()
-import Data.Array.Accelerate.LLVM.PTX.Compile                   ()
+import Data.Array.Accelerate.LLVM.PTX.Internal
+import Data.Array.Accelerate.LLVM.Native.Internal
+
 
 -- standard library
 import Control.Applicative
