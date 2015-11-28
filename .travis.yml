@@ -34,5 +34,5 @@ install:
 
 script:
   - stack --stack-yaml=stack-${GHC%.*}.yaml build
-  - stack --stack-yaml=stack-${GHC%.*}.yaml haddock
+  # - stack --stack-yaml=stack-${GHC%.*}.yaml haddock
 
