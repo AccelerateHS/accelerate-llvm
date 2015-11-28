@@ -1,6 +1,6 @@
 # vim: nospell
 language: c
-# sudo: true
+sudo: true
 
 matrix:
   include:
@@ -17,6 +17,12 @@ matrix:
 before_install:
   - unset CC
   - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+
+  # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
+  - | if [ ${LLVM} == 3.5 ]; then
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 20
+        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 20
+      fi
 
   # Fetch stack
   - mkdir $HOME/bin
