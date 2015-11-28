@@ -11,6 +11,7 @@ matrix:
           sources:
             - hvr-ghc
           packages:
+            - libgmp-dev
             - happy-1.19.5
             - alex-3.1.4
             - llvm-3.4-dev
@@ -24,6 +25,7 @@ matrix:
             - llvm-toolchain-precise-3.5
             - ubuntu-toolchain-r-test
           packages:
+            - libgmp-dev
             - happy-1.19.5
             - alex-3.1.4
             - llvm-3.5-dev
