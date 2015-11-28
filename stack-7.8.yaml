@@ -29,6 +29,9 @@ extra-deps:
 
 # accelerate-llvm-native
 - 'libffi-0.1'
+- 'mtl-2.2.1'
+- 'transformers-0.4.3.0'
+- 'transformers-compat-0.4.0.4'
 
 # accelerate-llvm-ptx
 # - 'cuda-0.7.0.0'
