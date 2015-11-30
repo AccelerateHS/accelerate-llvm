@@ -15,11 +15,6 @@ packages:
     commit: e9d8c2f8dc57b369253525987c2a7bc61c58f647
   extra-dep: true
 
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: 2d8455bd461aa65521486aa49c608e8faa7657d7
-  extra-dep: true
-
 # required on OS X due to https://github.com/bscarlet/llvm-general/issues/155
 - location:
     git:    https://github.com/bscarlet/llvm-general.git
