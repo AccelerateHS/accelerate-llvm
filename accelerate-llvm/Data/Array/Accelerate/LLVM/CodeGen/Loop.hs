@@ -12,6 +12,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Loop
   where
 
+import Control.Monad
+
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
@@ -27,28 +29,8 @@ for :: forall i. (Elt i, IsIntegral i)
     -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
     -> (IR i -> CodeGen ())                     -- ^ body of the loop
     -> CodeGen ()
-for start test incr body = do
-  loop  <- newBlock "for.top"
-  exit  <- newBlock "for.exit"
-  _     <- beginBlock "for.entry"
-
-  -- entry
-  p     <- test start
-  top   <- cbr p loop exit
-
-  -- loop body
-  setBlock loop
-  i     <- fresh
-
-  _     <- body i
-  i'    <- incr i
-  c'    <- test i'
-  bot   <- cbr c' loop exit
-
-  -- append a phi instruction at the loop head to set the incoming trip count
-  _     <- phi' loop i [(i',bot), (start, top)]
-
-  setBlock exit
+for start test incr body =
+  void $ while test (\i -> body i >> incr i) start
 
 
 -- | A standard 'while' loop
@@ -58,14 +40,14 @@ while :: Elt a
       -> (IR a -> CodeGen (IR a))
       -> IR a
       -> CodeGen (IR a)
-while test body x = do
-  loop <- newBlock "while.top"
-  exit <- newBlock "while.exit"
+while test body start = do
+  loop <- newBlock   "while.top"
+  exit <- newBlock   "while.exit"
   _    <- beginBlock "while.entry"
 
   -- Entry: generate the initial value
-  c    <- test x
-  top  <- cbr c loop exit
+  p    <- test start
+  top  <- cbr p loop exit
 
   -- Create the critical variable that will be used to accumulate the results
   prev <- fresh
@@ -76,12 +58,12 @@ while test body x = do
   --
   setBlock loop
   next <- body prev
-  c'   <- test next
-  bot  <- cbr c' loop exit
+  p'   <- test next
+  bot  <- cbr p' loop exit
 
-  _    <- phi' loop prev [(x,top), (next,bot)]
+  _    <- phi' loop prev [(start,top), (next,bot)]
 
   -- Now the loop exit
   setBlock exit
-  phi [(x,top), (next,bot)]
+  phi [(start,top), (next,bot)]
 

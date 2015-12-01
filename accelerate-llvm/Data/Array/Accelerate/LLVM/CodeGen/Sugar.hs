@@ -47,7 +47,7 @@ data IROpenFun2 arch env aenv t where
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
 data IROpenAcc arch aenv arrs where
-  IROpenAcc :: [Kernel arch aenv a]                             -- TLM: ???
+  IROpenAcc :: [Kernel arch aenv a]             -- TLM: ???
             -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where
@@ -65,7 +65,7 @@ data IRManifest arch aenv a where
 data IRArray a where
   IRArray :: (Shape sh, Elt e)
           => { irArrayShape :: IR sh
-             , irArrayData  :: IR e                       -- TLM: local operand name for array(s) containing elements of type 'e'
+             , irArrayData  :: IR e             -- TLM: local operand name for array(s) containing elements of type 'e'
              }
           -> IRArray (Array sh e)
 
