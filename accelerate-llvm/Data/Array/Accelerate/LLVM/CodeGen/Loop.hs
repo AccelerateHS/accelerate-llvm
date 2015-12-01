@@ -12,18 +12,20 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Loop
   where
 
+import Prelude                                                  hiding ( fst, snd, uncurry )
 import Control.Monad
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 
 -- | A standard 'for' loop.
 --
-for :: forall i. (Elt i, IsIntegral i)
+for :: (Elt i, IsIntegral i)
     => IR i                                     -- ^ starting index
     -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
     -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
@@ -31,6 +33,22 @@ for :: forall i. (Elt i, IsIntegral i)
     -> CodeGen ()
 for start test incr body =
   void $ while test (\i -> body i >> incr i) start
+
+
+-- | An loop with iteration count and accumulator.
+--
+iter :: (Elt i, IsIntegral i, Elt a)
+     => IR i                                    -- ^ starting index
+     -> IR a                                    -- ^ initial value
+     -> (IR i -> CodeGen (IR Bool))             -- ^ index test to keep looping
+     -> (IR i -> CodeGen (IR i))                -- ^ increment loop counter
+     -> (IR i -> IR a -> CodeGen (IR a))        -- ^ loop body
+     -> CodeGen (IR a)
+iter start seed test incr body = do
+  r <- while (test . fst)
+             (\v -> pair <$> incr (fst v) <*> uncurry body v)
+             (pair start seed)
+  return $ snd r
 
 
 -- | A standard 'while' loop
