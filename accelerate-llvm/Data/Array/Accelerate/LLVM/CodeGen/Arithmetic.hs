@@ -384,6 +384,22 @@ fromIntegral i1 n (op i1 -> x) =
 -- Utility functions
 -- -----------------
 
+fst :: IR (a, b) -> IR a
+fst (IR (OP_Pair (OP_Pair OP_Unit x) _)) = IR x
+
+snd :: IR (a, b) -> IR b
+snd (IR (OP_Pair _ y)) = IR y
+
+pair :: IR a -> IR b -> IR (a, b)
+pair (IR x) (IR y) = IR $ OP_Pair (OP_Pair OP_Unit x) y
+
+unpair :: IR (a, b) -> (IR a, IR b)
+unpair x = (fst x, snd x)
+
+uncurry :: (IR a -> IR b -> c) -> IR (a, b) -> c
+uncurry f (unpair -> (x,y)) = f x y
+
+
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 

@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import Control.Applicative                                      hiding ( Const )
 import Control.Monad
-import Prelude                                                  hiding ( exp, any, uncurry, fst, snd )
+import Prelude                                                  hiding ( exp, any )
 import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
@@ -336,43 +336,30 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
 -- Primitive functions
 -- ===================
 
-fst :: IR (a, b) -> IR a
-fst (IR (OP_Pair (OP_Pair OP_Unit x) _)) = IR x
-
-snd :: IR (a, b) -> IR b
-snd (IR (OP_Pair _ y)) = IR y
-
-unpair :: IR (a, b) -> (IR a, IR b)
-unpair x = (fst x, snd x)
-
-uncurry :: (IR a -> IR b -> c) -> IR (a, b) -> c
-uncurry f (unpair -> (x,y)) = f x y
-
-
 -- | Generate llvm operations for primitive scalar functions
 --
 llvmOfPrimFun :: (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
-llvmOfPrimFun (PrimAdd t)               = uncurry (A.add t)
-llvmOfPrimFun (PrimSub t)               = uncurry (A.sub t)
-llvmOfPrimFun (PrimMul t)               = uncurry (A.mul t)
+llvmOfPrimFun (PrimAdd t)               = A.uncurry (A.add t)
+llvmOfPrimFun (PrimSub t)               = A.uncurry (A.sub t)
+llvmOfPrimFun (PrimMul t)               = A.uncurry (A.mul t)
 llvmOfPrimFun (PrimNeg t)               = A.negate t
 llvmOfPrimFun (PrimAbs t)               = A.abs t
 llvmOfPrimFun (PrimSig t)               = A.signum t
-llvmOfPrimFun (PrimQuot t)              = uncurry (A.quot t)
-llvmOfPrimFun (PrimRem t)               = uncurry (A.rem t)
-llvmOfPrimFun (PrimQuotRem t)           = uncurry (A.quotRem t)
-llvmOfPrimFun (PrimIDiv t)              = uncurry (A.idiv t)
-llvmOfPrimFun (PrimMod t)               = uncurry (A.mod t)
-llvmOfPrimFun (PrimDivMod t)            = uncurry (A.divMod t)
-llvmOfPrimFun (PrimBAnd t)              = uncurry (A.band t)
-llvmOfPrimFun (PrimBOr t)               = uncurry (A.bor t)
-llvmOfPrimFun (PrimBXor t)              = uncurry (A.xor t)
+llvmOfPrimFun (PrimQuot t)              = A.uncurry (A.quot t)
+llvmOfPrimFun (PrimRem t)               = A.uncurry (A.rem t)
+llvmOfPrimFun (PrimQuotRem t)           = A.uncurry (A.quotRem t)
+llvmOfPrimFun (PrimIDiv t)              = A.uncurry (A.idiv t)
+llvmOfPrimFun (PrimMod t)               = A.uncurry (A.mod t)
+llvmOfPrimFun (PrimDivMod t)            = A.uncurry (A.divMod t)
+llvmOfPrimFun (PrimBAnd t)              = A.uncurry (A.band t)
+llvmOfPrimFun (PrimBOr t)               = A.uncurry (A.bor t)
+llvmOfPrimFun (PrimBXor t)              = A.uncurry (A.xor t)
 llvmOfPrimFun (PrimBNot t)              = A.complement t
-llvmOfPrimFun (PrimBShiftL t)           = uncurry (A.shiftL t)
-llvmOfPrimFun (PrimBShiftR t)           = uncurry (A.shiftR t)
-llvmOfPrimFun (PrimBRotateL t)          = uncurry (A.rotateL t)
-llvmOfPrimFun (PrimBRotateR t)          = uncurry (A.rotateR t)
-llvmOfPrimFun (PrimFDiv t)              = uncurry (A.fdiv t)
+llvmOfPrimFun (PrimBShiftL t)           = A.uncurry (A.shiftL t)
+llvmOfPrimFun (PrimBShiftR t)           = A.uncurry (A.shiftR t)
+llvmOfPrimFun (PrimBRotateL t)          = A.uncurry (A.rotateL t)
+llvmOfPrimFun (PrimBRotateR t)          = A.uncurry (A.rotateR t)
+llvmOfPrimFun (PrimFDiv t)              = A.uncurry (A.fdiv t)
 llvmOfPrimFun (PrimRecip t)             = A.recip t
 llvmOfPrimFun (PrimSin t)               = A.sin t
 llvmOfPrimFun (PrimCos t)               = A.cos t
@@ -386,27 +373,27 @@ llvmOfPrimFun (PrimAtan t)              = A.atan t
 llvmOfPrimFun (PrimAsinh t)             = A.asinh t
 llvmOfPrimFun (PrimAcosh t)             = A.acosh t
 llvmOfPrimFun (PrimAtanh t)             = A.atanh t
-llvmOfPrimFun (PrimAtan2 t)             = uncurry (A.atan2 t)
+llvmOfPrimFun (PrimAtan2 t)             = A.uncurry (A.atan2 t)
 llvmOfPrimFun (PrimExpFloating t)       = A.exp t
-llvmOfPrimFun (PrimFPow t)              = uncurry (A.fpow t)
+llvmOfPrimFun (PrimFPow t)              = A.uncurry (A.fpow t)
 llvmOfPrimFun (PrimSqrt t)              = A.sqrt t
 llvmOfPrimFun (PrimLog t)               = A.log t
-llvmOfPrimFun (PrimLogBase t)           = uncurry (A.logBase t)
+llvmOfPrimFun (PrimLogBase t)           = A.uncurry (A.logBase t)
 llvmOfPrimFun (PrimTruncate ta tb)      = A.truncate ta tb
 llvmOfPrimFun (PrimRound ta tb)         = A.round ta tb
 llvmOfPrimFun (PrimFloor ta tb)         = A.floor ta tb
 llvmOfPrimFun (PrimCeiling ta tb)       = A.ceiling ta tb
 llvmOfPrimFun (PrimIsNaN t)             = A.isNaN t
-llvmOfPrimFun (PrimLt t)                = uncurry (A.lt t)
-llvmOfPrimFun (PrimGt t)                = uncurry (A.gt t)
-llvmOfPrimFun (PrimLtEq t)              = uncurry (A.lte t)
-llvmOfPrimFun (PrimGtEq t)              = uncurry (A.gte t)
-llvmOfPrimFun (PrimEq t)                = uncurry (A.eq t)
-llvmOfPrimFun (PrimNEq t)               = uncurry (A.neq t)
-llvmOfPrimFun (PrimMax t)               = uncurry (A.max t)
-llvmOfPrimFun (PrimMin t)               = uncurry (A.min t)
-llvmOfPrimFun PrimLAnd                  = uncurry A.land
-llvmOfPrimFun PrimLOr                   = uncurry A.lor
+llvmOfPrimFun (PrimLt t)                = A.uncurry (A.lt t)
+llvmOfPrimFun (PrimGt t)                = A.uncurry (A.gt t)
+llvmOfPrimFun (PrimLtEq t)              = A.uncurry (A.lte t)
+llvmOfPrimFun (PrimGtEq t)              = A.uncurry (A.gte t)
+llvmOfPrimFun (PrimEq t)                = A.uncurry (A.eq t)
+llvmOfPrimFun (PrimNEq t)               = A.uncurry (A.neq t)
+llvmOfPrimFun (PrimMax t)               = A.uncurry (A.max t)
+llvmOfPrimFun (PrimMin t)               = A.uncurry (A.min t)
+llvmOfPrimFun PrimLAnd                  = A.uncurry A.land
+llvmOfPrimFun PrimLOr                   = A.uncurry A.lor
 llvmOfPrimFun PrimLNot                  = A.lnot
 llvmOfPrimFun PrimOrd                   = A.ord
 llvmOfPrimFun PrimChr                   = A.chr
