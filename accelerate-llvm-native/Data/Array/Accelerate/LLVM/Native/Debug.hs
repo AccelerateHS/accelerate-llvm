@@ -28,8 +28,8 @@ import Text.Printf
 -- | Execute an action and time the results.
 timed :: (Flags :-> Bool)
       -> (Double -> Double -> String)
-      -> IO ()
-      -> IO ()
+      -> IO a
+      -> IO a
 #ifdef ACCELERATE_DEBUG
 {-# NOINLINE timed #-}
 timed f msg action = do
@@ -42,7 +42,7 @@ timed f msg action = do
 
       -- Run the action in the main thread. For the native backend there is no
       -- need to time this asynchronously.
-      action
+      result    <- action
 
       wall1     <- getCurrentTime
       cpu1      <- getCPUTime
@@ -51,6 +51,7 @@ timed f msg action = do
           cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
 
       traceIO f (msg wallTime cpuTime)
+      return result
 
     else
       action

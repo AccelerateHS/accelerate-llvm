@@ -109,7 +109,7 @@ defaultTarget = unsafePerformIO $ do
 -- ---------
 
 {-# INLINE timed #-}
-timed :: IO () -> IO ()
+timed :: IO a -> IO a
 timed f = Debug.timed Debug.dump_exec elapsed f
 
 {-# INLINE elapsed #-}
