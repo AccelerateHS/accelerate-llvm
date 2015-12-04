@@ -63,6 +63,7 @@ mkWorkSearch ppt steal =
 
         -- Look for some work to do. If there is work on the local queue, take
         -- that first before trying to steal from the neighbours.
+        --
         self <- tryPopL workpool
         work <- case self of
                   Nothing -> runWorkSearch steal me
@@ -80,6 +81,7 @@ mkWorkSearch ppt steal =
         --
         -- This strategy avoids excessive splitting, especially in the case
         -- where this worker steals back the remainder from itself.
+        --
         case work of
           Just r | not (R.null r) -> do
             let (this, rest)    = R.splitAt ppt r
