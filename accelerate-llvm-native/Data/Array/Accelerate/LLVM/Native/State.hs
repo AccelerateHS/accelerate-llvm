@@ -31,6 +31,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 -- library
 import System.IO.Unsafe
 import Text.Printf
+import Prelude                                                  hiding ( init )
 
 import GHC.Conc
 
@@ -63,19 +64,19 @@ createTarget caps = do
 --
 _unbalancedParIO :: Gang -> Executable
 _unbalancedParIO gang =
-  Executable $ \_ range after fill ->
-    timed $ runParIO Single.mkResource gang range fill (runFinalise after)
+  Executable $ \_ range after init fill ->
+    timed $ runParIO Single.mkResource gang range init fill after
 
 
 -- | Execute a computation using lazy splitting work stealing queues.
 --
 balancedParIO :: Gang -> Executable
 balancedParIO gang =
-  Executable $ \ppt range after fill ->
+  Executable $ \ppt range after init fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt $ SMP.mkResource retries gang
     in
-    timed $ runParIO resource gang range fill (runFinalise after)
+    timed $ runParIO resource gang range init fill after
 
 
 -- Top-level mutable state

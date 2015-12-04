@@ -11,6 +11,7 @@
 module Control.Parallel.Meta
   where
 
+import Data.Maybe
 import Data.Monoid
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
@@ -18,6 +19,7 @@ import Data.Sequence                                            ( Seq )
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
 import qualified Data.Sequence                                  as Seq
+import Prelude                                                  hiding ( init )
 
 import GHC.Base                                                 ( quotInt, remInt )
 
@@ -55,7 +57,7 @@ instance Monoid WorkSearch where
 -- | A 'Resource' provides an abstraction of heterogeneous execution resources
 -- that may be combined. Composition of resources is left-biased. That is, if if
 -- @resource1@ always returns work from its 'WorkSearch', then the composed
--- resourc @resource1 <> resource2@ will never request work from @resource2@.
+-- resource @resource1 <> resource2@ will never request work from @resource2@.
 --
 data Resource = Resource {
     startup     :: Startup
@@ -67,6 +69,20 @@ instance Monoid Resource where
   mappend (Resource st1 ws1) (Resource st2 ws2) = Resource (st1 <> st2) (ws1 <> ws2)
 
 
+-- | An action to execute. The first parameters are the start and end indices of
+-- the range this action should process, and the final is the ID of the thread
+-- doing the work.
+--
+type Action = Int -> Int -> Int -> IO ()
+-- data Action = Action {
+--     runAction :: Int -> Int -> Int -> IO }
+--   }
+
+-- instance Monoid Action where
+--   mempty                        = Action $ \_ _ _ -> return ()
+--   Action f1 `mappend` Action f2 = Action $ \m n i -> f1 m n i >> f1 m n i
+
+
 -- | An 'Executable' provides a callback that can be used to run a provided
 -- function using an encapsulated work-stealing gang of threads.
 --
@@ -74,13 +90,9 @@ data Executable = Executable {
     runExecutable
         :: Int          -- ^ Profitable parallelism threshold (PPT)
         -> Range        -- ^ The range to execute over
-        -> Finalise     -- ^ Post-processing function given the ranges processed
-                        -- by this thread.
-        -> (Int -> Int -> Int -> IO ())
-                -- ^ The function to execute. The first parameters are
-                -- the start and end indices of the array this action
-                -- should process, and the final is the ID of the thread
-                -- doing the work.
+        -> Finalise     -- ^ Post-processing function, given the ranges processed by this thread.
+        -> Maybe Action -- ^ Initialisation to execute over the first range only
+        -> Action       -- ^ The main function to execute
         -> IO ()
   }
 
@@ -90,7 +102,8 @@ data Executable = Executable {
 -- handled.
 --
 data Finalise = Finalise {
-  runFinalise :: Seq Range -> IO () }
+    runFinalise :: Seq Range -> IO ()
+  }
 
 instance Monoid Finalise where
   mempty                            = Finalise $ \_ -> return ()
@@ -126,57 +139,67 @@ instance Monoid Finalise where
 -- deciding to exit? If the PPT is too large then threads might not react
 -- quickly enough to splitting once their deque is emptied. Maybe the first
 -- thread to return Nothing can probe the queues to see if they are all empty.
--- If True, write into a shared MVar to signal to the others that it all is time
--- to exit. But, that still assumes that the PPT is not so large that the queues
+-- If True, write into a shared MVar to signal to the others that it is time to
+-- exit. But, that still assumes that the PPT is not so large that the queues
 -- are always empty.
+--
+-- TLM TODO:
+--
+-- Splitting work should probably be biased to cache-size chunks, rather
+-- than trying to split exactly evenly.
 --
 runParIO
     :: Resource
     -> Gang
     -> Range
-    -> (Int -> Int -> Int -> IO ())
-    -> (Seq Range -> IO ())
+    -> Maybe Action
+    -> Action
+    -> Finalise
     -> IO ()
-runParIO resource gang range action finish
-  | gangSize gang == 1  = seqIO resource gang range action finish
-  | otherwise           = parIO resource gang range action finish
+runParIO resource gang range init action after
+  | gangSize gang == 1  = seqIO resource gang range init action after
+  | otherwise           = parIO resource gang range init action after
 
 seqIO
     :: Resource
     -> Gang
     -> Range
-    -> (Int -> Int -> Int -> IO ())
-    -> (Seq Range -> IO ())
+    -> Maybe Action
+    -> Action
+    -> Finalise
     -> IO ()
-seqIO _ _    Empty    _      finish = finish Seq.empty
-seqIO _ gang (IE u v) action finish = do
-  gangIO gang $ action u v
-  finish $ Seq.singleton (IE u v)
+seqIO _ _    Empty    _    _      after = runFinalise after Seq.empty
+seqIO _ gang (IE u v) init action after = do
+  gangIO gang $ fromMaybe action init u v
+  runFinalise after $ Seq.singleton (IE u v)
 
 parIO
     :: Resource
     -> Gang
     -> Range
-    -> (Int -> Int -> Int -> IO ())
-    -> (Seq Range -> IO ())
+    -> Maybe Action
+    -> Action
+    -> Finalise
     -> IO ()
-parIO _        _    Empty        _      finish = finish Seq.empty
-parIO resource gang (IE inf sup) action finish =
+parIO _        _    Empty        _    _      after = runFinalise after Seq.empty
+parIO resource gang (IE inf sup) init action after =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
           me    = V.unsafeIndex gang thread
 
-          loop rs = do
+          loop go rs = do
             work <- runWorkSearch (workSearch resource) me
             case work of
-              Just r@(IE u v)   -> action u v thread >> loop (rs `R.append` r)
+              Just r@(IE u v)   -> go u v thread >> loop action (rs `R.append` r)
               _                 -> return rs
 
-      ranges <- if start < end
-                  then pushL (workpool me) (IE start end) >> loop Seq.empty
-                  else return $ Seq.empty
-      finish (compress ranges)
+      ranges <- if start >= end
+                  then return Seq.empty
+                  else pushL (workpool me) (IE start end) >>
+                       loop (fromMaybe action init) Seq.empty
+
+      runFinalise after (compress ranges)
   where
     len                 = sup - inf
     workers             = gangSize gang
