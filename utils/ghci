@@ -16,7 +16,7 @@ GHC_FLAGS="$GHC_FLAGS
     -iaccelerate-llvm-multidev"
 
 # Include any auto-generated cabal_macros.h files
-MACROS=`find . -name "cabal_macros.h"`
+MACROS=`find accelerate-llvm -name "cabal_macros.h"`
 for x in $MACROS; do
   GHC_FLAGS="$GHC_FLAGS -optP-include -optP$x "
 done
