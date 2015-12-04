@@ -46,7 +46,9 @@ iter :: (Elt i, IsIntegral i, Elt a)
      -> CodeGen (IR a)
 iter start seed test incr body = do
   r <- while (test . fst)
-             (\v -> pair <$> incr (fst v) <*> uncurry body v)
+             (\v -> do v' <- uncurry body v     -- update value and then...
+                       i' <- incr (fst v)       -- ...calculate new index
+                       return $ pair i' v')
              (pair start seed)
   return $ snd r
 
