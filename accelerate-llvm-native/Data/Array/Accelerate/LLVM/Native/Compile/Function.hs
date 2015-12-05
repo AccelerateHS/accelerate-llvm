@@ -23,10 +23,11 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Function (
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
--- standard library
+-- library
 import Control.Concurrent
 import Data.List
 import Foreign.Ptr
+import Foreign.LibFFI
 
 
 -- | The 'Req' type encapsulates a request to execute the JIT compiled function
@@ -81,23 +82,24 @@ instance Show Function where
 
 -- | Execute the main function (the first function defined in a module).
 --
-executeFunction :: Function -> (FunPtr () -> IO ()) -> IO ()
-executeFunction Function{..} run =
+executeFunction :: Function -> [Arg] -> IO ()
+executeFunction Function{..} =
   case functionTable of
     []      -> $internalError "executeFunction" "no functions defined"
-    (_,f):_ -> do
-      putMVar  functionReq (ReqDo $ run f)
+    (_,f):_ -> \argv -> do
+      putMVar  functionReq (ReqDo $ callFFI f retVoid argv)
       takeMVar functionResult
+
 
 -- | Execute a named function that was defined in the module. If the function
 -- does not exist: error.
 --
-executeNamedFunction :: Function -> String -> (FunPtr () -> IO ()) -> IO ()
-executeNamedFunction Function{..} name run =
+executeNamedFunction :: Function -> String -> [Arg] -> IO ()
+executeNamedFunction Function{..} name =
   case lookup name functionTable of
     Nothing -> $internalError "executeNamedFunction" "function not found"
-    Just f  -> do
-      putMVar  functionReq (ReqDo $ run f)
+    Just f  -> \argv -> do
+      putMVar  functionReq (ReqDo $ callFFI f retVoid argv)
       takeMVar functionResult
 
 

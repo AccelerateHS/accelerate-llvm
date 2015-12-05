@@ -55,7 +55,6 @@ import Control.Monad.Trans                                      ( liftIO )
 import Prelude                                                  hiding ( map, scanl, scanr )
 import qualified Prelude                                        as P
 
-import Foreign.LibFFI                                           as FFI
 import Foreign.C
 import Foreign.Ptr
 
@@ -271,9 +270,9 @@ executeOp
     -> args
     -> IO ()
 executeOp native@Native{..} (NativeR main) finish gamma aenv r args =
-  executeFunction main                         $ \f ->
-  runExecutable fillP defaultLargePPT r finish $ \start end _ ->
-    callFFI f retVoid =<< marshal native () (start, end, args, (gamma,aenv))
+  let f = executeFunction main
+  in  runExecutable fillP 1 r finish Nothing $ \start end _tid ->
+        f =<< marshal native () (start, end, args, (gamma, aenv))
 
 
 -- Standard C functions
