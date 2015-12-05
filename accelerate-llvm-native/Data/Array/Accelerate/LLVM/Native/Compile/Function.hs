@@ -106,6 +106,11 @@ executeNamedFunction Function{..} name =
 -- | Start a worker thread that compiles the given module into executable code,
 -- then waits for requests to execute the compiled functions.
 --
+-- TLM: The finalisers for the worker functions are never firing, so the
+--      worker threads are staying alive forever. This is particularly bad
+--      because we are using OS threads to create the LLVM context, which
+--      are relatively easy to exhaust.
+--
 startFunction
     :: (([(String, FunPtr ())] -> IO ()) -> IO ())
     -> IO Function
@@ -118,6 +123,7 @@ startFunction withFunctions = do
   -- The finaliser requires access to both varReq and varDone, but which is GC'd
   -- first is very racey. If we don't put the finaliser on both, and other MVar
   -- is GC'd first, the function will never get the shutdown request.
+  --
   _       <- mkWeakMVar varReq  (finaliseFunction varReq varDone)
   _       <- mkWeakMVar varDone (finaliseFunction varReq varDone)
 
@@ -139,6 +145,9 @@ startFunction withFunctions = do
 
 -- | The worker thread blocks on the MVar waiting for a work request. On
 -- completion it writes into the result MVar.
+--
+-- TLM: We should be able to replace this with a continuation/coroutine,
+--      and do away with the need for communication via MVars.
 --
 functionLoop :: MVar Req -> MVar () -> IO ()
 functionLoop varReq varDone
