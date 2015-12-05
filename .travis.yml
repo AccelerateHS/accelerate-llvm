@@ -83,3 +83,8 @@ script:
   - stack build
   # - stack haddock
 
+notifications:
+  slack:
+    rooms:
+      secure: "Gv4wLRh+80JcI3KQ/7pbFGaK2O6VQf+ai0nEknToOrRcO8PIlK6U98zv7EFfcByU51pdsMWfgrN8YoDgbYymAcslmZtqSxoFor7LIGSLMYbJ0hJ4I9QmDrG/15Rw0+hGcbHwiUh7JT7UqDZQXLSdl3aOWHqG5TBFOsLgUZZctq8="
+
