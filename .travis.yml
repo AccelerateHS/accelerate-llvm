@@ -2,6 +2,10 @@
 language: c
 sudo: true
 
+cache:
+  directories:
+    - $HOME/.stack
+
 matrix:
   include:
     - env: GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 CABAL=1.18
