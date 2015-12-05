@@ -23,6 +23,22 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 
+-- | TODO: Iterate over a multidimensional index space.
+--
+-- Build nested loops that iterate over a hype-rectangular index space
+-- between the given coordinates. The LLVM optimiser will be able to
+-- vectorise nested loops, including when we insert conversions to the
+-- corresponding linear index (e.g., in order to index arrays).
+--
+-- iterate
+--     :: Shape sh
+--     => IR sh                                    -- ^ starting index
+--     -> IR sh                                    -- ^ final index
+--     -> (IR sh -> CodeGen (IR a))                -- ^ body of the loop
+--     -> CodeGen (IR a)
+-- iterate from to body = error "CodeGen.Loop.iterate"
+
+
 -- | A standard 'for' loop.
 --
 for :: (Elt i, IsIntegral i)

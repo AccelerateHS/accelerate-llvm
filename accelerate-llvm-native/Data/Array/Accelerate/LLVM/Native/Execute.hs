@@ -30,11 +30,13 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Analysis.Match
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold           ( matchShapeType )
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
@@ -52,7 +54,7 @@ import Data.Monoid                                              ( mempty )
 import Data.Word                                                ( Word8 )
 import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
-import Prelude                                                  hiding ( map, scanl, scanr )
+import Prelude                                                  hiding ( map, scanl, scanr, init )
 import qualified Prelude                                        as P
 
 import Foreign.C
@@ -88,20 +90,14 @@ instance Execute Native where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
-  permute       = permuteOp
-  scanl1        = scanl1Op
+  -- permute       = permuteOp
+  -- scanl1        = scanl1Op
 
 
 -- Skeleton implementation
 -- -----------------------
 
--- Execute fold operations. There are two flavours:
---
---   1. If we are collapsing to a single value, then the threads compute an
---   individual partial sum, then a single thread adds the results.
---
---   2. If this is a multidimensional reduction, then threads reduce the
---   inner dimensions sequentially.
+-- Inclusive reductions require at least one element in the input array.
 --
 fold1Op
     :: (Shape sh, Elt e)
@@ -115,7 +111,9 @@ fold1Op kernel gamma aenv stream sh@(_ :. sz)
   = $boundsCheck "fold1" "empty array" (sz > 0)
   $ foldCore kernel gamma aenv stream sh
 
--- Make space for the neutral element
+-- Exclusive reductions will have at least one element in the output array,
+-- so make sure the lower-dimensional component is non-empty.
+--
 foldOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
@@ -127,6 +125,15 @@ foldOp
 foldOp kernel gamma aenv stream (sh :. sz)
   = foldCore kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
 
+
+-- Execute fold operations. There are two flavours:
+--
+--   1. If we are collapsing to a single value, then the threads compute an
+--   individual partial sum, then a single thread adds the results.
+--
+--   2. If this is a multidimensional reduction, then the inner dimensions
+--   are distributed over the threads, which compute each sequentially.
+--
 foldCore
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
@@ -135,7 +142,77 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
-foldCore (NativeR k) gamma aenv () (sh :. sz) = do
+foldCore native gamma aenv () (sh :. sz)
+  -- Reduction to single value
+  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  = foldAllCore native gamma aenv () sz
+
+  -- Multidimensional reduction
+  | otherwise
+  = error "TODO: Data.Array.Accelerate.LLVM.Native.Execute.foldCore/multidimensional"
+
+
+foldAllCore
+    :: forall aenv e. Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int
+    -> LLVM Native (Scalar e)
+foldAllCore kernel@(NativeR k) gamma aenv () sz = do
+  native@Native{..} <- gets llvmTarget
+  --
+  liftIO $ if gangSize theGang == 1
+    -- Sequential reduction
+    then do
+      out <- allocateArray Z
+      executeOp native kernel mempty gamma aenv (IE 0 sz) out
+      return out
+
+    -- parallel reduction
+    else do
+      let w  = gangSize theGang
+          n  = sz `min` w
+      --
+      tmp <- allocateArray (Z :. w)     :: IO (Vector e)
+      out <- allocateArray Z
+
+      let p1 = executeNamedFunction k "foldAllP1"
+          p2 = executeNamedFunction k "foldAllP2"
+          p3 = executeNamedFunction k "foldAllP3"
+          --
+          init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+          main start end tid = p2 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+      --
+      runExecutable fillP defaultLargePPT (IE 0 sz) mempty (Just init) main
+      p3 =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
+      return out
+
+
+
+{--
+-- Make space for the neutral element
+foldOp'
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM Native (Array sh e)
+foldOp' kernel gamma aenv stream (sh :. sz)
+  = foldCore' kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
+
+foldCore'
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM Native (Array sh e)
+foldCore' (NativeR k) gamma aenv () (sh :. sz) = do
   native@Native{..} <- gets llvmTarget
 
   -- Either (1) multidimensional reduction; or
@@ -166,8 +243,10 @@ foldCore (NativeR k) gamma aenv () (sh :. sz) = do
               callFFI f retVoid =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
 
             return out
+--}
 
 
+{--
 -- Forward permutation, specified by an indexing mapping into an array and a
 -- combination function to combine elements.
 --
@@ -191,8 +270,8 @@ permuteOp kernel gamma aenv () shIn dfs = do
     memset (ptrsOfArrayData adata) unlocked n
     executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
   return out
-
-
+--}
+{--
 -- Left inclusive scan
 --
 scanl1Op
@@ -232,7 +311,7 @@ scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
                 callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
 
             return out
-
+--}
 
 -- Skeleton execution
 -- ------------------
