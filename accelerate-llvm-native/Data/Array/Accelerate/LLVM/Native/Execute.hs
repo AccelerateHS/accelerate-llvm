@@ -250,7 +250,7 @@ simpleOp
 simpleOp kernel gamma aenv () sh = do
   native <- gets llvmTarget
   liftIO $ do
-    out <- liftIO $ allocateArray sh
+    out <- allocateArray sh
     executeOp native kernel mempty gamma aenv (IE 0 (size sh)) out
     return out
 
