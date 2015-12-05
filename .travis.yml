@@ -63,7 +63,7 @@ before_install:
   - |
       if [ ${GHC%.*} == 7.8 ]; then
         # required to install the 'cuda' package
-        travis_retry sudo $HOME/bin/stack setup --upgrade-cabal
+        travis_retry sudo env PATH=$PATH stack setup --upgrade-cabal
       fi
 
   # Fetch CUDA
