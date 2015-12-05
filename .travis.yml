@@ -4,19 +4,20 @@ sudo: true
 
 matrix:
   include:
-    - env: GHC=7.8 LLVM=3.4 CUDA=7.0-28
+    - env: GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 CABAL=1.18
       compiler: "#GHC 7.8"
       addons:
         apt:
           sources:
             - hvr-ghc
           packages:
-            - libgmp-dev
+            - ghc-7.8.4
+            - cabal-install-1.18
             - happy-1.19.5
             - alex-3.1.4
             - llvm-3.4-dev
 
-    - env: GHC=7.10 LLVM=3.5 CUDA=7.0-28
+    - env: GHC=7.10.2 LLVM=3.5 CUDA=7.0-28 CABAL=1.22
       compiler: "#GHC 7.10"
       addons:
         apt:
@@ -25,7 +26,8 @@ matrix:
             - llvm-toolchain-precise-3.5
             - ubuntu-toolchain-r-test
           packages:
-            - libgmp-dev
+            - ghc-7.10.2
+            - cabal-install-1.22
             - happy-1.19.5
             - alex-3.1.4
             - llvm-3.5-dev
@@ -38,7 +40,7 @@ matrix:
 
 before_install:
   - unset CC
-  - export PATH=/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
   # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
   - |
@@ -52,12 +54,12 @@ before_install:
   - export PATH=$HOME/bin:$PATH
   - travis_retry curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
   - mv stack-*/stack $HOME/bin
-  - ln -s stack-${GHC}.yaml stack.yaml
+  - ln -s stack-${GHC%.*}.yaml stack.yaml
   - travis_retry stack setup
   - |
-      if [ ${GHC} == 7.8 ]; then
+      if [ ${GHC%.*} == 7.8 ]; then
         # required to install the 'cuda' package
-        travis_retry stack setup --upgrade-cabal
+        travis_retry sudo stack setup --upgrade-cabal
       fi
 
   # Fetch CUDA
