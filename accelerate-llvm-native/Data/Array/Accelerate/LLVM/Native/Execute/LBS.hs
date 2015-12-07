@@ -25,5 +25,5 @@ defaultLargePPT :: Int
 defaultLargePPT = 2048
 
 defaultSmallPPT :: Int
-defaultSmallPPT = 256
+defaultSmallPPT = 32
 
