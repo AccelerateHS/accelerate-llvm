@@ -63,11 +63,11 @@ before_install:
   - |
       if [ ${GHC%.*} == 7.8 ]; then
         # required to install the 'cuda' package
-        travis_retry sudo env PATH=$PATH stack setup --upgrade-cabal
-        # GCE workers doesn't have enough space in /tmp to install stack
-        # locally, so we need to install via apt and then --upgrade-cabal using
-        # 'sudo'. This fixes the resulting permissions.
-        sudo chown -R travis:travis $HOME/.stack
+        travis_retry sudo env PATH=$PATH stack setup --upgrade-cabal || exit 1
+        # GCE workers doesn't have enough space in /tmp to install ghc locally
+        # via stack, so we need to install via apt and then --upgrade-cabal
+        # using 'sudo'. This fixes the resulting permissions.
+        sudo chown -R travis:travis $HOME/.stack || exit 1
       fi
 
   # Fetch CUDA
