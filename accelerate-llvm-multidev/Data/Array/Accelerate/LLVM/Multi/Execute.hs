@@ -114,8 +114,8 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
 
   liftIO . gangIO theGang $ \thread ->
     case thread of
-      0 -> CPU.executeOp nativeTarget cpu (syncWith poke) gamma (avalForCPU aval)        u args >> traceIO dump_sched "sched/multi: Native exiting"
-      1 -> PTX.executeOp ptxTarget    ptx (syncWith peek) gamma (avalForPTX aval) stream v args >> traceIO dump_sched "sched/multi: PTX exiting"
+      0 -> CPU.executeOp 2048 nativeTarget cpu (syncWith poke) gamma (avalForCPU aval)        u args >> traceIO dump_sched "sched/multi: Native exiting"
+      1 -> PTX.executeOp      ptxTarget    ptx (syncWith peek) gamma (avalForPTX aval) stream v args >> traceIO dump_sched "sched/multi: PTX exiting"
       _ -> error "unpossible"
 
 
