@@ -50,7 +50,7 @@ mkFold aenv f z acc
   = mkFoldAll aenv f (Just z) acc
 
   | otherwise
-  = error "TODO: mkFold/multidimensional"
+  = mkFold' aenv f (Just z) acc
 
 
 mkFold1
@@ -64,7 +64,38 @@ mkFold1 aenv f acc
   = mkFoldAll aenv f Nothing acc
 
   | otherwise
-  = error "TODO: mkFold1/multidimensional"
+  = mkFold' aenv f Nothing acc
+
+
+mkFold'
+  :: forall arch aenv sh e. (Shape sh, Elt e)
+  =>          Gamma          aenv
+  ->          IRFun2    arch aenv (e -> e -> e)
+  -> Maybe   (IRExp     arch aenv e)
+  ->          IRDelayed arch aenv (Array (sh :. Int) e)
+  -> CodeGen (IROpenAcc arch aenv (Array sh e))
+mkFold' aenv combine mseed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+      --
+      name                      = "ix.stride" :: Name Int
+      paramStride               = scalarParameter scalarType name
+      stride                    = local           scalarType name
+  in
+  makeOpenAcc "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
+
+    imapFromTo start end $ \seg -> do
+      from <- mul numType seg  stride
+      to   <- add numType from stride
+      --
+      r    <- case mseed of
+                Just seed -> do z <- seed
+                                reduceFromTo  from to (app2 combine) z (app1 delayedLinearIndex)
+                Nothing   ->    reduce1FromTo from to (app2 combine)   (app1 delayedLinearIndex)
+      writeArray arrOut seg r
+    return_
 
 
 -- Reduce an array to single element.

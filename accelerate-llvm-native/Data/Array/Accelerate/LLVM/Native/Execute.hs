@@ -28,14 +28,12 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Analysis.Match
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
-import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold           ( matchShapeType )
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
@@ -109,7 +107,7 @@ fold1Op
     -> LLVM Native (Array sh e)
 fold1Op kernel gamma aenv stream sh@(_ :. sz)
   = $boundsCheck "fold1" "empty array" (sz > 0)
-  $ foldCore kernel gamma aenv stream sh
+  $ foldOp' kernel gamma aenv stream sh
 
 -- Exclusive reductions will have at least one element in the output array,
 -- so make sure the lower-dimensional component is non-empty.
@@ -123,7 +121,7 @@ foldOp
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldOp kernel gamma aenv stream (sh :. sz)
-  = foldCore kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
+  = foldOp' kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
 
 
 -- Execute fold operations. There are two flavours:
@@ -134,7 +132,7 @@ foldOp kernel gamma aenv stream (sh :. sz)
 --   2. If this is a multidimensional reduction, then the inner dimensions
 --   are distributed over the threads, which compute each sequentially.
 --
-foldCore
+foldOp'
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
@@ -142,16 +140,37 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
-foldCore native gamma aenv () (sh :. sz)
+foldOp' native gamma aenv () (sh :. sz)
   -- Reduction to single value
   | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
   = foldAllCore native gamma aenv () sz
 
   -- Multidimensional reduction
   | otherwise
-  = error "TODO: Data.Array.Accelerate.LLVM.Native.Execute.foldCore/multidimensional"
+  = foldCore native gamma aenv () sh sz
 
 
+-- Multidimensional reduction
+--
+foldCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int
+    -> LLVM Native (Array sh e)
+foldCore kernel gamma aenv () sh stride = do
+  native <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray sh
+    executeOp defaultSmallPPT native kernel mempty gamma aenv (IE 0 (size sh)) (stride, out)
+    return out
+
+
+-- Reduce an array to a single element
+--
 foldAllCore
     :: forall aenv e. Elt e
     => ExecutableR Native
@@ -167,7 +186,7 @@ foldAllCore kernel@(NativeR k) gamma aenv () sz = do
     -- Sequential reduction
     then do
       out <- allocateArray Z
-      executeOp native kernel mempty gamma aenv (IE 0 sz) out
+      executeOp defaultLargePPT native kernel mempty gamma aenv (IE 0 sz) out
       return out
 
     -- parallel reduction
@@ -330,7 +349,7 @@ simpleOp kernel gamma aenv () sh = do
   native <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOp native kernel mempty gamma aenv (IE 0 (size sh)) out
+    executeOp defaultLargePPT native kernel mempty gamma aenv (IE 0 (size sh)) out
     return out
 
 
@@ -340,7 +359,8 @@ simpleOp kernel gamma aenv () sh = do
 --
 executeOp
     :: Marshalable args
-    => Native
+    => Int
+    -> Native
     -> ExecutableR Native
     -> Finalise
     -> Gamma aenv
@@ -348,10 +368,11 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp native@Native{..} (NativeR main) finish gamma aenv r args =
-  let f = executeFunction main
-  in  runExecutable fillP 1 r finish Nothing $ \start end _tid ->
-        f =<< marshal native () (start, end, args, (gamma, aenv))
+executeOp ppt native@Native{..} NativeR{..} finish gamma aenv r args =
+  let f = executeFunction executableR
+  in  runExecutable fillP ppt r finish Nothing $ \start end _tid -> do
+        argv <- marshal native () (start, end, args, (gamma, aenv))
+        f argv
 
 
 -- Standard C functions
