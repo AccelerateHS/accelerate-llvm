@@ -290,11 +290,15 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
 
     cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
       | Just REFL <- matchTupleType t (eltType (undefined::Int))
-      = do
-           a <- cvt tsh sh ix
-           b <- A.mul numType a (IR sz)
-           c <- A.add numType b (IR i)
-           return c
+      -- If we short-circuit the last dimension, we can avoid inserting
+      -- a multiply by zero and add of the result.
+      = case matchTupleType tsh (eltType (undefined::Z)) of
+          Just REFL -> return (IR i)
+          Nothing   -> do
+            a <- cvt tsh sh ix
+            b <- A.mul numType a (IR sz)
+            c <- A.add numType b (IR i)
+            return c
 
     cvt (SingleTuple t) _ (op' t -> i)
       | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
