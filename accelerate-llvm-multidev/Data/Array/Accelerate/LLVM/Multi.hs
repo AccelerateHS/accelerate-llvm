@@ -2,7 +2,8 @@
 {-# LANGUAGE CPP          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi
--- Copyright   : [2014] Trevor L. McDonell, Sean Lee, Vinod Grover, NVIDIA Corporation
+-- Copyright   : [2014..2015] Trevor L. McDonell
+--               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
