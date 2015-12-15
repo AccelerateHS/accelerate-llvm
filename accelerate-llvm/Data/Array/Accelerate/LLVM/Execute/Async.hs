@@ -20,8 +20,8 @@ import Data.Array.Accelerate.LLVM.State
 -- -----------------------
 
 class Async arch where
-  type AsyncR arch a    -- ^ An asynchronous array
-  type StreamR arch     -- ^ Streams can execute concurrently with other streams
+  type AsyncR arch a    -- An asynchronous array
+  type StreamR arch     -- Streams can execute concurrently with other streams
 
   -- | Wait for an asynchronous operation to complete
   --

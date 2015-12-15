@@ -89,11 +89,11 @@ type Action = Int -> Int -> Int -> IO ()
 --
 data Executable = Executable {
     runExecutable
-        :: Int          -- ^ Profitable parallelism threshold (PPT)
-        -> Range        -- ^ The range to execute over
-        -> Finalise     -- ^ Post-processing function, given the ranges processed by this thread.
-        -> Maybe Action -- ^ Initialisation to execute over the first range only
-        -> Action       -- ^ The main function to execute
+        :: Int          -- Profitable parallelism threshold (PPT)
+        -> Range        -- The range to execute over
+        -> Finalise     -- Post-processing function, given the ranges processed by this thread.
+        -> Maybe Action -- Initialisation to execute over the first range only
+        -> Action       -- The main function to execute
         -> IO ()
   }
 

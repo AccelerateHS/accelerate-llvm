@@ -26,27 +26,27 @@ import LLVM.General.AST.Type.Operand
 --      @phi@ node?
 --
 data Terminator a where
-  -- | <http://llvm.org/docs/LangRef.html#ret-instruction>
+  -- <http://llvm.org/docs/LangRef.html#ret-instruction>
   --
   Ret           :: Terminator ()
 
-  -- | <http://llvm.org/docs/LangRef.html#ret-instruction>
+  -- <http://llvm.org/docs/LangRef.html#ret-instruction>
   --
   RetVal        :: Operand a
                 -> Terminator a
-  -- | <http://llvm.org/docs/LangRef.html#br-instruction>
+  -- <http://llvm.org/docs/LangRef.html#br-instruction>
   --
   Br            :: Label
                 -> Terminator ()
 
-  -- | <http://llvm.org/docs/LangRef.html#br-instruction>
+  -- <http://llvm.org/docs/LangRef.html#br-instruction>
   --
   CondBr        :: Operand Bool
                 -> Label
                 -> Label
                 -> Terminator ()
 
-  -- | <http://llvm.org/docs/LangRef.html#switch-instruction>
+  -- <http://llvm.org/docs/LangRef.html#switch-instruction>
   --
   Switch        :: Operand a
                 -> Label
