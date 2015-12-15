@@ -31,8 +31,8 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
 
-import Data.Array.Accelerate.LLVM.Native.Compile
-import Data.Array.Accelerate.LLVM.Native.Execute
+import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.State
 
 #if ACCELERATE_DEBUG

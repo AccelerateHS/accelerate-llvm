@@ -16,14 +16,14 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  module Data.Array.Accelerate.LLVM.Native.Compile.Function,
+  module Data.Array.Accelerate.LLVM.Native.Compile.Module,
   ExecutableR(..),
 
 ) where
 
 -- llvm-general
 import LLVM.General.AST                                         hiding ( Module )
-import LLVM.General.Module                                      as LLVM
+import LLVM.General.Module                                      as LLVM hiding ( Module )
 import LLVM.General.Context
 import LLVM.General.Target
 import LLVM.General.ExecutionEngine
@@ -36,10 +36,10 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                ( unModule )
 
-import Data.Array.Accelerate.LLVM.Native.Compile.Function
 import Data.Array.Accelerate.LLVM.Native.Compile.Link
+import Data.Array.Accelerate.LLVM.Native.Compile.Module
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -60,7 +60,7 @@ import System.IO
 
 
 instance Compile Native where
-  data ExecutableR Native = NativeR { executableR :: Function }
+  data ExecutableR Native = NativeR { executableR :: Module }
   compileForTarget        = compileForNativeTarget
 
 instance Intrinsic Native
@@ -73,19 +73,15 @@ compileForNativeTarget acc aenv = do
   target <- gets llvmTarget
 
   -- Generate code for this Acc operation
-  let Module ast = llvmOfOpenAcc target acc aenv
+  --
+  let ast        = unModule (llvmOfOpenAcc target acc aenv)
       triple     = fromMaybe "" (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 
-  -- Lower the generated LLVM AST all the way to JIT compiled functions.
+  -- Lower the generated LLVM to an executable function(s)
   --
-  -- See note: [Executing JIT-compiled functions]
-  --
-  -- Don't use the existing context stored in the LLVM state, as that would
-  -- sometimes lead to a segfault. Instead, the worker thread runs in a new
-  -- 'withContext'.
-  --
-  fun <- liftIO . startFunction $ \loop ->
+  mdl <- liftIO .
+    compileModule                         $ \k       ->
     withContext                           $ \ctx     ->
     runExcept $ withModuleFromAST ctx ast $ \mdl     ->
     runExcept $ withNativeTargetMachine   $ \machine ->
@@ -97,11 +93,11 @@ compileForNativeTarget acc aenv = do
           Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
         withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
-         withModuleInEngine mcjit mdl        $ \exe   -> do
-          funs <- getGlobalFunctions ast exe
-          loop funs
+          withModuleInEngine mcjit mdl       $ \exe   -> do
+            k =<< getGlobalFunctions ast exe
 
-  return $! NativeR fun
+  return $ NativeR mdl
+
   where
     runExcept   = either ($internalError "compileForNativeTarget") return <=< runExceptT
 

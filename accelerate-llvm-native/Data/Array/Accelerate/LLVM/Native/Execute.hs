@@ -180,7 +180,7 @@ foldAllCore
     -> Stream
     -> Int
     -> LLVM Native (Scalar e)
-foldAllCore kernel@(NativeR k) gamma aenv () sz = do
+foldAllCore kernel@(NativeR mdl) gamma aenv () sz = do
   native@Native{..} <- gets llvmTarget
   --
   liftIO $ if gangSize theGang == 1
@@ -198,9 +198,9 @@ foldAllCore kernel@(NativeR k) gamma aenv () sz = do
       tmp <- allocateArray (Z :. w)     :: IO (Vector e)
       out <- allocateArray Z
 
-      let p1 = executeNamedFunction k "foldAllP1"
-          p2 = executeNamedFunction k "foldAllP2"
-          p3 = executeNamedFunction k "foldAllP3"
+      let p1 = execute mdl "foldAllP1"
+          p2 = execute mdl "foldAllP2"
+          p3 = execute mdl "foldAllP3"
           --
           init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
           main start end tid = p2 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
@@ -370,10 +370,9 @@ executeOp
     -> args
     -> IO ()
 executeOp ppt native@Native{..} NativeR{..} finish gamma aenv r args =
-  let f = executeFunction executableR
+  let f = executeMain executableR
   in  runExecutable fillP ppt r finish Nothing $ \start end _tid -> do
-        argv <- marshal native () (start, end, args, (gamma, aenv))
-        f argv
+        f =<< marshal native () (start, end, args, (gamma, aenv))
 
 
 -- Standard C functions
