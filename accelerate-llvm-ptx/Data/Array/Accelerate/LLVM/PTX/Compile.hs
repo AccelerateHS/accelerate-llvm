@@ -28,6 +28,7 @@ import LLVM.General.AST.Global
 import qualified LLVM.General.AST                               as AST
 import qualified LLVM.General.Analysis                          as LLVM
 import qualified LLVM.General.Module                            as LLVM
+import qualified LLVM.General.Context                           as LLVM
 import qualified LLVM.General.PassManager                       as LLVM
 
 -- accelerate
@@ -57,7 +58,6 @@ import qualified Foreign.LibNVVM                                as NVVM
 -- standard library
 import Data.ByteString                                          ( ByteString )
 import Control.Monad.Except
-import Control.Monad.Reader
 import Control.Monad.State
 import Text.Printf
 import qualified Data.ByteString.Char8                          as B
@@ -89,12 +89,11 @@ compileForPTX
     -> LLVM PTX (ExecutableR PTX)
 compileForPTX acc aenv = do
   target <- gets llvmTarget
-  ctx    <- asks llvmContext
   let Module ast = llvmOfOpenAcc target acc aenv
       dev        = ptxDeviceProperties target
       globals    = globalFunctions (moduleDefinitions ast)
 
-  liftIO $ do
+  liftIO . LLVM.withContext $ \ctx -> do
     ptx  <- compileModule dev ctx ast
     funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
     return $! PTXR funs ptx

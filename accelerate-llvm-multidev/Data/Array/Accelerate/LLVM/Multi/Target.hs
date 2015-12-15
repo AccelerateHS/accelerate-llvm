@@ -21,7 +21,6 @@ import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX )
 import Data.Array.Accelerate.LLVM.Native.Internal               ( Native )
 
 -- standard library
-import Control.Monad.Reader
 import Control.Monad.State
 
 
@@ -39,6 +38,5 @@ data Multi = Multi {
 with :: LLVM t a -> (Multi -> t) -> LLVM Multi a
 with action f = do
   target <- gets f
-  ctx    <- asks llvmContext
-  liftIO $ evalStateT (runReaderT (runLLVM action) ctx) target
+  liftIO $ evalStateT (runLLVM action) target
 

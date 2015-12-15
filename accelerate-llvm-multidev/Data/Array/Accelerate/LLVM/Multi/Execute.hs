@@ -54,7 +54,6 @@ import Data.Foldable                                            ( mapM_ )
 import Control.Concurrent                                       ( runInBoundThread )
 import Control.Exception                                        ( bracket_ )
 import Control.Monad.State                                      ( gets, liftIO, evalStateT )
-import Control.Monad.Reader                                     ( runReaderT )
 import System.IO.Unsafe
 
 
@@ -108,7 +107,7 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
         where
           setup     = PTX.push (PTX.ptxContext ptxTarget)
           teardown  = PTX.pop
-          action    = evalStateT (runReaderT (runLLVM f) undefined) ptxTarget
+          action    = evalStateT (runLLVM f) ptxTarget
 
       poke from to = runPTX $ copyToRemoteR from to Nothing result
       peek from to = runPTX $ copyToHostR   from to Nothing result

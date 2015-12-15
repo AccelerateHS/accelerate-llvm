@@ -14,13 +14,9 @@
 module Data.Array.Accelerate.LLVM.State
   where
 
--- llvm-general
-import qualified LLVM.General.Context                   as LLVM
-
 -- library
 import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
-import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
 import Prelude
@@ -33,26 +29,19 @@ import Prelude
 -- for the LLVM execution context as well as the per-execution target specific
 -- state 'target'.
 --
-newtype LLVM target a = LLVM { runLLVM :: ReaderT LLVM.Context (StateT target IO) a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadReader LLVM.Context, MonadState target)
+newtype LLVM target a = LLVM { runLLVM :: StateT target IO a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadState target)
 
 -- | Extract the execution state: 'gets llvmTarget'
 --
 llvmTarget :: t -> t
 llvmTarget = id
 
--- | Extract the LLVM context: 'gets llvmContext'
---
-llvmContext :: LLVM.Context -> LLVM.Context
-llvmContext = id
-
-
 -- | Evaluate the given target with an LLVM context
 --
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
-  LLVM.withContext $ \ctx ->
-    evalStateT (runReaderT (runLLVM acc) ctx) target
+  evalStateT (runLLVM acc) target
 
 
 -- | Make sure the GC knows that we want to keep this thing alive forever.
