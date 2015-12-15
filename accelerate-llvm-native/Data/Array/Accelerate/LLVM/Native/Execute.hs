@@ -379,8 +379,8 @@ executeOp ppt native@Native{..} NativeR{..} finish gamma aenv r args =
 -- Standard C functions
 -- --------------------
 
-memset :: Ptr Word8 -> Word8 -> Int -> IO ()
-memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
+_memset :: Ptr Word8 -> Word8 -> Int -> IO ()
+_memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
 
 foreign import ccall unsafe "string.h memset" c_memset
     :: Ptr Word8 -> CInt -> CSize -> IO (Ptr Word8)
