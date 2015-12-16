@@ -25,12 +25,13 @@ import qualified Data.Array.Accelerate.Debug                    as Debug
 -- standard library
 import Control.Applicative
 import Control.Concurrent
+import Control.Exception
 import Control.Monad
 import Data.IORef
 import Data.Range.Range
 import Data.Vector                                              ( Vector )
 import System.IO.Unsafe
-import System.Random.MWC
+import System.Random.MWC                                        ( GenIO, createSystemRandom )
 import Text.Printf
 import Prelude
 import qualified Data.Vector                                    as V
@@ -163,13 +164,26 @@ gangWorker threadId st@Worker{..} = do
 -- | Issue work requests to the gang and wait until they complete
 --
 gangIO :: Gang -> (Int -> IO ()) -> IO ()
-gangIO gang action = do
+gangIO gang action = mask $ \restore -> do
+  main  <- myThreadId
 
   -- Send requests to the threads
-  V.mapM_ (\Worker{..} -> putMVar requestVar (ReqDo action)) gang
+  V.forM_ gang $ \Worker{..} ->
+    putMVar requestVar $ ReqDo (reflectExceptionsTo main . restore . action)
 
   -- Wait for all requests to complete
-  V.mapM_ (\Worker{..} -> takeMVar resultVar) gang
+  V.forM_ gang $ \Worker{..} -> takeMVar resultVar
+
+reflectExceptionsTo :: ThreadId -> IO () -> IO ()
+reflectExceptionsTo tid action =
+  catchNonThreadKilled action (throwTo tid)
+
+catchNonThreadKilled :: IO a -> (SomeException -> IO a) -> IO a
+catchNonThreadKilled action handler =
+  action `catch` \e ->
+    case fromException e of
+      Just ThreadKilled -> throwIO e
+      _                 -> handler e
 
 
 -- | The finaliser for worker threads.

@@ -25,6 +25,7 @@ import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- library
+import Control.Exception
 import Control.Concurrent
 import Data.List
 import Foreign.LibFFI
@@ -57,6 +58,7 @@ instance Show FunctionTable where
 -- The final argument is a continuation to which we pass a function you can call
 -- to actually execute the foreign function.
 --
+{-# INLINEABLE execute #-}
 execute
     :: Module
     -> String
@@ -72,6 +74,7 @@ execute mdl@(Module ft) name k =
 -- | Execute the 'main' function of a module, which is just the first function
 -- defined in the module.
 --
+{-# INLINEABLE executeMain #-}
 executeMain
     :: Module
     -> (([Arg] -> IO ()) -> IO a)
@@ -101,10 +104,11 @@ executeMain (Module ft) k =
 -- proceed.
 --
 compileModule :: (([Function] -> IO ()) -> IO ()) -> IO Module
-compileModule compile = do
+compileModule compile = mask $ \restore -> do
+  main  <- myThreadId
   mfuns <- newEmptyMVar
   mdone <- newEmptyMVar
-  _     <- forkIO . compile $ \funs -> do
+  _     <- forkIO . reflectExceptionsTo main . restore . compile $ \funs -> do
     putMVar mfuns funs
     takeMVar mdone                              -- thread blocks, keeping 'funs' alive
     message "worker thread shutting down"       -- we better have a matching message from 'finalise'
@@ -114,6 +118,16 @@ compileModule compile = do
   addFinalizer ftab (finalise mdone)
   return (Module ftab)
 
+reflectExceptionsTo :: ThreadId -> IO () -> IO ()
+reflectExceptionsTo tid action =
+  catchNonThreadKilled action (throwTo tid)
+
+catchNonThreadKilled :: IO a -> (SomeException -> IO a) -> IO a
+catchNonThreadKilled action handler =
+  action `catch` \e ->
+    case fromException e of
+      Just ThreadKilled -> throwIO e
+      _                 -> handler e
 
 finalise :: MVar () -> IO ()
 finalise done = do
