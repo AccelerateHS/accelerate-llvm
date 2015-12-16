@@ -191,23 +191,23 @@ foldAllCore kernel@(NativeR mdl) gamma aenv () sz = do
       return out
 
     -- parallel reduction
-    else do
-      let w  = gangSize theGang
-          n  = sz `min` w
-      --
-      tmp <- allocateArray (Z :. w)     :: IO (Vector e)
-      out <- allocateArray Z
-
-      let p1 = execute mdl "foldAllP1"
-          p2 = execute mdl "foldAllP2"
-          p3 = execute mdl "foldAllP3"
-          --
-          init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
-          main start end tid = p2 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
-      --
-      runExecutable fillP defaultLargePPT (IE 0 sz) mempty (Just init) main
-      p3 =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
-      return out
+    else
+      execute mdl "foldAllP1" $ \p1 ->
+      execute mdl "foldAllP2" $ \p2 ->
+      execute mdl "foldAllP3" $ \p3 -> do
+        let w = gangSize theGang
+            n = sz `min` w
+        --
+        tmp <- allocateArray (Z :. w) :: IO (Vector e)
+        out <- allocateArray Z
+        --
+        let init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+            main start end tid = p2 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+        --
+        runExecutable fillP defaultLargePPT (IE 0 sz) mempty (Just init) main
+        p3 =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
+        --
+        return out
 
 
 
@@ -370,9 +370,9 @@ executeOp
     -> args
     -> IO ()
 executeOp ppt native@Native{..} NativeR{..} finish gamma aenv r args =
-  let f = executeMain executableR
-  in  runExecutable fillP ppt r finish Nothing $ \start end _tid -> do
-        f =<< marshal native () (start, end, args, (gamma, aenv))
+  executeMain executableR                  $ \f              ->
+  runExecutable fillP ppt r finish Nothing $ \start end _tid ->
+    f =<< marshal native () (start, end, args, (gamma, aenv))
 
 
 -- Standard C functions
