@@ -25,9 +25,10 @@ dependencies that you will need to install as well:
 Installation
 ------------
 
-You will need to install a couple of foreign libraries: libffi as well as LLVM.
-When installing LLVM, make sure to install the 'nvptx' target as well, not just
-the native target.
+You will need to install a couple of foreign libraries: libffi as well as LLVM
+(with shared library support). If you want to use the GPU targeting
+`accelerate-llvm-ptx` backend, make sure you install (or build) LLVM with the
+'nvptx' target.
 
 Example using [Homebrew](http://brew.sh) on Mac OS X:
 
@@ -37,19 +38,28 @@ $ brew install libffi
 $ brew install llvm34 --all-targets
 ```
 
-If you are using GHC-7.8, in order to be able to use LLVM from within GHCi, you
-will need to tell the `llvm-general` package to use the shared library version
-of LLVM ([84][llvm-general-issue84], [85][llvm-general-issue85]):
+Then, installation using
+[`stack`](http://docs.haskellstack.org/en/stable/README.html) just requires you
+to point it to the appropriate configuration file, for example:
+
+```
+stack --stack-yaml=stack-7.8.yaml build
+```
+
+If installing via `cabal`, note that you will need to tell the `llvm-general`
+package to use the shared library version of LLVM ([84][llvm-general-issue84],
+[85][llvm-general-issue85]) before attempting to install `accelerate-llvm*`.
 
 ```
 $ cabal install llvm-general -fshared-llvm
+$ cabal install ./accelerate-llvm
 ```
 
 Finally, it is possible to use libNVVM to optimise the generated GPU code,
 rather than LLVM's inbuilt NVPTX backend (so, you will not need to install LLVM
 with the nvptx target). However, this will require an older version of LLVM,
 which may impact CPU performance. If you wish to use libNVVM, supply the flag
-`-flibnvvm` to cabal when installing `accelerate-llvm`.
+`-flibnvvm` to cabal when installing `accelerate-llvm`. [**WARNING:** bitrot]
 
 
 Current status
