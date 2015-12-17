@@ -63,8 +63,8 @@ Current status
 - [x] backpermute/transform
 - [x] slice/replicate
 - [x] reshape
-- [ ] fold (multidimensional)
-- [ ] foldAll (parallel optimisation)
+- [x] fold (multidimensional)
+- [x] foldAll (parallel)
 - [ ] scanl, scanr
 - [ ] scanl1, scanr1
 - [ ] scanl', scanr'
@@ -97,5 +97,4 @@ Current status
 
  [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
  [llvm-general-issue85]:        https://github.com/bscarlet/llvm-general/issues/85
- [llvm-general-issue101]:       https://github.com/bscarlet/llvm-general/pull/101
 
