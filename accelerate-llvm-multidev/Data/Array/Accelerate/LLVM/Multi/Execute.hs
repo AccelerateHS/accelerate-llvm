@@ -120,7 +120,7 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
 
 
 syncWith :: (Int -> Int -> IO ()) -> Finalise
-syncWith copy = Finalise $ mapM_ (\(IE from to) -> copy from to)
+syncWith copy = Finalise $ \_ -> mapM_ (\(IE from to) -> copy from to)
 
 
 -- Busywork to convert the array environment into a representation specific to
