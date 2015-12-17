@@ -29,6 +29,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Analysis.Match
 
@@ -44,20 +45,23 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 -- Use work-stealing scheduler
 import Data.Range.Range                                         ( Range(..) )
-import Control.Parallel.Meta                                    ( runExecutable, Finalise )
+import Control.Parallel.Meta                                    ( runExecutable, Finalise(..) )
 import Control.Parallel.Meta.Worker                             ( gangSize )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Data.Monoid                                              ( mempty )
 import Data.Word                                                ( Word8 )
+import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets )
 import Control.Monad.Trans                                      ( liftIO )
 import Prelude                                                  hiding ( map, scanl, scanr, init )
+import qualified Data.Sequence                                  as Seq
 import qualified Prelude                                        as P
 
 import Foreign.C
 import Foreign.Ptr
+import Foreign.Storable
 
 #if !MIN_VERSION_llvm_general(3,3,0)
 import Data.Word
@@ -198,14 +202,30 @@ foldAllCore kernel@(NativeR mdl) gamma aenv () sz = do
         let w = gangSize theGang
             n = sz `min` w
         --
-        tmp <- allocateArray (Z :. w) :: IO (Vector e)
-        out <- allocateArray Z
-        --
-        let init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+        flag <- allocateArray (Z :. w) :: IO (Vector Word8)
+        tmp  <- allocateArray (Z :. w) :: IO (Vector e)
+        out  <- allocateArray Z
+
+        let fptrs = case flag of Array _ adata -> ptrsOfArrayData adata
+        memset fptrs 1 w
+
+        let
+            -- In the first step 'init', each thread initialises the 'tmp' array
+            -- with a local sum. The subsequent 'main' loop is then executed
+            -- over the remaining work units, which reads from and updates the
+            -- local sum in 'tmp'.
+            --
+            init start end tid = p1 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
             main start end tid = p2 =<< marshal native () (start,end,tid,tmp,(gamma,aenv))
+
+            -- There is a tricky race condition in the above, in that even if
+            -- a thread is assigned work, it could be stolen by another thread
+            -- before it gets around to executing it. Thus, the thread might
+            -- never initialise its spot in the 'tmp' array.
+            after              = Finalise $ \tid r -> when (Seq.null r) $ pokeElemOff fptrs tid 0
         --
-        runExecutable fillP defaultLargePPT (IE 0 sz) mempty (Just init) main
-        p3 =<< marshal native () (0::Int,n,tmp,out,(gamma,aenv))
+        runExecutable fillP defaultLargePPT (IE 0 sz) after (Just init) main
+        p3 =<< marshal native () (0::Int,n,tmp,flag,out,(gamma,aenv))
         --
         return out
 
@@ -378,8 +398,8 @@ executeOp ppt native@Native{..} NativeR{..} finish gamma aenv r args =
 -- Standard C functions
 -- --------------------
 
-_memset :: Ptr Word8 -> Word8 -> Int -> IO ()
-_memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
+memset :: Ptr Word8 -> Word8 -> Int -> IO ()
+memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
 
 foreign import ccall unsafe "string.h memset" c_memset
     :: Ptr Word8 -> CInt -> CSize -> IO (Ptr Word8)

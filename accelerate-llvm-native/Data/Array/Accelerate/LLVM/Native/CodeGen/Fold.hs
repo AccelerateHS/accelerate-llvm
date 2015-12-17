@@ -132,11 +132,13 @@ mkFoldAll aenv combine mseed IRDelayed{..} = do
   let
       (start, end, paramGang)   = gangParam
       (tid, paramId)            = gangId
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      (arrOut,  paramOut)       = mutableArray ("out"  :: Name (Scalar e))
+      (arrTmp,  paramTmp)       = mutableArray ("tmp"  :: Name (Vector e))
+      (arrFlag, paramFlag)      = mutableArray ("flag" :: Name (Vector Word8))
       paramEnv                  = envParam aenv
       --
       zero                      = ir numType (num numType 0)
+      one                       = ir numType (num numType 1)
 
   -- Sequential reduction
   -- --------------------
@@ -172,16 +174,59 @@ mkFoldAll aenv combine mseed IRDelayed{..} = do
   -- threads. If this is an exclusive reduction, this is the time to
   -- include the seed element.
   --
-  p3 <- makeKernel "foldAllP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
-          r <- case mseed of
-                 -- exclusive reduction
-                 Just seed -> do z <- seed
-                                 reduceFromTo  zero end (app2 combine) z (readArray arrTmp)
-                 -- inclusive reduction
-                 Nothing   ->    reduce1FromTo zero end (app2 combine)   (readArray arrTmp)
-          -- store result
-          writeArray arrOut zero r
-          return_
+  -- We also need to be careful to only include those local sums that were
+  -- actually initialised, as marked by the flag parameter. This is an awkward
+  -- race condition in the scheduler, where a thread might be assigned some work
+  -- to do, but that is stolen before it gets a chance to execute it. If this
+  -- becomes a problem with other parallel operations, we will need to build
+  -- a better solution.
+  --
+  p3 <- makeKernel "foldAllP3" (paramGang ++ paramTmp ++ paramFlag ++ paramOut ++ paramEnv) $ do
+          let
+              -- Add any initialised elements to the given initial value
+              reduceFromToIf m n seed = do
+                z <- seed
+                r <- iterFromTo m n z $ \i acc ->
+                       ifThenElse
+                         (eq scalarType one =<< readArray arrFlag i)
+                         (app2 combine acc  =<< readArray arrTmp i)
+                         (return acc)
+
+                -- store result
+                writeArray arrOut zero r
+                return_
+          --
+          case mseed of
+            Just seed -> reduceFromToIf start end seed
+            Nothing   -> do
+              loop   <- newBlock "search.top"
+              mid    <- newBlock "search.mid"
+              exit   <- newBlock "search.exit"
+              _      <- newBlock "search.entry"
+
+              p      <- lt scalarType start end
+              top    <- cbr p loop exit
+              prev   <- fresh
+
+              -- loop over the temporary array, searching for a valid entry, and
+              -- break out as soon as we find one.
+              setBlock loop
+              ok     <- readArray arrFlag prev
+              p'     <- eq scalarType ok one
+              found  <- cbr p' exit mid
+
+              setBlock mid
+              next   <- add numType prev (ir numType (num numType 1))
+              p''    <- lt scalarType next end
+              bot    <- cbr p'' loop exit
+              _      <- phi' loop prev [(start,top), (next, bot)]
+
+              setBlock exit
+              start' <- phi [(start,top), (prev,found), (end,bot)]
+              next'  <- add numType start' (ir numType (num numType 1))
+
+              -- Assume at least one element was valid
+              reduceFromToIf next' end (readArray arrTmp start')
 
   -- NOTE: The sequential kernel must appear first in the list, so it will
   --       be treated as the default function to execute.

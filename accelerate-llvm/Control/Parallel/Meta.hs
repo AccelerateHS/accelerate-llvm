@@ -99,16 +99,16 @@ data Executable = Executable {
 
 
 -- | The 'Finalise' component of an executable is an action the thread applies
--- after processing the work function, given the ranges that this thread
--- handled.
+-- after processing the work function, given its thread id the ranges that this
+-- thread actually handled.
 --
 data Finalise = Finalise {
-    runFinalise :: Seq Range -> IO ()
+    runFinalise :: Int -> Seq Range -> IO ()
   }
 
 instance Monoid Finalise where
-  mempty                            = Finalise $ \_ -> return ()
-  Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
+  mempty                            = Finalise $ \_   _ -> return ()
+  Finalise f1 `mappend` Finalise f2 = Finalise $ \tid r -> f1 tid r >> f2 tid r
 
 
 -- | Run a parallel work-stealing operation.
@@ -169,10 +169,11 @@ seqIO
     -> Action
     -> Finalise
     -> IO ()
-seqIO _ _    Empty    _    _      after = runFinalise after Seq.empty
-seqIO _ gang (IE u v) init action after = do
-  gangIO gang $ fromMaybe action init u v
-  runFinalise after $ Seq.singleton (IE u v)
+seqIO _ _    Empty    _    _      after = runFinalise after 0 Seq.empty
+seqIO _ gang (IE u v) init action after =
+  gangIO gang $ \thread -> do
+    fromMaybe action init u v thread
+    runFinalise after thread (Seq.singleton (IE u v))
 
 parIO
     :: Resource
@@ -182,7 +183,7 @@ parIO
     -> Action
     -> Finalise
     -> IO ()
-parIO _        _    Empty        _    _      after = runFinalise after Seq.empty
+parIO _        _    Empty        _    _      after = runFinalise after 0 Seq.empty
 parIO resource gang (IE inf sup) init action after =
   gangIO gang $ \thread -> do
       let start = splitIx thread
@@ -200,7 +201,7 @@ parIO resource gang (IE inf sup) init action after =
                   else pushL (workpool me) (IE start end) >>
                        loop (fromMaybe action init) Seq.empty
 
-      runFinalise after (compress ranges)
+      runFinalise after thread (compress ranges)
   where
     len                 = sup - inf
     workers             = gangSize gang
