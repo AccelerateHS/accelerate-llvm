@@ -23,6 +23,7 @@ import Control.Parallel.Meta.Worker
 import qualified Control.Parallel.Meta.Trans.LBS                as LBS
 import qualified Control.Parallel.Meta.Resource.SMP             as SMP
 import qualified Control.Parallel.Meta.Resource.Single          as Single
+import qualified Control.Parallel.Meta.Resource.Backoff         as Backoff
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -30,6 +31,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- library
+import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
 import Prelude                                                  hiding ( init )
@@ -69,13 +71,14 @@ _unbalancedParIO gang =
     timed $ runParIO Single.mkResource gang range init fill after
 
 
--- | Execute a computation using lazy splitting work stealing queues.
+-- | Execute a computation using lazy splitting of work stealing queues and
+-- exponential backoff.
 --
 balancedParIO :: Gang -> Executable
 balancedParIO gang =
   Executable $ \ppt range after init fill ->
     let retries  = gangSize gang
-        resource = LBS.mkResource ppt $ SMP.mkResource retries gang
+        resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
     in
     timed $ runParIO resource gang range init fill after
 

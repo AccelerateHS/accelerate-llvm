@@ -193,8 +193,16 @@ parIO resource gang (IE inf sup) init action after =
           loop go rs = do
             work <- runWorkSearch (workSearch resource) me
             case work of
+              -- Got a work unit. Execute it then search for more.
               Just r@(IE u v)   -> go u v thread >> loop action (rs `R.append` r)
-              _                 -> return rs
+
+              -- If the work search failed (which is random), to be extra safe
+              -- make sure all the work queues are exhausted before exiting.
+              _                 -> do
+                done <- exhausted gang
+                if done
+                   then return rs
+                   else loop go rs
 
       ranges <- if start >= end
                   then return Seq.empty
