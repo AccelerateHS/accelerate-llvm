@@ -3,13 +3,13 @@
 # Get cabal to load up ghci for us. This will set the environment appropriately
 # if we have a local sandbox installation.
 #
-GHC="stack exec ghc --"
+GHC="stack exec ghci --"
 
 GHC_FLAGS="$GHC_FLAGS
-    --interactive
+    -DUNIX
+    -DACCELERATE_DEBUG
     -DACCELERATE_BOUNDS_CHECKS
     -DACCELERATE_INTERNAL_CHECKS
-    -DACCELERATE_DEBUG
     -iaccelerate-llvm
     -iaccelerate-llvm-native
     -iaccelerate-llvm-ptx
