@@ -178,8 +178,8 @@ dumpGraph g = return g
 writeGraph :: Graphable g => Bool -> g -> IO ()
 writeGraph simple g = do
   withTemporaryFile "acc.dot" $ \path hdl -> do
-    hPutStrLn stderr ("program graph: " ++ path)
     hPrint hdl (toGraph simple g)
+    hPutStrLn stderr ("program graph: " ++ path)
 
 withTemporaryFile :: String -> (FilePath -> Handle -> IO a) -> IO a
 withTemporaryFile template go = do
