@@ -75,7 +75,7 @@ timed f str stream action = do
       action
 #else
 {-# INLINE timed #-}
-timed _ _ _ = action
+timed _ _ _ action = action
 #endif
 
 {-# INLINE elapsed #-}
