@@ -1,5 +1,7 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP          #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE CPP                  #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -28,6 +30,7 @@ module Data.Array.Accelerate.LLVM.PTX (
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
+import Data.Array.Accelerate.Pretty                     ( Graph, graphDelayedAcc, graphDelayedAfun )
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
@@ -35,7 +38,20 @@ import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.State
 
 #if ACCELERATE_DEBUG
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug                      as Debug
+
+import Control.Exception                                ( bracket )
+import System.IO                                        ( Handle, openTempFile, hPutStrLn, hPrint, hClose, stderr )
+import System.FilePath                                  ( (</>) )
+import System.Directory                                 ( getTemporaryDirectory, createDirectoryIfMissing )
+
+#if   defined(UNIX)
+import System.Posix.Process                             ( getProcessID )
+#elif defined(WIN32)
+import System.Win32.Process                             ( ProcessId )
+#else
+#error "I don't know what operating system I am"
+#endif
 #endif
 
 -- standard library
@@ -117,6 +133,12 @@ config =  phases
   }
 
 
+-- Debugging
+-- =========
+
+-- Compiler phase statistics
+-- -------------------------
+
 dumpStats :: MonadIO m => a -> m a
 #if ACCELERATE_DEBUG
 dumpStats next = do
@@ -126,5 +148,50 @@ dumpStats next = do
   return next
 #else
 dumpStats next = return next
+#endif
+
+
+-- Program execution/dependency graph
+-- ----------------------------------
+
+class Graphable g where
+  toGraph :: Bool -> g -> Graph
+
+instance Graphable (DelayedAcc a) where
+  toGraph = graphDelayedAcc
+
+instance Graphable (DelayedAfun a) where
+  toGraph = graphDelayedAfun
+
+dumpGraph :: (MonadIO m, Graphable g) => g -> m g
+#if ACCELERATE_DEBUG
+dumpGraph g = do
+  liftIO $ do
+    Debug.when dump_dot       $ writeGraph False g
+    Debug.when dump_simpl_dot $ writeGraph True  g
+  return g
+#else
+dumpGraph g = return g
+#endif
+
+#if ACCELERATE_DEBUG
+writeGraph :: Graphable g => Bool -> g -> IO ()
+writeGraph simple g = do
+  withTemporaryFile "acc.dot" $ \path hdl -> do
+    hPutStrLn stderr ("program graph: " ++ path)
+    hPrint hdl (toGraph simple g)
+
+withTemporaryFile :: String -> (FilePath -> Handle -> IO a) -> IO a
+withTemporaryFile template go = do
+  pid <- getProcessID
+  tmp <- getTemporaryDirectory
+  let dir = tmp </> "accelerate-llvm-native-" ++ show pid
+  createDirectoryIfMissing True dir
+  bracket (openTempFile dir template) (hClose . snd) (uncurry go)
+#endif
+
+#ifdef WIN32
+getProcessID :: IO ProcessId
+getProcessID = return 0xaaaa
 #endif
 

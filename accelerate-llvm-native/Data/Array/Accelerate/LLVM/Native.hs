@@ -1,5 +1,7 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP          #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE CPP                  #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -30,13 +32,27 @@ module Data.Array.Accelerate.LLVM.Native (
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
+import Data.Array.Accelerate.Pretty                     ( Graph, graphDelayedAcc, graphDelayedAfun )
 
 import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.State
 
 #if ACCELERATE_DEBUG
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug                      as Debug
+
+import Control.Exception                                ( bracket )
+import System.IO                                        ( Handle, openTempFile, hPutStrLn, hPrint, hClose, stderr )
+import System.FilePath                                  ( (</>) )
+import System.Directory                                 ( getTemporaryDirectory, createDirectoryIfMissing )
+
+#if   defined(UNIX)
+import System.Posix.Process                             ( getProcessID )
+#elif defined(WIN32)
+import System.Win32.Process                             ( ProcessId )
+#else
+#error "I don't know what operating system I am"
+#endif
 #endif
 
 -- standard library
@@ -56,7 +72,7 @@ run :: Arrays a => Acc a -> a
 run a = unsafePerformIO execute
   where
     !acc        = convertAccWith config a
-    execute     = evalNative defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc)
+    execute     = dumpGraph acc >> evalNative defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -96,7 +112,7 @@ run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 f = \a -> unsafePerformIO (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ evalNative defaultTarget (compileAfun acc) >>= dumpStats
+    !afun       = unsafePerformIO $ dumpGraph acc >> evalNative defaultTarget (compileAfun acc) >>= dumpStats
     execute a   = evalNative defaultTarget (executeAfun1 afun a)
 
 
@@ -119,6 +135,12 @@ config =  phases
   }
 
 
+-- Debugging
+-- =========
+
+-- Compiler phase statistics
+-- -------------------------
+
 dumpStats :: MonadIO m => a -> m a
 #if ACCELERATE_DEBUG
 dumpStats next = do
@@ -128,5 +150,50 @@ dumpStats next = do
   return next
 #else
 dumpStats next = return next
+#endif
+
+
+-- Program execution/dependency graph
+-- ----------------------------------
+
+class Graphable g where
+  toGraph :: Bool -> g -> Graph
+
+instance Graphable (DelayedAcc a) where
+  toGraph = graphDelayedAcc
+
+instance Graphable (DelayedAfun a) where
+  toGraph = graphDelayedAfun
+
+dumpGraph :: (MonadIO m, Graphable g) => g -> m g
+#if ACCELERATE_DEBUG
+dumpGraph g = do
+  liftIO $ do
+    Debug.when dump_dot       $ writeGraph False g
+    Debug.when dump_simpl_dot $ writeGraph True  g
+  return g
+#else
+dumpGraph g = return g
+#endif
+
+#if ACCELERATE_DEBUG
+writeGraph :: Graphable g => Bool -> g -> IO ()
+writeGraph simple g = do
+  withTemporaryFile "acc.dot" $ \path hdl -> do
+    hPutStrLn stderr ("program graph: " ++ path)
+    hPrint hdl (toGraph simple g)
+
+withTemporaryFile :: String -> (FilePath -> Handle -> IO a) -> IO a
+withTemporaryFile template go = do
+  pid <- getProcessID
+  tmp <- getTemporaryDirectory
+  let dir = tmp </> "accelerate-llvm-native-" ++ show pid
+  createDirectoryIfMissing True dir
+  bracket (openTempFile dir template) (hClose . snd) (uncurry go)
+#endif
+
+#ifdef WIN32
+getProcessID :: IO ProcessId
+getProcessID = return 0xaaaa
 #endif
 
