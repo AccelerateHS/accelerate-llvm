@@ -85,7 +85,6 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
-        , filepath                      >= 1.0
         , libffi                        >= 0.1
         , llvm-general                  >= 3.2
         , llvm-general-pure             >= 3.2
@@ -108,13 +107,6 @@ Library
 
   if flag(internal-checks)
     cpp-options:                -DACCELERATE_INTERNAL_CHECKS
-
-  if os(windows)
-    cpp-options:                -DWIN32
-    build-depends:              Win32
-  else
-    cpp-options:                -DUNIX
-    build-depends:              unix
 
 
 source-repository head

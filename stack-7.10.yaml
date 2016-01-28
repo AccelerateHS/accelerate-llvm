@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 020d8fa7d066a3913290dae3f9125cb886b3b0d5
+    commit: 38e6f0be2499d9f233380fc142a2b150a1fb0e2a
   extra-dep: true
 
 # required on OS X due to https://github.com/bscarlet/llvm-general/issues/155
