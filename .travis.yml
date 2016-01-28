@@ -1,6 +1,6 @@
 # vim: nospell
-language: c
-sudo: true
+language: minimal
+sudo: required
 
 cache:
   directories:
@@ -9,7 +9,7 @@ cache:
 matrix:
   include:
     - env: GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 CABAL=1.18
-      compiler: "#GHC 7.8"
+      compiler: "GHC 7.8"
       addons:
         apt:
           sources:
@@ -22,7 +22,7 @@ matrix:
             - llvm-3.4-dev
 
     - env: GHC=7.10.2 LLVM=3.5 CUDA=7.0-28 CABAL=1.22
-      compiler: "#GHC 7.10"
+      compiler: "GHC 7.10"
       addons:
         apt:
           sources:
@@ -43,7 +43,6 @@ matrix:
     - env: CABAL=head GHC=head LLVM=3.6
 
 before_install:
-  - unset CC
   - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
   # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
