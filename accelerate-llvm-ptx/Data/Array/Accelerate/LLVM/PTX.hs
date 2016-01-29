@@ -19,14 +19,27 @@
 
 module Data.Array.Accelerate.LLVM.PTX (
 
-  Arrays,
+  Acc, Arrays,
 
-  -- ** Parallel execution
-  run, run1, stream,
+  -- * Synchronous execution
+  run, runWith,
+  run1, run1With,
+  stream, streamWith,
+
+  -- * Asynchronous execution
+  Async,
+  wait, poll, cancel,
+
+  runAsync, runAsyncWith,
+  run1Async, run1AsyncWith,
+
+  -- * Execution targets
+  PTX, createTarget,
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
@@ -37,6 +50,7 @@ import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.State
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- standard library
 import Control.Monad.Trans
@@ -51,10 +65,42 @@ import System.IO.Unsafe
 -- Note that it is recommended that you use 'run1' whenever possible.
 --
 run :: Arrays a => Acc a -> a
-run a = unsafePerformIO execute
+run = runWith defaultTarget
+
+
+-- | As 'run', but run the computation asynchronously and return immediately
+-- without waiting for the result. The status of the computation can be queried
+-- using 'wait', 'poll', and 'cancel'.
+--
+-- Note that a CUDA context can be active on only one host thread at a time. If
+-- you want to execute multiple computations in parallel, on the same or
+-- different devices, use 'runAsyncWith'.
+--
+runAsync :: Arrays a => Acc a -> Async a
+runAsync = runAsyncWith defaultTarget
+
+
+-- | As 'run', but execute using the specified target rather than using the
+-- default, automatically selected device.
+--
+-- Contexts passed to this function may all target to the same device, or to
+-- separate devices of differing compute capabilities.
+--
+runWith :: Arrays a => PTX -> Acc a -> a
+runWith target a
+  = unsafePerformIO
+  $ wait (runAsyncWith target a)
+
+
+-- | As 'runWith', but execute asynchronously. Be sure not to destroy the context,
+-- or attempt to attach it to a different host thread, before all outstanding
+-- operations have completed.
+--
+runAsyncWith :: Arrays a => PTX -> Acc a -> Async a
+runAsyncWith target a = unsafePerformIO $ asyncBound execute
   where
     !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalPTX defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
+    execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -91,20 +137,47 @@ run a = unsafePerformIO execute
 -- See the programs in the 'accelerate-examples' package for examples.
 --
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
-run1 f = \a -> unsafePerformIO (execute a)
+run1 = run1With defaultTarget
+
+
+-- | As 'run1', but the computation is executed asynchronously.
+--
+run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> Async b
+run1Async = run1AsyncWith defaultTarget
+
+
+-- | As 'run1', but execute using the specified target rather than using the
+-- default, automatically selected device.
+--
+run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
+run1With target f =
+  let go = run1AsyncWith target f
+  in \a -> unsafePerformIO $ wait (go a)
+
+
+-- | As 'run1With', but execute asynchronously.
+--
+run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> Async b
+run1AsyncWith target f = \a -> unsafePerformIO $ asyncBound (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX defaultTarget (compileAfun acc) >>= dumpStats
-    execute a   = evalPTX defaultTarget (executeAfun1 afun a >>= copyToHost)
+    !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX target (compileAfun acc) >>= dumpStats
+    execute a   = evalPTX target (executeAfun1 afun a >>= copyToHost)
 
 
 -- | Stream a lazily read list of input arrays through the given program,
 -- collecting results as we go.
 --
 stream :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> [a] -> [b]
-stream f arrs = map go arrs
+stream = streamWith defaultTarget
+
+
+-- | As 'stream', but execute using the specified target.
+--
+streamWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> [a] -> [b]
+streamWith target f arrs = map go arrs
   where
-    !go = run1 f
+    !go = run1With target f
 
 
 -- How the Accelerate program should be evaluated.
