@@ -57,8 +57,8 @@ evalPTX ptx acc =
 -- | Create a new PTX execution target for the given device
 --
 -- TLM: This state structure does not generalise to multiple devices. We require
---      the context and tables per device, whereas the scheduler requires
---      access to all devices.
+--      the context and tables per device, whereas a multi-device scheduler
+--      requires information for all devices.
 --
 createTarget
     :: CUDA.Device
