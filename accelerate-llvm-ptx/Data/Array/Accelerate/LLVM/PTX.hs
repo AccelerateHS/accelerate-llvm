@@ -43,7 +43,6 @@ import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
-import Data.Array.Accelerate.Pretty                     ( Graph, graphDelayedAcc, graphDelayedAfun )
 import Data.Array.Accelerate.Debug                      as Debug
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
