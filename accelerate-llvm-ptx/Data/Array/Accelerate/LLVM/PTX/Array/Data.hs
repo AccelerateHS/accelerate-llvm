@@ -20,7 +20,6 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array(..), size )
 import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
-import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -45,27 +44,29 @@ instance Remote PTX where
       return arr
 
   {-# INLINEABLE copyToRemoteR #-}
-  copyToRemoteR from to ms arr@(Array sh _) = do
+  copyToRemoteR from to mst arr@(Array _ _) = do
     PTX{..} <- gets llvmTarget
-    liftIO   $ if from == 0 && to == R.size sh
-                  then runArray (Prim.useArrayAsync   ptxContext ptxMemoryTable ms to)      arr
-                  else runArray (Prim.pokeArrayAsyncR ptxContext ptxMemoryTable ms from to) arr
+    liftIO $ case mst of
+      Nothing -> runArray (Prim.pokeArrayR      ptxContext ptxMemoryTable ptxStreamReservoir from to) arr
+      Just st -> runArray (Prim.pokeArrayAsyncR ptxContext ptxMemoryTable st                 from to) arr
 
   {-# INLINEABLE copyToHostR #-}
-  copyToHostR from to ms arr = do
+  copyToHostR from to mst arr = do
     PTX{..} <- gets llvmTarget
-    liftIO $ runArray (Prim.peekArrayAsyncR ptxContext ptxMemoryTable ms from to) arr
+    liftIO $ case mst of
+      Nothing -> runArray (Prim.peekArrayR      ptxContext ptxMemoryTable ptxStreamReservoir from to) arr
+      Just st -> runArray (Prim.peekArrayAsyncR ptxContext ptxMemoryTable st                 from to) arr
 
   {-# INLINEABLE copyToPeerR #-}
-  copyToPeerR from to dst ms arr = do
+  copyToPeerR from to dst mst arr = do
     src <- gets llvmTarget
-    liftIO . unless (ptxContext src == ptxContext dst) $ do
-      runArray (Prim.copyArrayPeerAsyncR (ptxContext src) (ptxMemoryTable src)
-                                         (ptxContext dst) (ptxMemoryTable dst) ms from to)
-               arr
+    liftIO . unless (ptxContext src == ptxContext dst) $
+      liftIO $ case mst of
+        Nothing -> runArray (Prim.copyArrayPeerR      (ptxContext src) (ptxMemoryTable src) (ptxStreamReservoir src) (ptxContext dst) (ptxMemoryTable dst)    from to) arr
+        Just st -> runArray (Prim.copyArrayPeerAsyncR (ptxContext src) (ptxMemoryTable src)                          (ptxContext dst) (ptxMemoryTable dst) st from to) arr
 
   {-# INLINEABLE indexRemote #-}
   indexRemote arr i = do
     PTX{..} <- gets llvmTarget
-    liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable) arr i
+    liftIO   $ runIndexArray (Prim.indexArray ptxContext ptxMemoryTable ptxStreamReservoir) arr i
 

@@ -19,9 +19,9 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
   mallocArray,
   useArray, useArrayAsync,
   indexArray,
-  peekArray, peekArrayAsync, peekArrayAsyncR,
-  pokeArray, pokeArrayAsync, pokeArrayAsyncR,
-  copyArrayPeer, copyArrayPeerAsync, copyArrayPeerAsyncR,
+  peekArray, peekArrayR, peekArrayAsync, peekArrayAsyncR,
+  pokeArray, pokeArrayR, pokeArrayAsync, pokeArrayAsyncR,
+  copyArrayPeer, copyArrayPeerR, copyArrayPeerAsync, copyArrayPeerAsyncR,
   devicePtr,
 
 ) where
@@ -31,6 +31,8 @@ import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.PTX.Context
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 import Data.Array.Accelerate.LLVM.PTX.Array.Table
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
@@ -41,11 +43,12 @@ import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 -- standard library
 import Prelude                                                  hiding ( lookup )
 import Control.Monad
+import Control.Exception
 import Data.Typeable
-import Foreign.Marshal.Alloc                                    ( alloca )
 import Foreign.Ptr
 import Foreign.Storable
 import Text.Printf
+
 
 -- | Allocate a device-side array associated with the given host array. If the
 -- allocation fails due to a memory error, we attempt some last-ditch memory
@@ -77,18 +80,20 @@ useArray
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
+    -> Reservoir
     -> Int
     -> ArrayData e
     -> IO ()
-useArray !ctx !mt !n !ad =
-  useArrayAsync ctx mt Nothing n ad
+useArray !ctx !mt !rsv !n !ad =
+  blocking ctx rsv $ \st ->
+    useArrayAsync ctx mt st n ad
 
 {-# INLINEABLE useArrayAsync #-}
 useArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
-    -> Maybe (CUDA.Stream)
+    -> CUDA.Stream
     -> Int
     -> ArrayData e
     -> IO ()
@@ -98,27 +103,30 @@ useArrayAsync !ctx !mt !st !n !ad = do
   exists        <- member mt ad
   unless exists $ do
     dst <- malloc ctx mt ad n
-    transfer "useArray" bytes st $ CUDA.pokeArrayAsync n src dst st
+    transfer "useArray" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
 
 -- | Copy data from the host to an existing array on the device
 --
+{-# INLINEABLE pokeArray #-}
 pokeArray
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
+    -> Reservoir
     -> Int
     -> ArrayData e
     -> IO ()
-pokeArray ctx !mt !n !ad =
-  pokeArrayAsync ctx mt Nothing n ad
+pokeArray !ctx !mt !rsv !n !ad =
+  blocking ctx rsv $ \st ->
+    pokeArrayAsync ctx mt st n ad
 
 {-# INLINEABLE pokeArrayAsync #-}
 pokeArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
-    -> Maybe CUDA.Stream
+    -> CUDA.Stream
     -> Int
     -> ArrayData e
     -> IO ()
@@ -126,14 +134,28 @@ pokeArrayAsync _ !mt !st !n !ad = do
   let !bytes    = n * sizeOf (undefined :: a)
       !src      = CUDA.HostPtr (ptrsOfArrayData ad)
   dst   <- devicePtr mt ad
-  transfer "pokeArray" bytes st $ CUDA.pokeArrayAsync n src dst st
+  transfer "pokeArray" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+
+{-# INLINEABLE pokeArrayR #-}
+pokeArrayR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
+    => Context
+    -> MemoryTable
+    -> Reservoir
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> IO ()
+pokeArrayR !ctx !mt !rsv !from !to !ad =
+  blocking ctx rsv $ \st ->
+    pokeArrayAsyncR ctx mt st from to ad
 
 {-# INLINEABLE pokeArrayAsyncR #-}
 pokeArrayAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
-    -> Maybe CUDA.Stream
+    -> CUDA.Stream
     -> Int
     -> Int
     -> ArrayData e
@@ -144,8 +166,8 @@ pokeArrayAsyncR _ !mt !st !from !to !ad = do
       !offset   = from * sizeOf (undefined :: a)
       !src      = CUDA.HostPtr (ptrsOfArrayData ad)
   dst   <- devicePtr mt ad
-  transfer "pokeArray" bytes st $
-    CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) st
+  transfer "pokeArray" bytes (Just st) $
+    CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
 
 
 -- | Read a single element from an array at a given row-major index
@@ -155,15 +177,17 @@ indexArray
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
+    -> Reservoir
     -> ArrayData e
     -> Int
     -> IO a
-indexArray _ !mt !ad !i =
-  alloca          $   \dst ->
-  devicePtr mt ad >>= \src -> do
+indexArray !ctx !mt !rsv !ad !i =
+  blocking ctx rsv                                  $ \st  ->
+  bracket (CUDA.mallocHostArray [] 1) CUDA.freeHost $ \dst -> do
+    src   <- devicePtr mt ad
     message $ "indexArray: " ++ showBytes (sizeOf (undefined::a))
-    CUDA.peekArray 1 (src `CUDA.advanceDevPtr` i) dst
-    peek dst
+    CUDA.peekArrayAsync 1 (src `CUDA.advanceDevPtr` i) dst (Just st)
+    peek (CUDA.useHostPtr dst)
 
 
 -- | Copy data from the device into the associated host-side Accelerate array
@@ -173,18 +197,20 @@ peekArray
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
+    -> Reservoir
     -> Int
     -> ArrayData e
     -> IO ()
-peekArray ctx !mt !n !ad =
-  peekArrayAsync ctx mt Nothing n ad
+peekArray !ctx !mt !rsv !n !ad =
+  blocking ctx rsv $ \st ->
+    peekArrayAsync ctx mt st n ad
 
 {-# INLINEABLE peekArrayAsync #-}
 peekArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
-    -> Maybe CUDA.Stream
+    -> CUDA.Stream
     -> Int
     -> ArrayData e
     -> IO ()
@@ -192,14 +218,28 @@ peekArrayAsync _ !mt !st !n !ad = do
   let !bytes    = n * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
   src   <- devicePtr mt ad
-  transfer "peekArray" bytes st $ CUDA.peekArrayAsync n src dst st
+  transfer "peekArray" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+
+{-# INLINEABLE peekArrayR #-}
+peekArrayR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
+    => Context
+    -> MemoryTable
+    -> Reservoir
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> IO ()
+peekArrayR !ctx !mt !rsv !from !to !ad =
+  blocking ctx rsv $ \st ->
+    peekArrayAsyncR ctx mt st from to ad
 
 {-# INLINEABLE peekArrayAsyncR #-}
 peekArrayAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context
     -> MemoryTable
-    -> Maybe CUDA.Stream
+    -> CUDA.Stream
     -> Int
     -> Int
     -> ArrayData e
@@ -210,8 +250,8 @@ peekArrayAsyncR _ !mt !st !from !to !ad = do
       !offset   = from * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
   src   <- devicePtr mt ad
-  transfer "peekArray" bytes st $
-    CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) st
+  transfer "peekArray" bytes (Just st) $
+    CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) (Just st)
 
 
 -- | Copy data from one device context into a _new_ array on the second context.
@@ -220,20 +260,21 @@ peekArrayAsyncR _ !mt !st !from !to !ad = do
 {-# INLINEABLE copyArrayPeer #-}
 copyArrayPeer
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
-    => Context -> MemoryTable           -- source context
-    -> Context -> MemoryTable           -- destination context
+    => Context -> MemoryTable -> Reservoir            -- source context
+    -> Context -> MemoryTable                         -- destination context
     -> Int
     -> ArrayData e
     -> IO ()
-copyArrayPeer !ctx1 !mt1 !ctx2 !mt2 !n !ad =
-  copyArrayPeerAsync ctx1 mt1 ctx2 mt2 Nothing n ad
+copyArrayPeer !ctx1 !mt1 !rsv1 !ctx2 !mt2 !n !ad =
+  blocking ctx1 rsv1 $ \st ->
+    copyArrayPeerAsync ctx1 mt1 ctx2 mt2 st n ad
 
 {-# INLINEABLE copyArrayPeerAsync #-}
 copyArrayPeerAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
-    => Context -> MemoryTable           -- source context
-    -> Context -> MemoryTable           -- destination context
-    -> Maybe CUDA.Stream
+    => Context -> MemoryTable             -- source context
+    -> Context -> MemoryTable             -- destination context
+    -> CUDA.Stream
     -> Int
     -> ArrayData e
     -> IO ()
@@ -241,18 +282,31 @@ copyArrayPeerAsync !ctx1 !mt1 !ctx2 !mt2 !st !n !ad = do
   let !bytes    = n * sizeOf (undefined :: a)
   src   <- devicePtr mt1 ad
   dst   <- mallocArray ctx2 mt2 n ad
-  transfer "copyArrayPeer" bytes st $
-    CUDA.copyArrayPeerAsync n src (deviceContext ctx1) dst (deviceContext ctx2) st
+  transfer "copyArrayPeer" bytes (Just st) $
+    CUDA.copyArrayPeerAsync n src (deviceContext ctx1) dst (deviceContext ctx2) (Just st)
 
 -- | Copy part of an array from one device context to another. Both source and
 -- destination arrays must exist.
 --
+{-# INLINEABLE copyArrayPeerR #-}
+copyArrayPeerR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
+    => Context -> MemoryTable -> Reservoir            -- source context
+    -> Context -> MemoryTable                         -- destination context
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> IO ()
+copyArrayPeerR !ctx1 !mt1 !rsv1 !ctx2 !mt2 !from !to !ad =
+  blocking ctx1 rsv1 $ \st ->
+    copyArrayPeerAsyncR ctx1 mt1 ctx2 mt2 st from to ad
+
 {-# INLINEABLE copyArrayPeerAsyncR #-}
 copyArrayPeerAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
-    => Context -> MemoryTable           -- source context
-    -> Context -> MemoryTable           -- destination context
-    -> Maybe CUDA.Stream
+    => Context -> MemoryTable             -- source context
+    -> Context -> MemoryTable             -- destination context
+    -> CUDA.Stream
     -> Int
     -> Int
     -> ArrayData e
@@ -263,9 +317,9 @@ copyArrayPeerAsyncR !ctx1 !mt1 !ctx2 !mt2 !st !from !to !ad = do
       !offset   = from * sizeOf (undefined :: a)
   src <- devicePtr mt1 ad       :: IO (CUDA.DevicePtr a)
   dst <- devicePtr mt2 ad       :: IO (CUDA.DevicePtr a)
-  transfer "copyArrayPeer" bytes st $
+  transfer "copyArrayPeer" bytes (Just st) $
     CUDA.copyArrayPeerAsync n (src `CUDA.plusDevPtr` offset) (deviceContext ctx1)
-                              (dst `CUDA.plusDevPtr` offset) (deviceContext ctx2) st
+                              (dst `CUDA.plusDevPtr` offset) (deviceContext ctx2) (Just st)
 
 -- | Lookup the device memory associated with a given host array
 --
@@ -280,6 +334,21 @@ devicePtr !mt !ad = do
   case mv of
     Just v      -> return v
     Nothing     -> $internalError "devicePtr" "lost device memory"
+
+
+-- | Execute the given operation in a new stream, and wait for the operation to
+-- complete before returning.
+--
+{-# INLINE blocking #-}
+blocking
+    :: Context
+    -> Reservoir
+    -> (Stream -> IO a)
+    -> IO a
+blocking !ctx !rsv !f =
+  streaming ctx rsv f $ \e r -> do
+    block e
+    return r
 
 
 -- Debug
