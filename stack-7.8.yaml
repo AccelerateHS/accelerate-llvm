@@ -12,11 +12,12 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 179ae0de057658e47a52cf3d1e5cbefc55fe093b
+    commit: 8355b8c75d9ecc0fcabd34f003bd58ddde20af64
   extra-dep: true
 
 extra-deps:
 - 'accelerate-2.0.0.0'
+- 'unique-0'
 
 # accelerate
 - 'base-orphans-0.4.4'

@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -29,6 +30,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal (
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
 import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
 
+import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async(..) )
@@ -45,6 +47,7 @@ import Data.Int
 import Data.DList                                               ( DList )
 import Data.Typeable
 import Foreign.Ptr
+import Foreign.Storable                                         ( Storable )
 import qualified Data.DList                                     as DL
 import qualified Data.IntMap                                    as IM
 
@@ -83,13 +86,13 @@ instance M.Marshalable PTX (Gamma aenv, Aval aenv) where        -- overlaps with
       sync (Async event arr) = after event stream >> return arr
 
 instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
-  marshal' PTX{..} _ adata = do
-    let marshalP :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable a)
+  marshal' ptx _ adata = do
+    let marshalP :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
                  => ArrayData e'
                  -> IO (DList CUDA.FunParam)
         marshalP ad =
           fmap (DL.singleton . CUDA.VArg)
-               (Prim.devicePtr ptxMemoryTable ad :: IO (CUDA.DevicePtr a))
+               (unsafeGetDevicePtr ptx ad :: IO (CUDA.DevicePtr a))
 
         marshalR :: ArrayEltR e' -> ArrayData e' -> IO (DList CUDA.FunParam)
         marshalR ArrayEltRunit             _  = return DL.empty
@@ -125,4 +128,18 @@ instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
         marshalR ArrayEltRbool    ad = marshalP ad
 
     marshalR arrayElt adata
+
+
+-- TODO FIXME !!!
+--
+-- We will probably need to change marshal to be a bracketed function. We may
+-- also want to consider whether we restrict it to IO.
+--
+unsafeGetDevicePtr
+    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
+    => PTX
+    -> ArrayData e
+    -> IO (CUDA.DevicePtr a)
+unsafeGetDevicePtr !ptx !ad =
+  evalPTX ptx $ Prim.withDevicePtr ad (\p -> return (Nothing,p))
 

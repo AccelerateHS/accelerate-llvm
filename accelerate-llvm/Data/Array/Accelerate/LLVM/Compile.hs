@@ -143,7 +143,7 @@ compileOpenAcc = traverseAcc
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
-        Use arrs                -> copyToRemote (toArr arrs::arrs) >> node (pure (Use arrs))
+        Use arrs                -> useRemote (toArr arrs::arrs) >> node (pure (Use arrs))
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a

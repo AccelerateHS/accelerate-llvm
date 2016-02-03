@@ -23,11 +23,11 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 -- llvm-general
 import LLVM.General.AST.AddrSpace
 import LLVM.General.AST.DataLayout
-import LLVM.General.Target                                      hiding ( Target )
-import qualified LLVM.General.Target                            as LLVM
-import qualified LLVM.General.Relocation                        as R
-import qualified LLVM.General.CodeModel                         as CM
-import qualified LLVM.General.CodeGenOpt                        as CGO
+import LLVM.General.Target                                          hiding ( Target )
+import qualified LLVM.General.Target                                as LLVM
+import qualified LLVM.General.Relocation                            as R
+import qualified LLVM.General.CodeModel                             as CM
+import qualified LLVM.General.CodeGenOpt                            as CGO
 
 -- accelerate
 import Data.Array.Accelerate.Error
@@ -35,20 +35,20 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
-import Control.Parallel.Meta                                    ( Executable )
-import Data.Array.Accelerate.LLVM.PTX.Context                   ( Context, deviceProperties )
-import Data.Array.Accelerate.LLVM.PTX.Array.Table               ( MemoryTable )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Reservoir )
+import Control.Parallel.Meta                                        ( Executable )
+import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
+import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Reservoir )
 
 -- CUDA
-import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
 import Control.Monad.Except
 import System.IO.Unsafe
 import Text.Printf
-import qualified Data.Map                                       as Map
-import qualified Data.Set                                       as Set
+import qualified Data.Map                                           as Map
+import qualified Data.Set                                           as Set
 
 
 -- | The PTX execution target for NVIDIA GPUs.

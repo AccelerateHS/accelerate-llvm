@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 
   Remote(..),
   newRemote,
+  useRemote,    useRemoteAsync,
   copyToRemote, copyToRemoteAsync,
   copyToHost,   copyToHostAsync,
   copyToPeer,   copyToPeerAsync,
@@ -55,6 +56,14 @@ class Async arch => Remote arch where
   {-# INLINEABLE allocateRemote #-}
   allocateRemote :: (Shape sh, Elt e) => sh -> LLVM arch (Array sh e)
   allocateRemote sh = liftIO $ allocateArray sh
+
+  -- | Use the given immutable array on the remote device. Since the source
+  -- array is immutable, the allocator can evict and re-upload the data as
+  -- necessary without copy-back.
+  --
+  {-# INLINEABLE useRemoteR #-}
+  useRemoteR :: Maybe (StreamR arch) -> Array sh e -> LLVM arch ()
+  useRemoteR _ _ = return ()
 
   -- | Upload a section of an array from the host to the remote device. Only the
   -- elements between the given indices (inclusive left, exclusive right) are
@@ -125,8 +134,8 @@ class Async arch => Remote arch where
 
 
 
--- |Create a new array from its representation on the host, and upload it to a
--- new remote array.
+-- | Create a new array from its representation on the host, and upload it to
+-- a new remote array.
 --
 {-# INLINEABLE newRemote #-}
 newRemote
@@ -135,7 +144,25 @@ newRemote
     -> (sh -> e)
     -> LLVM arch (Array sh e)
 newRemote sh f =
-  copyToRemote $! newArray sh f
+  useRemote $! newArray sh f
+
+
+-- | Upload an immutable array from the host to the remote device.
+--
+{-# INLINEABLE useRemote #-}
+useRemote :: (Remote arch, Arrays a) => a -> LLVM arch a
+useRemote arrs = do
+  runArrays (useRemoteR Nothing) arrs
+  return arrs
+
+-- | Upload an immutable array from the host to the remote device,
+-- asynchronously.
+--
+{-# INLINEABLE useRemoteAsync #-}
+useRemoteAsync :: (Remote arch, Arrays a) => StreamR arch -> a -> LLVM arch (AsyncR arch a)
+useRemoteAsync stream arrs = do
+  async stream $ do runArrays (useRemoteR (Just stream)) arrs
+                    return arrs
 
 
 -- | Uploading existing arrays from the host to the remote device
@@ -198,7 +225,7 @@ copyToPeerAsync peer stream arrs =
 {-# INLINEABLE runIndexArray #-}
 runIndexArray
     :: forall m sh e. Monad m
-    => (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a) => ArrayData e -> Int -> m a)
+    => (forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e) => ArrayData e -> Int -> m a)
     -> Array sh e
     -> Int
     -> m e
@@ -263,7 +290,7 @@ runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
 {-# INLINE runArray #-}
 runArray
     :: forall m sh e. Monad m
-    => (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p) => ArrayData e' -> m ())
+    => (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m ())
     -> Array sh e
     -> m ()
 runArray worker (Array _ adata) = runR arrayElt adata

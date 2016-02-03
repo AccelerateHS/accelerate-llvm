@@ -11,7 +11,7 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Event (
 
-  Event, create, destroy, waypoint, after, block,
+  Event, create, destroy, query, waypoint, after, block,
 
 ) where
 
@@ -69,6 +69,12 @@ block :: Event -> IO ()
 block e = do
   message $ "blocked on event " ++ showEvent e
   Event.block e
+
+-- | Test whether an event has completed
+--
+{-# INLINEABLE query #-}
+query :: Event -> IO Bool
+query = Event.query
 
 
 -- Debug

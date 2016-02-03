@@ -18,6 +18,7 @@ module Data.Array.Accelerate.LLVM.State
 import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
+import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
 import Control.Monad.Trans                              ( MonadIO )
 import Prelude
 
@@ -30,7 +31,7 @@ import Prelude
 -- state 'target'.
 --
 newtype LLVM target a = LLVM { runLLVM :: StateT target IO a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadState target)
+  deriving (Functor, Applicative, Monad, MonadIO, MonadState target, MonadThrow, MonadCatch, MonadMask)
 
 -- | Extract the execution state: 'gets llvmTarget'
 --
