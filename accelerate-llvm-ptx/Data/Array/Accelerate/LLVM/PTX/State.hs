@@ -36,7 +36,6 @@ import Control.Parallel.Meta                                    ( Executable(..)
 import Control.Exception                                        ( bracket_, catch )
 import Control.Concurrent                                       ( runInBoundThread )
 import System.IO.Unsafe                                         ( unsafePerformIO )
-import System.Mem                                               ( performGC )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
 
@@ -50,7 +49,7 @@ evalPTX ptx acc =
   \e -> $internalError "unhandled" (show (e :: CUDAException))
   where
     setup       = CT.push (ptxContext ptx)
-    teardown    = performGC >> CT.pop
+    teardown    = CT.pop
     action      = evalLLVM ptx acc
 
 
