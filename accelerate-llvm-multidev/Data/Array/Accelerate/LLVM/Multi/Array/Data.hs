@@ -33,6 +33,10 @@ instance Remote Multi where
   allocateRemote sh =
     allocateRemote sh `with` ptxTarget
 
+  {-# INLINEABLE useRemoteR #-}
+  useRemoteR stream arr =
+    useRemoteR stream arr `with` ptxTarget
+
   {-# INLINEABLE copyToRemoteR #-}
   copyToRemoteR from to stream arr =
     copyToRemoteR from to stream arr `with` ptxTarget
