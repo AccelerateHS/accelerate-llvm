@@ -102,7 +102,7 @@ nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
   AST.defaultModule {
     moduleDefinitions = [GlobalDefinition $ functionDefaults
-      { name                 =  AST.Name "__nvvm_reflect"
+      { name                 = AST.Name "__nvvm_reflect"
       , returnType           = downcast (integralType :: IntegralType Int32)
       , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )
 #if MIN_VERSION_llvm_general(3,5,0)
@@ -139,6 +139,7 @@ instance Libdevice AST.Module where
       (2,0) -> libdevice_20_mdl
       (3,0) -> libdevice_30_mdl
       (3,5) -> libdevice_35_mdl
+      (5,0) -> libdevice_50_mdl
       _     -> $internalError "libdevice" "no binary for this architecture"
 
 instance Libdevice (String, ByteString) where
@@ -147,6 +148,7 @@ instance Libdevice (String, ByteString) where
       (2,0) -> libdevice_20_bc
       (3,0) -> libdevice_30_bc
       (3,5) -> libdevice_35_bc
+      (5,0) -> libdevice_50_bc
       _     -> $internalError "libdevice" "no binary for this architecture"
 
 
@@ -157,10 +159,12 @@ instance Libdevice (String, ByteString) where
 {-# NOINLINE libdevice_20_mdl #-}
 {-# NOINLINE libdevice_30_mdl #-}
 {-# NOINLINE libdevice_35_mdl #-}
-libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl :: AST.Module
+{-# NOINLINE libdevice_50_mdl #-}
+libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
 libdevice_20_mdl = unsafePerformIO $ libdeviceModule (Compute 2 0)
 libdevice_30_mdl = unsafePerformIO $ libdeviceModule (Compute 3 0)
 libdevice_35_mdl = unsafePerformIO $ libdeviceModule (Compute 3 5)
+libdevice_50_mdl = unsafePerformIO $ libdeviceModule (Compute 5 0)
 
 -- Load the libdevice bitcode files as raw binary data. The top-level
 -- unsafePerformIO ensures that the data is read only once per program
@@ -169,10 +173,12 @@ libdevice_35_mdl = unsafePerformIO $ libdeviceModule (Compute 3 5)
 {-# NOINLINE libdevice_20_bc #-}
 {-# NOINLINE libdevice_30_bc #-}
 {-# NOINLINE libdevice_35_bc #-}
-libdevice_20_bc, libdevice_30_bc, libdevice_35_bc :: (String,ByteString)
+{-# NOINLINE libdevice_50_bc #-}
+libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (String,ByteString)
 libdevice_20_bc = unsafePerformIO $ libdeviceBitcode (Compute 2 0)
 libdevice_30_bc = unsafePerformIO $ libdeviceBitcode (Compute 3 0)
 libdevice_35_bc = unsafePerformIO $ libdeviceBitcode (Compute 3 5)
+libdevice_50_bc = unsafePerformIO $ libdeviceBitcode (Compute 5 0)
 
 
 -- Load the libdevice bitcode file for the given compute architecture, and raise
