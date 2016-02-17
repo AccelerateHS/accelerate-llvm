@@ -1,8 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE CPP          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -27,14 +26,12 @@ module Data.Array.Accelerate.LLVM.Multi (
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
+import Data.Array.Accelerate.Debug                      as Debug
 
 import Data.Array.Accelerate.LLVM.Multi.Compile
 import Data.Array.Accelerate.LLVM.Multi.Execute
 import Data.Array.Accelerate.LLVM.Multi.State
 
-#if ACCELERATE_DEBUG
-import Data.Array.Accelerate.Debug
-#endif
 
 -- standard library
 import Control.Monad.Trans
@@ -52,7 +49,7 @@ run :: Arrays a => Acc a -> a
 run a = unsafePerformIO execute
   where
     !acc        = convertAccWith config a
-    execute     = evalMulti defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc)
+    execute     = dumpGraph acc >> evalMulti defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -92,7 +89,7 @@ run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 f = \a -> unsafePerformIO (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ evalMulti defaultTarget (compileAfun acc) >>= dumpStats
+    !afun       = unsafePerformIO $ dumpGraph acc >> evalMulti defaultTarget (compileAfun acc) >>= dumpStats
     execute a   = evalMulti defaultTarget (executeAfun1 afun a)
 
 
@@ -111,23 +108,10 @@ stream f arrs = map go arrs
 --
 config :: Phase
 config =  phases
-  { recoverAccSharing      = True
-  , recoverExpSharing      = True
-  , floatOutAccFromExp     = True
-  , enableAccFusion        = True
-  , convertOffsetOfSegment = True
+  { convertOffsetOfSegment = True
   }
 
 
 dumpStats :: MonadIO m => a -> m a
-#if ACCELERATE_DEBUG
-dumpStats next = do
-  stats <- liftIO simplCount
-  liftIO $ traceIO dump_simpl_stats (show stats)
-  liftIO $ resetSimplCount
-  return next
-#else
-dumpStats next = return next
-#endif
-
+dumpStats next = dumpSimplStats >> return next
 
