@@ -69,6 +69,7 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Module
     Data.Array.Accelerate.LLVM.CodeGen.Monad
     Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+    Data.Array.Accelerate.LLVM.CodeGen.Stencil
     Data.Array.Accelerate.LLVM.CodeGen.Sugar
     Data.Array.Accelerate.LLVM.CodeGen.Type
     Data.Array.Accelerate.LLVM.Compile

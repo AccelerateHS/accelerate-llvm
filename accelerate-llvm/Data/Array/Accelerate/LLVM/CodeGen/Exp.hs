@@ -7,7 +7,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Exp
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2016] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -18,15 +18,15 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Exp
   where
 
-import Control.Applicative                                      hiding ( Const )
+import Control.Applicative                                          hiding ( Const )
 import Control.Monad
-import Prelude                                                  hiding ( exp, any )
-import qualified Data.IntMap                                    as IM
+import Prelude                                                      hiding ( exp, any )
+import qualified Data.IntMap                                        as IM
 
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
+import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                        hiding ( toTuple, shape, intersect, union )
-import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( toTuple, shape, intersect, union )
+import Data.Array.Accelerate.Array.Representation                   ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
@@ -37,11 +37,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                 ( CodeGen )
-import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+import Data.Array.Accelerate.LLVM.CodeGen.Monad                     ( CodeGen )
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as L
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 
 
 -- | A class covering code generation for a subset of the scalar operations.
@@ -70,7 +69,7 @@ class Expression arch where
 -- ==================
 
 llvmOfFun1
-    :: (Skeleton arch, Expression arch)
+    :: Expression arch
     => arch
     -> DelayedFun aenv (a -> b)
     -> Gamma aenv
@@ -79,7 +78,7 @@ llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body 
 llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
 
 llvmOfFun2
-    :: (Skeleton arch, Expression arch)
+    :: Expression arch
     => arch
     -> DelayedFun aenv (a -> b -> c)
     -> Gamma aenv
@@ -93,7 +92,7 @@ llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impo
 -- sequence of instructions used to construct basic blocks.
 --
 llvmOfOpenExp
-    :: forall arch env aenv _t. (Skeleton arch, Expression arch)
+    :: forall arch env aenv _t. Expression arch
     => arch
     -> DelayedOpenExp env aenv _t
     -> Val env

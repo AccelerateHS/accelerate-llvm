@@ -10,7 +10,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -95,6 +95,8 @@ instance Execute Native where
   fold1         = fold1Op
   -- permute       = permuteOp
   -- scanl1        = scanl1Op
+  stencil1      = stencil1Op
+  stencil2      = stencil2Op
 
 
 -- Skeleton implementation
@@ -352,6 +354,30 @@ scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
 
             return out
 --}
+
+stencil1Op
+    :: (Shape sh, Elt a, Elt b)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Array sh a
+    -> LLVM Native (Array sh b)
+stencil1Op kernel gamma aenv stream arr
+  = simpleOp kernel gamma aenv stream (shape arr)
+
+stencil2Op
+    :: (Shape sh, Elt a, Elt b, Elt c)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Array sh a
+    -> Array sh b
+    -> LLVM Native (Array sh c)
+stencil2Op kernel gamma aenv stream arr brr
+  = simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+
 
 -- Skeleton execution
 -- ------------------

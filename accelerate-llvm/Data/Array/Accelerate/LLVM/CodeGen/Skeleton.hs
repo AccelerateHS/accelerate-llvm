@@ -1,11 +1,10 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Skeleton
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2016] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -22,13 +21,15 @@ module Data.Array.Accelerate.LLVM.CodeGen.Skeleton (
 import Prelude                                                  hiding ( id )
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil, stencilAccess )
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 
@@ -40,11 +41,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 --   * fold, fold1, foldSeg, fold1Seg
 --   * scanl, scanl', scanl1, scanr, scanr', scanr1
 --   * permute
---   * stencil, stencil2
 --
 class Skeleton arch where
   {-# MINIMAL generate, fold, fold1, foldSeg, fold1Seg, scanl, scanl', scanl1,
-              scanr, scanr', scanr1, permute, stencil, stencil2 #-}
+              scanr, scanr', scanr1, permute #-}
 
   generate      :: (Shape sh, Elt e)
                 => arch
@@ -164,7 +164,7 @@ class Skeleton arch where
                 => arch
                 -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
-                -> Boundary (IRExp arch aenv a)
+                -> Boundary (IR a)
                 -> IRManifest arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
@@ -172,9 +172,9 @@ class Skeleton arch where
                 => arch
                 -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
-                -> Boundary (IRExp arch aenv a)
+                -> Boundary (IR a)
                 -> IRManifest arch aenv (Array sh a)
-                -> Boundary (IRExp arch aenv b)
+                -> Boundary (IR b)
                 -> IRManifest arch aenv (Array sh b)
                 -> CodeGen (IROpenAcc arch aenv (Array sh c))
 
@@ -183,9 +183,8 @@ class Skeleton arch where
   map           = defaultMap
   backpermute   = defaultBackpermute
   transform     = defaultTransform
-
-  stencil       = $internalError "stencil1" "no default instance yet"
-  stencil2      = $internalError "stencil2" "no default instance yet"
+  stencil       = defaultStencil1
+  stencil2      = defaultStencil2
 
 
 id :: forall arch aenv a. IRFun1 arch aenv (a -> a)
@@ -224,4 +223,33 @@ defaultTransform arch aenv p f IRDelayed{..}
       ix' <- app1 p ix
       a   <- app1 delayedIndex ix'
       app1 f a
+
+defaultStencil1
+    :: (Skeleton arch, Shape sh, Elt a, Elt b, Stencil sh a stencil)
+    => arch
+    -> Gamma aenv
+    -> IRFun1 arch aenv (stencil -> b)
+    -> Boundary (IR a)
+    -> IRManifest arch aenv (Array sh a)
+    -> CodeGen (IROpenAcc arch aenv (Array sh b))
+defaultStencil1 arch aenv f boundary (IRManifest v)
+  = generate arch aenv . IRFun1 $ \ix -> do
+      sten <- stencilAccess boundary (irArray (aprj v aenv)) ix
+      app1 f sten
+
+defaultStencil2
+    :: (Skeleton arch, Shape sh, Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
+    => arch
+    -> Gamma aenv
+    -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
+    -> Boundary (IR a)
+    -> IRManifest arch aenv (Array sh a)
+    -> Boundary (IR b)
+    -> IRManifest arch aenv (Array sh b)
+    -> CodeGen (IROpenAcc arch aenv (Array sh c))
+defaultStencil2 arch aenv f boundary1 (IRManifest v1) boundary2 (IRManifest v2)
+  = generate arch aenv . IRFun1 $ \ix -> do
+      sten1 <- stencilAccess boundary1 (irArray (aprj v1 aenv)) ix
+      sten2 <- stencilAccess boundary2 (irArray (aprj v2 aenv)) ix
+      app2 f sten1 sten2
 

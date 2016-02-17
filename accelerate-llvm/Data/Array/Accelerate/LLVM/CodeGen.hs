@@ -7,7 +7,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2016] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -117,12 +117,12 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     travB :: forall sh e. Elt e
           => DelayedOpenAcc aenv (Array sh e)
           -> Boundary (EltRepr e)
-          -> Boundary (IRExp arch aenv e)
+          -> Boundary (IR e)
     travB _ Clamp        = Clamp
     travB _ Mirror       = Mirror
     travB _ Wrap         = Wrap
     travB _ (Constant c)
-      = Constant . return
+      = Constant
       $ IR (constant (eltType (undefined::e)) c)
 
     -- sadness

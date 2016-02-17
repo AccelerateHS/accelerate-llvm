@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -80,6 +80,8 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  stencil1      = stencil1Op
+  stencil2      = stencil2Op
 
 
 -- Skeleton implementation
@@ -199,6 +201,32 @@ foldAllOp exe gamma aenv stream sh' = do
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
+
+
+-- Using the defaulting instances for stencil operations (for now).
+--
+stencil1Op
+    :: (Shape sh, Elt a, Elt b)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Array sh a
+    -> LLVM PTX (Array sh b)
+stencil1Op kernel gamma aenv stream arr
+  = simpleOp kernel gamma aenv stream (shape arr)
+
+stencil2Op
+    :: (Shape sh, Elt a, Elt b, Elt c)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Array sh a
+    -> Array sh b
+    -> LLVM PTX (Array sh c)
+stencil2Op kernel gamma aenv stream arr brr
+  = simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
 
 
 -- Skeleton execution

@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2016] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -84,5 +84,4 @@ makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
 --
 freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
 freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
-
 

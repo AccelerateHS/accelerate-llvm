@@ -3,10 +3,11 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -169,8 +170,8 @@ compileOpenAcc = traverseAcc
         Scanr' f e a            -> exec =<< liftA3 Scanr'               <$> travF f <*> travE e <*> travA a
         Scanr1 f a              -> exec =<< liftA2 Scanr1               <$> travF f <*> travA a
         Permute f d g a         -> exec =<< liftA4 Permute              <$> travF f <*> travA d <*> travF g <*> travA a
-        Stencil f b a           -> exec =<< liftA2 (flip Stencil b)     <$> travF f <*> travA a
-        Stencil2 f b1 a1 b2 a2  -> exec =<< liftA3 stencil2             <$> travF f <*> travA a1 <*> travA a2
+        Stencil f b a           -> exec =<< liftA2 (flip Stencil b)     <$> travF f <*> travM a
+        Stencil2 f b1 a1 b2 a2  -> exec =<< liftA3 stencil2             <$> travF f <*> travM a1 <*> travM a2
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
       where
@@ -178,6 +179,12 @@ compileOpenAcc = traverseAcc
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
+
+        travM :: (Shape sh, Elt e)
+              => DelayedOpenAcc aenv (Array sh e) -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
+        travM acc = case acc of
+          Manifest (Avar ix) -> (freevar ix,) <$> traverseAcc acc
+          _                  -> $internalError "compileOpenAcc" "expected array variable"
 
         travAF :: DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), PreOpenAfun (ExecOpenAcc arch) aenv f)
