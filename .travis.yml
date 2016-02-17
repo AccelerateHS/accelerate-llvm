@@ -21,7 +21,7 @@ matrix:
             - alex-3.1.4
             - llvm-3.4-dev
 
-    - env: GHC=7.10.2 LLVM=3.5 CUDA=7.0-28 CABAL=1.22
+    - env: GHC=7.10.3 LLVM=3.5 CUDA=7.0-28 CABAL=1.22
       compiler: "GHC 7.10"
       addons:
         apt:
@@ -30,7 +30,7 @@ matrix:
             - llvm-toolchain-precise-3.5
             - ubuntu-toolchain-r-test
           packages:
-            - ghc-7.10.2
+            - ghc-7.10.3
             - cabal-install-1.22
             - happy-1.19.5
             - alex-3.1.4
