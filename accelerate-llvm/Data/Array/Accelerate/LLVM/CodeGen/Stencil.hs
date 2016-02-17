@@ -33,6 +33,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
+import Control.Applicative
 import Prelude
 
 
