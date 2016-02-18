@@ -21,22 +21,36 @@
 
 module Data.Array.Accelerate.LLVM.Native (
 
-  Arrays,
+  Acc, Arrays,
 
-  -- ** Parallel execution
-  run, run1, stream,
+  -- * Synchronous execution
+  run, runWith,
+  run1, run1With,
+  stream, streamWith,
+
+  -- * Asynchronous execution
+  Async,
+  wait, poll, cancel,
+
+  runAsync, runAsyncWith,
+  run1Async, run1AsyncWith,
+
+  -- * Execution targets
+  Native, createTarget,
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
+import Data.Array.Accelerate.Smart                      ( Acc )
 import Data.Array.Accelerate.Debug                      as Debug
 
 import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.State
+import Data.Array.Accelerate.LLVM.Native.Target
 
 -- standard library
 import Control.Monad.Trans
@@ -52,10 +66,30 @@ import GHC.Conc                                         ( numCapabilities )
 -- Note that it is recommended that you use 'run1' whenever possible.
 --
 run :: Arrays a => Acc a -> a
-run a = unsafePerformIO execute
+run = runWith defaultTarget
+
+-- | As 'run', but execute using the specified target (thread gang).
+--
+runWith :: Arrays a => Native -> Acc a -> a
+runWith target a = unsafePerformIO (run' target a)
+
+-- | As 'run', but allow the computation to run asynchronously and return
+-- immediately without waiting for the result. The status of the computation can
+-- be queried using 'wait', 'poll', and 'cancel'.
+--
+runAsync :: Arrays a => Acc a -> IO (Async a)
+runAsync = runAsyncWith defaultTarget
+
+-- | As 'runAsync', but execute using the specified target (thread gang).
+--
+runAsyncWith :: Arrays a => Native -> Acc a -> IO (Async a)
+runAsyncWith target a = async (run' target a)
+
+run' :: Arrays a => Native -> Acc a -> IO a
+run' target a = execute
   where
     !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalNative defaultTarget (compileAcc acc >>= dumpStats >>= executeAcc)
+    execute     = dumpGraph acc >> evalNative target (compileAcc acc >>= dumpStats >>= executeAcc)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -92,20 +126,43 @@ run a = unsafePerformIO execute
 -- See the programs in the 'accelerate-examples' package for examples.
 --
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
-run1 f = \a -> unsafePerformIO (execute a)
+run1 = run1With defaultTarget
+
+-- | As 'run1', but execute using the specified target (thread gang).
+--
+run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
+run1With = run1' unsafePerformIO
+
+-- | As 'run1', but execute asynchronously.
+--
+run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> IO (Async b)
+run1Async = run1AsyncWith defaultTarget
+
+-- | As 'run1Async', but execute using the specified target (thread gang).
+--
+run1AsyncWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> IO (Async b)
+run1AsyncWith = run1' async
+
+run1' :: (Arrays a, Arrays b) => (IO b -> c) -> Native -> (Acc a -> Acc b) -> a -> c
+run1' after target f = \a -> after (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalNative defaultTarget (compileAfun acc) >>= dumpStats
-    execute a   = evalNative defaultTarget (executeAfun1 afun a)
+    !afun       = unsafePerformIO $ dumpGraph acc >> evalNative target (compileAfun acc) >>= dumpStats
+    execute a   = evalNative target (executeAfun1 afun a)
 
 
 -- | Stream a lazily read list of input arrays through the given program,
 -- collecting results as we go.
 --
 stream :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> [a] -> [b]
-stream f arrs = map go arrs
+stream = streamWith defaultTarget
+
+-- | As 'stream', but execute using the specified target (thread gang).
+--
+streamWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> [a] -> [b]
+streamWith target f arrs = map go arrs
   where
-    !go = run1 f
+    !go = run1With target f
 
 
 -- How the Accelerate program should be evaluated.
