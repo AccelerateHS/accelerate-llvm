@@ -67,18 +67,6 @@ run :: Arrays a => Acc a -> a
 run = runWith defaultTarget
 
 
--- | As 'run', but run the computation asynchronously and return immediately
--- without waiting for the result. The status of the computation can be queried
--- using 'wait', 'poll', and 'cancel'.
---
--- Note that a CUDA context can be active on only one host thread at a time. If
--- you want to execute multiple computations in parallel, on the same or
--- different devices, use 'runAsyncWith'.
---
-runAsync :: Arrays a => Acc a -> Async a
-runAsync = runAsyncWith defaultTarget
-
-
 -- | As 'run', but execute using the specified target rather than using the
 -- default, automatically selected device.
 --
@@ -88,15 +76,27 @@ runAsync = runAsyncWith defaultTarget
 runWith :: Arrays a => PTX -> Acc a -> a
 runWith target a
   = unsafePerformIO
-  $ wait (runAsyncWith target a)
+  $ wait =<< runAsyncWith target a
+
+
+-- | As 'run', but run the computation asynchronously and return immediately
+-- without waiting for the result. The status of the computation can be queried
+-- using 'wait', 'poll', and 'cancel'.
+--
+-- Note that a CUDA context can be active on only one host thread at a time. If
+-- you want to execute multiple computations in parallel, on the same or
+-- different devices, use 'runAsyncWith'.
+--
+runAsync :: Arrays a => Acc a -> IO (Async a)
+runAsync = runAsyncWith defaultTarget
 
 
 -- | As 'runWith', but execute asynchronously. Be sure not to destroy the context,
 -- or attempt to attach it to a different host thread, before all outstanding
 -- operations have completed.
 --
-runAsyncWith :: Arrays a => PTX -> Acc a -> Async a
-runAsyncWith target a = unsafePerformIO $ asyncBound execute
+runAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async a)
+runAsyncWith target a = asyncBound execute
   where
     !acc        = convertAccWith config a
     execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
@@ -139,25 +139,25 @@ run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 
--- | As 'run1', but the computation is executed asynchronously.
---
-run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> Async b
-run1Async = run1AsyncWith defaultTarget
-
-
 -- | As 'run1', but execute using the specified target rather than using the
 -- default, automatically selected device.
 --
 run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
 run1With target f =
   let go = run1AsyncWith target f
-  in \a -> unsafePerformIO $ wait (go a)
+  in \a -> unsafePerformIO $ wait =<< go a
+
+
+-- | As 'run1', but the computation is executed asynchronously.
+--
+run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> IO (Async b)
+run1Async = run1AsyncWith defaultTarget
 
 
 -- | As 'run1With', but execute asynchronously.
 --
-run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> Async b
-run1AsyncWith target f = \a -> unsafePerformIO $ asyncBound (execute a)
+run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> IO (Async b)
+run1AsyncWith target f = \a -> asyncBound (execute a)
   where
     !acc        = convertAfunWith config f
     !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX target (compileAfun acc) >>= dumpStats
