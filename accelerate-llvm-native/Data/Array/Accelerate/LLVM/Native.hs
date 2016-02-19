@@ -144,7 +144,7 @@ run1AsyncWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> IO (
 run1AsyncWith = run1' async
 
 run1' :: (Arrays a, Arrays b) => (IO b -> c) -> Native -> (Acc a -> Acc b) -> a -> c
-run1' after target f = \a -> after (execute a)
+run1' using target f = \a -> using (execute a)
   where
     !acc        = convertAfunWith config f
     !afun       = unsafePerformIO $ dumpGraph acc >> evalNative target (compileAfun acc) >>= dumpStats
