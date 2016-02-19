@@ -62,7 +62,7 @@ import Text.Printf
 --
 {-# INLINEABLE mallocArray #-}
 mallocArray
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
     => Int
     -> ArrayData e
     -> LLVM PTX ()
