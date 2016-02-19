@@ -80,8 +80,8 @@ Current status
 - [ ] scanl', scanr'
 - [ ] foldSeg
 - [ ] permute
-- [ ] stencil
-- [ ] stencil2
+- [x] stencil (preliminary support)
+- [x] stencil2 (preliminary support)
 - [ ] foreign functions
 
 
@@ -100,8 +100,8 @@ Current status
 - [ ] scanl', scanr'
 - [ ] foldSeg
 - [ ] permute
-- [ ] stencil
-- [ ] stencil2
+- [x] stencil (preliminary support)
+- [x] stencil2 (preliminary support)
 - [ ] foreign functions
 
 
