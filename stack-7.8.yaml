@@ -25,8 +25,6 @@ extra-deps:
 # accelerate-llvm
 - 'atomic-primops-0.8.0.2'
 - 'chaselev-deque-0.5.0.5'
-- 'llvm-general-3.4.6.0'
-- 'llvm-general-pure-3.4.5.4'
 
 # accelerate-llvm-native
 - 'libffi-0.1'
@@ -36,6 +34,10 @@ extra-deps:
 
 # accelerate-llvm-ptx
 - 'cuda-0.7.0.0'
+
+# update utils/cabal_macros.h whenever these versions are changed
+- 'llvm-general-3.4.6.0'
+- 'llvm-general-pure-3.4.5.4'
 
 
 # Override default flag values for local packages and extra-deps
