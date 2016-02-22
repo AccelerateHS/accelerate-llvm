@@ -207,6 +207,7 @@ class Remote arch => Execute arch where
 --  3. If it is a skeleton node, then we need to execute the compiled kernel for
 --     that node.
 --
+{-# INLINEABLE executeAcc #-}
 executeAcc
     :: forall arch a. (Execute arch, Arrays a)
     => ExecAcc arch a
@@ -214,6 +215,7 @@ executeAcc
 executeAcc acc =
   streaming (executeOpenAcc acc Aempty) wait
 
+{-# INLINEABLE executeAfun1 #-}
 executeAfun1
     :: forall arch a b. (Execute arch, Arrays a, Arrays b)
     => ExecAfun arch (a -> b)
@@ -225,6 +227,7 @@ executeAfun1 afun arrs =
 
 -- Execute an open array function of one argument
 --
+{-# INLINEABLE executeOpenAfun1 #-}
 executeOpenAfun1
     :: Execute arch
     => PreOpenAfun (ExecOpenAcc arch) aenv (a -> b)
@@ -237,6 +240,7 @@ executeOpenAfun1 _                _    _ = error "boop!"
 
 -- Execute an open array computation
 --
+{-# INLINEABLE executeOpenAcc #-}
 executeOpenAcc
     :: forall arch aenv arrs. Execute arch
     => ExecOpenAcc arch aenv arrs
@@ -342,6 +346,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
 -- Scalar expression evaluation
 -- ----------------------------
 
+{-# INLINEABLE executeExp #-}
 executeExp
     :: Execute arch
     => ExecExp arch aenv t
@@ -350,6 +355,7 @@ executeExp
     -> LLVM arch t
 executeExp exp aenv stream = executeOpenExp exp Empty aenv stream
 
+{-# INLINEABLE executeOpenExp #-}
 executeOpenExp
     :: forall arch env aenv exp. Execute arch
     => ExecOpenExp arch env aenv exp

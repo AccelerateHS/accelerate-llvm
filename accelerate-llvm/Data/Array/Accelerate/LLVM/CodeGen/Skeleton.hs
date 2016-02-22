@@ -187,9 +187,11 @@ class Skeleton arch where
   stencil2      = defaultStencil2
 
 
+{-# INLINE id #-}
 id :: forall arch aenv a. IRFun1 arch aenv (a -> a)
 id = IRFun1 return
 
+{-# INLINEABLE defaultMap #-}
 defaultMap
     :: (Skeleton arch, Shape sh, Elt a, Elt b)
     => arch
@@ -200,6 +202,7 @@ defaultMap
 defaultMap arch aenv f a
   = transform arch aenv id f a
 
+{-# INLINEABLE defaultBackpermute #-}
 defaultBackpermute
     :: (Skeleton arch, Shape sh, Shape sh', Elt e)
     => arch
@@ -210,6 +213,7 @@ defaultBackpermute
 defaultBackpermute arch aenv p a
   = transform arch aenv p id a
 
+{-# INLINEABLE defaultTransform #-}
 defaultTransform
     :: (Skeleton arch, Shape sh, Shape sh', Elt a, Elt b)
     => arch
@@ -224,6 +228,7 @@ defaultTransform arch aenv p f IRDelayed{..}
       a   <- app1 delayedIndex ix'
       app1 f a
 
+{-# INLINEABLE defaultStencil1 #-}
 defaultStencil1
     :: (Skeleton arch, Shape sh, Elt a, Elt b, Stencil sh a stencil)
     => arch
@@ -237,6 +242,7 @@ defaultStencil1 arch aenv f boundary (IRManifest v)
       sten <- stencilAccess boundary (irArray (aprj v aenv)) ix
       app1 f sten
 
+{-# INLINEABLE defaultStencil2 #-}
 defaultStencil2
     :: (Skeleton arch, Shape sh, Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
     => arch

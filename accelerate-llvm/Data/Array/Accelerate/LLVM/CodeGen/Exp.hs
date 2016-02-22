@@ -68,6 +68,7 @@ class Expression arch where
 -- Scalar expressions
 -- ==================
 
+{-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
     :: Expression arch
     => arch
@@ -77,6 +78,7 @@ llvmOfFun1
 llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body (Empty `Push` x) aenv
 llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
 
+{-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
     :: Expression arch
     => arch
@@ -91,6 +93,7 @@ llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impo
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
 --
+{-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
     :: forall arch env aenv _t. Expression arch
     => arch

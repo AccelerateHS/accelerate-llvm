@@ -47,6 +47,7 @@ import Prelude                                                  hiding ( map, sc
 
 -- | Generate code for a given target architecture.
 --
+{-# INLINEABLE llvmOfOpenAcc #-}
 llvmOfOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Expression arch)
     => arch

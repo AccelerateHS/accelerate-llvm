@@ -102,6 +102,7 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
 
+{-# INLINEABLE runLLVM #-}
 runLLVM
     :: forall arch aenv a. (Target arch, Intrinsic arch)
     => CodeGen (IROpenAcc arch aenv a)

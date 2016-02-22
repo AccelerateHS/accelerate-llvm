@@ -90,12 +90,14 @@ type ExecFun arch       = ExecOpenFun arch ()
 --
 --   * The compiled LLVM code required to execute the kernel
 --
+{-# INLINEABLE compileAcc #-}
 compileAcc
     :: (Compile arch, Remote arch)
     => DelayedAcc a
     -> LLVM arch (ExecAcc arch a)
 compileAcc = compileOpenAcc
 
+{-# INLINEABLE compileAfun #-}
 compileAfun
     :: (Compile arch, Remote arch)
     => DelayedAfun f
@@ -103,6 +105,7 @@ compileAfun
 compileAfun = compileOpenAfun
 
 
+{-# INLINEABLE compileOpenAfun #-}
 compileOpenAfun
     :: (Compile arch, Remote arch)
     => DelayedOpenAfun aenv f
@@ -111,6 +114,7 @@ compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
 compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
 
 
+{-# INLINEABLE compileOpenAcc #-}
 compileOpenAcc
     :: forall arch _aenv _a. (Compile arch, Remote arch)
     => DelayedOpenAcc _aenv _a
@@ -302,6 +306,7 @@ compileOpenAcc = traverseAcc
 --  * asynchronous compilation
 --  * kernel caching
 --
+{-# INLINEABLE build #-}
 build :: forall arch aenv a. Compile arch
       => DelayedOpenAcc aenv a
       -> Gamma aenv

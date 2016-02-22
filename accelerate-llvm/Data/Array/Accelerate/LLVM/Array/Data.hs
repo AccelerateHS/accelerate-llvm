@@ -286,7 +286,7 @@ runArrays worker arrs = runR (arrays arrs) (fromArr arrs)
 
 -- | Generalised function to traverse the ArrayData structure with one
 -- additional argument
-
+--
 {-# INLINE runArray #-}
 runArray
     :: forall m sh e. Monad m
