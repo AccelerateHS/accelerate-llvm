@@ -48,6 +48,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
+
 
 -- Thread identifiers
 -- ------------------
@@ -147,7 +149,7 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 
 -- | Create a single kernel program
 --
-makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc arch aenv a)
+makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc PTX aenv a)
 makeOpenAcc name param kernel = do
   body <- makeKernel name param kernel
   return $ IROpenAcc [body]
@@ -155,7 +157,7 @@ makeOpenAcc name param kernel = do
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --
-makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel arch aenv a)
+makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel PTX aenv a)
 makeKernel name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
