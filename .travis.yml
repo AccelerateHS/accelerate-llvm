@@ -15,7 +15,7 @@ matrix:
           sources:
             - hvr-ghc
           packages:
-            - ghc-7.8.4
+            # - ghc-7.8.4
             - cabal-install-1.18
             - happy-1.19.5
             - alex-3.1.4
@@ -30,7 +30,7 @@ matrix:
             - llvm-toolchain-precise-3.5
             - ubuntu-toolchain-r-test
           packages:
-            - ghc-7.10.3
+            # - ghc-7.10.3
             - cabal-install-1.22
             - happy-1.19.5
             - alex-3.1.4
@@ -43,7 +43,7 @@ matrix:
     - env: CABAL=head GHC=head LLVM=3.6
 
 before_install:
-  - export PATH=/opt/ghc/$GHC/bin:/opt/cabal/$CABAL/bin:/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
+  - export PATH=/opt/cabal/$CABAL/bin:/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
 
   # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
   - |
@@ -62,11 +62,7 @@ before_install:
   - |
       if [ ${GHC%.*} == 7.8 ]; then
         # required to install the 'cuda' package
-        travis_retry sudo env PATH=$PATH stack setup --upgrade-cabal || exit 1
-        # GCE workers doesn't have enough space in /tmp to install ghc locally
-        # via stack, so we need to install via apt and then --upgrade-cabal
-        # using 'sudo'. This fixes the resulting permissions.
-        sudo chown -R $USER:$USER $HOME/.stack || exit 1
+        travis_retry stack setup --upgrade-cabal || exit 1
       fi
 
   # Fetch CUDA
