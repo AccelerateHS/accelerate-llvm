@@ -96,6 +96,9 @@ Library
 
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
+  if impl(ghc >= 8.0)
+    ghc-options:                -Wmissed-specialisations
+
   if flag(debug)
     cpp-options:                -DACCELERATE_DEBUG
 

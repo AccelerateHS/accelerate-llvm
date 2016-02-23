@@ -109,6 +109,9 @@ Library
 
   ghc-options:                  -O2 -Wall -fwarn-tabs -dcore-lint
 
+  if impl(ghc >= 8.0)
+    ghc-options:                -Wmissed-specialisations
+
   if flag(libnvvm)
     cpp-options:                -DACCELERATE_USE_LIBNVVM
     build-depends:
