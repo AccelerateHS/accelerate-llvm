@@ -66,7 +66,7 @@ before_install:
         # GCE workers doesn't have enough space in /tmp to install ghc locally
         # via stack, so we need to install via apt and then --upgrade-cabal
         # using 'sudo'. This fixes the resulting permissions.
-        sudo chown -R travis:travis $HOME/.stack || exit 1
+        sudo chown -R $USER:$USER $HOME/.stack || exit 1
       fi
 
   # Fetch CUDA
