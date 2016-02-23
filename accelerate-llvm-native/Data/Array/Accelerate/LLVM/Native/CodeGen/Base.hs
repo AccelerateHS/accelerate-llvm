@@ -29,6 +29,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.Native.Target                         ( Native )
+
 
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
@@ -54,7 +56,7 @@ gangId =
 
 -- | Create a single kernel program
 --
-makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc arch aenv a)
+makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
 makeOpenAcc name param kernel = do
   body <- makeKernel name param kernel
   return $ IROpenAcc [body]
@@ -62,7 +64,7 @@ makeOpenAcc name param kernel = do
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --
-makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel arch aenv a)
+makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel Native aenv a)
 makeKernel name param kernel = do
   _    <- kernel
   code <- createBlocks

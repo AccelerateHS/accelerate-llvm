@@ -24,6 +24,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
@@ -32,10 +33,10 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- processes multiple adjacent elements.
 --
 mkGenerate
-    :: forall arch aenv sh e. (Shape sh, Elt e)
+    :: forall aenv sh e. (Shape sh, Elt e)
     => Gamma aenv
-    -> IRFun1 arch aenv (sh -> e)
-    -> CodeGen (IROpenAcc arch aenv (Array sh e))
+    -> IRFun1 Native aenv (sh -> e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkGenerate aenv apply =
   let
       (start, end, paramGang)   = gangParam

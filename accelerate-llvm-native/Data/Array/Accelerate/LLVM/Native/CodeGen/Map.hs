@@ -25,6 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
@@ -71,11 +72,11 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 -- Apply the given unary function to each element of an array.
 --
-mkMap :: forall arch aenv sh a b. Elt b
-      => Gamma          aenv
-      -> IRFun1    arch aenv (a -> b)
-      -> IRDelayed arch aenv (Array sh a)
-      -> CodeGen (IROpenAcc arch aenv (Array sh b))
+mkMap :: forall aenv sh a b. Elt b
+      => Gamma            aenv
+      -> IRFun1    Native aenv (a -> b)
+      -> IRDelayed Native aenv (Array sh a)
+      -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkMap aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam

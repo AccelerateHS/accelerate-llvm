@@ -32,6 +32,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.Native.Target                         ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
@@ -39,12 +40,12 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- Reduce an array along the innermost dimension.
 --
 mkFold
-    :: forall arch aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
-    -> IRFun2    arch aenv (e -> e -> e)
-    -> IRExp     arch aenv e
-    -> IRDelayed arch aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc arch aenv (Array sh e))
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Gamma            aenv
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRExp     Native aenv e
+    -> IRDelayed Native aenv (Array (sh :. Int) e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold aenv f z acc
   | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll aenv f (Just z) acc
@@ -54,11 +55,11 @@ mkFold aenv f z acc
 
 
 mkFold1
-    :: forall arch aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
-    -> IRFun2    arch aenv (e -> e -> e)
-    -> IRDelayed arch aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc arch aenv (Array sh e))
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Gamma            aenv
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRDelayed Native aenv (Array (sh :. Int) e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold1 aenv f acc
   | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll aenv f Nothing acc
@@ -68,12 +69,12 @@ mkFold1 aenv f acc
 
 
 mkFold'
-  :: forall arch aenv sh e. (Shape sh, Elt e)
-  =>          Gamma          aenv
-  ->          IRFun2    arch aenv (e -> e -> e)
-  -> Maybe   (IRExp     arch aenv e)
-  ->          IRDelayed arch aenv (Array (sh :. Int) e)
-  -> CodeGen (IROpenAcc arch aenv (Array sh e))
+  :: forall aenv sh e. (Shape sh, Elt e)
+  =>          Gamma            aenv
+  ->          IRFun2    Native aenv (e -> e -> e)
+  -> Maybe   (IRExp     Native aenv e)
+  ->          IRDelayed Native aenv (Array (sh :. Int) e)
+  -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold' aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
@@ -122,12 +123,12 @@ mkFold' aenv combine mseed IRDelayed{..} =
 -- is an exclusive reduction, the seed element is included at this point.
 --
 mkFoldAll
-    :: forall arch aenv e. Elt e
-    =>          Gamma          aenv                             -- ^ array environment
-    ->          IRFun2    arch aenv (e -> e -> e)               -- ^ combination function
-    -> Maybe   (IRExp     arch aenv e)                          -- ^ seed element, if this is an exclusive reduction
-    ->          IRDelayed arch aenv (Vector e)                  -- ^ input data
-    -> CodeGen (IROpenAcc arch aenv (Scalar e))
+    :: forall aenv e. Elt e
+    =>          Gamma            aenv                           -- ^ array environment
+    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
+    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
+    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
+    -> CodeGen (IROpenAcc Native aenv (Scalar e))
 mkFoldAll aenv combine mseed IRDelayed{..} = do
   let
       (start, end, paramGang)   = gangParam
