@@ -101,7 +101,7 @@ createTarget native ptx = do
       ptx'      = ptx    { PTX.fillP = Executable $ \ppt range sync init fill ->
                               parIO (LBS.mkResource ppt gpuR <> cpuR) gpuGang range init fill sync }
   --
-  return $! Multi ptx' native'
+  return $! Multi ptx' native' defaultMonitor
 
 
 -- Top-level mutable state
@@ -124,4 +124,11 @@ defaultTarget :: Multi
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default multi target"
   createTarget CPU.defaultTarget PTX.defaultTarget
+
+-- A gang whose only job is to dispatch the initial work distribution to the
+-- available worker backends.
+--
+{-# NOINLINE defaultMonitor #-}
+defaultMonitor :: Gang
+defaultMonitor = unsafePerformIO $ forkGang 2
 

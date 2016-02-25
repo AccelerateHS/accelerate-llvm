@@ -112,7 +112,7 @@ executeOp Multi{..} cpu ptx gamma aval stream n args result = do
       poke from to = runPTX $ copyToRemoteR from to Nothing result
       peek from to = runPTX $ copyToHostR   from to Nothing result
 
-  liftIO . gangIO theGang $ \thread ->
+  liftIO . gangIO monitorGang $ \thread ->
     case thread of
       0 -> CPU.executeOp 2048 nativeTarget cpu (syncWith poke) gamma (avalForCPU aval)        u args >> traceIO dump_sched "sched/multi: Native exiting"
       1 -> PTX.executeOp      ptxTarget    ptx (syncWith peek) gamma (avalForPTX aval) stream v args >> traceIO dump_sched "sched/multi: PTX exiting"
@@ -133,13 +133,4 @@ avalForCPU (Apush aenv (Async _ a)) = avalForCPU aenv `Apush` a
 avalForPTX :: Aval aenv -> AvalR PTX aenv
 avalForPTX Aempty         = Aempty
 avalForPTX (Apush aenv a) = avalForPTX aenv `Apush` a
-
-
--- A simple worker gang whose only job is to dispatch work to either the CPU or
--- GPU backend. Some lighter-weight concurrency would do as well, but we have
--- this built already...
---
-{-# NOINLINE theGang #-}
-theGang :: Gang
-theGang = unsafePerformIO $ forkGang 2
 

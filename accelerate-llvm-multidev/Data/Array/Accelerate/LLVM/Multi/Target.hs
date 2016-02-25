@@ -20,6 +20,8 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Internal                  ( PTX )
 import Data.Array.Accelerate.LLVM.Native.Internal               ( Native )
 
+import Control.Parallel.Meta.Worker
+
 -- standard library
 import Control.Monad.State
 
@@ -32,6 +34,7 @@ import Control.Monad.State
 data Multi = Multi {
     ptxTarget           :: {-# UNPACK #-} !PTX
   , nativeTarget        :: {-# UNPACK #-} !Native
+  , monitorGang         :: {-# UNPACK #-} !Gang
   }
 
 
