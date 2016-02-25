@@ -79,5 +79,7 @@ mkWorkSearch shortest longest = WorkSearch backoff
 
 {-# INLINE message #-}
 message :: Int -> String -> IO ()
-message tid msg = Debug.traceIO Debug.dump_sched (printf "sched/backoff: [%d] %s" tid msg)
+message tid msg
+  = Debug.when Debug.verbose
+  $ Debug.traceIO Debug.dump_sched (printf "sched/backoff: [%d] %s" tid msg)
 

@@ -105,7 +105,9 @@ mkWorkSearch retries gang =
 
 {-# INLINE message #-}
 message :: Int -> String -> IO ()
-message tid msg = Debug.traceIO Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
+message tid msg
+  = Debug.when Debug.verbose
+  $ Debug.traceIO Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
 
 {-# INLINE event #-}
 event :: Int -> String -> IO ()
