@@ -15,7 +15,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Context (
 
   Context(..),
-  new, destroy, push, pop,
+  new, raw, destroy, push, pop,
 
 ) where
 
@@ -54,8 +54,16 @@ new :: CUDA.Device
     -> CUDA.DeviceProperties
     -> [CUDA.ContextFlag]
     -> IO Context
-new dev prp flags = do
-  ctx   <- CUDA.create dev flags
+new dev prp flags =
+  raw dev prp =<< CUDA.create dev flags
+
+-- | Wrap a raw CUDA execution context
+--
+raw :: CUDA.Device
+    -> CUDA.DeviceProperties
+    -> CUDA.Context
+    -> IO Context
+raw dev prp ctx = do
   weak  <- mkWeakContext ctx $ do
     Debug.traceIO Debug.dump_gc ("gc: finalise context " ++ show (CUDA.useContext ctx))
     CUDA.destroy ctx

@@ -34,7 +34,7 @@ module Data.Array.Accelerate.LLVM.PTX (
   run1Async, run1AsyncWith,
 
   -- * Execution targets
-  PTX, createTarget,
+  PTX, createTargetForDevice, createTargetFromContext,
 
 ) where
 

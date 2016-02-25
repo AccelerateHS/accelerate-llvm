@@ -14,7 +14,7 @@
 module Data.Array.Accelerate.LLVM.PTX.State (
 
   evalPTX,
-  createTarget, defaultTarget
+  createTargetForDevice, createTargetFromContext, defaultTarget
 
 ) where
 
@@ -38,6 +38,7 @@ import Control.Concurrent                                       ( runInBoundThre
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Driver.Context                    as Context
 
 
 -- | Execute a PTX computation
@@ -55,19 +56,29 @@ evalPTX ptx acc =
 
 -- | Create a new PTX execution target for the given device
 --
--- TLM: This state structure does not generalise to multiple devices. We require
---      the context and tables per device, whereas a multi-device scheduler
---      requires information for all devices.
---
-createTarget
+createTargetForDevice
     :: CUDA.Device
     -> CUDA.DeviceProperties
     -> [CUDA.ContextFlag]
     -> IO PTX
-createTarget dev prp flags = do
-  ctx   <- CT.new dev prp flags
-  mt    <- MT.new ctx
-  st    <- RT.new ctx
+createTargetForDevice dev prp flags = do
+  ctx    <- CT.new dev prp flags
+  mt     <- MT.new ctx
+  st     <- RT.new ctx
+  return $! PTX ctx mt st simpleIO
+
+
+-- | Create a PTX execute target for the given device context
+--
+createTargetFromContext
+    :: CUDA.Context
+    -> IO PTX
+createTargetFromContext ctx' = do
+  dev    <- Context.device
+  prp    <- CUDA.props dev
+  ctx    <- CT.raw dev prp ctx'
+  mt     <- MT.new ctx
+  st     <- RT.new ctx
   return $! PTX ctx mt st simpleIO
 
 
@@ -97,5 +108,5 @@ defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
   (dev,prp)     <- selectBestDevice
-  createTarget dev prp [CUDA.SchedAuto]
+  createTargetForDevice dev prp [CUDA.SchedAuto]
 
