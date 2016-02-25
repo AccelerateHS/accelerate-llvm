@@ -126,6 +126,8 @@ destroy :: Context -> Reservoir -> Stream -> IO ()
 destroy _ctx !ref !stream = do
   message ("stash stream " ++ showStream stream)
 
+  -- TLM TODO: forkIO a thread to do the wait and stash. Need to test that.
+
   -- Wait for all preceding operations submitted to the stream to complete.
   --
   -- Note: Placing the block here seems to force _all_ streams to block, or at

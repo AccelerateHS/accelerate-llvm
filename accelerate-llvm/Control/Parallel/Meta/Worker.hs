@@ -76,6 +76,8 @@ data Worker = Worker {
   , workpool            :: {-# UNPACK #-} !(WSDeque Range)
   , consecutiveFailures :: {-# UNPACK #-} !(IORef Int)
   , rngState            :: {-# UNPACK #-} !GenIO        -- don't unpack: too large?
+
+  -- TODO: debug/work statistics
   }
 
 instance Eq Worker where
