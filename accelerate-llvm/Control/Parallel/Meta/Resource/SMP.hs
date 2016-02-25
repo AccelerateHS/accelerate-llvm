@@ -85,7 +85,7 @@ mkWorkSearch retries gang =
                    mwork <- tryPopR (workpool target)
                    case mwork of
                      Nothing    -> loop (n-1)
-                     _          -> do message myId (printf "steal from %d" (workerId target))
+                     _          -> do event myId (printf "steal from %d" (workerId target))
                                       writeIORef (consecutiveFailures me) 0
                                       return mwork
         in
@@ -106,4 +106,11 @@ mkWorkSearch retries gang =
 {-# INLINE message #-}
 message :: Int -> String -> IO ()
 message tid msg = Debug.traceIO Debug.dump_sched (printf "sched/smp: [%d] %s" tid msg)
+
+{-# INLINE event #-}
+event :: Int -> String -> IO ()
+event tid msg = do
+  let msg' = printf "sched/smp: [%d] %s" tid msg
+  Debug.traceIO      Debug.dump_sched msg'
+  Debug.traceEventIO Debug.dump_sched msg'
 
