@@ -43,7 +43,6 @@ import Foreign.CUDA.Driver.Error
 import Data.Monoid
 import Control.Exception                                        ( bracket_, catch )
 import Control.Concurrent                                       ( runInBoundThread )
-import System.Mem                                               ( performGC )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import Prelude                                                  hiding ( init )
 
@@ -58,7 +57,7 @@ evalMulti multi acc =
   \e -> $internalError "unhandled" (show (e :: CUDAException))
   where
     setup       = PTX.push (PTX.ptxContext (ptxTarget multi))
-    teardown    = performGC >> PTX.pop
+    teardown    = PTX.pop
     action      = evalLLVM multi acc
 
 
