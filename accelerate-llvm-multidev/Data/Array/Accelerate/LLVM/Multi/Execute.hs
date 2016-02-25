@@ -54,7 +54,6 @@ import Data.Foldable                                            ( mapM_ )
 import Control.Concurrent                                       ( runInBoundThread )
 import Control.Exception                                        ( bracket_ )
 import Control.Monad.State                                      ( gets, liftIO, evalStateT )
-import System.IO.Unsafe
 
 
 instance Execute Multi where
