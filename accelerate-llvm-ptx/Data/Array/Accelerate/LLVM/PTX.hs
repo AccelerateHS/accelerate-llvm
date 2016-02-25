@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX
@@ -41,19 +42,37 @@ module Data.Array.Accelerate.LLVM.PTX (
 -- accelerate
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Smart                      ( Acc )
-import Data.Array.Accelerate.Array.Sugar                ( Arrays )
-import Data.Array.Accelerate.Debug                      as Debug
+import Data.Array.Accelerate.Smart                                ( Acc )
+import Data.Array.Accelerate.Array.Sugar                          ( Arrays )
+import Data.Array.Accelerate.Debug                                as Debug
 
-import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.State                           ( LLVM )
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
+import qualified Data.Array.Accelerate.LLVM.PTX.Array.Data        as AD
 
 -- standard library
 import Control.Monad.Trans
 import System.IO.Unsafe
+
+
+-- Remote memory
+-- -------------
+
+-- Represents that data is contained on the remote device only. It must be
+-- explicitly copied back to the host before it can be used.
+--
+-- TODO: Remote needs to be a thing that can be subject to un/lift, so that we
+--       can pick out just one piece of it and copy only that bit back.
+--
+data Remote a where
+    Remote :: Arrays a => PTX -> a -> Remote a
+
+copyToHost :: Remote a -> IO a
+copyToHost (Remote target arrs) = do
+  evalPTX target (AD.copyToHost arrs)
 
 
 -- Accelerate: LLVM backend for NVIDIA GPUs
@@ -96,10 +115,21 @@ runAsync = runAsyncWith defaultTarget
 -- operations have completed.
 --
 runAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async a)
-runAsyncWith target a = asyncBound execute
+runAsyncWith = run' AD.copyToHost
+
+
+-- | As 'runAsyncWith', but don't automatically transfer the array back to the
+-- host on completion.
+--
+runRemoteAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async (Remote a))
+runRemoteAsyncWith target = run' (return . Remote target) target
+
+
+run' :: Arrays a => (a -> LLVM PTX b) -> PTX -> Acc a -> IO (Async b)
+run' finish target a = asyncBound execute
   where
     !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= copyToHost)
+    execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= finish)
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -161,7 +191,7 @@ run1AsyncWith target f = \a -> asyncBound (execute a)
   where
     !acc        = convertAfunWith config f
     !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX target (compileAfun acc) >>= dumpStats
-    execute a   = evalPTX target (executeAfun1 afun a >>= copyToHost)
+    execute a   = evalPTX target (executeAfun1 afun a >>= AD.copyToHost)
 
 
 -- | Stream a lazily read list of input arrays through the given program,
