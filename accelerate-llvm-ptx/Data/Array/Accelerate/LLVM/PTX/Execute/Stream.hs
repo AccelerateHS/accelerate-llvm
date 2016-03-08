@@ -19,13 +19,14 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Stream (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Lifetime
+
 import Data.Array.Accelerate.LLVM.PTX.Context                   ( Context(..) )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( Event, Stream )
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 -- cuda
-import Foreign.CUDA.Driver.Event                                ( Event(..) )
-import Foreign.CUDA.Driver.Stream                               ( Stream(..) )
 import qualified Foreign.CUDA.Driver.Stream                     as Stream
 
 -- standard library
@@ -45,7 +46,7 @@ import qualified Data.Sequence                                  as Seq
 -- TLM: In a multi-threaded multi-device environment, the Reservoir might need
 --      to be augmented to explicitly push/pop the surrounding any operation.
 --
-type Reservoir  = MVar (Seq Stream)
+type Reservoir  = MVar (Seq Stream.Stream)
 
 
 -- Executing operations in streams
@@ -106,16 +107,28 @@ flush !Context{..} !ref = do
 --
 {-# INLINEABLE create #-}
 create :: Context -> Reservoir -> IO Stream
-create _ctx !ref = modifyMVar ref $ \rsv ->
-  case Seq.viewl rsv of
-    s Seq.:< ss -> do
-      message ("reuse " ++ showStream s)
-      return (ss, s)
+create _ctx !ref = do
+  s <- modifyMVar ref $ \rsv ->
+          case Seq.viewl rsv of
+            s Seq.:< ss -> do
+              message ("reuse " ++ showStream s)
+              return (ss, s)
 
-    Seq.EmptyL  -> do
-      s <- Stream.create []
-      message ("new " ++ showStream s)
-      return (Seq.empty, s)
+            Seq.EmptyL  -> do
+              s <- Stream.create []
+              message ("new " ++ showStream s)
+              return (Seq.empty, s)
+
+  stream <- newLifetime s
+  addFinalizer stream $ do
+      message ("stash stream " ++ showStream s)
+      -- TLM: We should ensure that all operations in the stream have completed
+      -- before attempting to return it to the reservoir.
+      --
+      -- forkOS $ bracket_ (push ctx) pop (Stream.block s)
+      modifyMVar_ ref $ \rsv -> return (rsv Seq.|> s)
+
+  return stream
 
 
 -- | Merge a stream back into the reservoir. This must only be done once all
@@ -123,7 +136,9 @@ create _ctx !ref = modifyMVar ref $ \rsv ->
 --
 {-# INLINEABLE destroy #-}
 destroy :: Context -> Reservoir -> Stream -> IO ()
-destroy _ctx !ref !stream = do
+destroy _ctx _ref = finalize
+
+{--
   message ("stash stream " ++ showStream stream)
 
   -- TLM TODO: forkIO a thread to do the wait and stash. Need to test that.
@@ -146,6 +161,7 @@ destroy _ctx !ref !stream = do
   --       operations (just in case).
   --
   modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
+--}
 
 
 -- Debug
@@ -162,6 +178,6 @@ message :: String -> IO ()
 message s = s `trace` return ()
 
 {-# INLINE showStream #-}
-showStream :: Stream -> String
-showStream (Stream s) = show s
+showStream :: Stream.Stream -> String
+showStream (Stream.Stream s) = show s
 

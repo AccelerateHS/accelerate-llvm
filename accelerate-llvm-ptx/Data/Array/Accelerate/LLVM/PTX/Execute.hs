@@ -27,6 +27,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Array.Sugar
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
@@ -266,9 +267,10 @@ executeOp ptx@PTX{..} kernel finish gamma aenv stream r args =
 -- parameters.
 --
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
-launch Kernel{..} stream n args
-  = Debug.timed Debug.dump_exec msg (Just stream)
-  $ CUDA.launchKernel kernelFun grid cta smem (Just stream) args
+launch Kernel{..} stream n args =
+  withLifetime stream $ \st ->
+    Debug.timed Debug.dump_exec msg (Just st) $
+      CUDA.launchKernel kernelFun grid cta smem (Just st) args
   where
     cta         = (kernelThreadBlockSize, 1, 1)
     grid        = (kernelThreadBlocks n, 1, 1)
