@@ -55,11 +55,11 @@ destroy = finalize
 waypoint :: Stream -> IO Event
 waypoint stream = do
   event <- create
-  withLifetime stream $ \s -> do
-  withLifetime event  $ \e -> do
-    message $ "add waypoint " ++ showEvent e ++ " in stream " ++ showStream s
-    Event.record e (Just s)
-    return event
+  withLifetime stream  $ \s -> do
+    withLifetime event $ \e -> do
+      message $ "add waypoint " ++ showEvent e ++ " in stream " ++ showStream s
+      Event.record e (Just s)
+      return event
 
 -- | Make all future work submitted to the given stream wait until the event
 -- reports completion before beginning execution.
