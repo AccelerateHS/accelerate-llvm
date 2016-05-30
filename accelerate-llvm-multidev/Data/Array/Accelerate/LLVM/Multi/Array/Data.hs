@@ -23,9 +23,11 @@ import Data.Array.Accelerate.LLVM.Multi.Execute.Async           ()
 import Data.Array.Accelerate.LLVM.PTX                           ()
 
 
--- Instance of remote array memory management for the Multi-device target. We
--- just apply the operations of the PTX backend to ensure data is copied to the
--- GPU.
+-- Instance of remote array memory management for the Multi-device target. Since
+-- after the execution of each kernel the CPU and GPU memories are explicitly
+-- synchronised, for the most part no additional copying here is required. The
+-- only exception is when we Use an array, in which case we transfer it to all
+-- remote targets.
 --
 instance Remote Multi where
 
@@ -36,20 +38,4 @@ instance Remote Multi where
   {-# INLINEABLE useRemoteR #-}
   useRemoteR stream arr =
     useRemoteR stream arr `with` ptxTarget
-
-  {-# INLINEABLE copyToRemoteR #-}
-  copyToRemoteR from to stream arr =
-    copyToRemoteR from to stream arr `with` ptxTarget
-
-  {-# INLINEABLE copyToHostR #-}
-  copyToHostR from to stream arr =
-    copyToHostR from to stream arr `with` ptxTarget
-
-  {-# INLINEABLE copyToPeerR #-}
-  copyToPeerR from to peer stream arr =
-    copyToPeerR from to (ptxTarget peer) stream arr `with` ptxTarget
-
-  {-# INLINEABLE indexRemote #-}
-  indexRemote arr i =
-    indexRemote arr i `with` ptxTarget
 
