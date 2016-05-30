@@ -30,6 +30,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Lifetime
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -88,7 +89,7 @@ useArray !n !ad =
 {-# INLINEABLE useArrayAsync #-}
 useArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-    => CUDA.Stream
+    => Stream
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
@@ -111,16 +112,19 @@ pokeArray !n !ad =
 {-# INLINEABLE pokeArrayAsync #-}
 pokeArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
-    => CUDA.Stream
+    => Stream
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-pokeArrayAsync !st !n !ad =
+pokeArrayAsync !stream !n !ad = do
   let src      = CUDA.HostPtr (ptrsOfArrayData ad)
       bytes    = n * sizeOf (undefined :: a)
-  in
-  withDevicePtr ad $ \dst -> nonblocking st $
-    transfer "pokeArray" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+      st       = unsafeGetValue stream
+  --
+  withDevicePtr ad $ \dst ->
+    nonblocking stream $
+      transfer "pokeArray" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+  liftIO (touchLifetime stream)
 
 
 {-# INLINEABLE pokeArrayR #-}
@@ -136,20 +140,23 @@ pokeArrayR !from !to !ad =
 {-# INLINEABLE pokeArrayAsyncR #-}
 pokeArrayAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => CUDA.Stream
+    => Stream
     -> Int
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-pokeArrayAsyncR !st !from !to !ad =
+pokeArrayAsyncR !stream !from !to !ad = do
   let !n        = to - from
       !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
       !src      = CUDA.HostPtr (ptrsOfArrayData ad)
-  in
-  withDevicePtr ad $ \dst -> nonblocking st $
-    transfer "pokeArray" bytes (Just st)    $
-      CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr ad $ \dst ->
+    nonblocking stream $
+      transfer "pokeArray" bytes (Just st) $
+        CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
+  liftIO (touchLifetime stream)
 
 
 -- | Read a single element from an array at a given row-major index
@@ -161,12 +168,14 @@ indexArray
     -> Int
     -> LLVM PTX a
 indexArray !ad !i =
-  blocking                                          $ \st  ->
-  withDevicePtr ad                                  $ \src -> liftIO $
-  bracket (CUDA.mallocHostArray [] 1) CUDA.freeHost $ \dst -> do
+  blocking                                          $ \stream  ->
+  withDevicePtr ad                                  $ \src     -> liftIO $
+  bracket (CUDA.mallocHostArray [] 1) CUDA.freeHost $ \dst     -> do
+    let !st = unsafeGetValue stream
     message $ "indexArray: " ++ showBytes (sizeOf (undefined::a))
     CUDA.peekArrayAsync 1 (src `CUDA.advanceDevPtr` i) dst (Just st)
     CUDA.block st
+    touchLifetime stream
     r <- peek (CUDA.useHostPtr dst)
     return (Nothing, r)
 
@@ -185,16 +194,19 @@ peekArray !n !ad =
 {-# INLINEABLE peekArrayAsync #-}
 peekArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => CUDA.Stream
+    => Stream
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-peekArrayAsync !st !n !ad =
+peekArrayAsync !stream !n !ad = do
   let !bytes    = n * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
-  in
-  withDevicePtr ad $ \src -> nonblocking st $
-    transfer "peekArray" bytes (Just st)  $ CUDA.peekArrayAsync n src dst (Just st)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr ad $ \src ->
+    nonblocking stream $
+      transfer "peekArray" bytes (Just st)  $ CUDA.peekArrayAsync n src dst (Just st)
+  liftIO (touchLifetime stream)
 
 {-# INLINEABLE peekArrayR #-}
 peekArrayR
@@ -209,20 +221,23 @@ peekArrayR !from !to !ad =
 {-# INLINEABLE peekArrayAsyncR #-}
 peekArrayAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => CUDA.Stream
+    => Stream
     -> Int
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-peekArrayAsyncR !st !from !to !ad =
+peekArrayAsyncR !stream !from !to !ad = do
   let !n        = to - from
       !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
-  in
-  withDevicePtr ad $ \src -> nonblocking st $
-    transfer "peekArray" bytes (Just st)    $
-      CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) (Just st)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr ad     $ \src ->
+    nonblocking stream $
+      transfer "peekArray" bytes (Just st) $
+        CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) (Just st)
+  liftIO (touchLifetime stream)
 
 
 -- | Copy data from one device context into a _new_ array on the second context.
@@ -244,7 +259,7 @@ copyArrayPeerAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context                            -- destination context
     -> MemoryTable                        -- destination memory table
-    -> CUDA.Stream
+    -> Stream
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
@@ -278,7 +293,7 @@ copyArrayPeerAsyncR
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
     => Context                            -- destination context
     -> MemoryTable                        -- destination memory table
-    -> CUDA.Stream
+    -> Stream
     -> Int
     -> Int
     -> ArrayData e
@@ -348,9 +363,9 @@ blocking !f = do
 --
 {-# INLINE nonblocking #-}
 nonblocking :: Stream -> LLVM PTX a -> LLVM PTX (Maybe Event, a)
-nonblocking !st !f = do
+nonblocking !stream !f = do
   r <- f
-  e <- liftIO $ waypoint st
+  e <- liftIO $ waypoint stream
   return (Just e, r)
 
 

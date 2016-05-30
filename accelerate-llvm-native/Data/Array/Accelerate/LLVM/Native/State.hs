@@ -15,6 +15,9 @@ module Data.Array.Accelerate.LLVM.Native.State (
   evalNative,
   createTarget, defaultTarget,
 
+  Strategy,
+  balancedParIO, unbalancedParIO,
+
 ) where
 
 -- accelerate
@@ -54,27 +57,31 @@ evalNative = evalLLVM
 --
 createTarget
     :: [Int]
+    -> Strategy
     -> IO Native
-createTarget caps = do
+createTarget caps strategy = do
   gang   <- forkGangOn caps
-  return $! Native gang (balancedParIO gang)
+  return $! Native gang (strategy gang)
 
 
--- | Execute a computation without load balancing. Each thread evaluates its
--- local work queue only and does not create or search for additional work. This
--- relies on 'runParIO' initialising each thread with an equally sized chunk of
--- the input.
+-- | The strategy for balancing work amongst the available worker threads.
 --
-_unbalancedParIO :: Gang -> Executable
-_unbalancedParIO gang =
+type Strategy = Gang -> Executable
+
+-- | Execute a computation without load balancing. Each thread computes an
+-- equally sized chunk of the input. No work stealing occurs.
+--
+unbalancedParIO :: Strategy
+unbalancedParIO gang =
   Executable $ \_ range after init fill ->
     timed $ runParIO Single.mkResource gang range init fill after
 
 
--- | Execute a computation using lazy splitting of work stealing queues and
--- exponential backoff.
+-- | Execute a computation where threads use work stealing (based on lazy
+-- splitting of work stealing queues and exponential backoff) in order to
+-- automatically balance the workload amongst themselves.
 --
-balancedParIO :: Gang -> Executable
+balancedParIO :: Strategy
 balancedParIO gang =
   Executable $ \ppt range after init fill ->
     let retries  = gangSize gang
@@ -107,7 +114,7 @@ balancedParIO gang =
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  createTarget [0 .. numCapabilities - 1]
+  createTarget [0 .. numCapabilities - 1] balancedParIO
 
 
 -- Debugging

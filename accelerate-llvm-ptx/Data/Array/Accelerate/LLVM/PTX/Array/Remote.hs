@@ -22,9 +22,10 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Remote (
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event                     ( Event, block, query )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                    ( Stream, streaming )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
+import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Array.Data
 import qualified Data.Array.Accelerate.Array.Remote                     as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
@@ -63,13 +64,17 @@ instance Remote.RemoteMemory (LLVM PTX) where
     let bytes = n * sizeOfPtr src
         dst   = CUDA.HostPtr (ptrsOfArrayData ad)
     in
-    blocking $ \st -> transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+    blocking            $ \stream ->
+    withLifetime stream $ \st     ->
+      transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
   pokeRemote n dst ad =
     let bytes = n * sizeOfPtr dst
         src   = CUDA.HostPtr (ptrsOfArrayData ad)
     in
-    blocking $ \st -> transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+    blocking            $ \stream ->
+    withLifetime stream $ \st     ->
+      transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr _      = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo
