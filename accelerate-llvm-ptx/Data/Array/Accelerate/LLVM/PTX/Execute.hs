@@ -155,7 +155,7 @@ foldCore
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
 foldCore kernel gamma aenv stream sh'@(sh :. _)
-  | dim sh > 0      = simpleOp  kernel gamma aenv stream sh
+  | rank sh > 0     = simpleOp  kernel gamma aenv stream sh
   | otherwise       = foldAllOp kernel gamma aenv stream sh'
 
 -- See note: [Marshalling foldAll output arrays]
