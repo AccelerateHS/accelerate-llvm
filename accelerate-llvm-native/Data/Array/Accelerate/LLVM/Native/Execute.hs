@@ -224,9 +224,9 @@ foldAllCore kernel@(NativeR mdl) gamma aenv () sz = do
             -- a thread is assigned work, it could be stolen by another thread
             -- before it gets around to executing it. Thus, the thread might
             -- never initialise its spot in the 'tmp' array.
-            after              = Finalise $ \tid r -> when (Seq.null r) $ pokeElemOff fptrs tid 0
+            finalise           = Finalise $ \tid r -> when (Seq.null r) $ pokeElemOff fptrs tid 0
         --
-        runExecutable fillP defaultLargePPT (IE 0 sz) after (Just init) main
+        runExecutable fillP defaultLargePPT (IE 0 sz) finalise (Just init) main
         p3 =<< marshal native () (0::Int,n,tmp,flag,out,(gamma,aenv))
         --
         return out
