@@ -7,7 +7,7 @@ packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
-- 'accelerate-llvm-multidev'
+# - 'accelerate-llvm-multidev'
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
