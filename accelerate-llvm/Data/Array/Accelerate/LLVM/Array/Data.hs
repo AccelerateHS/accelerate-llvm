@@ -62,7 +62,7 @@ class Async arch => Remote arch where
   --
   {-# INLINEABLE useRemoteR #-}
   useRemoteR
-      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ number of elements in the payload
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
       -> ArrayData e              -- ^ array payload
@@ -75,7 +75,7 @@ class Async arch => Remote arch where
   --
   {-# INLINEABLE copyToRemoteR #-}
   copyToRemoteR
-      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of first element to copy
       -> Int
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
@@ -89,7 +89,7 @@ class Async arch => Remote arch where
   --
   {-# INLINEABLE copyToHostR #-}
   copyToHostR
-      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of the first element to copy
       -> Int
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
@@ -104,7 +104,7 @@ class Async arch => Remote arch where
   --
   {-# INLINEABLE copyToPeerR #-}
   copyToPeerR
-      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable a, Storable a)
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of the first element to copy
       -> Int
       -> arch                     -- ^ remote device to copy to
