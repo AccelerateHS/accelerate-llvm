@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Char, Bool(..), Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
 import Data.Bits                                                ( finiteBitSize )
 import Data.String
 import Control.Applicative
