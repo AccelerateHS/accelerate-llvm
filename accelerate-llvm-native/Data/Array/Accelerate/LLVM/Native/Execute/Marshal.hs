@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -27,9 +27,10 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Marshal (
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
 import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
 
-import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Array.Data
+import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
+import Data.Array.Accelerate.LLVM.Native.Target
 
 -- libraries
 import Data.DList                                               ( DList )
@@ -53,7 +54,9 @@ instance M.Marshalable Native Int where
 instance M.Marshalable Native (Gamma aenv, Aval aenv) where     -- overlaps with instance (a,b)
   marshal' t s (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> M.marshal' t s (aprj idx aenv)) (IM.elems gamma)
+    $ mapM (\(_, Idx' idx) -> M.marshal' t s (sync (aprj idx aenv))) (IM.elems gamma)
+    where
+      sync (AsyncR () a) = a
 
 instance ArrayElt e => M.Marshalable Native (ArrayData e) where
   marshal' _ _ adata = return $ marshalR arrayElt adata

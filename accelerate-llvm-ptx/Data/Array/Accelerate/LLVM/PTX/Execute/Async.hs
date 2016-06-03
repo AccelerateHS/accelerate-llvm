@@ -14,12 +14,13 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 
-  Async(..), Stream,
-  A.wait, A.after, A.streaming, A.async,
+  Async, Stream, Event,
+  module Data.Array.Accelerate.LLVM.Execute.Async,
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( Async )
 import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
 
 import Data.Array.Accelerate.LLVM.State
@@ -36,28 +37,26 @@ import Control.Monad.State
 -- Asynchronous arrays in the CUDA backend are tagged with an Event that will be
 -- filled once the kernel implementing that array has completed.
 --
-data Async a = Async {-# UNPACK #-} !Event !a
+type Async a = AsyncR PTX a
 
 instance A.Async PTX where
-  type AsyncR PTX a = Async a
-  type StreamR PTX  = Stream
+  type StreamR PTX = Stream
+  type EventR  PTX = Event
 
-  {-# INLINEABLE wait #-}
-  wait (Async event arr) =
-    liftIO $ Event.block event >> return arr
+  {-# INLINEABLE spawn #-}
+  spawn = do
+    PTX{..} <- gets llvmTarget
+    liftIO  $! Stream.create ptxContext ptxStreamReservoir
+
+  {-# INLINEABLE checkpoint #-}
+  checkpoint stream =
+    liftIO $! Event.waypoint stream
 
   {-# INLINEABLE after #-}
-  after stream (Async event arr) =
-    liftIO $ Event.after event stream >> return arr
+  after stream event =
+    liftIO $! Event.after event stream
 
-  {-# INLINEABLE streaming #-}
-  streaming first second = do
-    PTX{..} <- gets llvmTarget
-    Stream.streaming ptxContext ptxStreamReservoir first (\event arr -> second (Async event arr))
-
-  {-# INLINEABLE async #-}
-  async stream action = do
-    r <- action
-    e <- liftIO $ Event.waypoint stream
-    return $! Async e r
+  {-# INLINEABLE block #-}
+  block event =
+    liftIO $! Event.block event
 

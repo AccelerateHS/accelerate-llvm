@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -19,27 +19,60 @@ import Data.Array.Accelerate.LLVM.State
 -- Asynchronous operations
 -- -----------------------
 
+-- | The result of a potentially parallel computation which will be available at
+-- some point (presumably, in the future). This is essentially a write-once
+-- IVar.
+--
+data AsyncR arch a = AsyncR !(EventR arch) !a
+
 class Async arch where
-  type AsyncR arch a    -- An asynchronous array
-  type StreamR arch     -- Streams can execute concurrently with other streams
-
-  -- | Wait for an asynchronous operation to complete
+  -- | Streams (i.e. threads) can execute concurrently with other streams, but
+  -- operations within the same stream proceed sequentially.
   --
-  wait      :: AsyncR arch a -> LLVM arch a
+  type StreamR arch
 
-  -- | Mark the given array as being available to the execution stream only
-  -- after all preceding operations have completed.
+  -- | An Event marks a point in the execution stream, possibly in the future.
+  -- Since execution within a stream is sequential, events can be used to test
+  -- the progress of a computation and synchronise between different streams.
   --
-  after     :: StreamR arch -> AsyncR arch a -> LLVM arch a
+  type EventR arch
 
-  -- | Execute a computation in a new stream and make that available
-  -- asynchronously in a consumer operation.
+  -- | Create a new execution stream that can be used to track (potentially
+  -- parallel) computations
   --
-  streaming :: (StreamR arch  -> LLVM arch a)
-            -> (AsyncR arch a -> LLVM arch b)
-            -> LLVM arch b
+  spawn       :: LLVM arch (StreamR arch)
 
-  -- | Execute the given operation asynchronously
+  -- | Generate a new event at the end of the given execution stream. It will be
+  -- filled once all prior work submitted to the stream has completed.
   --
-  async     :: StreamR arch -> LLVM arch a -> LLVM arch (AsyncR arch a)
+  checkpoint  :: StreamR arch -> LLVM arch (EventR arch)
+
+  -- | Make all future work submitted to the given execution stream wait until
+  -- the given event has passed. Typically the event is from a different
+  -- execution stream, therefore this function is intended to enable
+  -- non-blocking cross-stream coordination.
+  --
+  after       :: StreamR arch -> EventR arch -> LLVM arch ()
+
+  -- | Block execution of the calling thread until the given event has been
+  -- recorded.
+  --
+  block       :: EventR arch -> LLVM arch ()
+
+
+-- | Wait for an asynchronous operation to complete, then return it.
+--
+get :: Async arch => AsyncR arch a -> LLVM arch a
+get (AsyncR e a) = block e >> return a
+
+-- | Execute the given operation asynchronously in a new execution stream.
+--
+async :: Async arch
+      => (StreamR arch -> LLVM arch a)
+      -> LLVM arch (AsyncR arch a)
+async f = do
+  s <- spawn
+  r <- f s
+  e <- checkpoint s
+  return $ AsyncR e r
 

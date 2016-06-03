@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Async
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2016] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -13,34 +13,37 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 
-  Async, Stream,
-  A.wait, A.after, A.streaming, A.async,
+  Async, Stream, Event,
+  module Data.Array.Accelerate.LLVM.Execute.Async,
 
 ) where
 
 -- accelerate
-import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
+import Data.Array.Accelerate.LLVM.Execute.Async                     hiding ( Async )
+import qualified Data.Array.Accelerate.LLVM.Execute.Async           as A
+
 import Data.Array.Accelerate.LLVM.Native.Target
 
 
-type Async a = A.AsyncR Native a
+type Async a = A.AsyncR  Native a
 type Stream  = A.StreamR Native
+type Event   = A.EventR  Native
 
 -- The native backend does everything synchronously.
 --
 instance A.Async Native where
-  type AsyncR Native a = a
-  type StreamR Native  = ()
+  type StreamR Native = ()
+  type EventR  Native = ()
 
-  {-# INLINE wait #-}
-  wait a = return a
+  {-# INLINE spawn #-}
+  spawn = return ()
+
+  {-# INLINE checkpoint #-}
+  checkpoint () = return ()
 
   {-# INLINE after #-}
-  after () a = return a
+  after () () = return ()
 
-  {-# INLINE streaming #-}
-  streaming f g = g =<< f ()
-
-  {-# INLINE async #-}
-  async () a = a
+  {-# INLINE block #-}
+  block () = return ()
 

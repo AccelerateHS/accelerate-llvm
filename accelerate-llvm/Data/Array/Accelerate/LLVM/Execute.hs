@@ -213,7 +213,7 @@ executeAcc
     => ExecAcc arch a
     -> LLVM arch a
 executeAcc acc =
-  streaming (executeOpenAcc acc Aempty) wait
+  get =<< async (executeOpenAcc acc Aempty)
 
 {-# INLINEABLE executeAfun1 #-}
 executeAfun1
@@ -221,8 +221,8 @@ executeAfun1
     => ExecAfun arch (a -> b)
     -> a
     -> LLVM arch b
-executeAfun1 afun arrs =
-  streaming (\s -> useRemoteAsync s arrs >> return arrs) (executeOpenAfun1 afun Aempty)
+executeAfun1 afun arrs = do
+  executeOpenAfun1 afun Aempty =<< useRemoteAsync arrs =<< spawn
 
 
 -- Execute an open array function of one argument
@@ -234,7 +234,7 @@ executeOpenAfun1
     -> AvalR arch aenv
     -> AsyncR arch a
     -> LLVM arch b
-executeOpenAfun1 (Alam (Abody f)) aenv a = streaming (executeOpenAcc f (aenv `Apush` a)) wait
+executeOpenAfun1 (Alam (Abody f)) aenv a = get =<< async (executeOpenAcc f (aenv `Apush` a))
 executeOpenAfun1 _                _    _ = error "boop!"
 
 
@@ -257,9 +257,13 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Unit x                      -> newRemote Z . const =<< travE x
 
     -- Environment manipulation
-    Avar ix                     -> after stream (aprj ix aenv)
-    Alet bnd body               -> streaming (executeOpenAcc bnd aenv) (\x -> executeOpenAcc body (aenv `Apush` x) stream)
-    Apply f a                   -> streaming (executeOpenAcc a aenv)   (executeOpenAfun1 f aenv)
+    Avar ix                     -> do let AsyncR event arr = aprj ix aenv
+                                      after stream event
+                                      return arr
+    Alet bnd body               -> do bnd'  <- async (executeOpenAcc bnd aenv)
+                                      body' <- executeOpenAcc body (aenv `Apush` bnd') stream
+                                      return body'
+    Apply f a                   -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
     Atuple tup                  -> toAtuple <$> travT tup
     Aprj ix tup                 -> evalPrj ix . fromAtuple <$> travA tup
     Acond p t e                 -> acond t e =<< travE p
@@ -336,10 +340,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
            -> a
            -> LLVM arch a
     awhile p f a = do
-      a'  <- async stream (return a)
-      r   <- executeOpenAfun1 p aenv a'
+      e   <- checkpoint stream
+      r   <- executeOpenAfun1 p aenv (AsyncR e a)
       ok  <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv a'
+      if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
             else return a
 
 

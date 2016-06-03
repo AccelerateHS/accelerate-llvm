@@ -33,7 +33,7 @@ import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async(..) )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async, AsyncR(..) )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( after )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
@@ -74,16 +74,15 @@ instance M.Marshalable PTX (Gamma aenv, Aval aenv) where        -- overlaps with
     where
       -- HAXORZ~ D:
       --
-      -- The 'Async' class functions need to run in the LLVM monad because the
-      -- continuations of the 'streaming' function run under the full LLVM
-      -- monad. But the marshalling functions must run in IO because they will
-      -- be executed in the lower-level scheduling code.
+      -- The 'Async' class functions need to run in the LLVM monad, but the
+      -- marshalling functions must run in IO because they will be executed in
+      -- the lower-level scheduling code.
       --
       -- We hack around this impedance mismatch by calling the 'after'
       -- implementation directly.
       --
       sync :: Async a -> IO a
-      sync (Async event arr) = after event stream >> return arr
+      sync (AsyncR event arr) = after event stream >> return arr
 
 instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
   marshal' ptx _ adata = do
@@ -133,7 +132,7 @@ instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
 -- TODO FIXME !!!
 --
 -- We will probably need to change marshal to be a bracketed function. We may
--- also want to consider whether we restrict it to IO.
+-- also want to reconsider whether to continue to restrict it to IO.
 --
 unsafeGetDevicePtr
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
