@@ -20,7 +20,8 @@ import Data.Array.Accelerate.LLVM.State
 -- -----------------------
 
 -- | The result of a potentially parallel computation which will be available at
--- some point in the future.
+-- some point (presumably, in the future). This is essentially a write-once
+-- IVar.
 --
 data AsyncR arch a = AsyncR !(EventR arch) !a
 
