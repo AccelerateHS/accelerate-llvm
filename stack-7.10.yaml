@@ -9,14 +9,19 @@ packages:
 - 'accelerate-llvm-ptx'
 # - 'accelerate-llvm-multidev'
 
+# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
     commit: 01d1d2da0b5147041af61e95936262e6eff3f881
   extra-dep: true
 
+- location:
+    git:    https://github.com/tmcdonell/cuda.git
+    commit: 4153ab41fdea3dcc205c4d8c12734f1c2322ff6d
+  extra-dep: true
+
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
-- 'cuda-0.7.0.0'
 - 'libffi-0.1'
 - 'unique-0'
 
