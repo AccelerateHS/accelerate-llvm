@@ -16,7 +16,6 @@
 module LLVM.General.AST.Type.Instruction
   where
 
-import LLVM.General.AST.Type.Bits
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Global
@@ -190,15 +189,14 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#trunc-to-instruction>
   --
-  Trunc         :: BoundedType a        -- req: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
+  Trunc         :: BoundedType a        -- precondition: BitSize a > BitSize b
                 -> BoundedType b
                 -> Operand a
                 -> Instruction b
 
   -- <http://llvm.org/docs/LangRef.html#fptrunc-to-instruction>
   --
-  FTrunc        :: (BitSize a > BitSize b)
-                => FloatingType a
+  FTrunc        :: FloatingType a       -- precondition: BitSize a > BitSize b
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
@@ -206,15 +204,14 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#zext-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#sext-to-instruction>
   --
-  Ext           :: BoundedType a        -- Req: (BitSize a < BitSize b)
+  Ext           :: BoundedType a        -- precondition: BitSize a < BitSize b
                 -> BoundedType b
                 -> Operand a
                 -> Instruction b
 
   -- <http://llvm.org/docs/LangRef.html#fpext-to-instruction>
   --
-  FExt          :: (BitSize a < BitSize b)
-                => FloatingType a
+  FExt          :: FloatingType a       -- precondition: BitSize a < BitSize b
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
@@ -237,7 +234,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#bitcast-to-instruction>
   --
-  BitCast       :: ScalarType b         -- precondition: (BitSizeEq a b ~ True)
+  BitCast       :: ScalarType b         -- precondition: BitSize a == BitSize b
                 -> Operand a
                 -> Instruction b
 

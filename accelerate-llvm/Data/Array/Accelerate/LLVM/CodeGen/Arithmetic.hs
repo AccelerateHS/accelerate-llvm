@@ -19,10 +19,11 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 
 -- standard/external libraries
 import Prelude                                                  ( Eq, Num, Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
-import Data.Bits                                                ( finiteBitSize )
-import Data.String
 import Control.Applicative
 import Control.Monad
+import Data.Bits                                                ( finiteBitSize )
+import Data.String
+import Foreign.Storable                                         ( sizeOf )
 import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
@@ -366,7 +367,8 @@ boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
 fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
 fromIntegral i1 n (op i1 -> x) =
   case n of
-    FloatingNumType f -> instr (IntToFP i1 f x)
+    FloatingNumType f
+      -> instr (IntToFP i1 f x)
 
     IntegralNumType (i2 :: IntegralType b)
       | IntegralDict <- integralDict i1
@@ -378,7 +380,28 @@ fromIntegral i1 n (op i1 -> x) =
          case Ord.compare bits_a bits_b of
            Ord.EQ -> instr (BitCast (NumScalarType n) x)
            Ord.GT -> instr (Trunc (IntegralBoundedType i1) (IntegralBoundedType i2) x)
-           Ord.LT -> instr (Ext (IntegralBoundedType i1) (IntegralBoundedType i2) x)
+           Ord.LT -> instr (Ext   (IntegralBoundedType i1) (IntegralBoundedType i2) x)
+
+toFloating :: forall a b. NumType a -> FloatingType b -> IR a -> CodeGen (IR b)
+toFloating n1 f2 (op n1 -> x) =
+  case n1 of
+    IntegralNumType i1
+      -> instr (IntToFP i1 f2 x)
+
+    FloatingNumType (f1 :: FloatingType a)
+      | FloatingDict <- floatingDict f1
+      , FloatingDict <- floatingDict f2
+      -> let
+             bytes_a = sizeOf (undefined::a)
+             bytes_b = sizeOf (undefined::b)
+         in
+         case Ord.compare bytes_a bytes_b of
+           Ord.EQ -> instr (BitCast (NumScalarType (FloatingNumType f2)) x)
+           Ord.GT -> instr (FTrunc f1 f2 x)
+           Ord.LT -> instr (FExt   f1 f2 x)
+
+coerce :: forall a b. ScalarType a -> ScalarType b -> IR a -> CodeGen (IR b)
+coerce ta tb (op ta -> x) = instr (BitCast tb x)
 
 
 -- Utility functions

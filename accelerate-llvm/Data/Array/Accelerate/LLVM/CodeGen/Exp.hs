@@ -405,5 +405,7 @@ llvmOfPrimFun PrimOrd                   = A.ord
 llvmOfPrimFun PrimChr                   = A.chr
 llvmOfPrimFun PrimBoolToInt             = A.boolToInt
 llvmOfPrimFun (PrimFromIntegral ta tb)  = A.fromIntegral ta tb
+llvmOfPrimFun (PrimToFloating ta tb)    = A.toFloating ta tb
+llvmOfPrimFun (PrimCoerce ta tb)        = A.coerce ta tb
   -- no missing patterns, whoo!
 
