@@ -1,11 +1,15 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverlappingInstances  #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+#if __GLASGOW_HASKELL__ <= 708
+{-# LANGUAGE OverlappingInstances  #-}
+{-# OPTIONS_GHC -fno-warn-unrecognised-pragmas #-}
+#endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 -- Copyright   : [2014..2016] Trevor L. McDonell
@@ -51,7 +55,7 @@ type instance M.ArgR Native = FFI.Arg
 instance M.Marshalable Native Int where
   marshal' _ _ x = return $ DL.singleton (FFI.argInt x)
 
-instance M.Marshalable Native (Gamma aenv, Aval aenv) where     -- overlaps with instance (a,b)
+instance {-# OVERLAPS #-} M.Marshalable Native (Gamma aenv, Aval aenv) where
   marshal' t s (gamma, aenv)
     = fmap DL.concat
     $ mapM (\(_, Idx' idx) -> M.marshal' t s (sync (aprj idx aenv))) (IM.elems gamma)

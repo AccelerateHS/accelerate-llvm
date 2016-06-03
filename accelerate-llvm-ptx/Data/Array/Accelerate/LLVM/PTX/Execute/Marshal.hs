@@ -1,14 +1,18 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE BangPatterns          #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverlappingInstances  #-}
 {-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+#if __GLASGOW_HASKELL__ <= 708
+{-# LANGUAGE OverlappingInstances  #-}
+{-# OPTIONS_GHC -fno-warn-unrecognised-pragmas #-}
+#endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -67,7 +71,7 @@ instance M.Marshalable PTX Int where
 instance M.Marshalable PTX Int32 where
   marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
 
-instance M.Marshalable PTX (Gamma aenv, Aval aenv) where        -- overlaps with instance (a,b)
+instance {-# OVERLAPS #-} M.Marshalable PTX (Gamma aenv, Aval aenv) where
   marshal' ptx stream (gamma, aenv)
     = fmap DL.concat
     $ mapM (\(_, Idx' idx) -> M.marshal' ptx stream =<< sync (aprj idx aenv)) (IM.elems gamma)
