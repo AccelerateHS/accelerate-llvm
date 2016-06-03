@@ -82,7 +82,6 @@ Library
     Data.Array.Accelerate.LLVM.Util
 
     -- LLVM code generation
-    LLVM.General.AST.Type.Bits
     LLVM.General.AST.Type.Constant
     LLVM.General.AST.Type.Flags
     LLVM.General.AST.Type.Global
