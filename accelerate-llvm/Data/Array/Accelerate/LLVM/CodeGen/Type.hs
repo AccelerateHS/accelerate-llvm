@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
 -- Copyright   : [2015] Trevor L. McDonell
@@ -14,6 +15,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Maybe
 
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 import LLVM.General.AST.Type.Constant
@@ -94,8 +96,8 @@ instance TypeOf Instruction where
       LOr _ _           -> scalarType
       LNot _            -> scalarType
       Load t _ _        -> t
---      Store _ _ x       -> typeOf x
---      GetElementPtr x _ -> typeOf x
+      Store _ _ _       -> $internalError "typeOf" "unexpected instruction: Store"
+      GetElementPtr _ _ -> $internalError "typeOf" "unexpected instruction: GetElementPtr"
       FTrunc _ t _      -> NumScalarType (FloatingNumType t)
       FExt _ t _        -> NumScalarType (FloatingNumType t)
       Trunc _ t _       -> case t of
