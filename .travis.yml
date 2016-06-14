@@ -11,6 +11,7 @@ sudo: false
 cache:
   directories:
     - $HOME/.stack
+    - $HOME/llvm
 
 matrix:
   include:
