@@ -78,10 +78,10 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
-          base                          >= 4.7 && <4.9
+          base                          >= 4.7 && < 4.10
         , accelerate                    == 2.0.*
         , accelerate-llvm               == 2.0.*
-        , containers                    >= 0.5 && <0.6
+        , containers                    >= 0.5 && < 0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
