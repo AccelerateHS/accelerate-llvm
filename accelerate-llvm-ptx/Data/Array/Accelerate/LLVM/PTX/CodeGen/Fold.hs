@@ -181,3 +181,30 @@ matchShapeType _ _
 matchShapeType _ _
   = Nothing
 
+
+-- Efficient warp reduction using __shfl_up instruction (compute >= 3.0)
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_shfl.cuh#L310
+--
+-- TLM: Actually this might be tricky because the __shfl_up() operation is
+--      defined in the sm_30_intrinsics.hpp header file using raw assembly.
+--
+reduceWarpShfl
+    :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    -> IR e                                                     -- ^ this thread's input value
+    -> CodeGen (IR e)                                           -- ^ final result
+reduceWarpShfl combine input =
+  error "TODO: PTX.reduceWarpShfl"
+
+
+-- Efficient warp reduction using shared memory
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
+--
+reduceWarpSMem
+    :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    -> IRArray (Vector e)                                       -- ^ values in shared memory buffer to reduce
+    -> CodeGen (IR e)                                           -- ^ final result
+reduceWarpSMem combine smem =
+  error "TODO: PTX.reduceWarpSMem"
+
