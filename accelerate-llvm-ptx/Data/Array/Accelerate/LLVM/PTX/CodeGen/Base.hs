@@ -28,16 +28,19 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 import Control.Monad                                                    ( void )
 
 -- llvm
-import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Operand
+import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
+import qualified LLVM.General.AST.Name                                  as LLVM
 import qualified LLVM.General.AST.Type                                  as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                    as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -143,9 +146,39 @@ __threadfence_grid :: CodeGen ()
 __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 
 
+-- Shared memory
+-- -------------
+
+-- External declaration in shared memory address space. This must be declared in
+-- order to access memory allocated dynamically by the CUDA driver. This results
+-- in the following global declaration:
+--
+-- > @__shared__ = external addrspace(3) global [0 x i8]
+--
+initialiseSharedMemory :: CodeGen ()
+initialiseSharedMemory
+  = declare
+  $ LLVM.globalVariableDefaults
+      { LLVM.addrSpace = LLVM.AddrSpace 3
+      , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
+      , LLVM.name      = LLVM.Name "__shared__"
+      }
+
+
+-- Declared a new dynamically allocated array in the __shared__ memory space
+-- with enough space to contain the given number of elements.
+--
+sharedMem
+    :: Elt e
+    => Name (Vector e)                        -- base name of the array
+    -> IR Int32                               -- number of array elements
+    -> CodeGen (IRArray (Vector e))
+sharedMem =
+  error "TODO: PTX.sharedMem"
+
+
 -- Global kernel definitions
 -- -------------------------
-
 
 -- | Create a single kernel program
 --
