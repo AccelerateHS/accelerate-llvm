@@ -83,8 +83,8 @@ shapeName (UnName n) i = shapeName (Name (show n)) i
 -- | Names of array data elements
 --
 irArray :: forall sh e. (Shape sh, Elt e)
-          => Name (Array sh e)
-          -> IRArray (Array sh e)
+        => Name (Array sh e)
+        -> IRArray (Array sh e)
 irArray n
   = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference t (shapeName n i)))
             (travTypeToIR (undefined::e)  (\t i -> LocalReference t (arrayName n i)))
