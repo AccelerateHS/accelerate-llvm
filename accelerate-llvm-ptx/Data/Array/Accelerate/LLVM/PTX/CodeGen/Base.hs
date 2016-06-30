@@ -185,7 +185,7 @@ sharedMem
     => IR Int                                 -- number of array elements
     -> Maybe (IR Int)                         -- #bytes of shared memory the have already been allocated for this kernel (default: zero)
     -> CodeGen (IRArray (Vector e))
-sharedMem (op integralType -> n) moffset = do
+sharedMem (IR (OP_Int n)) moffset = do
   let
       go :: TupleType s -> Operand (Ptr Word8) -> CodeGen (Operand (Ptr Word8), Operands s)
       go UnitTuple       p = return (p, OP_Unit)
@@ -214,7 +214,7 @@ sharedMem (op integralType -> n) moffset = do
   smem   <- initialiseSharedMemory
   ptr    <- instr' $ GetElementPtr smem [offset]
   (_,ad) <- go (eltType (undefined::e)) ptr
-  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit (ir' integralType n)
+  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit (OP_Int n)
                    , irArrayData  = IR ad
                    }
 
