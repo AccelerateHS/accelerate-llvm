@@ -170,6 +170,7 @@ instance Downcast (Instruction a) L.Instruction where
     | signed t                  = L.SIToFP (downcast x) (downcast t') md
     | otherwise                 = L.UIToFP (downcast x) (downcast t') md
   downcast (BitCast t x)        = L.BitCast (downcast x) (downcast t) md
+  downcast (PtrCast t a x)      = L.BitCast (downcast x) (L.PointerType (downcast t) (fromMaybe (L.AddrSpace 0) a)) md
   downcast (Phi t incoming)     = L.Phi (downcast t) (downcast incoming) md
   downcast (Select _ p x y)     = L.Select (downcast p) (downcast x) (downcast y) md
   downcast (Call f attrs)       = L.Call tailcall L.C [] (downcast f) (downcast f) (downcast attrs) md

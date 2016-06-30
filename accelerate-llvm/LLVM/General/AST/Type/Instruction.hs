@@ -238,6 +238,11 @@ data Instruction a where
                 -> Operand a
                 -> Instruction b
 
+  PtrCast       :: ScalarType b
+                -> Maybe AddrSpace
+                -> Operand (Ptr a)
+                -> Instruction (Ptr b)
+
   -- PtrToInt
   -- IntToPtr
   -- AddrSpaceCast

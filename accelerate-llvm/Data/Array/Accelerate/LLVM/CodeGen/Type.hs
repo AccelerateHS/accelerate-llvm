@@ -96,8 +96,8 @@ instance TypeOf Instruction where
       LOr _ _           -> scalarType
       LNot _            -> scalarType
       Load t _ _        -> t
-      Store _ _ _       -> $internalError "typeOf" "unexpected instruction: Store"
-      GetElementPtr _ _ -> $internalError "typeOf" "unexpected instruction: GetElementPtr"
+      Store _ _ _       -> $internalError "typeOf" "unhandled instruction: Store"
+      GetElementPtr _ _ -> $internalError "typeOf" "unhandled instruction: GetElementPtr"
       FTrunc _ t _      -> NumScalarType (FloatingNumType t)
       FExt _ t _        -> NumScalarType (FloatingNumType t)
       Trunc _ t _       -> case t of
@@ -109,6 +109,7 @@ instance TypeOf Instruction where
       FPToInt _ t _     -> NumScalarType (IntegralNumType t)
       IntToFP _ t _     -> NumScalarType (FloatingNumType t)
       BitCast t _       -> t
+      PtrCast _ _ _     -> $internalError "typeOf" "unhandled instruction: PtrCast"
       Cmp{}             -> scalarType
       Select t _ _ _    -> t
       Phi t _           -> t
