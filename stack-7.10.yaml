@@ -9,14 +9,15 @@ packages:
 - 'accelerate-llvm-ptx'
 # - 'accelerate-llvm-multidev'
 
+# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: aed12138a9788ff5d6289d214c84ff6108dc04bd
+    commit: 868c372012cccdf453f5653ecfa40f11545e0150
   extra-dep: true
 
 - location:
     git:    https://github.com/tmcdonell/cuda.git
-    commit: 28ee2bd8ef94eb0e6231373ee2b5e0c9187bf5c7
+    commit: d4ce36da07f510b7fcc994f86557af7d6b16c8f2
   extra-dep: true
 
 extra-deps:

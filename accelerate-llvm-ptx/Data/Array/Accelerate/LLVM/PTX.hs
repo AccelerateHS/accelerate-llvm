@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX
@@ -37,23 +38,31 @@ module Data.Array.Accelerate.LLVM.PTX (
   -- * Execution targets
   PTX, createTargetForDevice, createTargetFromContext,
 
+  -- * Controlling host-side allocation
+  registerPinnedAllocator, registerPinnedAllocatorWith,
+
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Async
-import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Smart                                ( Acc )
 import Data.Array.Accelerate.Array.Sugar                          ( Arrays )
+import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Debug                                as Debug
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Smart                                ( Acc )
+import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.State                           ( LLVM )
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
+import qualified Data.Array.Accelerate.LLVM.PTX.Context           as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Data        as AD
 
+import Foreign.CUDA.Driver                                        as CUDA ( CUDAException, mallocHostForeignPtr )
+
 -- standard library
+import Control.Exception
 import Control.Monad.Trans
 import System.IO.Unsafe
 
@@ -217,6 +226,35 @@ config :: Phase
 config =  phases
   { convertOffsetOfSegment = True
   }
+
+
+-- Controlling host-side allocation
+-- --------------------------------
+
+-- | Configure the default execution target to allocate all future host-side
+-- arrays using (CUDA) pinned memory. Any newly allocated arrays will be
+-- page-locked and directly accessible from the device, enabling high-speed
+-- (asynchronous) DMA.
+--
+-- Note that since the amount of available pageable memory will be reduced,
+-- overall system performance can suffer.
+--
+registerPinnedAllocator :: IO ()
+registerPinnedAllocator = registerPinnedAllocatorWith defaultTarget
+
+
+-- | As with 'registerPinnedAllocator', but configure the given execution
+-- context.
+--
+registerPinnedAllocatorWith :: PTX -> IO ()
+registerPinnedAllocatorWith target =
+  AD.registerForeignPtrAllocator $ \bytes ->
+    bracket_ setup teardown (CUDA.mallocHostForeignPtr [] bytes)
+    `catch`
+    \e -> $internalError "registerPinnedAlocator" (show (e :: CUDAException))
+    where
+      setup    = CT.push (ptxContext target)
+      teardown = CT.pop
 
 
 -- Debugging
