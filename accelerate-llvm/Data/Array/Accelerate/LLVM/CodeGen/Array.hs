@@ -13,8 +13,8 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.Array (
 
-  readArray,
-  writeArray,
+  readArray,  readVolatileArray,
+  writeArray, writeVolatileArray,
 
 ) where
 
@@ -40,6 +40,12 @@ readArray :: forall sh e. IRArray (Array sh e) -> IR Int -> CodeGen (IR e)
 readArray (IRArray _ (IR adata)) (op integralType -> ix) =
   IR <$> readArrayData NonVolatile ix (eltType (undefined::e)) adata
 
+-- | Read a value from a volatile array at the given index
+--
+readVolatileArray :: forall sh e. IRArray (Array sh e) -> IR Int -> CodeGen (IR e)
+readVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) =
+  IR <$> readArrayData Volatile ix (eltType (undefined::e)) adata
+
 readArrayData :: Volatile -> Operand Int -> TupleType t -> Operands t -> CodeGen (Operands t)
 readArrayData volatile ix = read
   where
@@ -60,6 +66,12 @@ readArrayPrim t volatile arr i = do
 writeArray :: forall sh e. IRArray (Array sh e) -> IR Int -> IR e -> CodeGen ()
 writeArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
   writeArrayData NonVolatile ix (eltType (undefined::e)) adata val
+
+-- | Write a value into a volatile array at the given index
+--
+writeVolatileArray :: forall sh e. IRArray (Array sh e) -> IR Int -> IR e -> CodeGen ()
+writeVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
+  writeArrayData Volatile ix (eltType (undefined::e)) adata val
 
 
 writeArrayData :: Volatile -> Operand Int -> TupleType t -> Operands t -> Operands t -> CodeGen ()
