@@ -157,7 +157,7 @@ scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (ScalarParameter t x)
 
 ptrParameter :: ScalarType t -> Name t -> LLVM.Parameter
-ptrParameter t x = downcast (PtrParameter t x)
+ptrParameter t x = downcast (PtrParameter t x Nothing)
 
 
 -- | Unpack the array environment into a set of input parameters to a function.

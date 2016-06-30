@@ -19,6 +19,7 @@ import Foreign.Ptr
 
 import Data.Array.Accelerate.Type
 
+import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 
@@ -27,7 +28,7 @@ import LLVM.General.AST.Type.Operand
 --
 data Parameter a where
   ScalarParameter       :: ScalarType a -> Name a -> Parameter a
-  PtrParameter          :: ScalarType a -> Name a -> Parameter (Ptr a)
+  PtrParameter          :: ScalarType a -> Name a -> Maybe AddrSpace -> Parameter (Ptr a)
 
 -- | Attributes for the function call instruction
 --

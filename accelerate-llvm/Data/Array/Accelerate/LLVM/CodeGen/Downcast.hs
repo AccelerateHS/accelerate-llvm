@@ -23,6 +23,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Downcast (
 
 import Prelude                                                  hiding ( Ordering(..), const )
 import Data.Bits
+import Data.Maybe
 import Foreign.C.Types
 
 import Data.Array.Accelerate.Type
@@ -285,8 +286,8 @@ instance Downcast Label L.Name where
 -- ----------------------------
 
 instance Downcast (Parameter a) L.Parameter where
-  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                 (downcast x) []
-  downcast (PtrParameter t x)    = L.Parameter (L.PointerType (downcast t) (L.AddrSpace 0)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
+  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                               (downcast x) []
+  downcast (PtrParameter t x a)  = L.Parameter (L.PointerType (downcast t) (fromMaybe (L.AddrSpace 0) a)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
 
 -- Function -> callable operands (for Call instruction)
 --
