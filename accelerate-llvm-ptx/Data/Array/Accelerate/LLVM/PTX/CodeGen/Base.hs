@@ -1,4 +1,8 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -20,16 +24,23 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   __syncthreads,
   __threadfence_block, __threadfence_grid,
 
-  --- Kernel definitions
+  -- Shared memory
+  sharedMem,
+
+  -- Kernel definitions
   makeOpenAcc,
 
 ) where
 
+import Prelude                                                          as P
+import Foreign.Ptr                                                      ( Ptr )
 import Control.Monad                                                    ( void )
 
 -- llvm
+import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
+import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
@@ -40,7 +51,8 @@ import qualified LLVM.General.AST.Type                                  as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector )
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector, eltType )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                    as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -155,26 +167,56 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 --
 -- > @__shared__ = external addrspace(3) global [0 x i8]
 --
-initialiseSharedMemory :: CodeGen ()
-initialiseSharedMemory
-  = declare
-  $ LLVM.globalVariableDefaults
-      { LLVM.addrSpace = LLVM.AddrSpace 3
-      , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
-      , LLVM.name      = LLVM.Name "__shared__"
-      }
+initialiseSharedMemory :: CodeGen (Operand (Ptr Word8))
+initialiseSharedMemory = do
+  declare $ LLVM.globalVariableDefaults
+    { LLVM.addrSpace = LLVM.AddrSpace 3
+    , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
+    , LLVM.name      = LLVM.Name "__shared__"
+    }
+  return $ PtrOperand $ ConstantOperand $ GlobalReference (Just scalarType) "__shared__"
 
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
 --
 sharedMem
-    :: Elt e
-    => Name (Vector e)                        -- base name of the array
-    -> IR Int32                               -- number of array elements
+    :: forall e. Elt e
+    => IR Int                                 -- number of array elements
+    -> Maybe (IR Int)                         -- #bytes of shared memory the have already been allocated for this kernel (default: zero)
     -> CodeGen (IRArray (Vector e))
-sharedMem =
-  error "TODO: PTX.sharedMem"
+sharedMem (op integralType -> n) moffset = do
+  let
+      go :: TupleType s -> Operand (Ptr Word8) -> CodeGen (Operand (Ptr Word8), Operands s)
+      go UnitTuple       p = return (p, OP_Unit)
+      go (SingleTuple t) p = do
+        -- TLM: bitcasts are no-op instructions. While having casts both in and
+        --      out in order to satisfy the types is somewhat inelegant, they
+        --      cost us no cycles (at runtime; the optimiser does work removing
+        --      adjacent casts)
+        s <- instr' $ PtrCast t as p
+        q <- instr' $ GetElementPtr s [n]
+        r <- instr' $ PtrCast scalarType as q
+        let s' = case s of    -- XXX: This is a hack because we can't properly represent pointer types
+                   LocalReference _ (Name x)   -> LocalReference t (Name x)
+                   LocalReference _ (UnName x) -> LocalReference t (UnName x)
+                   _                           -> $internalError "sharedMem" "@tmcdonell: fix the type hierarchy"
+        return (r, ir' t s')
+      go (PairTuple t2 t1) p = do
+        (p1, ad1) <- go t1 p
+        (p2, ad2) <- go t2 p1
+        return $ (p2, OP_Pair ad2 ad1)
+
+      as      = Just $ AddrSpace 3
+      zero    = scalar scalarType 0
+      offset  = maybe zero (op integralType) moffset
+  --
+  smem   <- initialiseSharedMemory
+  ptr    <- instr' $ GetElementPtr smem [offset]
+  (_,ad) <- go (eltType (undefined::e)) ptr
+  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit (ir' integralType n)
+                   , irArrayData  = IR ad
+                   }
 
 
 -- Global kernel definitions
