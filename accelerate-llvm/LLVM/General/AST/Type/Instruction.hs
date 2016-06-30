@@ -16,9 +16,10 @@
 module LLVM.General.AST.Type.Instruction
   where
 
+import LLVM.General.AST.Type.AddrSpace
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Global
 
 import Data.Array.Accelerate.Type
 
@@ -179,7 +180,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr :: Operand a            -- Operand (Ptr a), Name a ??
+  GetElementPtr :: Operand (Ptr a)
                 -> [Operand Int]
                 -> Instruction (Ptr a)
 

@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 ) where
 
 import Control.Applicative
+import Foreign.Ptr
 import Prelude                                                          hiding ( read )
 
 import LLVM.General.AST.Type.Operand
@@ -44,10 +45,10 @@ readArrayData volatile ix = read
   where
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
     read UnitTuple          OP_Unit        = return OP_Unit
-    read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair   <$> read t2 a2 <*> read t1 a1
-    read (SingleTuple t)   (op' t -> arr)  = ir' t <$> readArrayPrim t volatile arr ix
+    read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (SingleTuple t)   (op' t -> arr)  = ir' t   <$> readArrayPrim t volatile (PtrOperand arr) ix
 
-readArrayPrim :: ScalarType e -> Volatile -> Operand e -> Operand Int -> CodeGen (Operand e)
+readArrayPrim :: ScalarType e -> Volatile -> Operand (Ptr e) -> Operand Int -> CodeGen (Operand e)
 readArrayPrim t volatile arr i = do
   ptr   <- instr' $ GetElementPtr arr [i]
   v     <- instr' $ Load t volatile ptr
@@ -67,9 +68,9 @@ writeArrayData volatile ix = write
     write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
     write UnitTuple          OP_Unit         OP_Unit        = return ()
     write (PairTuple t2 t1) (OP_Pair a2 a1) (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (SingleTuple t)   (op' t -> arr)  (op' t -> val)  = writeArrayPrim volatile arr ix val
+    write (SingleTuple t)   (op' t -> arr)  (op' t -> val)  = writeArrayPrim volatile (PtrOperand arr) ix val
 
-writeArrayPrim :: Volatile -> Operand e -> Operand Int -> Operand e -> CodeGen ()
+writeArrayPrim :: Volatile -> Operand (Ptr e) -> Operand Int -> Operand e -> CodeGen ()
 writeArrayPrim volatile arr i v = do
   ptr   <- instr' $ GetElementPtr arr [i]
   _     <- instr' $ Store volatile ptr v
