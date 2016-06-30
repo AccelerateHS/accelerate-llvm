@@ -247,8 +247,9 @@ instance Downcast (Constant a) LC.Constant where
 -- -----------------------------
 
 instance Downcast (Operand a) L.Operand where
-  downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)
-  downcast (ConstantOperand c)       = L.ConstantOperand (downcast c)
+  downcast (LocalReference t n) = L.LocalReference (downcast t) (downcast n)
+  downcast (ConstantOperand c)  = L.ConstantOperand (downcast c)
+  downcast (PtrOperand x)       = downcast x
 
 
 -- LLVM.General.AST.Type.Metadata

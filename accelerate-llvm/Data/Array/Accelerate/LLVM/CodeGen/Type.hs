@@ -121,8 +121,9 @@ instance TypeOf Instruction where
 instance TypeOf Operand where
   typeOf op =
     case op of
-      LocalReference t _        -> t
-      ConstantOperand c         -> typeOf c
+      LocalReference t _ -> t
+      ConstantOperand c  -> typeOf c
+      PtrOperand _       -> $internalError "typeOf" "unhandled instruction: PtrOperand"
 
 instance TypeOf Constant where
   typeOf c =
