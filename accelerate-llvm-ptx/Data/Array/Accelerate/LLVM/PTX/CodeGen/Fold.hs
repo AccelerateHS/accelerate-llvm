@@ -42,7 +42,7 @@ import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
-import Foreign.CUDA.Analysis
+import Foreign.CUDA.Analysis as CUDA
 
 
 -- Reduce an array along the innermost dimension. The reduction function must be
@@ -182,6 +182,119 @@ matchShapeType _ _
   = Nothing
 
 
+-- mkFoldDim
+--     :: forall aenv sh e. (Shape sh, Elt e)
+--     =>          DeviceProperties                                -- ^ properties of the target GPU
+--     ->          Gamma         aenv                              -- ^ array environment
+--     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+--     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive reduction
+--     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
+--     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
+-- mkFoldDim dev aenv combine mseed IRDelayed{..} =
+--     let
+--           (start, end, paramGang)   = gangParam
+--           (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+--           paramEnv                  = envParam aenv
+--     in
+--     makeOpenAcc "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+--
+--     ntid <- A.fromIntegral integralType numType =<< blockDim
+--     smem <- sharedMem ntid Nothing :: CodeGen (IRArray (Vector e))
+--     v    <- reduceWarpSMem combine smem
+--
+--     return_
+
+
+
+-- __global__ void reduceBlockSMem(int *g_idata, int *g_odata, combine) {
+--   extern __shared__ int smem[];
+--   unsigned int tid = threadIdx.x;
+--   unsigned int i = blockIdx.x * (blockDim.x * 2) + threadIdx.x;
+--   smem[tid] = g_idata[i] + g_idata[i + blockDim.x];
+--   __syncthreads();
+--
+--   for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
+--    if (tid < s) {
+--      smem[tid] = combine(smem[tid], smem[tid + s]);
+--    }
+--    __syncthreads();
+--   }
+--
+--   if (tid < 32)
+--    reduceWarpSMem(combine, smem);
+-- }
+
+
+-- Q0: Should `reduceBlockSMem` generate code?
+--     I think it shoudn't, as `reduceWarpSMem`
+-- Q1: What should be put in `let .. in` and what should be out?
+-- Q2: What's the difference between `readArray` / `readVolatileArray`
+--     It seems that I should use `readArray` when it's a global array,
+--     and `readVolatileArray` when it's on device?
+-- Q3: How could I run some code snippet to prove the correctness of the implementation
+-- Q4: ifElseThen?
+
+reduceBlockSMem
+    :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    -> IRArray (Vector e)                                       -- ^ input  data array
+    -> IRArray (Vector e)                                       -- ^ output data array
+    -> CodeGen (IR e)                                           -- ^ final result
+reduceBlockSMem combine g_idata g_odata = do
+  let
+    (start, end, paramGang)   = gangParam
+    (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+    paramEnv                  = envParam aenv
+    --
+    zero = ir numType (num numType 0)
+    two  = ir numType (num numType 2)
+  in
+  tid  <- A.fromIntegral integralType numType =<< threadIdx
+  bd   <- A.fromIntegral integralType numType =<< blockDim
+  bi   <- A.fromIntegral integralType numType =<< blockIdx
+  ws   <- A.fromIntegral integralType numType =<< warpSize
+
+  -- declare smem first
+  smem <- sharedMem ntid Nothing :: CodeGen (IRArray (Vector (Int, Char, Double)))
+
+  -- read input data to smem
+  i    <- add numType (mul numType bi (mul numType bd two)) tid   -- blockIdx.x * (blockDim.x * 2) + threadIdx.x
+  x    <- readVolatileArray g_idata i
+  y    <- readVolatileArray g_idata (add i bd)
+  z    <- app2 combine x y
+  writeVolatileArray smem tid z
+  __syncthreads
+
+
+  -- for loop
+  start <- A.quot integralType bd two
+  Loop.for start
+           (\s -> gt scalarType s ws)
+           (\s -> A.quot integralType s two)
+           (\s -> do
+              ifThenElse
+                (lt scalarType tid s)
+                (
+                 i = add numType tid s
+                 x <- readVolatileArray smem tid
+                 y <- readVolatileArray smem i
+                 z <- app2 combine x y
+                 writeVolatileArray smem tid z
+                )
+                (Nothing)
+
+              __syncthreads
+           )
+
+  -- reduceWarpSMem
+  ifThenElse
+    (lt scalarType tid ws)
+    (reduceWarpSMem(combine, smem))
+    (Nothing)
+  readVolatileArray smem tid
+
+
+
+
 -- Efficient warp reduction using __shfl_up instruction (compute >= 3.0)
 --
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_shfl.cuh#L310
@@ -201,10 +314,60 @@ reduceWarpShfl combine input =
 --
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
 --
+-- pseudo code:
+--  reduceWarpSMem(combine, smem) {
+--    for (offset = warpSize / 2; offset > 0; offset /= 2) {
+--      smem[tid] = combine(smem[tid], smem[tid + offset]);
+--    }
+--    return smem[0];
+--  }
+
+
+-- roll version
 reduceWarpSMem
     :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> IRArray (Vector e)                                       -- ^ values in shared memory buffer to reduce
     -> CodeGen (IR e)                                           -- ^ final result
-reduceWarpSMem combine smem =
-  error "TODO: PTX.reduceWarpSMem"
+reduceWarpSMem combine smem = do
+  let
+    zero == ir numType (num numType 0)
+    two  == ir numType (num numType 2)
+  in
+  --
+  tid  <- A.fromIntegralType integralType numType =<< threadIdx
+  ws   <- A.fromIntegralType integralType numType =<< warpSize
+  start <- A.quot integralType ws two
 
+  Loop.for start
+           (\offset -> gt scalarType offset zero)
+           (\offset -> A.quot integralType offset two)
+           (\offset -> do
+             i <- add numType tid offset
+             x <- readVolatileArray smem tid
+             y <- readVolatileArray smem i
+             z <- app2 combine x y
+             writeVolatileArray smem tid z
+  readVolatileArray smem tid
+
+-- unroll version
+reduceWarpSMem
+    :: DeviceProperties
+    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    -> IRArray (Vector e)                                       -- ^ values in shared memory buffer to reduce
+    -> CodeGen (IR e)                                           -- ^ final result
+reduceWarpSMem dev combine smem = do
+    let
+      steps = takeWhile (> 0)
+        $ iterate (`P.quot` 2)
+        $ CUDA.warpSize dev `P.quot` 2
+    in
+    tid <- A.fromIntegral integralType numType =<< threadIdx
+    -- Generate an unrolled loop
+    forM_ steps $ \(ir numType . num numType -> offset) -> do
+      i <- add numType tid offset
+      x <- readVolatileArray smem tid
+      y <- readVolatileArray smem i
+      z <- app2 combine x y
+      writeVolatileArray smem tid z
+
+    readVolatileArray smem tid
