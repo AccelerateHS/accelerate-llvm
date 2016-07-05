@@ -351,7 +351,7 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
 --
 {-# INLINE runArrays #-}
 runArrays
-    :: forall m arrs. (Monad m, Arrays arrs)
+    :: forall m arrs. (Functor m, Applicative m, Monad m, Arrays arrs)
     => arrs
     -> (forall sh e. Array sh e -> m (Array sh e))
     -> m arrs
@@ -368,7 +368,7 @@ runArrays arrs worker = toArr <$> runR (arrays arrs) (fromArr arrs)
 --
 {-# INLINE runArray #-}
 runArray
-    :: forall m sh e. Monad m
+    :: forall m sh e. (Functor m, Applicative m, Monad m)
     => Array sh e
     -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m (ArrayData e'))
     -> m (Array sh e)
