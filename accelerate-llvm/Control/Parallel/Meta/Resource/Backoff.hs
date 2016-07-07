@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Resource.Backoff
 -- Copyright   : [2014..2015] Trevor L. McDonell
