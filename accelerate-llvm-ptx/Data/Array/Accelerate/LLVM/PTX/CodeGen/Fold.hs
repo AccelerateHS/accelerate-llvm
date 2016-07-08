@@ -236,10 +236,9 @@ reduceBlockSMem combine g_idata g_odata = do
   smem <- sharedMem bd Nothing :: CodeGen (IRArray (Vector e))
 
   -- read input data to smem
-  x    <- mul numType bi bd
-  i    <- add numType x tid
-  y    <- readVolatileArray g_idata i
-  writeVolatileArray smem tid y
+  i    <- A.fromIntegral integralType numType =<< globalThreadIdx
+  x    <- readArray g_idata i
+  writeVolatileArray smem tid x
   __syncthreads
 
 
@@ -262,12 +261,13 @@ reduceBlockSMem combine g_idata g_odata = do
   -- reduceWarpSMem
   when (lt scalarType tid ws) $ do
     reduceWarpSMem combine smem
-    return_
+    return ()
 
   when (eq scalarType tid zero) $ do
     x <- readVolatileArray smem tid
-    writeVolatileArray g_odata bi x
-    return_
+    writeArray g_odata bi x
+    return ()
+
 
   readVolatileArray smem tid
 
