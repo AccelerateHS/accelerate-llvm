@@ -77,8 +77,31 @@ abs t x =
             64 -> call (Lam t' (op t x) (Body (Just t') "llabs")) [NoUnwind, ReadNone]
             _  -> call (Lam t' (op t x) (Body (Just t') "abs"))   [NoUnwind, ReadNone]
 
-signum :: NumType a -> IR a -> CodeGen (IR a)
-signum = error "signum"
+signum :: forall a. Elt a => NumType a -> IR a -> CodeGen (IR a)
+signum t x =
+  case t of
+    IntegralNumType i
+      | IntegralDict <- integralDict i
+      , unsigned i
+      -> do z <- neq (NumScalarType t) x (ir t (num t 0))
+            s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            return s
+      --
+      | IntegralDict <- integralDict i
+      -> do let wsib = finiteBitSize (undefined::a)
+            y <- negate t x
+            l <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
+            r <- shiftRL i y (ir integralType (integral integralType (wsib P.- 1)))
+            s <- bor i l r
+            return s
+    --
+    FloatingNumType f
+      | FloatingDict <- floatingDict f
+      -> if gt (NumScalarType t) x (ir f (floating f 0))
+            then return $ ir f (floating f 1)
+            else if lt (NumScalarType t) x (ir f (floating f 0))
+                    then return $ ir f (floating f (P.negate 1))
+                    else return $ ir f (floating f 0)
 
 
 -- Operations from Integral and Bits
