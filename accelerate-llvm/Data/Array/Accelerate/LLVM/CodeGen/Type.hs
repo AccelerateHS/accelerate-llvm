@@ -18,6 +18,7 @@ import Data.Maybe
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
@@ -130,4 +131,52 @@ instance TypeOf Constant where
     case c of
       ScalarConstant t _        -> t
       GlobalReference t _       -> fromJust t
+
+
+-- | Extract some evidence that a reified type implies that type is a valid
+-- element
+--
+data EltDict a where
+  EltDict :: Elt a => EltDict a
+
+scalarElt :: ScalarType a -> EltDict a
+scalarElt (NumScalarType    t) = numElt t
+scalarElt (NonNumScalarType t) = nonNumElt t
+
+numElt :: NumType a -> EltDict a
+numElt (IntegralNumType t) = integralElt t
+numElt (FloatingNumType t) = floatingElt t
+
+integralElt :: IntegralType a -> EltDict a
+integralElt TypeInt{}     = EltDict
+integralElt TypeInt8{}    = EltDict
+integralElt TypeInt16{}   = EltDict
+integralElt TypeInt32{}   = EltDict
+integralElt TypeInt64{}   = EltDict
+integralElt TypeWord{}    = EltDict
+integralElt TypeWord8{}   = EltDict
+integralElt TypeWord16{}  = EltDict
+integralElt TypeWord32{}  = EltDict
+integralElt TypeWord64{}  = EltDict
+integralElt TypeCShort{}  = EltDict
+integralElt TypeCUShort{} = EltDict
+integralElt TypeCInt{}    = EltDict
+integralElt TypeCUInt{}   = EltDict
+integralElt TypeCLong{}   = EltDict
+integralElt TypeCULong{}  = EltDict
+integralElt TypeCLLong{}  = EltDict
+integralElt TypeCULLong{} = EltDict
+
+floatingElt :: FloatingType a -> EltDict a
+floatingElt TypeFloat{}   = EltDict
+floatingElt TypeDouble{}  = EltDict
+floatingElt TypeCFloat{}  = EltDict
+floatingElt TypeCDouble{} = EltDict
+
+nonNumElt :: NonNumType a -> EltDict a
+nonNumElt TypeBool{}   = EltDict
+nonNumElt TypeChar{}   = EltDict
+nonNumElt TypeCChar{}  = EltDict
+nonNumElt TypeCSChar{} = EltDict
+nonNumElt TypeCUChar{} = EltDict
 
