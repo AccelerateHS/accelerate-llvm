@@ -99,6 +99,8 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
+        , llvm-general                  >= 3.3.15
+        , llvm-general-pure             >= 3.3
         , mtl                           >= 2.2.1
         , pretty                        >= 1.1
         , time                          >= 1.4
@@ -115,13 +117,7 @@ Library
   if flag(libnvvm)
     cpp-options:                -DACCELERATE_USE_LIBNVVM
     build-depends:
-          libnvvm                   >= 1.0
-        , llvm-general              == 3.2.*
-        , llvm-general-pure         == 3.2.*
-  else
-    build-depends:
-          llvm-general              >= 3.3.15
-        , llvm-general-pure         >= 3.3
+          nvvm                  >= 0.7.5
 
   if flag(debug)
     cpp-options:                -DACCELERATE_DEBUG

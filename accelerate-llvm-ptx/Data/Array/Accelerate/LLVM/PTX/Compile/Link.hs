@@ -99,12 +99,15 @@ withLibdeviceNVPTX dev ctx ast next =
 
 
 -- | Lower an LLVM AST to C++ objects and prepare it for linking against
--- libdevice using the libnvvm bindings, iff any libdevice functions are
--- referenced from the base module.
+-- libdevice using the nvvm bindings, iff any libdevice functions are referenced
+-- from the base module.
 --
--- Note that due to limitations in the llvm-general-3.2.* API, which we are
--- required to use due to limitations with libnvvm, unused functions from
--- libdevice are NOT internalised.
+-- Rather than internalise and strip any unused functions ourselves, allow the
+-- nvvm library to do so when linking the two modules together.
+--
+-- TLM: This really should work with the above method, however for some reason
+-- we get a "CUDA Exception: function named symbol not found" error, even though
+-- the function is clearly visible in the generated code. hmm...
 --
 withLibdeviceNVVM
     :: DeviceProperties

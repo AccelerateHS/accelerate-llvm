@@ -26,7 +26,7 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 import LLVM.General.Context
 import LLVM.General.Module                                      as LLVM
 
-import LLVM.General.AST                                         as AST ( Module(..), Definition(..), defaultModule )
+import LLVM.General.AST                                         as AST ( Module(..), Definition(..) )
 import LLVM.General.AST.Instruction                             as AST ( Named(..) )
 import LLVM.General.AST.Attribute
 import LLVM.General.AST.Global                                  as G
@@ -100,8 +100,11 @@ instance NVVMReflect (String, ByteString) where
 --
 nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
-  AST.defaultModule {
-    moduleDefinitions = [GlobalDefinition $ functionDefaults
+  AST.Module
+    { moduleName          = "nvvm-reflect"
+    , moduleDataLayout    = targetDataLayout (undefined::PTX)
+    , moduleTargetTriple  = targetTriple (undefined::PTX)
+    , moduleDefinitions   = [GlobalDefinition $ functionDefaults
       { name                 = AST.Name "__nvvm_reflect"
       , returnType           = downcast (integralType :: IntegralType Int32)
       , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )

@@ -20,6 +20,11 @@ packages:
     commit: d4ce36da07f510b7fcc994f86557af7d6b16c8f2
   extra-dep: true
 
+- location:
+    git:    https://github.com/tmcdonell/nvvm.git
+    commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
+  extra-dep: true
+
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'libffi-0.1'
