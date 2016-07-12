@@ -69,8 +69,8 @@ data PTX = PTX {
 
 instance Target PTX where
   targetTriple _     = Just ptxTargetTriple
-#if ACCELERATE_USE_LIBNVVM
-  targetDataLayout _ = Nothing            -- see note: [libNVVM and target data layout]
+#if ACCELERATE_USE_NVVM
+  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
 #else
   targetDataLayout _ = Just ptxDataLayout
 #endif

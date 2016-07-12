@@ -22,9 +22,9 @@ category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 -- Configuration flags
 -- -------------------
 
-Flag libnvvm
+Flag nvvm
   Default:              False
-  Description:          Use the libNVVM bindings to optimise generated PTX
+  Description:          Use the NVVM library to generate optimised PTX
 
 Flag debug
   Default:              True
@@ -114,8 +114,8 @@ Library
   if impl(ghc >= 8.0)
     ghc-options:                -Wmissed-specialisations
 
-  if flag(libnvvm)
-    cpp-options:                -DACCELERATE_USE_LIBNVVM
+  if flag(nvvm)
+    cpp-options:                -DACCELERATE_USE_NVVM
     build-depends:
           nvvm                  >= 0.7.5
 

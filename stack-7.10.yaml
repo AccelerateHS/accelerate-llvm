@@ -48,7 +48,7 @@ flags:
     debug: true
   accelerate-llvm-ptx:
     debug: true
-    libnvvm: false
+    nvvm: false
   llvm-general:
     shared-llvm: true
 

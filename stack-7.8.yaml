@@ -55,6 +55,14 @@ flags:
     bounds-checks: true
     debug: false
     internal-checks: false
+  accelerate-llvm:
+    debug: true
+    chase-lev: true
+  accelerate-llvm-native:
+    debug: true
+  accelerate-llvm-ptx:
+    debug: true
+    nvvm: false
   llvm-general:
     shared-llvm: true
 

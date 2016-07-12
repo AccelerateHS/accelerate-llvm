@@ -53,7 +53,7 @@ import qualified  Data.Array.Accelerate.LLVM.PTX.Debug          as Debug
 -- cuda
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
-#ifdef ACCELERATE_USE_LIBNVVM
+#ifdef ACCELERATE_USE_NVVM
 import qualified Foreign.NVVM                                   as NVVM
 #endif
 
@@ -103,7 +103,7 @@ compileForPTX acc aenv = do
 
 -- | Compile the LLVM module to produce a CUDA module.
 --
---    * If we are using libNVVM, this includes all LLVM optimisations plus some
+--    * If we are using NVVM, this includes all LLVM optimisations plus some
 --    sekrit optimisations.
 --
 --    * If we are just using the llvm ptx backend, we still need to run the
@@ -112,15 +112,15 @@ compileForPTX acc aenv = do
 compileModule :: CUDA.DeviceProperties -> Context -> AST.Module -> IO CUDA.Module
 compileModule dev ctx ast =
   let name      = moduleName ast in
-#ifdef ACCELERATE_USE_LIBNVVM
+#ifdef ACCELERATE_USE_NVVM
   withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev name)
 #else
   withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev name)
 #endif
 
 
-#ifdef ACCELERATE_USE_LIBNVVM
--- Compile and optimise the module to PTX using the (closed source) libNVVM
+#ifdef ACCELERATE_USE_NVVM
+-- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This may produce faster object code than the LLVM NVPTX compiler.
 --
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO CUDA.Module
@@ -131,10 +131,10 @@ compileModuleNVVM dev name libdevice mdl = do
       verbose = if _debug then [ NVVM.GenerateDebugInfo ] else []
       flags   = NVVM.Target arch : verbose
 
-      -- Note: [libNVVM and target datalayout]
+      -- Note: [NVVM and target datalayout]
       --
-      -- The libNVVM library does not correctly parse the target datalayout
-      -- field, instead doing a (very dodgy) string compare against exactly two
+      -- The NVVM library does not correctly parse the target datalayout field,
+      -- instead doing a (very dodgy) string compare against exactly two
       -- expected values. This means that it is sensitive to, e.g. the ordering
       -- of the fields, and changes to the representation in each LLVM release.
       --
