@@ -84,10 +84,10 @@ withLibdeviceNVPTX dev ctx ast next =
       runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  ->
       runError $ LLVM.withModuleFromAST ctx nvvmReflect                            $ \refl ->
       runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
-        runError $ LLVM.linkModules False libd refl
-        runError $ LLVM.linkModules False libd mdl
+        runError $ LLVM.linkModules False mdl refl
+        runError $ LLVM.linkModules False mdl libd
         Debug.traceIO Debug.dump_cc msg
-        next libd
+        next mdl
   where
     externs     = analyse ast
 
@@ -119,7 +119,6 @@ withLibdeviceNVVM dev ctx ast next =
   runError $ LLVM.withModuleFromAST ctx ast $ \mdl -> do
     when withlib $ Debug.traceIO Debug.dump_cc msg
     next lib mdl
-
   where
     externs             = analyse ast
     withlib             = not (Set.null externs)

@@ -125,10 +125,10 @@ compileModule dev ctx ast =
 --
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO CUDA.Module
 compileModuleNVVM dev name libdevice mdl = do
-  dbg <- Debug.queryFlag Debug.debug_cc
+  _debug <- Debug.queryFlag Debug.debug_cc
   --
   let arch    = CUDA.computeCapability dev
-      verbose = if dbg then [ NVVM.GenerateDebugInfo ] else []
+      verbose = if _debug then [ NVVM.GenerateDebugInfo ] else []
       flags   = NVVM.Target arch : verbose
 
       -- Note: [libNVVM and target datalayout]
