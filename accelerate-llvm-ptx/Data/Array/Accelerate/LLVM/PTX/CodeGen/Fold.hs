@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold (
 ) where
 
 import Data.Typeable
+import Control.Monad hiding (when)
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
@@ -208,15 +209,6 @@ matchShapeType _ _
 -- }
 
 
--- Q0: Should `reduceBlockSMem` generate code?
---     I think it shoudn't, as `reduceWarpSMem`
--- Q1: What should be put in `let .. in` and what should be out?
--- Q2: What's the difference between `readArray` / `readVolatileArray`
---     It seems that I should use `readArray` when it's a global array,
---     and `readVolatileArray` when it's on device?
--- Q3: How could I run some code snippet to prove the correctness of the implementation
--- Q4: ifElseThen?
-
 reduceBlockSMem
   :: forall aenv e. Elt e
   => IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
@@ -260,14 +252,11 @@ reduceBlockSMem combine g_idata g_odata = do
 
   -- reduceWarpSMem
   when (lt scalarType tid ws) $ do
-    reduceWarpSMem combine smem
-    return ()
+    void $ reduceWarpSMem combine smem
 
   when (eq scalarType tid zero) $ do
     x <- readVolatileArray smem tid
-    writeArray g_odata bi x
-    return ()
-
+    void $ writeArray g_odata bi x
 
   readVolatileArray smem tid
 
