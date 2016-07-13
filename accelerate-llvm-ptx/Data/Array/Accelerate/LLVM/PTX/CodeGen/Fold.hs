@@ -202,9 +202,10 @@ reduceWarpShfl combine input =
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
 --
 reduceWarpSMem
-    :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    :: DeviceProperties
+    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> IRArray (Vector e)                                       -- ^ values in shared memory buffer to reduce
     -> CodeGen (IR e)                                           -- ^ final result
-reduceWarpSMem combine smem =
+reduceWarpSMem dev combine smem =
   error "TODO: PTX.reduceWarpSMem"
 
