@@ -35,9 +35,9 @@ import qualified LLVM.General.AST.Name                          as AST
 -- accelerate
 import LLVM.General.AST.Type.Name                               ( Label(..) )
 import LLVM.General.AST.Type.Terminator                         ( Terminator(..) )
+import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -104,7 +104,7 @@ nvvmReflectPass_mdl =
     moduleDefinitions = [GlobalDefinition $ functionDefaults
       { name                 = AST.Name "__nvvm_reflect"
       , returnType           = downcast (integralType :: IntegralType Int32)
-      , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )
+      , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name (Ptr Int8))], False )
 #if MIN_VERSION_llvm_general(3,5,0)
       , G.functionAttributes = map Right [NoUnwind, ReadNone, AlwaysInline]
 #else
@@ -137,7 +137,7 @@ instance Libdevice AST.Module where
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_mdl   -- 2.0, 2.1
-      (3,n) | n < 5     -> libdevice_30_mdl   -- 3.0, 3.2
+      (3,x) | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
             | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
       (5,_)             -> libdevice_50_mdl   -- 5.0
       _                 -> $internalError "libdevice" "no binary for this architecture"
@@ -146,7 +146,7 @@ instance Libdevice (String, ByteString) where
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_bc    -- 2.0, 2.1
-      (3,n) | n < 5     -> libdevice_30_bc    -- 3.0, 3.2
+      (3,x) | x < 5     -> libdevice_30_bc    -- 3.0, 3.2
             | otherwise -> libdevice_35_bc    -- 3.5, 3.7
       (5,_)             -> libdevice_50_bc    -- 5.0
       _                 -> $internalError "libdevice" "no binary for this architecture"

@@ -33,7 +33,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 ) where
 
 import Prelude                                                          as P
-import Foreign.Ptr                                                      ( Ptr )
 import Control.Monad                                                    ( void )
 
 -- llvm
@@ -44,13 +43,13 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
 import qualified LLVM.General.AST.Name                                  as LLVM
 import qualified LLVM.General.AST.Type                                  as LLVM
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector, eltType )
 
@@ -73,7 +72,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
 --
 specialPTXReg :: Label -> CodeGen (IR Int32)
 specialPTXReg f =
-  call (Body (Just scalarType) f) [NoUnwind, ReadNone]
+  call (Body type' f) [NoUnwind, ReadNone]
 
 blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen (IR Int32)
 blockDim  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
@@ -127,7 +126,7 @@ gangParam =
 -- | Call a builtin CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen ()
-barrier f = void $ call (Body Nothing f) [NoUnwind, ReadNone]
+barrier f = void $ call (Body VoidType f) [NoUnwind, ReadNone]
 
 
 -- | Wait until all threads in the thread block have reached this point and all
@@ -174,7 +173,7 @@ initialiseSharedMemory = do
     , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
     , LLVM.name      = LLVM.Name "__shared__"
     }
-  return $ PtrOperand $ ConstantOperand $ GlobalReference (Just scalarType) "__shared__"
+  return $ ConstantOperand $ GlobalReference type' "__shared__"
 
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
@@ -194,20 +193,23 @@ sharedMem (IR (OP_Int n)) moffset = do
         --      out in order to satisfy the types is somewhat inelegant, they
         --      cost us no cycles (at runtime; the optimiser does work removing
         --      adjacent casts)
-        s <- instr' $ PtrCast t as p
+        s <- instr' $ PtrCast (PtrPrimType t as) p
         q <- instr' $ GetElementPtr s [n]
-        r <- instr' $ PtrCast scalarType as q
-        let s' = case s of    -- XXX: This is a hack because we can't properly represent pointer types
-                   LocalReference _ (Name x)   -> LocalReference t (Name x)
-                   LocalReference _ (UnName x) -> LocalReference t (UnName x)
-                   _                           -> $internalError "sharedMem" "@tmcdonell: fix the type hierarchy"
+        r <- instr' $ PtrCast (PtrPrimType scalarType as) q
+        -- This is a hack because we can't easily create an 'EltRepr (Ptr a)'
+        -- type and associated encoding with operands, since we don't have the
+        -- appropriate TupleType proof object.
+        let s' = case s of
+                   LocalReference _ (Name x)   -> LocalReference (PrimType (ScalarPrimType t)) (Name x)
+                   LocalReference _ (UnName x) -> LocalReference (PrimType (ScalarPrimType t)) (UnName x)
+                   _                           -> $internalError "sharedMem" "unexpected global reference"
         return (r, ir' t s')
       go (PairTuple t2 t1) p = do
         (p1, ad1) <- go t1 p
         (p2, ad2) <- go t2 p1
         return $ (p2, OP_Pair ad2 ad1)
 
-      as      = Just $ AddrSpace 3
+      as      = AddrSpace 3
       zero    = scalar scalarType 0
       offset  = maybe zero (op integralType) moffset
   --
@@ -237,7 +239,7 @@ makeKernel name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
   addMetadata "nvvm.annotations"
-    [ Just . MetadataOperand       $ ConstantOperand (GlobalReference Nothing (Name l))
+    [ Just . MetadataOperand       $ ConstantOperand (GlobalReference VoidType (Name l))
     , Just . MetadataStringOperand $ "kernel"
     , Just . MetadataOperand       $ scalar scalarType (1::Int)
     ]

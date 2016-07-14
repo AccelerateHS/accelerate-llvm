@@ -1,17 +1,6 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE IncoherentInstances  #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE MagicHash            #-}
-{-# LANGUAGE OverlappingInstances #-}
-{-# LANGUAGE RoleAnnotations      #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GADTs             #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Representation
 -- Copyright   : [2015] Trevor L. McDonell
@@ -22,194 +11,413 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Representation
-  where
+module LLVM.General.AST.Type.Representation (
 
-import Data.Bits
-import Data.Int
-import Data.Proxy
-import Data.Word
-import Foreign.C.Types
+  module LLVM.General.AST.Type.Representation,
+  module Data.Array.Accelerate.Type,
+  Ptr,
+  AddrSpace(..),
 
-import GHC.Base
-import GHC.Ptr
-import GHC.TypeLits
+) where
 
-import LLVM.General.AST.Type.Name
+import Data.Array.Accelerate.Type
 
-import qualified LLVM.General.AST.Type                          as LLVM
-import qualified LLVM.General.AST.AddrSpace                     as LLVM
-import qualified LLVM.General.AST.Name                          as LLVM
+import LLVM.General.AST.Type.AddrSpace
+
+import Foreign.Ptr
+import Text.Printf
 
 
+-- Witnesses to observe the LLVM type hierarchy:
+--
 -- <http://llvm.org/docs/LangRef.html#type-system>
 --
--- IsType
+-- Type
 --   * void
 --   * labels & metadata
 --   * function types
 --   * first class types (basic types)
 --      * primitive types (single value types, things that go in registers)
---          * multi
---          * atomic
+--          * multi (SIMD vectors of primitive types: pointer and single values)
+--          * single value types
 --              * int
 --              * float
---              * ptr   (any first-class or function type)
+--              * ptr (any first-class or function type)
 --      * aggregate types
 --          * (static) array
 --          * [opaque] structure
 --
-
--- | The 'IsType' class classifies all Haskell types that have a representation
--- in LLVM.
+-- We actually don't want to encode this hierarchy as shown above, since it is
+-- not precise enough for our purposes. For example, the `Add` instruction
+-- operates on operands of integer type or vector (multi) of integer types, so
+-- we would probably prefer to add multi-types as a sub-type of IntegralType,
+-- FloatingType, etc...
 --
+-- Furthermore, we really only need to extend Accelerate's existing type
+-- hierarchy with Void and pointers to scalar types.
+--
+
+data Type a where
+  VoidType  ::               Type ()
+  PrimType  :: PrimType a -> Type a
+
+data PrimType a where
+  PtrPrimType     :: ScalarType a -> AddrSpace -> PrimType (Ptr a)  -- TLM: volatility??
+  ScalarPrimType  :: ScalarType a -> PrimType a
+
+
+-- | All types
+--
+
 class IsType a where
-  llvmType :: a -> LLVM.Type
+  type' :: Type a
 
 instance IsType () where
-  llvmType _ = LLVM.VoidType
+  type' = VoidType
 
-instance IsType (Name a) where
-  llvmType (Name s)   = LLVM.NamedTypeReference (LLVM.Name s)
-  llvmType (UnName n) = LLVM.NamedTypeReference (LLVM.UnName n)
+instance IsType Int where
+  type' = PrimType primType
+
+instance IsType Int8 where
+  type' = PrimType primType
+
+instance IsType Int16 where
+  type' = PrimType primType
+
+instance IsType Int32 where
+  type' = PrimType primType
+
+instance IsType Int64 where
+  type' = PrimType primType
+
+instance IsType Word where
+  type' = PrimType primType
+
+instance IsType Word8 where
+  type' = PrimType primType
+
+instance IsType Word16 where
+  type' = PrimType primType
+
+instance IsType Word32 where
+  type' = PrimType primType
+
+instance IsType Word64 where
+  type' = PrimType primType
+
+instance IsType CShort where
+  type' = PrimType primType
+
+instance IsType CUShort where
+  type' = PrimType primType
+
+instance IsType CInt where
+  type' = PrimType primType
+
+instance IsType CUInt where
+  type' = PrimType primType
+
+instance IsType CLong where
+  type' = PrimType primType
+
+instance IsType CULong where
+  type' = PrimType primType
+
+instance IsType CLLong where
+  type' = PrimType primType
+
+instance IsType CULLong where
+  type' = PrimType primType
+
+instance IsType Float where
+  type' = PrimType primType
+
+instance IsType Double where
+  type' = PrimType primType
+
+instance IsType CFloat where
+  type' = PrimType primType
+
+instance IsType CDouble where
+  type' = PrimType primType
+
+instance IsType Bool where
+  type' = PrimType primType
+
+instance IsType Char where
+  type' = PrimType primType
+
+instance IsType CChar where
+  type' = PrimType primType
+
+instance IsType CSChar where
+  type' = PrimType primType
+
+instance IsType CUChar where
+  type' = PrimType primType
+
+instance IsType (Ptr Int) where
+  type' = PrimType primType
+
+instance IsType (Ptr Int8) where
+  type' = PrimType primType
+
+instance IsType (Ptr Int16) where
+  type' = PrimType primType
+
+instance IsType (Ptr Int32) where
+  type' = PrimType primType
+
+instance IsType (Ptr Int64) where
+  type' = PrimType primType
+
+instance IsType (Ptr Word) where
+  type' = PrimType primType
+
+instance IsType (Ptr Word8) where
+  type' = PrimType primType
+
+instance IsType (Ptr Word16) where
+  type' = PrimType primType
+
+instance IsType (Ptr Word32) where
+  type' = PrimType primType
+
+instance IsType (Ptr Word64) where
+  type' = PrimType primType
+
+instance IsType (Ptr CShort) where
+  type' = PrimType primType
+
+instance IsType (Ptr CUShort) where
+  type' = PrimType primType
+
+instance IsType (Ptr CInt) where
+  type' = PrimType primType
+
+instance IsType (Ptr CUInt) where
+  type' = PrimType primType
+
+instance IsType (Ptr CLong) where
+  type' = PrimType primType
+
+instance IsType (Ptr CULong) where
+  type' = PrimType primType
+
+instance IsType (Ptr CLLong) where
+  type' = PrimType primType
+
+instance IsType (Ptr CULLong) where
+  type' = PrimType primType
+
+instance IsType (Ptr Float) where
+  type' = PrimType primType
+
+instance IsType (Ptr Double) where
+  type' = PrimType primType
+
+instance IsType (Ptr CFloat) where
+  type' = PrimType primType
+
+instance IsType (Ptr CDouble) where
+  type' = PrimType primType
+
+instance IsType (Ptr Bool) where
+  type' = PrimType primType
+
+instance IsType (Ptr Char) where
+  type' = PrimType primType
+
+instance IsType (Ptr CChar) where
+  type' = PrimType primType
+
+instance IsType (Ptr CSChar) where
+  type' = PrimType primType
+
+instance IsType (Ptr CUChar) where
+  type' = PrimType primType
 
 
--- Function types
--- --------------
+-- | All primitive types
 --
---   * http://hackage.haskell.org/package/ivory-0.1.0.0/docs/src/Ivory-Language-Proc.html#Proc
---
---   * How we do it with sharing recovery
---
 
-class FunType a where
-  funType :: a -> LLVM.Type
+class IsPrim a where
+  primType :: PrimType a
+
+instance IsPrim Int where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Int8 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Int16 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Int32 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Int64 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Word where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Word8 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Word16 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Word32 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Word64 where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CShort where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CUShort where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CInt where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CUInt where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CLong where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CULong where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CLLong where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CULLong where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Float where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Double where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CFloat where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CDouble where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Bool where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim Char where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CChar where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CSChar where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim CUChar where
+  primType = ScalarPrimType scalarType
+
+instance IsPrim (Ptr Int) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Int8) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Int16) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Int32) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Int64) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Word) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Word8) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Word16) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Word32) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Word64) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CShort) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CUShort) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CInt) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CUInt) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CLong) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CULong) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CLLong) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CULLong) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Float) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Double) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CFloat) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CDouble) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Bool) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr Char) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CChar) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CSChar) where
+  primType = PtrPrimType scalarType defaultAddrSpace
+
+instance IsPrim (Ptr CUChar) where
+  primType = PtrPrimType scalarType defaultAddrSpace
 
 
--- First-class types
--- -----------------
+instance Show (Type a) where
+  show VoidType     = "()"
+  show (PrimType t) = show t
 
-class BasicType a where
-  basicType :: a -> LLVM.Type
-
-instance BasicType a => IsType a where
-  llvmType = basicType
-
-instance SingleValueType a => BasicType a where
-  basicType = singleValueType
-
-
--- Primitive types
--- ---------------
-
-class SingleValueType a where
-  singleValueType :: a -> LLVM.Type
-
-instance AtomicType a => SingleValueType a where
-  singleValueType = atomicType
-
-
-class AtomicType a where
-  atomicType :: a -> LLVM.Type
-
-instance AtomicType Int8    where atomicType _ = LLVM.IntegerType 8
-instance AtomicType Int16   where atomicType _ = LLVM.IntegerType 16
-instance AtomicType Int32   where atomicType _ = LLVM.IntegerType 32
-instance AtomicType Int64   where atomicType _ = LLVM.IntegerType 64
-instance AtomicType Word8   where atomicType _ = LLVM.IntegerType 8
-instance AtomicType Word16  where atomicType _ = LLVM.IntegerType 16
-instance AtomicType Word32  where atomicType _ = LLVM.IntegerType 32
-instance AtomicType Word64  where atomicType _ = LLVM.IntegerType 64
-instance AtomicType Char    where atomicType _ = LLVM.IntegerType 32
-instance AtomicType Bool    where atomicType _ = LLVM.IntegerType 1
-
-instance AtomicType CShort  where atomicType _ = LLVM.IntegerType 16
-instance AtomicType CUShort where atomicType _ = LLVM.IntegerType 16
-instance AtomicType CInt    where atomicType _ = LLVM.IntegerType 32
-instance AtomicType CUInt   where atomicType _ = LLVM.IntegerType 32
-instance AtomicType CLLong  where atomicType _ = LLVM.IntegerType 64
-instance AtomicType CULLong where atomicType _ = LLVM.IntegerType 64
-instance AtomicType CChar   where atomicType _ = LLVM.IntegerType 8
-instance AtomicType CUChar  where atomicType _ = LLVM.IntegerType 8
-instance AtomicType CSChar  where atomicType _ = LLVM.IntegerType 8
-
-instance AtomicType Float   where atomicType _ = LLVM.FloatingPointType 32 LLVM.IEEE
-instance AtomicType CFloat  where atomicType _ = LLVM.FloatingPointType 32 LLVM.IEEE
-instance AtomicType Double  where atomicType _ = LLVM.FloatingPointType 64 LLVM.IEEE
-instance AtomicType CDouble where atomicType _ = LLVM.FloatingPointType 64 LLVM.IEEE
-
-instance AtomicType Int  where
-  atomicType _ = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined::Int)) |] )
-
-instance AtomicType Word where
-  atomicType _ = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined::Word)) |] )
-
-instance AtomicType CLong where
-  atomicType _ = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined::CLong)) |] )
-
-instance AtomicType CULong where
-  atomicType _ = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined::CULong)) |] )
-
-
--- Pointers to objects in memory. Pointers are primitive types, but can point to
--- non-primitive derived types such as SIMD vectors as well as primitive types.
---
-instance BasicType t => AtomicType (Ptr t) where
-  atomicType _ = LLVM.PointerType (basicType (undefined :: t)) (LLVM.AddrSpace 0)
-
--- instance FunType f => AtomicType (Ptr f) where
---   atomicType _ = LLVM.PointerType (funType (undefined :: f)) (LLVM.AddrSpace 0)
-
-
--- | A @'RegionPtr' r a@ is a pointer into a specific memory location 'a' in
--- address space 'r'. The default address space is number zero. The semantics of
--- non-zero address spaces are target specific.
---
-type role RegionPtr representational representational
-data RegionPtr r a = RegionPtr Addr#
-  deriving (Eq, Ord)
-
-class Region r where
-  llvmAddrSpace :: r -> LLVM.AddrSpace
-
-instance (Region r, BasicType t) => AtomicType (RegionPtr r t) where
-  atomicType _ = LLVM.PointerType
-                   (basicType (undefined :: t))
-                   (llvmAddrSpace (undefined :: r))
-
-ptrToRegionPtr :: Ptr a -> RegionPtr r a
-ptrToRegionPtr (Ptr addr#) = RegionPtr addr#
-
-regionPtrToPtr :: RegionPtr r a -> Ptr a
-regionPtrToPtr (RegionPtr addr#) = Ptr addr#
-
--- data Shared
--- instance Region Shared where
---   llvmAddrSpace _ = LLVM.AddrSpace 3
-
-
--- SIMD vector types
---
-data Multi :: Nat -> * -> * where       -- FIXME: SomeNat ??
-  Multi :: (AtomicType a, KnownNat n, 1 <= n) => Multi n a
-
-instance (AtomicType a, KnownNat n, 1 <= n) => SingleValueType (Multi n a) where
-  singleValueType _ = LLVM.VectorType
-                        (fromIntegral (natVal (Proxy :: Proxy n)))
-                        (atomicType (undefined :: a))
-
-
--- Aggregate types
---
-
--- Static arrays are a simple derived type that arranges elements sequentially
--- in memory.
---
-data Array :: Nat -> * -> * where       -- FIXME: SomeNat ??
-  Array :: (BasicType a, KnownNat n) => Array n a
-
-instance (KnownNat n, BasicType a) => BasicType (Array n a) where
-  basicType _ = LLVM.ArrayType
-                  (fromIntegral (natVal (Proxy :: Proxy n)))
-                  (basicType (undefined :: a))
+instance Show (PrimType a) where
+  show (ScalarPrimType t)            = show t
+  show (PtrPrimType t (AddrSpace n)) = printf "Ptr%s %s" a p
+    where
+      p             = show t
+      a | n == 0    = ""
+        | otherwise = printf "[addrspace %d]" n
+      -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
+      --   | otherwise           = show t
 

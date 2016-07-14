@@ -13,8 +13,16 @@
 module LLVM.General.AST.Type.AddrSpace (
 
   AddrSpace(..),
+  defaultAddrSpace,
 
 ) where
 
 import LLVM.General.AST.AddrSpace
+
+
+-- | The default address space is number zero. The semantics of non-zero address
+-- spaces are target dependent.
+--
+defaultAddrSpace :: AddrSpace
+defaultAddrSpace = AddrSpace 0
 
