@@ -83,9 +83,10 @@ shapeName (UnName n) i = shapeName (Name (show n)) i
 
 -- | Names of array data elements
 --
-irArray :: forall sh e. (Shape sh, Elt e)
-        => Name (Array sh e)
-        -> IRArray (Array sh e)
+irArray
+    :: forall sh e. (Shape sh, Elt e)
+    => Name (Array sh e)
+    -> IRArray (Array sh e)
 irArray n
   = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
             (travTypeToIR (undefined::e)  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
@@ -103,9 +104,10 @@ mutableArray name =
   , arrayParam name )
 
 
-travTypeToList :: forall t a. Elt t
+travTypeToList
+    :: forall t a. Elt t
     => t {- dummy -}
-    -> (forall t'. ScalarType t' -> Int -> a)
+    -> (forall s. ScalarType s -> Int -> a)
     -> [a]
 travTypeToList t f = snd $ go (eltType t) 0
   where
@@ -119,9 +121,9 @@ travTypeToList t f = snd $ go (eltType t) 0
                              (i2, r2 ++ r1)
 
 travTypeToIR
-    :: forall t. Elt t
+    :: Elt t
     => t {- dummy -}
-    -> (forall t'. ScalarType t' -> Int -> Operand t')
+    -> (forall s. ScalarType s -> Int -> Operand s)
     -> IR t
 travTypeToIR t f = IR . snd $ go (eltType t) 0
   where
@@ -133,6 +135,24 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
                                  (i2, r2) = go t2 i1
                              in
                              (i2, OP_Pair r2 r1)
+
+-- travTypeToIRPtr
+--     :: forall t. Elt t
+--     => AddrSpace
+--     -> t {- dummy -}
+--     -> (forall s. ScalarType s -> Int -> Operand (Ptr s))
+--     -> IR (Ptr t)
+-- travTypeToIRPtr as t f = IR . snd $ go (eltType t) 0
+--   where
+--     -- DANGER: [2] must traverse in the same order as [1]
+--     -- go :: TupleType s -> Int -> (Int, Operands (Ptr s))
+--     go :: TupleType (EltRepr s) -> Int -> (Int, Operands (EltRepr (Ptr s)))   -- TLM: ugh ):
+--     go UnitTuple         i = (i,   OP_Unit)
+--     go (SingleTuple t')  i = (i+1, ir' (PtrPrimType t' as) $ f t' i)
+--     go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+--                                  (i2, r2) = go t2 i1
+--                              in
+--                              (i2, OP_Pair r2 r1)
 
 
 -- Function parameters

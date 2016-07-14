@@ -245,13 +245,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- refer to it.
 --
 instr :: Instruction a -> CodeGen (IR a)
--- instr ins = ir (typeOf ins) <$> instr' ins
-instr ins = do
-  ops <- instr' ins
-  case typeOf ins of
-    VoidType                    -> return $ IR OP_Unit
-    PrimType (ScalarPrimType t) -> return $ ir t ops
-    PrimType (PtrPrimType _ _)  -> $internalError "instr" "unexpected pointer"
+instr ins = ir (typeOf ins) <$> instr' ins
 
 instr' :: Instruction a -> CodeGen (Operand a)
 instr' ins = do

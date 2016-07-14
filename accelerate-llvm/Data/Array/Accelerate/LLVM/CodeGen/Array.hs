@@ -1,6 +1,5 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -31,7 +30,6 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -94,8 +92,8 @@ writeArrayPrim volatile arr i v = do
   return ()
 
 
--- TODO: Finish IR/Operands for Ptr types, change IRArray to store the payload
---       operands with their real (pointer) types.
+-- TODO: We should have IRArray store the array payloads with pointer type,
+--       rather than faking it here.
 --
 ptr :: ScalarType t -> Operands t -> Operand (Ptr t)
 ptr t (op' t -> x) =
@@ -107,5 +105,5 @@ ptr t (op' t -> x) =
   case x of
     LocalReference _ n                    -> LocalReference ptr_t (rename n)
     ConstantOperand (GlobalReference _ n) -> ConstantOperand (GlobalReference ptr_t (rename n))
-    ConstantOperand ScalarConstant{}      -> $internalError "ptr" "unexpected argument to dodgy hack"
+    ConstantOperand ScalarConstant{}      -> error "unexpected scalar constant"
 

@@ -196,10 +196,13 @@ sharedMem (IR (OP_Int n)) moffset = do
         s <- instr' $ PtrCast (PtrPrimType t as) p
         q <- instr' $ GetElementPtr s [n]
         r <- instr' $ PtrCast (PtrPrimType scalarType as) q
-        let s' = case s of    -- XXX: This is a hack because we can't properly represent pointer types
+        -- This is a hack because we can't easily create an 'EltRepr (Ptr a)'
+        -- type and associated encoding with operands, since we don't have the
+        -- appropriate TupleType proof object.
+        let s' = case s of
                    LocalReference _ (Name x)   -> LocalReference (PrimType (ScalarPrimType t)) (Name x)
                    LocalReference _ (UnName x) -> LocalReference (PrimType (ScalarPrimType t)) (UnName x)
-                   _                           -> $internalError "sharedMem" "@tmcdonell: finish fixing the type hierarchy"
+                   _                           -> $internalError "sharedMem" "unexpected global reference"
         return (r, ir' t s')
       go (PairTuple t2 t1) p = do
         (p1, ad1) <- go t1 p
