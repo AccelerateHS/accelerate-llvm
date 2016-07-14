@@ -12,10 +12,8 @@
 module LLVM.General.AST.Type.Constant
   where
 
-import Data.Array.Accelerate.Type
-
 import LLVM.General.AST.Type.Name
--- import LLVM.General.AST.Type.Representation
+import LLVM.General.AST.Type.Representation
 
 
 -- | Although constant expressions and instructions have many similarities,
@@ -33,7 +31,7 @@ data Constant a where
                         -> a
                         -> Constant a
 
-  GlobalReference       :: Maybe (ScalarType a)
+  GlobalReference       :: Type a
                         -> Name a
                         -> Constant a
 

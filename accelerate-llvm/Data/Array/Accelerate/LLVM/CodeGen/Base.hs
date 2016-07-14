@@ -30,14 +30,15 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
 ) where
 
+import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
@@ -59,10 +60,10 @@ import qualified Data.IntMap                                            as IM
 -- ----------
 
 local :: ScalarType a -> Name a -> IR a
-local t x = ir t (LocalReference t x)
+local t x = ir t (LocalReference (PrimType (ScalarPrimType t)) x)
 
 global :: ScalarType a -> Name a -> IR a
-global t x = ir t (ConstantOperand (GlobalReference (Just t) x))
+global t x = ir t (ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) x))
 
 
 -- Generating names for things
@@ -83,11 +84,11 @@ shapeName (UnName n) i = shapeName (Name (show n)) i
 -- | Names of array data elements
 --
 irArray :: forall sh e. (Shape sh, Elt e)
-          => Name (Array sh e)
-          -> IRArray (Array sh e)
+        => Name (Array sh e)
+        -> IRArray (Array sh e)
 irArray n
-  = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference t (shapeName n i)))
-            (travTypeToIR (undefined::e)  (\t i -> LocalReference t (arrayName n i)))
+  = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
+            (travTypeToIR (undefined::e)  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
 
 
 -- | Generate typed local names for array data components as well as function
@@ -154,10 +155,10 @@ call f attrs = do
 
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
-scalarParameter t x = downcast (ScalarParameter t x)
+scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
 
-ptrParameter :: ScalarType t -> Name t -> LLVM.Parameter
-ptrParameter t x = downcast (PtrParameter t x Nothing)
+ptrParameter :: ScalarType t -> Name (Ptr t) -> LLVM.Parameter
+ptrParameter t x = downcast (Parameter (PtrPrimType t defaultAddrSpace) x)
 
 
 -- | Unpack the array environment into a set of input parameters to a function.
