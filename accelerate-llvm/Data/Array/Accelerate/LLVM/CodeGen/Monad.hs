@@ -51,7 +51,6 @@ import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar                                ( Elt, eltType )
 import qualified Data.Array.Accelerate.Debug                            as Debug
@@ -61,6 +60,7 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 import LLVM.General.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
@@ -233,7 +233,7 @@ fresh = IR <$> go (eltType (undefined::a))
     go :: TupleType t -> CodeGen (Operands t)
     go UnitTuple         = return OP_Unit
     go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (SingleTuple t)   = ir' t . LocalReference t <$> freshName
+    go (SingleTuple t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -250,7 +250,7 @@ instr ins = ir (typeOf ins) <$> instr' ins
 
 instr' :: Instruction a -> CodeGen (Operand a)
 instr' ins = do
-  name  <- freshName
+  name <- freshName
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> $internalError "instr" "empty block chain"
@@ -318,15 +318,17 @@ phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b)
 phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
-      update b  = b { instructions = downcast (crit := Phi ty [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
-      ty        = case incoming of
+      update b  = b { instructions = downcast (crit := Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
+      t         = case incoming of
                     []        -> $internalError "phi" "no incoming values specified"
-                    (o,_):_   -> typeOf o
+                    (o,_):_   -> case typeOf o of
+                                   VoidType   -> $internalError "phi" "operand has type void"
+                                   PrimType x -> x
   in
   state $ \s ->
     case Seq.findIndexR (cmp target) (blockChain s) of
       Nothing -> $internalError "phi" "unknown basic block"
-      Just i  -> ( LocalReference ty crit
+      Just i  -> ( LocalReference (PrimType t) crit
                  , s { blockChain = Seq.adjust update i (blockChain s) } )
 
 

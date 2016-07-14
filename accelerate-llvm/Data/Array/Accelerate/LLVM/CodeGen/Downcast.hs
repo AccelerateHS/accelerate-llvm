@@ -26,7 +26,6 @@ import Prelude                                                  hiding ( Orderin
 import Data.Bits
 import Foreign.C.Types
 
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 
@@ -37,9 +36,9 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 import LLVM.General.AST.Type.Terminator
 
-import qualified LLVM.General.AST.AddrSpace                     as L
 import qualified LLVM.General.AST.Attribute                     as L
 import qualified LLVM.General.AST.CallingConvention             as L
 import qualified LLVM.General.AST.Constant                      as LC
@@ -156,7 +155,7 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (LNot x)             = L.Xor (downcast x) (downcast (scalar scalarType True)) md
   downcast (Load _ v p)         = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)        = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
-  downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- in bounds??
+  downcast (GetElementPtr n i)  = L.GetElementPtr False (downcast n) (downcast i) md            -- TLM: in bounds??
   downcast (Trunc _ t x)        = L.Trunc (downcast x) (downcast t) md
   downcast (FTrunc _ t x)       = L.FPTrunc (downcast x) (downcast t) md
   downcast (Ext t t' x)
@@ -170,6 +169,7 @@ instance Downcast (Instruction a) L.Instruction where
     | signed t                  = L.SIToFP (downcast x) (downcast t') md
     | otherwise                 = L.UIToFP (downcast x) (downcast t') md
   downcast (BitCast t x)        = L.BitCast (downcast x) (downcast t) md
+  downcast (PtrCast t x)        = L.BitCast (downcast x) (downcast t) md
   downcast (Phi t incoming)     = L.Phi (downcast t) (downcast incoming) md
   downcast (Select _ p x y)     = L.Select (downcast p) (downcast x) (downcast y) md
   downcast (Call f attrs)       = L.Call tailcall L.C [] (downcast f) (downcast f) (downcast attrs) md
@@ -197,9 +197,9 @@ instance Downcast (Instruction a) L.Instruction where
         ui GE = IP.UGE
     in
     case t of
-      NumScalarType FloatingNumType{}   -> L.FCmp (fp p) (downcast x) (downcast y) md
-      _ | signed t                      -> L.ICmp (si p) (downcast x) (downcast y) md
-        | otherwise                     -> L.ICmp (ui p) (downcast x) (downcast y) md
+      NumScalarType FloatingNumType{} -> L.FCmp (fp p) (downcast x) (downcast y) md
+      _ | signed t                    -> L.ICmp (si p) (downcast x) (downcast y) md
+        | otherwise                   -> L.ICmp (ui p) (downcast x) (downcast y) md
 
 instance Downcast Volatile Bool where
   downcast Volatile    = True
@@ -247,8 +247,8 @@ instance Downcast (Constant a) LC.Constant where
 -- -----------------------------
 
 instance Downcast (Operand a) L.Operand where
-  downcast (LocalReference t n)      = L.LocalReference (downcast t) (downcast n)
-  downcast (ConstantOperand c)       = L.ConstantOperand (downcast c)
+  downcast (LocalReference t n) = L.LocalReference (downcast t) (downcast n)
+  downcast (ConstantOperand c)  = L.ConstantOperand (downcast c)
 
 
 -- LLVM.General.AST.Type.Metadata
@@ -268,26 +268,28 @@ instance Downcast MetadataNode L.MetadataNode where
 -- --------------------------------
 
 instance Downcast (Terminator a) L.Terminator where
-  downcast Ret                  = L.Ret Nothing md
-  downcast (RetVal x)           = L.Ret (Just (downcast x)) md
-  downcast (Br l)               = L.Br (downcast l) md
-  downcast (CondBr p t f)       = L.CondBr (downcast p) (downcast t) (downcast f) md
-  downcast (Switch p d a)       = L.Switch (downcast p) (downcast d) (downcast a) md
+  downcast Ret            = L.Ret Nothing md
+  downcast (RetVal x)     = L.Ret (Just (downcast x)) md
+  downcast (Br l)         = L.Br (downcast l) md
+  downcast (CondBr p t f) = L.CondBr (downcast p) (downcast t) (downcast f) md
+  downcast (Switch p d a) = L.Switch (downcast p) (downcast d) (downcast a) md
 
 
 -- LLVM.General.AST.Type.Name
 -- --------------------------
 
 instance Downcast Label L.Name where
-  downcast (Label l)    = L.Name l
+  downcast (Label l) = L.Name l
 
 
 -- LLVM.General.AST.Type.Global
 -- ----------------------------
 
 instance Downcast (Parameter a) L.Parameter where
-  downcast (ScalarParameter t x) = L.Parameter (downcast t)                                 (downcast x) []
-  downcast (PtrParameter t x)    = L.Parameter (L.PointerType (downcast t) (L.AddrSpace 0)) (downcast x) [L.NoAlias, L.NoCapture]       -- TLM: alignment!
+  downcast (Parameter t x) = L.Parameter (downcast t) (downcast x) attrs
+    where
+      attrs | PtrPrimType{} <- t = [L.NoAlias, L.NoCapture] -- TLM: alignment?
+            | otherwise          = []
 
 -- Function -> callable operands (for Call instruction)
 --
@@ -336,13 +338,19 @@ instance Downcast GroupID L.GroupID where
   downcast (GroupID n) = L.GroupID n
 #endif
 
+-- LLVM.General.AST.Type.Representation
+-- ------------------------------------
+
+instance Downcast (Type a) L.Type where
+  downcast VoidType     = L.VoidType
+  downcast (PrimType t) = downcast t
+
+instance Downcast (PrimType a) L.Type where
+  downcast (PtrPrimType t a)  = L.PointerType (downcast t) a
+  downcast (ScalarPrimType t) = downcast t
 
 -- Data.Array.Accelerate.Type
 -- --------------------------
-
-instance Downcast (dict a) L.Type => Downcast (Maybe (dict a)) L.Type where
-  downcast (Just t) = downcast t
-  downcast Nothing  = L.VoidType
 
 instance Downcast (ScalarType a) L.Type where
   downcast (NumScalarType t)    = downcast t

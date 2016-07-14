@@ -17,13 +17,10 @@
 module LLVM.General.AST.Type.Instruction
   where
 
+import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Global
-
-import Data.Array.Accelerate.Type
-
-import Foreign.Ptr
+import LLVM.General.AST.Type.Representation
 
 
 -- | Predicate for comparison instruction
@@ -180,8 +177,8 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr :: Operand a            -- Operand (Ptr a), Name a ??
-                -> [Operand Int]
+  GetElementPtr :: Operand (Ptr a)
+                -> [Operand i]
                 -> Instruction (Ptr a)
 
   -- Fence
@@ -239,6 +236,10 @@ data Instruction a where
                 -> Operand a
                 -> Instruction b
 
+  PtrCast       :: PrimType (Ptr b)     -- precondition: same address space
+                -> Operand (Ptr a)
+                -> Instruction (Ptr b)
+
   -- PtrToInt
   -- IntToPtr
   -- AddrSpaceCast
@@ -249,6 +250,8 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#icmp-instruction>
   -- <http://llvm.org/docs/LangRef.html#fcmp-instruction>
   --
+  -- We treat non-scalar types as signed/unsigned integer values.
+  --
   Cmp           :: ScalarType a
                 -> Predicate
                 -> Operand a
@@ -257,7 +260,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#phi-instruction>
   --
-  Phi           :: ScalarType a
+  Phi           :: PrimType a
                 -> [(Operand a, Label)]
                 -> Instruction a
 

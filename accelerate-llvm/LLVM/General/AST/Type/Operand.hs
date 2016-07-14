@@ -16,15 +16,14 @@ module LLVM.General.AST.Type.Operand (
 
 ) where
 
-import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Constant
-
-import Data.Array.Accelerate.Type
+import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Representation
 
 
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'
 --
 data Operand a where
-  LocalReference        :: ScalarType a -> Name a -> Operand a
+  LocalReference        :: Type a -> Name a -> Operand a
   ConstantOperand       :: Constant a -> Operand a
 

@@ -65,8 +65,8 @@ data IRManifest arch aenv a where
 
 data IRArray a where
   IRArray :: (Shape sh, Elt e)
-          => { irArrayShape :: IR sh
-             , irArrayData  :: IR e             -- TLM: local operand name for array(s) containing elements of type 'e'
+          => { irArrayShape :: IR sh    -- Array extent
+             , irArrayData  :: IR e     -- Array payloads (should really be 'Ptr e')
              }
           -> IRArray (Array sh e)
 

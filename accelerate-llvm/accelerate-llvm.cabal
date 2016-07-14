@@ -82,6 +82,7 @@ Library
     Data.Array.Accelerate.LLVM.Util
 
     -- LLVM code generation
+    LLVM.General.AST.Type.AddrSpace
     LLVM.General.AST.Type.Constant
     LLVM.General.AST.Type.Flags
     LLVM.General.AST.Type.Global
@@ -89,6 +90,7 @@ Library
     LLVM.General.AST.Type.Metadata
     LLVM.General.AST.Type.Name
     LLVM.General.AST.Type.Operand
+    LLVM.General.AST.Type.Representation
     LLVM.General.AST.Type.Terminator
 
     -- Scheduler

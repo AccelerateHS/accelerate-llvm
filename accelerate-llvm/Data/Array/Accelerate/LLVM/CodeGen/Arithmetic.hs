@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Maybe(..), ($), (++), (==), undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, ($), (++), (==), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                ( finiteBitSize )
@@ -29,7 +29,6 @@ import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
@@ -39,6 +38,7 @@ import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -66,16 +66,18 @@ negate t x =
     FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (P.negate 1)))
 
 abs :: forall a. NumType a -> IR a -> CodeGen (IR a)
-abs t x =
-  case t of
+abs n x =
+  case n of
     FloatingNumType f                  -> mathf "fabs" f x
     IntegralNumType i
       | unsigned i                     -> return x
       | IntegralDict <- integralDict i ->
-          let t' = NumScalarType t in
+          let p = ScalarPrimType (NumScalarType n)
+              t = PrimType p
+          in
           case finiteBitSize (undefined :: a) of
-            64 -> call (Lam t' (op t x) (Body (Just t') "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam t' (op t x) (Body (Just t') "abs"))   [NoUnwind, ReadNone]
+            64 -> call (Lam p (op n x) (Body t "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam p (op n x) (Body t "abs"))   [NoUnwind, ReadNone]
 
 signum :: forall a. NumType a -> IR a -> CodeGen (IR a)
 signum t x =
@@ -296,13 +298,13 @@ atanh :: FloatingType a -> IR a -> CodeGen (IR a)
 atanh = mathf "atanh"
 
 atan2 :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-atan2 = mathf' "atan2"
+atan2 = mathf2 "atan2"
 
 exp :: FloatingType a -> IR a -> CodeGen (IR a)
 exp = mathf "exp"
 
 fpow :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-fpow = mathf' "pow"
+fpow = mathf2 "pow"
 
 sqrt :: FloatingType a -> IR a -> CodeGen (IR a)
 sqrt = mathf "sqrt"
@@ -331,9 +333,11 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- ------------------------
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isNaN t (op t -> x) = do
+isNaN f (op f -> x) = do
+  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = type'
   name <- intrinsic "isnan"
-  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body (Just scalarType) name)) [NoUnwind, ReadOnly]
+  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
 
@@ -385,13 +389,13 @@ neq = cmp NE
 
 max :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
 max ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmax" f x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
   | otherwise                               = do c <- op scalarType <$> gte ty x y
                                                  binop (flip Select c) ty x y
 
 min :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
 min ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmin" f x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
   | otherwise                               = do c <- op scalarType <$> lte ty x y
                                                  binop (flip Select c) ty x y
 
@@ -580,20 +584,22 @@ unless test doit = do
 -- TLM: We should really be able to construct functions of any arity.
 --
 mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
-mathf n t (op t -> x) = do
-  let st  = NumScalarType (FloatingNumType t)
+mathf n f (op f -> x) = do
+  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = PrimType s
   --
-  name <- lm t n
-  r    <- call (Lam st x (Body (Just st) name)) [NoUnwind, ReadOnly]
+  name <- lm f n
+  r    <- call (Lam s x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
 
-mathf' :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
-mathf' n t (op t -> x) (op t -> y) = do
-  let st = NumScalarType (FloatingNumType t)
+mathf2 :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf2 n f (op f -> x) (op f -> y) = do
+  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = PrimType s
   --
-  name <- lm t n
-  r    <- call (Lam st x (Lam st y (Body (Just st) name))) [NoUnwind, ReadOnly]
+  name <- lm f n
+  r    <- call (Lam s x (Lam s y (Body t name))) [NoUnwind, ReadOnly]
   return r
 
 lm :: FloatingType t -> String -> CodeGen Label
