@@ -180,11 +180,11 @@ initialiseSharedMemory = do
 -- with enough space to contain the given number of elements.
 --
 sharedMem
-    :: forall e. Elt e
-    => IR Int                                 -- number of array elements
-    -> Maybe (IR Int)                         -- #bytes of shared memory the have already been allocated for this kernel (default: zero)
+    :: forall e int. (Elt e, IsIntegral int)
+    => IR int                                 -- number of array elements
+    -> Maybe (IR int)                         -- #bytes of shared memory the have already been allocated for this kernel (default: zero)
     -> CodeGen (IRArray (Vector e))
-sharedMem (IR (OP_Int n)) moffset = do
+sharedMem n@(op integralType -> n') moffset = do
   let
       go :: TupleType s -> Operand (Ptr Word8) -> CodeGen (Operand (Ptr Word8), Operands s)
       go UnitTuple       p = return (p, OP_Unit)
@@ -194,7 +194,7 @@ sharedMem (IR (OP_Int n)) moffset = do
         --      cost us no cycles (at runtime; the optimiser does work removing
         --      adjacent casts)
         s <- instr' $ PtrCast (PtrPrimType t as) p
-        q <- instr' $ GetElementPtr s [n]
+        q <- instr' $ GetElementPtr s [n']
         r <- instr' $ PtrCast (PtrPrimType scalarType as) q
         -- This is a hack because we can't easily create an 'EltRepr (Ptr a)'
         -- type and associated encoding with operands, since we don't have the
@@ -215,8 +215,9 @@ sharedMem (IR (OP_Int n)) moffset = do
   --
   smem   <- initialiseSharedMemory
   ptr    <- instr' $ GetElementPtr smem [offset]
+  IR sz  <- A.fromIntegral integralType (numType :: NumType Int) n
   (_,ad) <- go (eltType (undefined::e)) ptr
-  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit (OP_Int n)
+  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit sz
                    , irArrayData  = IR ad
                    }
 

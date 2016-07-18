@@ -42,7 +42,6 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop as Loop
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base as PTXBase
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
 import Foreign.CUDA.Analysis as CUDA
 
@@ -219,16 +218,16 @@ reduceBlockSMem combine g_idata g_odata = do
   let
     zero = ir numType (num numType 0)
     two  = ir numType (num numType 2)
-  tid  <- A.fromIntegral integralType numType =<< threadIdx
-  bd   <- A.fromIntegral integralType numType =<< blockDim
-  bi   <- A.fromIntegral integralType numType =<< blockIdx
-  ws   <- A.fromIntegral integralType numType =<< PTXBase.warpSize
+  tid  <- threadIdx
+  bd   <- blockDim
+  bi   <- blockIdx
+  ws   <- PTXBase.warpSize
 
   -- declare smem first
   smem <- sharedMem bd Nothing :: CodeGen (IRArray (Vector e))
 
   -- read input data to smem
-  i    <- A.fromIntegral integralType numType =<< globalThreadIdx
+  i    <- globalThreadIdx
   x    <- readArray g_idata i
   writeVolatileArray smem tid x
   __syncthreads
@@ -290,8 +289,7 @@ reduceWarpShfl combine input =
 
 -- roll version
 reduceWarpSMem
-    :: DeviceProperties
-    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> IRArray (Vector e)                                       -- ^ values in shared memory buffer to reduce
     -> CodeGen (IR e)                                           -- ^ final result
 reduceWarpSMem combine smem = do
@@ -299,8 +297,8 @@ reduceWarpSMem combine smem = do
     zero = ir numType (num numType 0)
     two  = ir numType (num numType 2)
   --
-  tid   <- A.fromIntegral integralType numType =<< threadIdx
-  ws    <- A.fromIntegral integralType numType =<< PTXBase.warpSize
+  tid   <- threadIdx
+  ws    <- PTXBase.warpSize
   start <- A.quot integralType ws two
 
   Loop.for start
