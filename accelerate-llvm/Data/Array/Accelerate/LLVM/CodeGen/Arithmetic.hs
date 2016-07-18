@@ -431,6 +431,8 @@ binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dic
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
+-- | Standard if-then-else expression
+
 ifThenElse
     :: Elt a
     => CodeGen (IR Bool)
@@ -456,6 +458,40 @@ ifThenElse test yes no = do
 
   setBlock ifExit
   phi [(tv, tb), (fv, fb)]
+
+
+-- Execute the body only if the first argument evaluates to True
+--
+when :: CodeGen (IR Bool) -> CodeGen() -> CodeGen()
+when test doit = do
+  body <- newBlock "when.body"
+  exit <- newBlock "when.exit"
+
+  p <- test
+  _ <- cbr p body exit
+
+  setBlock body
+  doit
+  _ <- br exit
+
+  setBlock exit
+
+
+-- Execute the body only if the first argument evaluates to False
+--
+unless :: CodeGen (IR Bool) -> CodeGen() -> CodeGen()
+unless test doit = do
+  body <- newBlock "unless.body"
+  exit <- newBlock "unless.exit"
+
+  p <- test
+  _ <- cbr p exit body
+
+  setBlock body
+  doit
+  _ <- br exit
+
+  setBlock exit
 
 
 -- Call a function from the standard C math library. This is a wrapper around
