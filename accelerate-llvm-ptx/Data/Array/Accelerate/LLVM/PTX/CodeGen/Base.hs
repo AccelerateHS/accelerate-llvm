@@ -20,6 +20,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   gridSize, globalThreadIdx,
   gangParam,
 
+  -- Other intrinsics
+  laneId, warpId,
+  laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge,
+
   -- Barriers and synchronisation
   __syncthreads,
   __threadfence_block, __threadfence_grid,
@@ -70,16 +74,29 @@ import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
 
 -- | Read the builtin registers that store CUDA thread and grid identifiers
 --
+-- <https://github.com/llvm-mirror/llvm/blob/master/include/llvm/IR/IntrinsicsNVVM.td>
+--
 specialPTXReg :: Label -> CodeGen (IR Int32)
 specialPTXReg f =
   call (Body type' f) [NoUnwind, ReadNone]
 
 blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen (IR Int32)
-blockDim  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
-gridDim   = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
-threadIdx = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
-blockIdx  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
-warpSize  = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
+gridDim     = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
+threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
+blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
+warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+
+laneId, warpId :: CodeGen (IR Int32)
+laneId      = specialPTXReg "llvm.ptx.read.laneid"
+warpId      = specialPTXReg "llvm.ptx.read.warpid"
+
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
+laneMask_eq = specialPTXReg "llvm.ptx.read.lanemask.eq"
+laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
+laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
+laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
+laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
 
 
 -- | The size of the thread grid
@@ -102,7 +119,7 @@ globalThreadIdx = do
   ntid  <- blockDim
   ctaid <- blockIdx
   tid   <- threadIdx
-
+  --
   u     <- mul numType ntid ctaid
   v     <- add numType tid u
   return v
