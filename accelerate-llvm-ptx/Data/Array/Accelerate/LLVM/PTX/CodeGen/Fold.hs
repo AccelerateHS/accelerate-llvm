@@ -22,14 +22,17 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold (
 ) where
 
 import Data.Typeable
-import Control.Monad hiding (when)
+import Control.Monad                                                ( void )
+
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic as A
+-- accelerate-llvm-*
+import LLVM.General.AST.Type.Representation
+
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -37,13 +40,15 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop as Loop
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop          as Loop
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Context
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base as PTXBase
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 
-import Foreign.CUDA.Analysis as CUDA
+-- cuda
+import Foreign.CUDA.Analysis                                      ( DeviceProperties )
+-- import qualified Foreign.CUDA.Analysis                            as CUDA
 
 
 -- Reduce an array along the innermost dimension. The reduction function must be
@@ -99,7 +104,7 @@ mkFoldAll
     -> Maybe   (IRExp     PTX aenv e)                           -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Scalar e))
-mkFoldAll dev aenv combine mseed IRDelayed{..} =
+mkFoldAll _dev _aenv _combine _mseed IRDelayed{..} =
   error "TODO: PTX.mkFoldAll"
 
 
@@ -221,7 +226,7 @@ reduceBlockSMem combine g_idata g_odata = do
   tid  <- threadIdx
   bd   <- blockDim
   bi   <- blockIdx
-  ws   <- PTXBase.warpSize
+  ws   <- warpSize
 
   -- declare smem first
   smem <- sharedMem bd Nothing :: CodeGen (IRArray (Vector e))
@@ -259,6 +264,7 @@ reduceBlockSMem combine g_idata g_odata = do
 
   readVolatileArray smem tid
 
+
 -- Efficient warp reduction using __shfl_up instruction (compute >= 3.0)
 --
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_shfl.cuh#L310
@@ -270,7 +276,7 @@ reduceWarpShfl
     :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> IR e                                                     -- ^ this thread's input value
     -> CodeGen (IR e)                                           -- ^ final result
-reduceWarpShfl combine input =
+reduceWarpShfl _combine _input =
   error "TODO: PTX.reduceWarpShfl"
 
 
@@ -298,7 +304,7 @@ reduceWarpSMem combine smem = do
     two  = ir numType (num numType 2)
   --
   tid   <- threadIdx
-  ws    <- PTXBase.warpSize
+  ws    <- warpSize
   start <- A.quot integralType ws two
 
   Loop.for start
