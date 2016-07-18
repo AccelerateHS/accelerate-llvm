@@ -9,14 +9,20 @@ packages:
 - 'accelerate-llvm-ptx'
 # - 'accelerate-llvm-multidev'
 
+# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: aed12138a9788ff5d6289d214c84ff6108dc04bd
+    commit: f4a9559f41ec35a820a7b73241c102ec1936c312
   extra-dep: true
 
 - location:
     git:    https://github.com/tmcdonell/cuda.git
-    commit: 28ee2bd8ef94eb0e6231373ee2b5e0c9187bf5c7
+    commit: d4ce36da07f510b7fcc994f86557af7d6b16c8f2
+  extra-dep: true
+
+- location:
+    git:    https://github.com/tmcdonell/nvvm.git
+    commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
   extra-dep: true
 
 extra-deps:
@@ -42,7 +48,7 @@ flags:
     debug: true
   accelerate-llvm-ptx:
     debug: true
-    libnvvm: false
+    nvvm: false
   llvm-general:
     shared-llvm: true
 

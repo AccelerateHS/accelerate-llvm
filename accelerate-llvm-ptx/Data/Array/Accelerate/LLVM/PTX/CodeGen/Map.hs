@@ -15,10 +15,10 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
-import Prelude                                                  hiding ( fromIntegral )
+import Prelude                                                      hiding ( fromIntegral )
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Elt )
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -30,7 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
-import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
+import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
 
 
 -- Apply a unary function to each element of an array. Each thread processes

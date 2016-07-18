@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Data
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -40,12 +41,14 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Trans
 import Data.Typeable
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
+import Prelude
 
 
 class Async arch => Remote arch where
@@ -191,15 +194,16 @@ useRemoteAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch arrs)
 useRemoteAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
           s <- spawn
           useRemoteR n (Just s) ad
           after stream =<< checkpoint s
+          return ad
   --
   event  <- checkpoint stream   -- TLM: Assuming that adding events to a stream counts as things to wait for
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Uploading existing arrays from the host to the remote device. This is
@@ -220,15 +224,16 @@ copyToRemoteAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToRemoteAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
           s <- spawn
           copyToRemoteR 0 n (Just s) ad
           after stream =<< checkpoint s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Copy an array from the remote device to the host. This is synchronous with
@@ -249,15 +254,16 @@ copyToHostAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToHostAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
           s <- spawn
           copyToHostR 0 n (Just s) ad
           after stream =<< checkpoint s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Copy arrays between two remote instances of the same type. This may be more
@@ -279,15 +285,16 @@ copyToPeerAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToPeerAsync peer arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
           s <- spawn
           copyToPeerR 0 n peer (Just s) ad
           after stream =<< checkpoint s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- Helpers for traversing the Arrays data structure
@@ -345,16 +352,16 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
 --
 {-# INLINE runArrays #-}
 runArrays
-    :: forall m arrs. (Monad m, Arrays arrs)
+    :: forall m arrs. (Functor m, Applicative m, Monad m, Arrays arrs)
     => arrs
-    -> (forall sh e. Array sh e -> m ())
-    -> m ()
-runArrays arrs worker = runR (arrays arrs) (fromArr arrs)
+    -> (forall sh e. Array sh e -> m (Array sh e))
+    -> m arrs
+runArrays arrs worker = toArr <$> runR (arrays arrs) (fromArr arrs)
   where
-    runR :: ArraysR a -> a -> m ()
+    runR :: ArraysR a -> a -> m a
     runR ArraysRunit             ()             = return ()
     runR ArraysRarray            arr            = worker arr
-    runR (ArraysRpair aeR1 aeR2) (arrs1, arrs2) = runR aeR1 arrs1 >> runR aeR2 arrs2
+    runR (ArraysRpair aeR2 aeR1) (arrs2, arrs1) = (,) <$> runR aeR2 arrs2 <*> runR aeR1 arrs1
 
 
 -- | Generalised function to traverse the ArrayData structure with one
@@ -362,18 +369,17 @@ runArrays arrs worker = runR (arrays arrs) (fromArr arrs)
 --
 {-# INLINE runArray #-}
 runArray
-    :: forall m sh e. Monad m
+    :: forall m sh e. (Functor m, Applicative m, Monad m)
     => Array sh e
-    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m ())
-    -> m ()
-runArray (Array _ adata) worker = runR arrayElt adata
+    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m (ArrayData e'))
+    -> m (Array sh e)
+runArray (Array sh adata) worker = Array sh <$> runR arrayElt adata
   where
-    runR :: ArrayEltR e' -> ArrayData e' -> m ()
-    runR ArrayEltRunit             _  = return ()
-    runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fstArrayData ad) >>
-                                        runR aeR2 (sndArrayData ad)
-    runR aer                       ad = runW aer ad
+    runR :: ArrayEltR e' -> ArrayData e' -> m (ArrayData e')
+    runR ArrayEltRunit             AD_Unit           = return AD_Unit
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) = AD_Pair <$> runR aeR2 ad2 <*> runR aeR1 ad1
+    runR aer                       ad                = runW aer ad
     --
-    runW :: ArrayEltR e' -> ArrayData e' -> m ()
+    runW :: ArrayEltR e' -> ArrayData e' -> m (ArrayData e')
     mkPrimDispatch(runW, worker)
 

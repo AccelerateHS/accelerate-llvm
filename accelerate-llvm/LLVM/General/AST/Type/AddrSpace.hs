@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.AddrSpace
 -- Copyright   : [2016] Trevor L. McDonell

@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -funbox-strict-fields #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Range.Range
 -- Copyright   : [2014..2015] Trevor L. McDonell

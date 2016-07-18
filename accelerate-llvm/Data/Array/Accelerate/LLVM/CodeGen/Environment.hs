@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
 -- Copyright   : [2015..2016] Trevor L. McDonell

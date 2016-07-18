@@ -69,7 +69,11 @@ data PTX = PTX {
 
 instance Target PTX where
   targetTriple _     = Just ptxTargetTriple
+#if ACCELERATE_USE_NVVM
+  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
+#else
   targetDataLayout _ = Just ptxDataLayout
+#endif
 
 
 -- | Extract the properties of the device the current PTX execution state is

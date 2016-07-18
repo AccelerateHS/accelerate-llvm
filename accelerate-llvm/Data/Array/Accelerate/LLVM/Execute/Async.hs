@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
 -- Copyright   : [2014..2016] Trevor L. McDonell

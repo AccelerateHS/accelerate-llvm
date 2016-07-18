@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RoleAnnotations    #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Name
 -- Copyright   : [2015] Trevor L. McDonell

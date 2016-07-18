@@ -36,7 +36,8 @@ module Data.Array.Accelerate.LLVM.Native (
   run1Async, run1AsyncWith,
 
   -- * Execution targets
-  Native, createTarget,
+  Native, Strategy,
+  createTarget, balancedParIO, unbalancedParIO,
 
 ) where
 

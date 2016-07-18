@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs        #-}
 {-# LANGUAGE RankNTypes   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
 -- Copyright   : [2015] Trevor L. McDonell

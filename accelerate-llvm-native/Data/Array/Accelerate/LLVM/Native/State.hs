@@ -48,12 +48,8 @@ evalNative :: Native -> LLVM Native a -> IO a
 evalNative = evalLLVM
 
 
--- | Create a Native execution target for the given capabilities.
---
--- This spawns a worker thread on the specified CPUs. A lazy binary splitting
--- work-stealing scheduler is used to balance the load amongst the available
--- processors. A suitable PPT should be chosen when invoking the continuation in
--- order to balance scheduler overhead with fine-grained function calls.
+-- | Create a Native execution target by spawning a worker thread on each of the
+-- given capabilities, using the given strategy to load balance the workers.
 --
 createTarget
     :: [Int]
@@ -79,7 +75,9 @@ unbalancedParIO gang =
 
 -- | Execute a computation where threads use work stealing (based on lazy
 -- splitting of work stealing queues and exponential backoff) in order to
--- automatically balance the workload amongst themselves.
+-- automatically balance the workload amongst themselves. A suitable PPT should
+-- be chosen when invoking the continuation in order to balance scheduler
+-- overhead with fine-grained function calls.
 --
 balancedParIO :: Strategy
 balancedParIO gang =

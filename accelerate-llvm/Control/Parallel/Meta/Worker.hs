@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Worker
 -- Copyright   : [2014..2015] Trevor L. McDonell

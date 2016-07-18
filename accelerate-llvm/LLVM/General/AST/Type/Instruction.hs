@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeOperators  #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Instruction
 -- Copyright   : [2015] Trevor L. McDonell
