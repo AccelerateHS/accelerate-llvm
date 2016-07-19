@@ -48,6 +48,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Foreign.CUDA.Analysis                                        ( DeviceProperties )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
+import Control.Applicative
 import Data.Bits                                                    as P
 import Data.String                                                  ( fromString )
 import Data.Typeable
