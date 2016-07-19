@@ -316,32 +316,36 @@ reduceBlockSMem
     -> IR Int32                                                 -- ^ number of items that will be reduced by this _thread block_
     -> IR e                                                     -- ^ calling thread's input element
     -> CodeGen (IR e)                                           -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
-reduceBlockSMem dev combine smem1 smem2 num_valid input = do
-
+reduceBlockSMem dev combine smem1 smem2 size input = do
+  let
+      ws  = lift $ P.fromIntegral (CUDA.warpSize dev)
+      ws1 = lift $ P.fromIntegral (CUDA.warpSize dev - 1)
+  --
   -- Compute a per-warp reduction
-  r    <- reduceWarpSMem dev combine smem1 num_valid input
-
-  -- Share the per-warp reductions
-  lane <- laneId
-  wid  <- warpId
-  when (A.eq scalarType lane (lift 0)) $ do
-    writeVolatileArray smem2 wid r
-
-  -- Avoid an extra __syncthreads by storing the per-warp reductions into
-  -- a separate shared memory array.
-  __syncthreads
+  r <- reduceWarpSMem dev combine smem1 size input
 
   -- How many warps were actively computing part of the reduction?
-  a   <- A.add  numType      num_valid (lift . P.fromIntegral $ CUDA.warpSize dev - 1)
-  b   <- A.quot integralType a         (lift . P.fromIntegral $ CUDA.warpSize dev)
+  a <- A.add  numType      size ws1
+  b <- A.quot integralType a    ws
 
-  -- Reduce the per-warp aggregates to a single value.
-  --
-  -- TODO: Assumes that this can be done in a single step, implying the maximum
-  -- thread block size we support is 32 * 32 = 1024. Need to relax this.
-  if A.eq scalarType wid (lift 0)
-    then reduceWarpSMem dev combine smem1 b =<< readVolatileArray smem2 lane
-    else return r
+  -- Combine the per-warp reductions until only a single warp did anything, at
+  -- which point thread zero holds the aggregated block-wide reduction
+  iter b r (\n -> A.gt scalarType n (lift 1))
+           (\n -> flip (A.quot integralType) ws =<< A.add numType n ws1) $ \n s -> do
+
+    -- Share the per-warp reductions
+    lane <- laneId
+    wid  <- warpId
+    when (A.eq scalarType lane (lift 0)) $
+      writeVolatileArray smem2 wid s
+
+    -- Wait for all warps to store their local aggregate
+    __syncthreads
+
+    tid <- threadIdx
+    if A.lt scalarType tid n
+      then reduceWarpSMem dev combine smem1 n =<< readVolatileArray smem2 tid
+      else return r
 
 
 -- Efficient warp reduction using shared memory. The return value is only valid
@@ -363,7 +367,7 @@ reduceWarpSMem
     -> IR Int32                                                 -- ^ number of items that will be reduced by this _thread block_
     -> IR e                                                     -- ^ calling thread's input element
     -> CodeGen (IR e)                                           -- ^ warp-wide reduction using the specified operator (lane 0 only)
-reduceWarpSMem dev combine smem num_valid = reduce 0
+reduceWarpSMem dev combine smem size = reduce 0
   where
     log2 :: Double -> Double
     log2  = P.logBase 2
@@ -382,7 +386,7 @@ reduceWarpSMem dev combine smem num_valid = reduce 0
 
           -- update input if in range
           i    <- A.add numType tid (lift offset)
-          x'   <- if A.lt scalarType i num_valid
+          x'   <- if A.lt scalarType i size
                     then app2 combine x =<< readVolatileArray smem i
                     else return x
 
