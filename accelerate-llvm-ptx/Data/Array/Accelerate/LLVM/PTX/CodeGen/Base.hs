@@ -87,9 +87,8 @@ threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
-laneId, warpId :: CodeGen (IR Int32)
+laneId :: CodeGen (IR Int32)
 laneId      = specialPTXReg "llvm.ptx.read.laneid"
-warpId      = specialPTXReg "llvm.ptx.read.warpid"
 
 laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
 laneMask_eq = specialPTXReg "llvm.ptx.read.lanemask.eq"
@@ -97,6 +96,23 @@ laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
 laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
 laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
+
+-- | NOTE: The special register %warpid as volatile value and is not guaranteed
+--         to be constant over the lifetime of a thread or thread block.
+--
+-- http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#sm-id-and-warp-id
+--
+-- We might consider passing in the (constant) warp size from device properties,
+-- so that the division can be optimised to a shift.
+--
+warpId :: CodeGen (IR Int32)
+warpId = do
+  tid <- threadIdx
+  ws  <- warpSize
+  A.quot integralType tid ws
+
+_warpId :: CodeGen (IR Int32)
+_warpId = specialPTXReg "llvm.ptx.read.warpid"
 
 
 -- | The size of the thread grid
