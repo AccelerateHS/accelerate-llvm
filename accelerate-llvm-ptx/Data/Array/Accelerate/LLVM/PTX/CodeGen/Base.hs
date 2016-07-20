@@ -102,6 +102,8 @@ laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
 --
 -- http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#sm-id-and-warp-id
 --
+-- http://docs.nvidia.com/cuda/parallel-thread-execution/index.html#special-registers-warpid
+--
 -- We might consider passing in the (constant) warp size from device properties,
 -- so that the division can be optimised to a shift.
 --
