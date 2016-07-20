@@ -41,7 +41,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
+#ifdef ACCELERATE_USE_NVVM
 import Data.Array.Accelerate.LLVM.Util
+#endif
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Compile.Link
