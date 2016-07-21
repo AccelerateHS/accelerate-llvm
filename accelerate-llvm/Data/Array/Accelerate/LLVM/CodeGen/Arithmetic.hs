@@ -514,8 +514,8 @@ binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 -- | Lift a constant value into an constant in the intermediate representation.
 --
-lift :: IsNum a => a -> IR a
-lift x = ir numType (num numType x)
+lift :: IsScalar a => a -> IR a
+lift x = ir scalarType (scalar scalarType x)
 
 
 -- | Standard if-then-else expression
