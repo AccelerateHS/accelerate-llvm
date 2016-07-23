@@ -137,59 +137,59 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
   makeOpenAcc "fold" (paramGang ++ paramOut ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
-    -- block, those threads will never contribute to the result and can exit
-    -- immediately.
-    tid   <- threadIdx
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
-    unless (A.lt scalarType tid sz)
-      return_
+    -- block, those threads will never contribute to the output.
+    tid <- threadIdx
+    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    when (A.lt scalarType tid sz) $ do
 
-    -- Thread blocks iterate over the outer dimensions, each thread block
-    -- cooperatively reducing along each outermost index to a single value.
-    --
-    gd    <- gridDim
-    bid   <- blockIdx
-    seg0  <- A.add numType start bid
-    for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
-
-      -- Step 1: initialise local sums
-      from  <- A.mul numType seg sz           -- first linear index this block will reduce
-      to    <- A.add numType from sz          -- last linear index this block will reduce (exclusive)
-
-      i0    <- A.add numType from tid
-      x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
-      bd    <- blockDim
-      r0    <- if A.gte scalarType sz bd
-                 then reduceBlockSMem dev combine Nothing x0
-                 else reduceBlockSMem dev combine (Just sz) x0
-
-      -- Step 2: keep walking over the input
-      next  <- A.add numType from bd
-      r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \off acc -> do
-
-        remain  <- A.sub numType to off
-        if A.lt scalarType tid remain
-           then do
-             i <- A.add numType off tid
-             x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-             r <- if A.gte scalarType remain bd
-                    then reduceBlockSMem dev combine Nothing       x
-                    else reduceBlockSMem dev combine (Just remain) x
-
-             if A.eq scalarType tid (lift 0)
-                then app2 combine acc r
-                else return r
-           else
-             return acc
-
-      -- Step 3: Thread 0 writes the aggregate reduction of this dimension to
-      -- memory. If this is an exclusive scan, combine with the initial element.
+      -- Thread blocks iterate over the outer dimensions, each thread block
+      -- cooperatively reducing along each outermost index to a single value.
       --
-      when (A.eq scalarType tid (lift 0)) $
-        writeArray arrOut seg =<<
-          case mseed of
-            Nothing -> return r
-            Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
+      gd    <- gridDim
+      bid   <- blockIdx
+      seg0  <- A.add numType start bid
+      for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
+
+        -- Step 1: initialise local sums
+        from  <- A.mul numType seg  sz          -- first linear index this block will reduce
+        to    <- A.add numType from sz          -- last linear index this block will reduce (exclusive)
+
+        i0    <- A.add numType from tid
+        x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+        bd    <- blockDim
+        r0    <- if A.gte scalarType sz bd
+                   then reduceBlockSMem dev combine Nothing x0
+                   else reduceBlockSMem dev combine (Just sz) x0
+
+        -- Step 2: keep walking over the input
+        next  <- A.add numType from bd
+        r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \offset r -> do
+
+          -- Wait for all threads to catch up before starting the next stripe
+          __syncthreads
+
+          i     <- A.add numType offset tid
+          x     <- if A.lt scalarType i to
+                     then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                     else return r
+
+          valid <- A.sub numType to offset
+          r'    <- if A.gte scalarType valid bd
+                     then reduceBlockSMem dev combine Nothing      x
+                     else reduceBlockSMem dev combine (Just valid) x
+
+          if A.eq scalarType tid (lift 0)
+            then app2 combine r r'
+            else return r'
+
+        -- Step 3: Thread 0 writes the aggregate reduction of this dimension to
+        -- memory. If this is an exclusive scan, combine with the initial element.
+        --
+        when (A.eq scalarType tid (lift 0)) $
+          writeArray arrOut seg =<<
+            case mseed of
+              Nothing -> return r
+              Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
     return_
 
@@ -426,7 +426,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
       skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem (int32 warp_smem_elems) (Just skip)
+      smem  <- sharedMem (int32 warp_smem_elems) skip
 
       -- Are we doing bounds checking for this warp?
       --
@@ -436,18 +436,13 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
           reduceWarpSMem dev combine smem Nothing input
 
         -- Otherwise check how many elements are valid for this warp. If it is
-        -- full, we can still skip bounds checks for this one warp. Assuming the
-        -- register allocator works well this should be fine since threads of
-        -- a warp share a program counter (rather than all threads in a block).
+        -- full then we can still skip bounds checks for it.
         Just n -> do
           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
-          m      <- A.sub numType n offset    -- could be negative
-          if A.lte scalarType m (lift 0)
-            then return input
-            else
-            if A.gt scalarType m (int32 (CUDA.warpSize dev))
-               then reduceWarpSMem dev combine smem Nothing  input
-               else reduceWarpSMem dev combine smem (Just m) input
+          valid  <- A.sub numType n offset
+          if A.gte scalarType valid (int32 (CUDA.warpSize dev))
+            then reduceWarpSMem dev combine smem Nothing input
+            else reduceWarpSMem dev combine smem (Just valid) input
 
     -- Step 2: Aggregate per-warp reductions
     --
@@ -457,7 +452,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       bid   <- blockDim
       warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem warps (Just skip)
+      smem  <- sharedMem warps skip
 
       -- Share the per-lane aggregates
       wid   <- warpId
