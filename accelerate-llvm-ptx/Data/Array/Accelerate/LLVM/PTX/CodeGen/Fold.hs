@@ -150,7 +150,9 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       seg0  <- A.add numType start bid
       for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
 
-        -- Wait for threads to catch up before starting this segment.
+        -- Wait for threads to catch up before starting this segment. We could
+        -- also place this at the bottom of the loop, but here allows threads to
+        -- exit quickly on the last iteration.
         __syncthreads
 
         -- Step 1: initialise local sums
@@ -170,6 +172,9 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
+
+          -- TLM: Should we combine these two branches under a (valid < blockDim)
+          -- branch, to try to avoid a branch in the full block case?
 
           i     <- A.add numType offset tid
           x     <- if A.lt scalarType i to
