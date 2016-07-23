@@ -150,6 +150,9 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       seg0  <- A.add numType start bid
       for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
 
+        -- Wait for threads to catch up before starting this segment.
+        __syncthreads
+
         -- Step 1: initialise local sums
         from  <- A.mul numType seg  sz          -- first linear index this block will reduce
         to    <- A.add numType from sz          -- last linear index this block will reduce (exclusive)
