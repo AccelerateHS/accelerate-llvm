@@ -49,10 +49,11 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Foreign.CUDA.Analysis                                        ( DeviceProperties )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
+import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>) )
-import Data.Bits                                                    as P
 import Data.String                                                  ( fromString )
 import Data.Typeable
+import Data.Bits                                                    as P
 import Prelude                                                      as P
 
 
@@ -217,12 +218,11 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 --
 mkFoldFill
     :: (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRExp PTX aenv e
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill ptx aenv seed =
-  mkGenerate ptx aenv (IRFun1 (const seed))
+mkFoldFill aenv seed =
+  mkGenerate aenv (IRFun1 (const seed))
 
 
 
