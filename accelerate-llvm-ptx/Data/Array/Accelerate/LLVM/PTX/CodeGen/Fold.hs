@@ -175,25 +175,33 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
 
-          -- TLM: Should we combine these two branches under a (valid < blockDim)
-          -- branch, to try to avoid a branch in the full block case?
-
+          -- Threads cooperatively reduce this stripe of the input
           i     <- A.add numType offset tid
-          x     <- if A.lt scalarType i to
-                     then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-                     else return r
-
+          i'    <- A.fromIntegral integralType numType i
           valid <- A.sub numType to offset
           r'    <- if A.gte scalarType valid bd
-                     then reduceBlockSMem dev combine Nothing      x
-                     else reduceBlockSMem dev combine (Just valid) x
+                      -- All threads of the block are valid, so we can avoid
+                      -- bounds checks.
+                      then do
+                        x <- app1 delayedLinearIndex i'
+                        reduceBlockSMem dev combine Nothing x
+
+                      -- Otherwise we require bounds checks when reading the
+                      -- input and during the reduction.
+                      else
+                      if A.lt scalarType i to
+                        then do
+                          x <- app1 delayedLinearIndex i'
+                          reduceBlockSMem dev combine (Just valid) x
+                        else
+                          return r
 
           if A.eq scalarType tid (lift 0)
             then app2 combine r r'
             else return r'
 
         -- Step 3: Thread 0 writes the aggregate reduction of this dimension to
-        -- memory. If this is an exclusive scan, combine with the initial element.
+        -- memory. If this is an exclusive fold, combine with the initial element.
         --
         when (A.eq scalarType tid (lift 0)) $
           writeArray arrOut seg =<<
@@ -209,212 +217,13 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 --
 mkFoldFill
     :: (Shape sh, Elt e)
-    => Gamma aenv
+    => PTX
+    -> Gamma aenv
     -> IRExp PTX aenv e
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill aenv seed =
-  mkGenerate aenv (IRFun1 (const seed))
+mkFoldFill ptx aenv seed =
+  mkGenerate ptx aenv (IRFun1 (const seed))
 
-
--- Utilities
--- ---------
-
--- Match reified shape types
---
-matchShapeType
-    :: forall sh sh'. (Shape sh, Shape sh')
-    => sh
-    -> sh'
-    -> Maybe (sh :=: sh')
-matchShapeType _ _
-  | Just REFL <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast REFL
-
-matchShapeType _ _
-  = Nothing
-
-
-
--- __global__ void reduceBlockSMem(int *g_idata, int *g_odata, combine) {
---   __shared__ int smem[blockDim.x];
---   unsigned int tid = threadIdx.x;
---   unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
---   smem[tid] = g_idata[i];
---   __syncthreads();
---
---   for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
---    if (tid < s) {
---      smem[tid] = combine(smem[tid], smem[tid + s]);
---    }
---    __syncthreads();
---   }
---
---   if (tid < 32)
---    reduceWarpSMem(combine, smem);
---   if (tid == 0)
---    g_odata[blockIdx.x] = smem[0];
--- }
-
-{--
-reduceBlockSMem
-  :: forall aenv e. Elt e
-  => DeviceProperties                                         -- ^ properties of the target device
-  -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
-  -> IRArray (Vector e)                                       -- ^ input  data array
-  -> IRArray (Vector e)                                       -- ^ output data array
-  -> CodeGen (IR e)                                           -- ^ final result
-reduceBlockSMem dev combine g_idata g_odata = do
-  let
-    zero = ir numType (num numType 0)
-    two  = ir numType (num numType 2)
-  tid  <- threadIdx
-  bd   <- blockDim
-  bi   <- blockIdx
-  ws   <- warpSize
-
-  -- declare smem first
-  smem <- sharedMem bd Nothing :: CodeGen (IRArray (Vector e))
-
-  -- read input data to smem
-  i    <- globalThreadIdx
-  x    <- readArray g_idata i
-  writeVolatileArray smem tid x
-  __syncthreads
-
-
-  -- for loop
-  start <- A.quot integralType bd two
-  Loop.for start
-           (\s -> gt scalarType s ws)
-           (\s -> A.quot integralType s two)
-           (\s -> do
-             when (lt scalarType tid s) $ do
-               i <- add numType tid s
-               x <- readVolatileArray smem tid
-               y <- readVolatileArray smem i
-               z <- app2 combine x y
-               writeVolatileArray smem tid z
-
-             __syncthreads
-           )
-
-  -- reduceWarpSMem
-  when (lt scalarType tid ws) $ do
-    void $ reduceWarpSMem combine smem
-
-  when (eq scalarType tid zero) $ do
-    x <- readVolatileArray smem tid
-    void $ writeArray g_odata bi x
-
-  readVolatileArray smem tid
---}
-
-
--- Efficient warp reduction using __shfl_up instruction (compute >= 3.0)
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_shfl.cuh#L310
---
--- reduceWarpShfl
---     :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
---     -> IR e                                                     -- ^ this thread's input value
---     -> CodeGen (IR e)                                           -- ^ final result
--- reduceWarpShfl combine input =
---   error "TODO: PTX.reduceWarpShfl"
-
-
-{--
--- Efficient warp-reduction-based parallel reductions across a thread block.
--- Supports non-commutative operators.
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_reduce_warp_reductions.cuh
---
--- TODO: Add specialisation for when all elements are valid
---
-reduceBlockSMem
-    :: forall aenv e. Elt e
-    => DeviceProperties                                         -- ^ properties of the target device
-    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
-    -> IRArray (Vector e)                                       -- ^ temporary storage used by individual warp reductions
-    -> IRArray (Vector e)                                       -- ^ temporary storage used for block-wide reduction
-    -> IR Int32                                                 -- ^ number of items that will be reduced by this _thread block_
-    -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
-reduceBlockSMem dev combine smem1 smem2 size input = do
-  let
-      ws  = lift $ P.fromIntegral (CUDA.warpSize dev)
-      ws1 = lift $ P.fromIntegral (CUDA.warpSize dev - 1)
-  --
-  -- Compute a per-warp reduction
-  r <- reduceWarpSMem dev combine smem1 size input
-
-  -- How many warps were actively computing part of the reduction?
-  a <- A.add  numType      size ws1
-  b <- A.quot integralType a    ws
-
-  -- Combine the per-warp reductions until only a single warp did anything, at
-  -- which point thread zero holds the aggregated block-wide reduction
-  iter b r (\n -> A.gt scalarType n (lift 1))
-           (\n -> flip (A.quot integralType) ws =<< A.add numType n ws1) $ \n s -> do
-
-    -- Share the per-warp reductions
-    lane <- laneId
-    wid  <- warpId
-    when (A.eq scalarType lane (lift 0)) $
-      writeVolatileArray smem2 wid s
-
-    -- Wait for all warps to store their local aggregate
-    __syncthreads
-
-    tid <- threadIdx
-    if A.lt scalarType tid n
-      then reduceWarpSMem dev combine smem1 n =<< readVolatileArray smem2 tid
-      else return r
-
-
--- Efficient warp reduction using shared memory. The return value is only valid
--- for thread lane zero.
---
--- This is a little awkward because we don't have individual shared memory
--- allocations for each warp, rather a single allocation for the thread block.
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
---
--- TODO: Add specialisation for when all elements are valid, thus avoiding an
---       inner branch.
---
-reduceWarpSMem
-    :: forall aenv e. Elt e
-    => DeviceProperties                                         -- ^ properties of the target device
-    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
-    -> IRArray (Vector e)                                       -- ^ temporary storage array in shared memory
-    -> IR Int32                                                 -- ^ number of items that will be reduced by this _thread block_
-    -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ warp-wide reduction using the specified operator (lane 0 only)
-reduceWarpSMem dev combine smem size = reduce 0
-  where
-    log2 :: Double -> Double
-    log2  = P.logBase 2
-
-    -- Number steps required to reduce warp
-    steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
-
-    -- Unfold the reduction as a recursive code generation function.
-    reduce :: Int -> IR e -> CodeGen (IR e)
-    reduce step x
-      | step >= steps               = return x
-      | offset <- 1 `P.shiftL` step = do
-          -- share input through buffer
-          tid <- threadIdx
-          writeVolatileArray smem tid x
-
-          -- update input if in range
-          i   <- A.add numType tid (lift offset)
-          x'  <- if A.lt scalarType i size
-                   then app2 combine x =<< readVolatileArray smem i
-                   else return x
-
-          reduce (step+1) x'
---}
 
 
 -- Efficient threadblock-wide reduction using the specified operator. The
@@ -555,4 +364,34 @@ reduceWarpSMem dev combine smem size = reduce 0
                    else return x
 
           reduce (step+1) x'
+
+
+-- Efficient warp reduction using __shfl_up instruction (compute >= 3.0)
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_shfl.cuh#L310
+--
+-- reduceWarpShfl
+--     :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+--     -> IR e                                                     -- ^ this thread's input value
+--     -> CodeGen (IR e)                                           -- ^ final result
+-- reduceWarpShfl combine input =
+--   error "TODO: PTX.reduceWarpShfl"
+
+
+-- Utilities
+-- ---------
+
+-- Match reified shape types
+--
+matchShapeType
+    :: forall sh sh'. (Shape sh, Shape sh')
+    => sh
+    -> sh'
+    -> Maybe (sh :=: sh')
+matchShapeType _ _
+  | Just REFL <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
+  = gcast REFL
+
+matchShapeType _ _
+  = Nothing
 
