@@ -154,9 +154,9 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldCore kernel gamma aenv stream sh'@(sh :. _)
-  | rank sh > 0     = simpleOp  kernel gamma aenv stream sh
-  | otherwise       = foldAllOp kernel gamma aenv stream sh'
+foldCore kernel gamma aenv stream sh
+  | rank sh == 1  = foldAllOp kernel gamma aenv stream sh
+  | otherwise     = foldDimOp kernel gamma aenv stream sh
 
 -- See note: [Marshalling foldAll output arrays]
 --
@@ -202,6 +202,29 @@ foldAllOp exe gamma aenv stream sh' = do
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
+
+foldDimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+foldDimOp exe gamma aenv stream (sh :. sz) = do
+  let
+      kernel
+        | sz > 0    = k1    -- reduce
+        | otherwise = k2    -- fill with initial element
+
+      (k1,k2) = case ptxKernel exe of
+                  u:v:_ -> (u,v)
+                  _     -> $internalError "foldDimOp" "kernel not found"
+  --
+  out <- allocateRemote sh
+  ptx <- gets llvmTarget
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  return out
 
 
 -- Using the defaulting instances for stencil operations (for now).

@@ -40,9 +40,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.PTX.Context
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
 import Foreign.CUDA.Analysis                                        ( DeviceProperties )
@@ -74,7 +75,8 @@ mkFold (deviceProperties . ptxContext -> dev) aenv f z acc
   = mkFoldAll dev aenv f (Just z) acc
 
   | otherwise
-  = mkFoldDim dev aenv f (Just z) acc
+  = (+++) <$> mkFoldDim dev aenv f (Just z) acc
+          <*> mkFoldFill aenv z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
@@ -200,6 +202,18 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
               Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
     return_
+
+
+-- Exclusive reductions over empty arrays (of any dimension) fill the lower
+-- dimensions with the initial element.
+--
+mkFoldFill
+    :: (Shape sh, Elt e)
+    => Gamma aenv
+    -> IRExp PTX aenv e
+    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
+mkFoldFill aenv seed =
+  mkGenerate aenv (IRFun1 (const seed))
 
 
 -- Utilities

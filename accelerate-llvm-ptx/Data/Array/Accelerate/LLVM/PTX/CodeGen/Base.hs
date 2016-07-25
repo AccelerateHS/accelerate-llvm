@@ -32,6 +32,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   sharedMem,
 
   -- Kernel definitions
+  (+++),
   makeOpenAcc,
 
 ) where
@@ -252,6 +253,11 @@ sharedMem n@(op integralType -> m) (op integralType -> offset) = do
 
 -- Global kernel definitions
 -- -------------------------
+
+-- | Combine kernels into a single program
+--
+(+++) :: IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a
+IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 
 -- | Create a single kernel program
 --
