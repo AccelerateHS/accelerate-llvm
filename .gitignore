@@ -10,3 +10,5 @@ cabal-dev
 cabal.sandbox.config
 .stack-work
 stack.yaml
+tags
+Test.hs

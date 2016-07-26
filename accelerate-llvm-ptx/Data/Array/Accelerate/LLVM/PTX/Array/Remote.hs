@@ -52,13 +52,15 @@ instance Remote.Task (Maybe Event) where
 instance Remote.RemoteMemory (LLVM PTX) where
   type RemotePtr (LLVM PTX) = CUDA.DevicePtr
   --
-  mallocRemote n = liftIO $ do
-    ep <- try (CUDA.mallocArray n)
-    case ep of
-      Right p                     -> return (Just p)
-      Left (ExitCode OutOfMemory) -> return Nothing
-      Left e                      -> do message ("malloc failed with error: " ++ show e)
-                                        throwIO e
+  mallocRemote n
+    | n <= 0    = return (Just CUDA.nullDevPtr)
+    | otherwise = liftIO $ do
+        ep <- try (CUDA.mallocArray n)
+        case ep of
+          Right p                     -> return (Just p)
+          Left (ExitCode OutOfMemory) -> return Nothing
+          Left e                      -> do message ("malloc failed with error: " ++ show e)
+                                            throwIO e
 
   peekRemote n src ad =
     let bytes = n * sizeOfPtr src

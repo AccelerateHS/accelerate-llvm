@@ -149,15 +149,6 @@ llvmOfOpenExp arch top env aenv = cvtE top
     indexAny = let any = Any :: Any sh
                in  IR (constant (eltType any) (fromElt any))
 
-    indexHead :: IR (sh :. sz) -> IR sz
-    indexHead (IR (OP_Pair _ sz)) = IR sz
-
-    indexCons :: IR sh -> IR sz -> IR (sh :. sz)
-    indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
-
-    indexTail :: IR (sh :. sz) -> IR sh
-    indexTail (IR (OP_Pair sh _)) = IR sh
-
     indexSlice :: (Shape sh, Shape sl, Elt slix)
                => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
                -> IR slix
@@ -280,6 +271,22 @@ llvmOfOpenExp arch top env aenv = cvtE top
                return $ OP_Pair sh' sz'
         go _ _ _
           = $internalError "union" "expected shape with Int components"
+
+
+-- | Extract the head of an index
+--
+indexHead :: IR (sh :. sz) -> IR sz
+indexHead (IR (OP_Pair _ sz)) = IR sz
+
+-- | Extract the tail of an index
+--
+indexTail :: IR (sh :. sz) -> IR sh
+indexTail (IR (OP_Pair sh _)) = IR sh
+
+-- | Construct an index from the head and tail
+--
+indexCons :: IR sh -> IR sz -> IR (sh :. sz)
+indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 
 
 -- | Convert a multidimensional array index into a linear index
