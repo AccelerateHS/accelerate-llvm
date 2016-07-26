@@ -91,7 +91,7 @@ blockSize
     -> (Int -> Int)             -- shared memory as a function of thread block size (bytes)
     -> (Int, Occupancy)
 blockSize dev acc lim regs smem =
-  optimalBlockSizeBy dev (filter (<= lim) . strategy) (const regs) smem
+  optimalBlockSizeOf dev (filter (<= lim) (strategy dev)) (const regs) smem
   where
     strategy = case acc of
       Fold _ _ _        -> incPow2
