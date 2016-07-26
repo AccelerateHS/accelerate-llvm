@@ -10,17 +10,21 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen
-  where
+module Data.Array.Accelerate.LLVM.Native.CodeGen (
+
+  KernelMetadata(..),
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.CodeGen
 
-import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where

@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 -- Copyright   : [2015] Trevor L. McDonell
@@ -54,11 +55,16 @@ gangId =
   (local t tid, [ scalarParameter t tid ] )
 
 
+-- Global function definitions
+-- ---------------------------
+
+data instance KernelMetadata Native = KM_Native ()
+
 -- | Create a single kernel program
 --
 makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
 makeOpenAcc name param kernel = do
-  body <- makeKernel name param kernel
+  body  <- makeKernel name param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process
@@ -68,10 +74,13 @@ makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel Native 
 makeKernel name param kernel = do
   _    <- kernel
   code <- createBlocks
-  return . Kernel $ LLVM.functionDefaults
-             { LLVM.returnType  = LLVM.VoidType
-             , LLVM.name        = downcast name
-             , LLVM.parameters  = (param, False)
-             , LLVM.basicBlocks = code
-             }
+  return $ Kernel
+    { kernelMetadata = KM_Native ()
+    , unKernel       = LLVM.functionDefaults
+                     { LLVM.returnType  = LLVM.VoidType
+                     , LLVM.name        = downcast name
+                     , LLVM.parameters  = (param, False)
+                     , LLVM.basicBlocks = code
+                     }
+    }
 

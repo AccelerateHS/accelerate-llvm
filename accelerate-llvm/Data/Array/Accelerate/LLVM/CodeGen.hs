@@ -18,7 +18,7 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen (
 
-  Skeleton(..), Expression(..), Intrinsic(..),
+  Skeleton(..), Expression(..), Intrinsic(..), KernelMetadata,
   llvmOfOpenAcc,
 
 ) where

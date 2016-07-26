@@ -110,9 +110,6 @@ runLLVM
     -> Module arch aenv a
 runLLVM  ll =
   let
-      (kernels, st)     = case runState (runCodeGen ll) initialState of
-                            (IROpenAcc r, s) -> (map unKernel r, s)
-
       initialState      = CodeGenState
                             { blockChain        = initBlockChain
                             , symbolTable       = Map.empty
@@ -121,21 +118,27 @@ runLLVM  ll =
                             , next              = 0
                             }
 
+      (kernels, md, st) = case runState (runCodeGen ll) initialState of
+                            (IROpenAcc ks, st) -> let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
+                                                  in  (fs, Map.fromList as, st)
+
       definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
            , f@LLVM.Function{} <- x
-           , LLVM.Name s <- LLVM.name f = s
-           | otherwise                  = "<undefined>"
+           , LLVM.Name s       <- LLVM.name f = s
+           | otherwise                        = "<undefined>"
 
   in
-  Module $ LLVM.Module
-    { LLVM.moduleName         = name
-    , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
-    , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
-    , LLVM.moduleDefinitions  = definitions
-    }
+  Module { moduleMetadata = md
+         , unModule       = LLVM.Module
+                          { LLVM.moduleName         = name
+                          , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
+                          , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
+                          , LLVM.moduleDefinitions  = definitions
+                          }
+         }
 
 
 -- Basic Blocks
