@@ -415,14 +415,13 @@ lor x y =
     then return $ ir scalarType (scalar scalarType True)
     else y
 
--- TLM: These implementations are strict in both arguments, but logical
---      operators should short-circuit. This needs to be fixed!!
-land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-land' (op scalarType -> x) (op scalarType -> y)
+-- These implementations are strict in both arguments.
+_land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+_land (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor'  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-lor' (op scalarType -> x) (op scalarType -> y)
+_lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+_lor (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen (IR Bool)
