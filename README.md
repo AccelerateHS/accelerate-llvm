@@ -95,7 +95,7 @@ Current status
 - [x] backpermute/transform
 - [x] slice/replicate
 - [x] reshape
-- [ ] fold (multidimensional)
+- [x] fold (multidimensional)
 - [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
 - [ ] scanl1, scanr1
