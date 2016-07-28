@@ -47,88 +47,41 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Foreign.CUDA.Analysis as CUDA
 
 
--- __global__ void scan(float *g_idata, float *g_odata, int n) {
---   __shared__ float temp[2*BLOCKSIZE];
---   int tid = threadIdx.x;
---   int pout = 0, pin = 1;
---
---   temp[pout * n + tid] = g_idata[tid];
---   __syncthreads()
---
---   for (int offset = 1; offset < n; offset *= 2) {
---     pout = 1 - pout;
---     pin  = 1 - pout;
---
---     if (tid >= offset)
---       temp[pout * n + tid] = temp[pin * n + tid] + temp[pin * n + tid - offset];
---     else
---       temp[pout * n + tid] = temp[pin * n + tid];
---
---     __syncthreads();
---   }
---   g_odata[tid] = temp[pout * n + tid];
--- }
-
-inclusiveBlockScan
+scanWarpSMem
   :: forall aenv e. Elt e
-  => IRFun2 PTX aenv (e -> e -> e)
+  => DeviceProperties
+  -> IRFun2 PTX aenv (e -> e -> e)
   -> IRArray (Vector e)
-  -> IRArray (Vector e)
+  -> Maybe (IR Int32)
+  -> IR e
   -> CodeGen (IR e)
-inclusiveBlockScan combine g_idata g_odata = do
-  let
-    zero = ir numType (num numType 0)
-    one  = ir numType (num numType 1)
-    two  = ir numType (num numType 2)
-  tid <- A.fromIntegral integralType numType =<< threadIdx
-  bd  <- A.fromIntegral integralType numType =<< blockDim
-  bi  <- A.fromIntegral integralType numType =<< blockIdx
+scanWarpSMem dev combine smem size = scanStep 0
+  where
+    log2 :: Double -> Double
+    log2 = P.logBase 2
 
-  -- declare shared memory: __shared__ smem[2*blockDim];
-  len  <- mul bd two
-  smem <- sharedMem len Nothing :: CodeGen (IRArray (Vector e))
+    -- Number steps required to scan warp
+    steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
 
-  outFlag <- zero
-  inFlag  <- one
+  valid i =
+    case size of
+      Nothing -> return (lift True)
+      Just n  -> A.lt scalarType i n
 
-  -- read global data: x = g_idata[blockDim * blockIdx + threadIdx]
-  i <- A.fromIntegral integralType numType =<< globalThreadIdx
-  x <- readArray g_idata i
+  -- unfold the scan as a recursive code generation function
+  scanStep :: Int -> IR e -> CodeGen (IR e)
+  scanStep step x
+    | step >= steps               = return x
+    | offset <- 1 `P.shiftL` step = do
+      -- share input through buffer
+      lane <-laneId
+      idx  <- A.add numType lane (lift 16) -- lane_id + HALF_WARP_SIZE
+      writeVolatileArray smem idx x
 
-  -- write data to shared memory: smem[outFlag * BlockDim + threadIdx] = x
-  outPos0 <- mul outFlag bd
-  outPos1 <- add outPos0 tid
-  writeVolatileArray smem outPos1 x
-  __syncthreads
+      -- update input if in range
+      i    <- A.sub numType idx (lift offset)
+      x'   <- if valid i
+                 then app2 combine x =<< readVolatileArray smem i
+                 else return x
 
-  Loop.for one
-    (\offset -> lt integralType offset bd)
-    (\offset -> mul integralType offset two)
-    (\offset -> do
-      outFlag <- sub one outFlag
-      inFlag  <- sub one outFlag
-
-      outPos0 <- mul outFlag bd
-      outPos1 <- add outPos0 tid
-      inPos0  <- mul inFlag  bd
-      inPos1  <- add inPos0  tid
-      inPos2  <- sub inPos1  offset
-
-      ifThenElse
-        (gte scalarType tid offset)
-        (do
-          x <- readVolatileArray smem inPos1
-          y <- readVolatileArray smem inPos2
-          z <- app2 combine x y
-          writeVolatileArray smem outPos1 z
-        )
-        (do
-          x <- readVolatileArray smem inPos1
-          writeVolatileArray smem outPos1 x
-        )
-
-      __syncthreads
-    )
-
-  x <- readVolatileArray smem outPos1
-  writeVolatileArray tid x
+      scanStep (step + 1) x'
