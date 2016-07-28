@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Resource.LBS
 -- Copyright   : [2014..2015] Trevor L. McDonell

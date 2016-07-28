@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
@@ -40,6 +41,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
+#ifdef ACCELERATE_USE_NVVM
+import Data.Array.Accelerate.LLVM.Util
+#endif
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Compile.Link
@@ -51,8 +55,8 @@ import qualified  Data.Array.Accelerate.LLVM.PTX.Debug          as Debug
 -- cuda
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
-#ifdef ACCELERATE_USE_LIBNVVM
-import qualified Foreign.LibNVVM                                as NVVM
+#ifdef ACCELERATE_USE_NVVM
+import qualified Foreign.NVVM                                   as NVVM
 #endif
 
 -- standard library
@@ -101,7 +105,7 @@ compileForPTX acc aenv = do
 
 -- | Compile the LLVM module to produce a CUDA module.
 --
---    * If we are using libNVVM, this includes all LLVM optimisations plus some
+--    * If we are using NVVM, this includes all LLVM optimisations plus some
 --    sekrit optimisations.
 --
 --    * If we are just using the llvm ptx backend, we still need to run the
@@ -110,39 +114,55 @@ compileForPTX acc aenv = do
 compileModule :: CUDA.DeviceProperties -> Context -> AST.Module -> IO CUDA.Module
 compileModule dev ctx ast =
   let name      = moduleName ast in
-#ifdef ACCELERATE_USE_LIBNVVM
+#ifdef ACCELERATE_USE_NVVM
   withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev name)
 #else
   withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev name)
 #endif
 
 
-#ifdef ACCELERATE_USE_LIBNVVM
--- Compiling the module with libNVVM implicitly uses LLVM-3.2.
+#ifdef ACCELERATE_USE_NVVM
+-- Compile and optimise the module to PTX using the (closed source) NVVM
+-- library. This may produce faster object code than the LLVM NVPTX compiler.
 --
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO CUDA.Module
 compileModuleNVVM dev name libdevice mdl = do
-  -- Lower the module to bitcode and have libNVVM compile to PTX
-  let arch      = CUDA.computeCapability dev
-      verbose   = if Debug.mode Debug.debug then [ NVVM.GenerateDebugInfo ] else []
-      flags     = NVVM.Target arch : verbose
+  _debug <- Debug.queryFlag Debug.debug_cc
+  --
+  let arch    = CUDA.computeCapability dev
+      verbose = if _debug then [ NVVM.GenerateDebugInfo ] else []
+      flags   = NVVM.Target arch : verbose
 
-#ifdef ACCELERATE_INTERNAL_CHECKS
-      verify  = True
-#else
-      verify  = False
-#endif
+      -- Note: [NVVM and target datalayout]
+      --
+      -- The NVVM library does not correctly parse the target datalayout field,
+      -- instead doing a (very dodgy) string compare against exactly two
+      -- expected values. This means that it is sensitive to, e.g. the ordering
+      -- of the fields, and changes to the representation in each LLVM release.
+      --
+      -- We get around this by only specifying the data layout in a separate
+      -- (otherwise empty) module that we additionally link against.
+      --
+      header  = case bitSize (undefined::Int) of
+                  32 -> "target triple = \"nvptx-nvidia-cuda\"\ntarget datalayout = \"e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
+                  64 -> "target triple = \"nvptx64-nvidia-cuda\"\ntarget datalayout = \"e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
+                  _  -> $internalError "compileModuleNVVM" "I don't know what architecture I am"
 
-  ll    <- LLVM.moduleString mdl        -- no LLVM.moduleBitcode in llvm-general-3.2.*
-  ptx   <- NVVM.compileModules ((name,B.pack ll):libdevice) flags verify
+  Debug.when Debug.dump_cc   $ do
+    Debug.when Debug.verbose $ do
+      ll <- LLVM.moduleLLVMAssembly mdl -- TLM: unfortunate to do the lowering twice in debug mode
+      Debug.traceIO Debug.verbose ll
 
-  -- Debugging
-  Debug.when Debug.dump_cc $ do
-    Debug.traceIO Debug.verbose ll
-    Debug.traceIO Debug.dump_cc $ "llvm: " ++ B.unpack (NVVM.nvvmLog ptx)
+  -- Lower the generated module to bitcode, then compile and link together with
+  -- the shim header and libdevice library (if necessary)
+  bc  <- LLVM.moduleBitcode mdl
+  ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
+
+  unless (B.null (NVVM.compileLog ptx)) $ do
+    Debug.traceIO Debug.dump_cc $ "llvm: " ++ B.unpack (NVVM.compileLog ptx)
 
   -- Link into a new CUDA module in the current context
-  linkPTX name (NVVM.nvvmResult ptx)
+  linkPTX name (NVVM.compileResult ptx)
 
 #else
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above

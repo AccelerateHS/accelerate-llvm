@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
 -- Copyright   : [2015] Trevor L. McDonell
@@ -13,24 +14,22 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Type
   where
 
-import Data.Maybe
-
-import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 
 -- | Does the concrete type represent signed or unsigned values?
 --
 class IsSigned dict where
   signed   :: dict a -> Bool
-  unsigned :: dict a -> Bool
-
   signed   = not . unsigned
+  --
+  unsigned :: dict a -> Bool
   unsigned = not . signed
 
 instance IsSigned ScalarType where
@@ -75,7 +74,7 @@ instance IsSigned NonNumType where
 -- | Extract the reified scalar type dictionary of an operation
 --
 class TypeOf op where
-  typeOf :: op a -> ScalarType a
+  typeOf :: op a -> Type a
 
 instance TypeOf Instruction where
   typeOf ins =
@@ -92,43 +91,90 @@ instance TypeOf Instruction where
       BAnd _ x _        -> typeOf x
       BOr _ x _         -> typeOf x
       BXor _ x _        -> typeOf x
-      LAnd _ _          -> scalarType
-      LOr _ _           -> scalarType
-      LNot _            -> scalarType
-      Load t _ _        -> t
-      Store _ _ _       -> $internalError "typeOf" "unhandled instruction: Store"
-      GetElementPtr _ _ -> $internalError "typeOf" "unhandled instruction: GetElementPtr"
-      FTrunc _ t _      -> NumScalarType (FloatingNumType t)
-      FExt _ t _        -> NumScalarType (FloatingNumType t)
+      LAnd _ _          -> type'
+      LOr _ _           -> type'
+      LNot _            -> type'
+      Load t _ _        -> PrimType (ScalarPrimType t)
+      Store _ _ _       -> VoidType
+      GetElementPtr x _ -> typeOf x
+      FTrunc _ t _      -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      FExt _ t _        -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
       Trunc _ t _       -> case t of
-                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
-                             NonNumBoundedType n   -> NonNumScalarType n
+                             IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
+                             NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
       Ext _ t _         -> case t of
-                             IntegralBoundedType i -> NumScalarType (IntegralNumType i)
-                             NonNumBoundedType n   -> NonNumScalarType n
-      FPToInt _ t _     -> NumScalarType (IntegralNumType t)
-      IntToFP _ t _     -> NumScalarType (FloatingNumType t)
-      BitCast t _       -> t
-      PtrCast _ _ _     -> $internalError "typeOf" "unhandled instruction: PtrCast"
-      Cmp{}             -> scalarType
-      Select t _ _ _    -> t
-      Phi t _           -> t
+                             IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
+                             NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
+      FPToInt _ t _     -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType t)))
+      IntToFP _ t _     -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      BitCast t _       -> PrimType (ScalarPrimType t)
+      PtrCast t _       -> PrimType t
+      Cmp{}             -> type'
+      Select t _ _ _    -> PrimType (ScalarPrimType t)
+      Phi t _           -> PrimType t
       Call f _          -> funResultType f
         where
-          funResultType :: GlobalFunction args t -> ScalarType t
+          funResultType :: GlobalFunction args t -> Type t
           funResultType (Lam _ _ l) = funResultType l
-          funResultType (Body t _)  = fromJust t
+          funResultType (Body t _)  = t
 
 instance TypeOf Operand where
   typeOf op =
     case op of
       LocalReference t _ -> t
       ConstantOperand c  -> typeOf c
-      PtrOperand _       -> $internalError "typeOf" "unhandled instruction: PtrOperand"
 
 instance TypeOf Constant where
   typeOf c =
     case c of
-      ScalarConstant t _        -> t
-      GlobalReference t _       -> fromJust t
+      ScalarConstant t _        -> PrimType (ScalarPrimType t)
+      GlobalReference t _       -> t
+
+
+-- | Extract some evidence that a reified type implies that type is a valid
+-- element
+--
+data EltDict a where
+  EltDict :: Elt a => EltDict a
+
+scalarElt :: ScalarType a -> EltDict a
+scalarElt (NumScalarType    t) = numElt t
+scalarElt (NonNumScalarType t) = nonNumElt t
+
+numElt :: NumType a -> EltDict a
+numElt (IntegralNumType t) = integralElt t
+numElt (FloatingNumType t) = floatingElt t
+
+integralElt :: IntegralType a -> EltDict a
+integralElt TypeInt{}     = EltDict
+integralElt TypeInt8{}    = EltDict
+integralElt TypeInt16{}   = EltDict
+integralElt TypeInt32{}   = EltDict
+integralElt TypeInt64{}   = EltDict
+integralElt TypeWord{}    = EltDict
+integralElt TypeWord8{}   = EltDict
+integralElt TypeWord16{}  = EltDict
+integralElt TypeWord32{}  = EltDict
+integralElt TypeWord64{}  = EltDict
+integralElt TypeCShort{}  = EltDict
+integralElt TypeCUShort{} = EltDict
+integralElt TypeCInt{}    = EltDict
+integralElt TypeCUInt{}   = EltDict
+integralElt TypeCLong{}   = EltDict
+integralElt TypeCULong{}  = EltDict
+integralElt TypeCLLong{}  = EltDict
+integralElt TypeCULLong{} = EltDict
+
+floatingElt :: FloatingType a -> EltDict a
+floatingElt TypeFloat{}   = EltDict
+floatingElt TypeDouble{}  = EltDict
+floatingElt TypeCFloat{}  = EltDict
+floatingElt TypeCDouble{} = EltDict
+
+nonNumElt :: NonNumType a -> EltDict a
+nonNumElt TypeBool{}   = EltDict
+nonNumElt TypeChar{}   = EltDict
+nonNumElt TypeCChar{}  = EltDict
+nonNumElt TypeCSChar{} = EltDict
+nonNumElt TypeCUChar{} = EltDict
 

@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta
 -- Copyright   : [2014..2015] Trevor L. McDonell

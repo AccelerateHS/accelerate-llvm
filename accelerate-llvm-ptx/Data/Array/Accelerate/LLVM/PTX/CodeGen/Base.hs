@@ -20,6 +20,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   gridSize, globalThreadIdx,
   gangParam,
 
+  -- Other intrinsics
+  laneId, warpId,
+  laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge,
+
   -- Barriers and synchronisation
   __syncthreads,
   __threadfence_block, __threadfence_grid,
@@ -28,12 +32,12 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   sharedMem,
 
   -- Kernel definitions
+  (+++),
   makeOpenAcc,
 
 ) where
 
 import Prelude                                                          as P
-import Foreign.Ptr                                                      ( Ptr )
 import Control.Monad                                                    ( void )
 
 -- llvm
@@ -44,15 +48,16 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
 import qualified LLVM.General.AST.Name                                  as LLVM
 import qualified LLVM.General.AST.Type                                  as LLVM
 
 -- accelerate
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector, eltType )
+import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                    as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -71,16 +76,47 @@ import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
 
 -- | Read the builtin registers that store CUDA thread and grid identifiers
 --
+-- <https://github.com/llvm-mirror/llvm/blob/master/include/llvm/IR/IntrinsicsNVVM.td>
+--
 specialPTXReg :: Label -> CodeGen (IR Int32)
 specialPTXReg f =
-  call (Body (Just scalarType) f) [NoUnwind, ReadNone]
+  call (Body type' f) [NoUnwind, ReadNone]
 
 blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen (IR Int32)
-blockDim  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
-gridDim   = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
-threadIdx = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
-blockIdx  = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
-warpSize  = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
+gridDim     = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
+threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
+blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
+warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
+
+laneId :: CodeGen (IR Int32)
+laneId      = specialPTXReg "llvm.ptx.read.laneid"
+
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
+laneMask_eq = specialPTXReg "llvm.ptx.read.lanemask.eq"
+laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
+laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
+laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
+laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
+
+-- | NOTE: The special register %warpid as volatile value and is not guaranteed
+--         to be constant over the lifetime of a thread or thread block.
+--
+-- http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#sm-id-and-warp-id
+--
+-- http://docs.nvidia.com/cuda/parallel-thread-execution/index.html#special-registers-warpid
+--
+-- We might consider passing in the (constant) warp size from device properties,
+-- so that the division can be optimised to a shift.
+--
+warpId :: CodeGen (IR Int32)
+warpId = do
+  tid <- threadIdx
+  ws  <- warpSize
+  A.quot integralType tid ws
+
+_warpId :: CodeGen (IR Int32)
+_warpId = specialPTXReg "llvm.ptx.read.warpid"
 
 
 -- | The size of the thread grid
@@ -103,7 +139,7 @@ globalThreadIdx = do
   ntid  <- blockDim
   ctaid <- blockIdx
   tid   <- threadIdx
-
+  --
   u     <- mul numType ntid ctaid
   v     <- add numType tid u
   return v
@@ -127,7 +163,7 @@ gangParam =
 -- | Call a builtin CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen ()
-barrier f = void $ call (Body Nothing f) [NoUnwind, ReadNone]
+barrier f = void $ call (Body VoidType f) [NoUnwind] -- Convergent
 
 
 -- | Wait until all threads in the thread block have reached this point and all
@@ -174,53 +210,54 @@ initialiseSharedMemory = do
     , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
     , LLVM.name      = LLVM.Name "__shared__"
     }
-  return $ PtrOperand $ ConstantOperand $ GlobalReference (Just scalarType) "__shared__"
+  return $ ConstantOperand $ GlobalReference type' "__shared__"
 
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
 --
 sharedMem
-    :: forall e. Elt e
-    => IR Int                                 -- number of array elements
-    -> Maybe (IR Int)                         -- #bytes of shared memory the have already been allocated for this kernel (default: zero)
+    :: forall e int. (Elt e, IsIntegral int)
+    => IR int                                 -- number of array elements
+    -> IR int                                 -- #bytes of shared memory the have already been allocated
     -> CodeGen (IRArray (Vector e))
-sharedMem (IR (OP_Int n)) moffset = do
+sharedMem n@(op integralType -> m) (op integralType -> offset) = do
+  smem <- initialiseSharedMemory
   let
-      go :: TupleType s -> Operand (Ptr Word8) -> CodeGen (Operand (Ptr Word8), Operands s)
-      go UnitTuple       p = return (p, OP_Unit)
-      go (SingleTuple t) p = do
-        -- TLM: bitcasts are no-op instructions. While having casts both in and
-        --      out in order to satisfy the types is somewhat inelegant, they
-        --      cost us no cycles (at runtime; the optimiser does work removing
-        --      adjacent casts)
-        s <- instr' $ PtrCast t as p
-        q <- instr' $ GetElementPtr s [n]
-        r <- instr' $ PtrCast scalarType as q
-        let s' = case s of    -- XXX: This is a hack because we can't properly represent pointer types
-                   LocalReference _ (Name x)   -> LocalReference t (Name x)
-                   LocalReference _ (UnName x) -> LocalReference t (UnName x)
-                   _                           -> $internalError "sharedMem" "@tmcdonell: fix the type hierarchy"
-        return (r, ir' t s')
-      go (PairTuple t2 t1) p = do
-        (p1, ad1) <- go t1 p
-        (p2, ad2) <- go t2 p1
-        return $ (p2, OP_Pair ad2 ad1)
+      -- XXX: This is a hack because we can't create the evidence to traverse an
+      -- 'EltRepr (Ptr a)' type and associated encoding with operands.
+      ptr :: Operand (Ptr a) -> Operand a
+      ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType (ScalarPrimType t)) (Name x)
+      ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType (ScalarPrimType t)) (UnName x)
+      ptr _ = $internalError "sharedMem" "unexpected constant operand"
 
-      as      = Just $ AddrSpace 3
-      zero    = scalar scalarType 0
-      offset  = maybe zero (op integralType) moffset
+      go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
+      go UnitTuple         i  = return (i, OP_Unit)
+      go (PairTuple t2 t1) i0 = do
+        (i1, p1) <- go t1 i0
+        (i2, p2) <- go t2 i1
+        return $ (i2, OP_Pair p2 p1)
+      go (SingleTuple t)   i  = do
+        p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
+        q <- instr' $ PtrCast (PtrPrimType t (AddrSpace 3)) p
+        a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
+        b <- instr' $ Add numType i a
+        return (b, ir' t (ptr q))
   --
-  smem   <- initialiseSharedMemory
-  ptr    <- instr' $ GetElementPtr smem [offset]
-  (_,ad) <- go (eltType (undefined::e)) ptr
-  return $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit (OP_Int n)
-                   , irArrayData  = IR ad
-                   }
+  (_, ad) <- go (eltType (undefined::e)) offset
+  IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
+  return   $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit sz
+                     , irArrayData  = IR ad
+                     }
 
 
 -- Global kernel definitions
 -- -------------------------
+
+-- | Combine kernels into a single program
+--
+(+++) :: IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a
+IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 
 -- | Create a single kernel program
 --
@@ -237,7 +274,7 @@ makeKernel name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
   addMetadata "nvvm.annotations"
-    [ Just . MetadataOperand       $ ConstantOperand (GlobalReference Nothing (Name l))
+    [ Just . MetadataOperand       $ ConstantOperand (GlobalReference VoidType (Name l))
     , Just . MetadataStringOperand $ "kernel"
     , Just . MetadataOperand       $ scalar scalarType (1::Int)
     ]

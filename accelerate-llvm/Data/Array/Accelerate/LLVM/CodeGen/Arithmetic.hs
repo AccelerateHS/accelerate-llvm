@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 -- Copyright   : [2015..2016] Trevor L. McDonell
@@ -18,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Maybe(..), ($), (++), (==), error, undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, ($), (++), (==), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                ( finiteBitSize )
@@ -28,7 +29,6 @@ import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
@@ -38,6 +38,7 @@ import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -65,19 +66,45 @@ negate t x =
     FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (P.negate 1)))
 
 abs :: forall a. NumType a -> IR a -> CodeGen (IR a)
-abs t x =
-  case t of
+abs n x =
+  case n of
     FloatingNumType f                  -> mathf "fabs" f x
     IntegralNumType i
       | unsigned i                     -> return x
       | IntegralDict <- integralDict i ->
-          let t' = NumScalarType t in
+          let p = ScalarPrimType (NumScalarType n)
+              t = PrimType p
+          in
           case finiteBitSize (undefined :: a) of
-            64 -> call (Lam t' (op t x) (Body (Just t') "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam t' (op t x) (Body (Just t') "abs"))   [NoUnwind, ReadNone]
+            64 -> call (Lam p (op n x) (Body t "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam p (op n x) (Body t "abs"))   [NoUnwind, ReadNone]
 
-signum :: NumType a -> IR a -> CodeGen (IR a)
-signum = error "signum"
+signum :: forall a. NumType a -> IR a -> CodeGen (IR a)
+signum t x =
+  case t of
+    IntegralNumType i
+      | IntegralDict <- integralDict i
+      , unsigned i
+      -> do z <- neq (NumScalarType t) x (ir t (num t 0))
+            s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            return s
+      --
+      | IntegralDict <- integralDict i
+      -> do let wsib = finiteBitSize (undefined::a)
+            y <- negate t x
+            l <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
+            r <- shiftRL i y (ir integralType (integral integralType (wsib P.- 1)))
+            s <- bor i l r
+            return s
+    --
+    FloatingNumType f
+      | FloatingDict <- floatingDict f
+      , EltDict      <- numElt t
+      -> if gt (NumScalarType t) x (ir f (floating f 0))
+            then return $ ir f (floating f 1)
+            else if lt (NumScalarType t) x (ir f (floating f 0))
+                    then return $ ir f (floating f (P.negate 1))
+                    else return $ ir f (floating f 0)
 
 
 -- Operations from Integral and Bits
@@ -90,45 +117,87 @@ rem :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
 rem = binop Rem
 
 quotRem :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
-quotRem = error "quotRem"
+quotRem t x y = do
+  q <- quot t x y
+  z <- mul (IntegralNumType t) y q
+  r <- sub (IntegralNumType t) x z
+  return $ pair q r
 
 idiv :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
-idiv = error "idiv"
+idiv i x y
+  | unsigned i
+  = quot i x y
+  --
+  | IntegralDict <- integralDict i
+  , EltDict      <- integralElt i
+  , zero         <- ir i (integral i 0)
+  , one          <- ir i (integral i 1)
+  , n            <- IntegralNumType i
+  , s            <- NumScalarType n
+  = if gt s x zero `land` lt s y zero
+       then do
+         a <- sub n x one
+         b <- quot i a y
+         c <- sub n b one
+         return c
+       else
+    if lt s x zero `land` gt s y zero
+       then do
+         a <- add n x one
+         b <- quot i a y
+         c <- sub n b one
+         return c
+    else
+         quot i x y
 
-mod :: Elt a => IntegralType a -> IR a -> IR a -> CodeGen (IR a)
-mod t x y
-  | unsigned t                     = rem t x y
-  | IntegralDict <- integralDict t =
-    do
-       let nt = IntegralNumType t
-           st = NumScalarType nt
-           _0 = ir t (integral t 0)
-       --
-       ifOr     <- newBlock "mod.or"
-       ifTrue   <- newBlock "mod.true"
-       ifEnd    <- newBlock "mod.end"
-
-       _        <- beginBlock "mod.entry"
-       r        <- rem t x y
-       c1       <- join $ land <$> gt st x _0 <*> lt st y _0
-       _        <- cbr c1 ifTrue ifOr
-
-       setBlock ifOr
-       c2       <- join $ land <$> lt st x _0 <*> gt st y _0
-       false    <- cbr c2 ifTrue ifEnd
-
-       setBlock ifTrue
-       c3       <- neq st r _0
-       s        <- add nt r y
-       v        <- instr $ Select st (op scalarType c3) (op t s) (op t _0)
-       true     <- br ifEnd
-
-       setBlock ifEnd
-       phi [(v,true), (r,false)]
-
+mod :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+mod i x y
+  | unsigned i
+  = rem i x y
+  --
+  | IntegralDict <- integralDict i
+  , EltDict      <- integralElt i
+  , zero         <- ir i (integral i 0)
+  , n            <- IntegralNumType i
+  , s            <- NumScalarType n
+  = do r <- rem i x y
+       if (gt s x zero `land` lt s y zero) `lor` (lt s x zero `land` gt s y zero)
+          then if neq s r zero
+                  then add n r y
+                  else return zero
+          else return r
 
 divMod :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
-divMod = error "divMod"
+divMod i x y
+  | unsigned i
+  = quotRem i x y
+  --
+  | IntegralDict <- integralDict i
+  , EltDict      <- integralElt i
+  , zero         <- ir i (integral i 0)
+  , one          <- ir i (integral i 1)
+  , n            <- IntegralNumType i
+  , s            <- NumScalarType n
+  = if gt s x zero `land` lt s y zero
+       then do
+         a <- sub n x one
+         b <- quotRem i a y
+         c <- sub n (fst b) one
+         d <- add n (snd b) y
+         e <- add n d one
+         return $ pair c e
+       else
+    if lt s x zero `land` gt s y zero
+       then do
+         a <- add n x one
+         b <- quotRem i a y
+         c <- sub n (fst b) one
+         d <- add n (snd b) y
+         e <- sub n d one
+         return $ pair c e
+    else
+         quotRem i x y
+
 
 band :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
 band = binop BAnd
@@ -229,13 +298,13 @@ atanh :: FloatingType a -> IR a -> CodeGen (IR a)
 atanh = mathf "atanh"
 
 atan2 :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-atan2 = mathf' "atan2"
+atan2 = mathf2 "atan2"
 
 exp :: FloatingType a -> IR a -> CodeGen (IR a)
 exp = mathf "exp"
 
 fpow :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
-fpow = mathf' "pow"
+fpow = mathf2 "pow"
 
 sqrt :: FloatingType a -> IR a -> CodeGen (IR a)
 sqrt = mathf "sqrt"
@@ -264,9 +333,11 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- ------------------------
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isNaN t (op t -> x) = do
+isNaN f (op f -> x) = do
+  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = type'
   name <- intrinsic "isnan"
-  r    <- call (Lam (NumScalarType (FloatingNumType t)) x (Body (Just scalarType) name)) [NoUnwind, ReadOnly]
+  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
 
@@ -318,13 +389,13 @@ neq = cmp NE
 
 max :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
 max ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmax" f x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
   | otherwise                               = do c <- op scalarType <$> gte ty x y
                                                  binop (flip Select c) ty x y
 
 min :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
 min ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf' "fmin" f x y
+  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
   | otherwise                               = do c <- op scalarType <$> lte ty x y
                                                  binop (flip Select c) ty x y
 
@@ -332,12 +403,26 @@ min ty x y
 -- Logical operators
 -- -----------------
 
-land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-land (op scalarType -> x) (op scalarType -> y)
+land :: CodeGen (IR Bool) -> CodeGen (IR Bool) -> CodeGen (IR Bool)
+land x y =
+  if x
+    then y
+    else return $ ir scalarType (scalar scalarType False)
+
+lor :: CodeGen (IR Bool) -> CodeGen (IR Bool) -> CodeGen (IR Bool)
+lor x y =
+  if x
+    then return $ ir scalarType (scalar scalarType True)
+    else y
+
+-- TLM: These implementations are strict in both arguments, but logical
+--      operators should short-circuit. This needs to be fixed!!
+land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+land' (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-lor (op scalarType -> x) (op scalarType -> y)
+lor'  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor' (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen (IR Bool)
@@ -427,8 +512,14 @@ binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dic
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
--- | Standard if-then-else expression
+-- | Lift a constant value into an constant in the intermediate representation.
+--
+lift :: IsScalar a => a -> IR a
+lift x = ir scalarType (scalar scalarType x)
 
+
+-- | Standard if-then-else expression
+--
 ifThenElse
     :: Elt a
     => CodeGen (IR Bool)
@@ -458,7 +549,7 @@ ifThenElse test yes no = do
 
 -- Execute the body only if the first argument evaluates to True
 --
-when :: CodeGen (IR Bool) -> CodeGen() -> CodeGen()
+when :: CodeGen (IR Bool) -> CodeGen () -> CodeGen ()
 when test doit = do
   body <- newBlock "when.body"
   exit <- newBlock "when.exit"
@@ -475,7 +566,7 @@ when test doit = do
 
 -- Execute the body only if the first argument evaluates to False
 --
-unless :: CodeGen (IR Bool) -> CodeGen() -> CodeGen()
+unless :: CodeGen (IR Bool) -> CodeGen () -> CodeGen ()
 unless test doit = do
   body <- newBlock "unless.body"
   exit <- newBlock "unless.exit"
@@ -499,20 +590,22 @@ unless test doit = do
 -- TLM: We should really be able to construct functions of any arity.
 --
 mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
-mathf n t (op t -> x) = do
-  let st  = NumScalarType (FloatingNumType t)
+mathf n f (op f -> x) = do
+  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = PrimType s
   --
-  name <- lm t n
-  r    <- call (Lam st x (Body (Just st) name)) [NoUnwind, ReadOnly]
+  name <- lm f n
+  r    <- call (Lam s x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
 
-mathf' :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
-mathf' n t (op t -> x) (op t -> y) = do
-  let st = NumScalarType (FloatingNumType t)
+mathf2 :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf2 n f (op f -> x) (op f -> y) = do
+  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = PrimType s
   --
-  name <- lm t n
-  r    <- call (Lam st x (Lam st y (Body (Just st) name))) [NoUnwind, ReadOnly]
+  name <- lm f n
+  r    <- call (Lam s x (Lam s y (Body t name))) [NoUnwind, ReadOnly]
   return r
 
 lm :: FloatingType t -> String -> CodeGen Label

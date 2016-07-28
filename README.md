@@ -43,7 +43,7 @@ Then, installation using
 to point it to the appropriate configuration file, for example:
 
 ```
-stack --stack-yaml=stack-7.8.yaml build
+$ stack --stack-yaml=stack-7.8.yaml build
 ```
 
 If installing via `cabal`, note that you will need to tell the `llvm-general`
@@ -57,9 +57,11 @@ $ cabal install ./accelerate-llvm
 
 Finally, it is possible to use libNVVM to optimise the generated GPU code,
 rather than LLVM's inbuilt NVPTX backend (so, you will not need to install LLVM
-with the nvptx target). However, this will require an older version of LLVM,
-which may impact CPU performance. If you wish to use libNVVM, supply the flag
-`-flibnvvm` to cabal when installing `accelerate-llvm`. [**WARNING:** bitrot]
+with the NVPTX target).
+
+```
+$ cabal install accelerate-llvm-ptx -fnvvm
+```
 
 
 Current status

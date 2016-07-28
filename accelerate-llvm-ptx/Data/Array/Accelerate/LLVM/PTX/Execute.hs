@@ -50,10 +50,11 @@ import Control.Parallel.Meta                                    ( runExecutable,
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
-import Data.Int                                                 ( Int32 )
-import Data.Monoid                                              ( mempty )
 import Control.Monad.State                                      ( gets, liftIO )
-import Text.Printf
+import Data.Int                                                 ( Int32 )
+import Data.List                                                ( find )
+import Data.Monoid                                              ( mempty )
+import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import qualified Prelude                                        as P
 
@@ -131,9 +132,11 @@ fold1Op
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-fold1Op kernel gamma aenv stream sh@(_ :. sz)
+fold1Op kernel gamma aenv stream sh@(sx :. sz)
   = $boundsCheck "fold1" "empty array" (sz > 0)
-  $ foldCore kernel gamma aenv stream sh
+  $ case size sh of
+      0 -> allocateRemote sx
+      _ -> foldCore kernel gamma aenv stream sh
 
 foldOp
     :: (Shape sh, Elt e)
@@ -143,8 +146,11 @@ foldOp
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldOp kernel gamma aenv stream (sh :. sz)
-  = foldCore kernel gamma aenv stream ((listToShape . P.map (max 1) . shapeToList $ sh) :. sz)
+foldOp kernel gamma aenv stream sh@(sx :. sz)
+  = foldCore kernel gamma aenv stream
+  $ case size sh of
+      0 -> listToShape (P.map (max 1) (shapeToList sx)) :. 0
+      _ -> sh
 
 foldCore
     :: (Shape sh, Elt e)
@@ -154,9 +160,9 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldCore kernel gamma aenv stream sh'@(sh :. _)
-  | rank sh > 0     = simpleOp  kernel gamma aenv stream sh
-  | otherwise       = foldAllOp kernel gamma aenv stream sh'
+foldCore kernel gamma aenv stream sh
+  | rank sh == 1  = foldAllOp kernel gamma aenv stream sh
+  | otherwise     = foldDimOp kernel gamma aenv stream sh
 
 -- See note: [Marshalling foldAll output arrays]
 --
@@ -203,6 +209,25 @@ foldAllOp exe gamma aenv stream sh' = do
   --
   foldIntro sh'
 
+foldDimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> LLVM PTX (Array sh e)
+foldDimOp exe gamma aenv stream (sh :. sz) = do
+  let
+      kernel
+        | sz > 0    = lookupKernel "fold"     exe
+        | otherwise = lookupKernel "generate" exe
+  --
+  out <- allocateRemote sh
+  ptx <- gets llvmTarget
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  return out
+
 
 -- Using the defaulting instances for stencil operations (for now).
 --
@@ -242,6 +267,15 @@ defaultPPT = 32768
 {-# INLINE i32 #-}
 i32 :: Int -> Int32
 i32 = fromIntegral
+
+
+-- | Retrieve the named kernel
+--
+lookupKernel :: String -> ExecutableR PTX -> Kernel
+lookupKernel name exe =
+  case find (\k -> kernelName k == name) (ptxKernel exe) of
+    Just k  -> k
+    Nothing -> $internalError "lookupKernel" ("not found: " ++ name)
 
 
 -- Execute the function implementing this kernel.

@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeOperators  #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Instruction
 -- Copyright   : [2015] Trevor L. McDonell
@@ -16,14 +17,10 @@
 module LLVM.General.AST.Type.Instruction
   where
 
-import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
-
-import Data.Array.Accelerate.Type
-
-import Foreign.Ptr
+import LLVM.General.AST.Type.Representation
 
 
 -- | Predicate for comparison instruction
@@ -181,7 +178,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
   GetElementPtr :: Operand (Ptr a)
-                -> [Operand Int]
+                -> [Operand i]
                 -> Instruction (Ptr a)
 
   -- Fence
@@ -239,8 +236,7 @@ data Instruction a where
                 -> Operand a
                 -> Instruction b
 
-  PtrCast       :: ScalarType b
-                -> Maybe AddrSpace
+  PtrCast       :: PrimType (Ptr b)     -- precondition: same address space
                 -> Operand (Ptr a)
                 -> Instruction (Ptr b)
 
@@ -254,6 +250,8 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#icmp-instruction>
   -- <http://llvm.org/docs/LangRef.html#fcmp-instruction>
   --
+  -- We treat non-scalar types as signed/unsigned integer values.
+  --
   Cmp           :: ScalarType a
                 -> Predicate
                 -> Operand a
@@ -262,7 +260,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#phi-instruction>
   --
-  Phi           :: ScalarType a
+  Phi           :: PrimType a
                 -> [(Operand a, Label)]
                 -> Instruction a
 

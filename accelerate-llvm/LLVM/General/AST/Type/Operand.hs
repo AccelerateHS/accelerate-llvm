@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Operand
 -- Copyright   : [2015] Trevor L. McDonell
@@ -17,15 +18,12 @@ module LLVM.General.AST.Type.Operand (
 
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Name
+import LLVM.General.AST.Type.Representation
 
-import Data.Array.Accelerate.Type
-
-import Foreign.Ptr
 
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'
 --
 data Operand a where
-  LocalReference        :: ScalarType a -> Name a -> Operand a
+  LocalReference        :: Type a -> Name a -> Operand a
   ConstantOperand       :: Constant a -> Operand a
-  PtrOperand            :: Operand a -> Operand (Ptr a)               -- TODO: This is a hack; sort out the type hierarchy
 

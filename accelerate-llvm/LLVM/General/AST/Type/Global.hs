@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE KindSignatures       #-}
 {-# LANGUAGE TypeOperators        #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.General.AST.Type.Global
 -- Copyright   : [2015] Trevor L. McDonell
@@ -15,20 +16,15 @@
 module LLVM.General.AST.Type.Global
   where
 
-import Foreign.Ptr
-
-import Data.Array.Accelerate.Type
-
-import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 
 -- | Parameters for functions
 --
 data Parameter a where
-  ScalarParameter       :: ScalarType a -> Name a -> Parameter a
-  PtrParameter          :: ScalarType a -> Name a -> Maybe AddrSpace -> Parameter (Ptr a)
+  Parameter :: PrimType a -> Name a -> Parameter a
 
 -- | Attributes for the function call instruction
 --
@@ -45,15 +41,11 @@ data FunctionAttribute
 --
 data GroupID = GroupID !Word
 
--- | A global function definition
---
--- Note that because we just use the reified dictionary structure of Accelerate
--- types, our functions are limited to operating over scalar types only; no
--- pointers to functions and nothing that returns void.
+-- | A global function definition.
 --
 data GlobalFunction args t where
-  Body :: Maybe (ScalarType r) -> Label                              -> GlobalFunction '[]         r
-  Lam  :: ScalarType a         -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
+  Body :: Type r     -> Label                              -> GlobalFunction '[]         r
+  Lam  :: PrimType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
 
 data HList (l :: [*]) where
   HNil  ::                 HList '[]

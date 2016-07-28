@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs        #-}
 {-# LANGUAGE RankNTypes   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar
 -- Copyright   : [2015] Trevor L. McDonell
@@ -47,7 +48,7 @@ data IROpenFun2 arch env aenv t where
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
 data IROpenAcc arch aenv arrs where
-  IROpenAcc :: [Kernel arch aenv a]             -- TLM: ???
+  IROpenAcc :: [Kernel arch aenv arrs]            -- TLM: ???
             -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where
@@ -64,8 +65,8 @@ data IRManifest arch aenv a where
 
 data IRArray a where
   IRArray :: (Shape sh, Elt e)
-          => { irArrayShape :: IR sh
-             , irArrayData  :: IR e             -- TLM: local operand name for array(s) containing elements of type 'e'
+          => { irArrayShape :: IR sh    -- Array extent
+             , irArrayData  :: IR e     -- Array payloads (should really be 'Ptr e')
              }
           -> IRArray (Array sh e)
 
