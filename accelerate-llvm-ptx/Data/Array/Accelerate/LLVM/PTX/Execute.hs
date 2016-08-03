@@ -146,7 +146,7 @@ foldOp
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldOp kernel gamma aenv stream sh@(sx :. sz)
+foldOp kernel gamma aenv stream sh@(sx :. _)
   = foldCore kernel gamma aenv stream
   $ case size sh of
       0 -> listToShape (P.map (max 1) (shapeToList sx)) :. 0

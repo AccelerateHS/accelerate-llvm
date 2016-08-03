@@ -119,8 +119,8 @@ runLLVM  ll =
                             }
 
       (kernels, md, st) = case runState (runCodeGen ll) initialState of
-                            (IROpenAcc ks, st) -> let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
-                                                  in  (fs, Map.fromList as, st)
+                            (IROpenAcc ks, s) -> let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
+                                                 in  (fs, Map.fromList as, s)
 
       definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)

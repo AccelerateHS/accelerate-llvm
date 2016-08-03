@@ -48,7 +48,7 @@ data IROpenFun2 arch env aenv t where
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
 data IROpenAcc arch aenv arrs where
-  IROpenAcc :: [Kernel arch aenv arrs]            -- TLM: ???
+  IROpenAcc :: [Kernel arch aenv arrs]
             -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where

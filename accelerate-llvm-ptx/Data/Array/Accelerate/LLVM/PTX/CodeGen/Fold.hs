@@ -61,7 +61,8 @@ import Prelude                                                      as P
 -- associative to allow for an efficient parallel implementation, but the
 -- initial element does /not/ need to be a neutral element of operator.
 --
--- TODO: Specialise for commutative operations (such as (+))
+-- TODO: Specialise for commutative operations (such as (+)) and those with
+--       a neutral element {(+), 0}
 --
 mkFold
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -73,7 +74,8 @@ mkFold
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
   | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
-  = mkFoldAll dev aenv f (Just z) acc
+  = (+++) <$> mkFoldAll  dev aenv f (Just z) acc
+          <*> mkFoldFill ptx aenv z
 
   | otherwise
   = (+++) <$> mkFoldDim  dev aenv f (Just z) acc
@@ -84,7 +86,8 @@ mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
 -- function must be associative to allow for an efficient parallel
 -- implementation.
 --
--- TODO: Specialise for commutative operations (such as (+))
+-- TODO: Specialise for commutative operations (such as (+)) and those with
+--       a neutral element {(+), 0}
 --
 mkFold1
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -101,7 +104,22 @@ mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
   = mkFoldDim dev aenv f Nothing acc
 
 
--- Reduce an array of arbitrary rank to a single element.
+-- Reduce an array to a single element.
+--
+-- Thread blocks cooperatively reduce a stripe of the input (one element per
+-- thread) to a single element, which is stored into a temporary array. This is
+-- repeated recursively until only a single element remains.
+--
+-- Since the input may be a delayed array, this process is implemented in two
+-- kernels. The first phase incorporates any fused/embedded input arrays, while
+-- the second (and subsequent) phases read from the manifest temporary array.
+--
+-- TODO: This uses a static decomposition of the input space. However, for
+--       architectures with fast atomic operations to global memory (which may
+--       be all 2.0 and later architectures, constituting everything supported
+--       by the LLVM-based toolchain), we might prefer to dynamically allocate
+--       sections of the input as threads complete each block. We should
+--       investigate this.
 --
 mkFoldAll
     :: forall aenv e. Elt e
