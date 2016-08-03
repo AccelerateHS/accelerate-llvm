@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 6e54b685207b0d35be6c7452c2da1abe9d65cff4
+    commit: db1679c79e3086446aa79754dbd33f4a37a7852d
   extra-dep: true
 
 - location:
@@ -54,6 +54,7 @@ flags:
     unsafe-checks: false
     bounds-checks: true
     debug: false
+    ekg: false
     internal-checks: false
   accelerate-llvm:
     debug: true

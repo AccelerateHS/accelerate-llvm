@@ -90,6 +90,7 @@ Library
         , llvm-general-pure             >= 3.2
         , mtl                           >= 2.2.1
         , time                          >= 1.4
+        , vector                        >= 0.10
 
   default-language:
     Haskell2010

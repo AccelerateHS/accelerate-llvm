@@ -60,6 +60,11 @@ gangId =
 
 data instance KernelMetadata Native = KM_Native ()
 
+-- | Combine kernels into a single program
+--
+(+++) :: IROpenAcc Native aenv a -> IROpenAcc Native aenv a -> IROpenAcc Native aenv a
+IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
+
 -- | Create a single kernel program
 --
 makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
