@@ -85,7 +85,7 @@ mkFoldSegS
 mkFoldSegS aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
   makeOpenAcc "foldSegS" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -126,7 +126,7 @@ mkFoldSegP
 mkFoldSegP aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
   makeOpenAcc "foldSegP" (paramGang ++ paramOut ++ paramEnv) $ do
