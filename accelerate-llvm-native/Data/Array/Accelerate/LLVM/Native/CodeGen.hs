@@ -21,6 +21,7 @@ import Data.Array.Accelerate.LLVM.CodeGen
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+import Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 -- import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
@@ -32,6 +33,8 @@ instance Skeleton Native where
   generate _    = mkGenerate
   fold _        = mkFold
   fold1 _       = mkFold1
+  foldSeg _     = mkFoldSeg
+  fold1Seg _    = mkFold1Seg
 --  permute _     = mkPermute
 
 instance Expression Native

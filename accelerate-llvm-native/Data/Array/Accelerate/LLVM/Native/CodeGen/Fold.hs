@@ -26,7 +26,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -38,7 +37,7 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import Control.Applicative
 import Data.Typeable
-import Prelude                                                      as P
+import Prelude                                                      as P hiding ( length )
 
 
 -- Reduce a (possibly empty) array along the innermost dimension. The reduction
