@@ -27,23 +27,21 @@ Flag nvvm
   Description:          Use the NVVM library to generate optimised PTX
 
 Flag debug
-  Default:              True
+  Default:              False
   Description:
-    Enable tracing message flags. These are read from the command-line
-    arguments, which is convenient but may cause problems interacting with the
-    user program, so is not enabled by default. The available options:
-    .
+    Enable tracing message flags. For the list of available options, see the
+    'accelerate' package.
 
 Flag bounds-checks
   Default:              True
   Description:          Enable bounds checking
 
 Flag unsafe-checks
-  Default:              True
+  Default:              False
   Description:          Enable bounds checking in unsafe operations
 
 Flag internal-checks
-  Default:              True
+  Default:              False
   Description:          Enable internal consistency checks
 
 

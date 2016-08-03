@@ -303,15 +303,22 @@ executeOp ptx@PTX{..} kernel finish gamma aenv stream r args =
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
 launch Kernel{..} stream n args =
   withLifetime stream $ \st ->
-    Debug.timed Debug.dump_exec msg (Just st) $
+    Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args
   where
     cta         = (kernelThreadBlockSize, 1, 1)
     grid        = (kernelThreadBlocks n, 1, 1)
     smem        = kernelSharedMemBytes
 
+    -- Debugging/monitoring support
+    query       = if Debug.monitoringIsEnabled
+                    then return True
+                    else Debug.queryFlag Debug.dump_exec
+
     fst3 (x,_,_)         = x
-    msg gpuTime wallTime =
-      printf "exec: %s <<< %d, %d, %d >>> %s"
-             kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed gpuTime wallTime)
+    msg gpuTime wallTime = do
+      Debug.addProcessorTime Debug.PTX gpuTime
+      Debug.traceIO Debug.dump_exec $
+        printf "exec: %s <<< %d, %d, %d >>> %s"
+               kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed gpuTime wallTime)
 
