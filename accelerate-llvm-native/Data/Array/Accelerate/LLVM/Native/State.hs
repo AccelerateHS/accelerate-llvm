@@ -37,7 +37,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
-import Prelude                                                  hiding ( init )
 
 import GHC.Conc
 
@@ -69,8 +68,8 @@ type Strategy = Gang -> Executable
 --
 unbalancedParIO :: Strategy
 unbalancedParIO gang =
-  Executable $ \_ range after init fill ->
-    timed $ runParIO Single.mkResource gang range init fill after
+  Executable $ \_ range after fill ->
+    timed $ runParIO Single.mkResource gang range fill after
 
 
 -- | Execute a computation where threads use work stealing (based on lazy
@@ -81,11 +80,11 @@ unbalancedParIO gang =
 --
 balancedParIO :: Strategy
 balancedParIO gang =
-  Executable $ \ppt range after init fill ->
+  Executable $ \ppt range after fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
     in
-    timed $ runParIO resource gang range init fill after
+    timed $ runParIO resource gang range fill after
 
 
 -- Top-level mutable state
