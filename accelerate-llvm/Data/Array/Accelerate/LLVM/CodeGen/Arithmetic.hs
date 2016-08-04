@@ -511,6 +511,22 @@ binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dic
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
+fst3 :: IR (a, b, c) -> IR a
+fst3 (IR (OP_Pair (OP_Pair (OP_Pair OP_Unit x) _) _)) = IR x
+
+snd3 :: IR (a, b, c) -> IR b
+snd3 (IR (OP_Pair (OP_Pair _ y) _)) = IR y
+
+thd3 :: IR (a, b, c) -> IR c
+thd3 (IR (OP_Pair _ z)) = IR z
+
+trip :: IR a -> IR b -> IR c -> IR (a, b, c)
+trip (IR x) (IR y) (IR z) = IR $ OP_Pair (OP_Pair (OP_Pair OP_Unit x) y) z
+
+untrip :: IR (a, b, c) -> (IR a, IR b, IR c)
+untrip t = (fst3 t, snd3 t, thd3 t)
+
+
 -- | Lift a constant value into an constant in the intermediate representation.
 --
 lift :: IsScalar a => a -> IR a
