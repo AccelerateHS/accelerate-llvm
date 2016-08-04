@@ -116,7 +116,6 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       __syncthreads
 
       -- Whether or not the partial belonging to the current thread is valid
-      -- ^ number of valid elements (may be less than block size)
       valid tid =
         case size of
           Nothing -> return (lift True)
@@ -129,9 +128,10 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
         | otherwise     = do
           inclusive <- app2 combine blockAggregate partial
           partial'  <- if A.eq scalarType warpId warps
-                           then if valid laneId
+                           then if valid threadId
                                    then return inclusive
                                    else return blockAggregate
+                           else return partial
           blockAggregate' <- app2 combine blockAggregate =<<
                               readArray smem step
           recursiveAggregate (step+1) partial' blockAggregate'
