@@ -37,8 +37,10 @@ instance Skeleton Native where
   fold1Seg _    = mkFold1Seg
   scanl _       = mkScanl
   scanl1 _      = mkScanl1
+  scanl' _      = mkScanl'
   scanr _       = mkScanr
   scanr1 _      = mkScanr1
+  scanr' _      = mkScanr'
 --  permute _     = mkPermute
 
 instance Expression Native

@@ -25,6 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -74,6 +75,26 @@ mkScanl1 aenv combine arr =
   (+++) <$> mkScanS L aenv combine Nothing arr
         <*> mkScanP L aenv combine Nothing arr
 
+-- Variant of 'scanl' where the final result is returned in a separate array.
+--
+-- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> ( Array (Z :. 10) [10,10,11,13,16,20,25,31,38,46]
+--       , Array Z [55]
+--       )
+--
+mkScanl'
+    :: forall aenv e. Elt e
+    => Gamma            aenv
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRExp     Native aenv e
+    -> IRDelayed Native aenv (Vector e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScanl' aenv combine seed arr =
+  (+++) <$> mkScan'S L aenv combine seed arr
+        <*> mkScan'P L aenv combine seed arr
+
+
 -- 'Data.List.scanr' style right-to-left exclusive scan, but with the
 -- restriction that the combination function must be associative to enable
 -- efficient parallel implementation.
@@ -110,6 +131,25 @@ mkScanr1
 mkScanr1 aenv combine arr =
   (+++) <$> mkScanS R aenv combine Nothing arr
         <*> mkScanP R aenv combine Nothing arr
+
+-- Variant of 'scanr' where the final result is returned in a separate array.
+--
+-- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> ( Array (Z :. 10) [55,54,52,49,45,40,34,27,19,10]
+--       , Array Z [55]
+--       )
+--
+mkScanr'
+    :: forall aenv e. Elt e
+    => Gamma            aenv
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRExp     Native aenv e
+    -> IRDelayed Native aenv (Vector e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScanr' aenv combine seed arr =
+  (+++) <$> mkScan'S R aenv combine seed arr
+        <*> mkScan'P R aenv combine seed arr
 
 
 -- Sequentially scan an input array. For inclusive scans we can assume that
@@ -174,6 +214,60 @@ mkScanS dir aenv combine mseed IRDelayed{..} =
 
     return_
 
+
+mkScan'S
+    :: forall aenv e. Elt e
+    => Direction
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> IRExp Native aenv e
+    -> IRDelayed Native aenv (Vector e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'S dir aenv combine seed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
+      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Scalar e))
+      paramEnv                  = envParam aenv
+      --
+      cont i                    = case dir of
+                                    L -> A.lt  scalarType i end
+                                    R -> A.gte scalarType i start
+
+      next i                    = case dir of
+                                    L -> A.add numType i (lift 1)
+                                    R -> A.sub numType i (lift 1)
+  in
+  makeOpenAcc "scanS" (paramGang ++ paramOut ++ paramSum ++ paramEnv) $ do
+
+    -- index to read data from
+    i0 <- case dir of
+            L -> return start
+            R -> next end
+
+    -- initial element
+    v0 <- seed
+
+    -- Loop through the input. Only at the top of the loop to we write the
+    -- carry-in value (i.e. value from the last loop iteration) to the output
+    -- array. This ensures correct behaviour if the input array was empty.
+    r  <- while (cont . A.fst)
+                (\(A.unpair -> (i,v)) -> do
+                    writeArray arrOut i v
+
+                    u  <- app1 delayedLinearIndex i
+                    v' <- case dir of
+                            L -> app2 combine v u
+                            R -> app2 combine u v
+                    i' <- next i
+                    return $ A.pair i' v')
+                (A.pair i0 v0)
+
+    -- write final reduction result
+    writeArray arrSum (lift 0 :: IR Int) (A.snd r)
+
+    return_
+
 mkScanP
     :: forall aenv e. Elt e
     => Direction
@@ -183,6 +277,23 @@ mkScanP
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP dir aenv combine mseed arr =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "scanP" (paramGang ++ paramOut ++ paramEnv) $ do
+    return_
+
+mkScan'P
+    :: forall aenv e. Elt e
+    => Direction
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> IRExp Native aenv e
+    -> IRDelayed Native aenv (Vector e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'P dir aenv combine seed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))

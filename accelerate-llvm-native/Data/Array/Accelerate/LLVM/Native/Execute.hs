@@ -97,8 +97,10 @@ instance Execute Native where
   fold1Seg      = foldSegOp
   scanl         = scanOp
   scanl1        = scan1Op
+  scanl'        = scan'Op
   scanr         = scanOp
   scanr1        = scan1Op
+  scanr'        = scan'Op
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -324,7 +326,30 @@ scanCore NativeR{..} gamma aenv () n m = do
 
     -- parallel scan
     ncpu -> do
-      error "TODO: parallel scan"
+      error "TODO: parallel scanOp"
+
+scan'Op
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e, Scalar e)
+scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
+  target <- gets llvmTarget
+  liftIO $  case gangSize (theGang target) of
+
+    -- sequential scan
+    1    -> do
+      out <- allocateArray sh
+      sum <- allocateArray Z
+      execute executableR "scanS" $ \f ->
+        executeOp 1 target f mempty gamma aenv (IE 0 n) (out,sum)
+      return (out,sum)
+
+    ncpu -> do
+      error "TODO: parallel scan'Op"
 
 
 {--
