@@ -95,8 +95,10 @@ instance Execute Native where
   fold1         = fold1Op
   foldSeg       = foldSegOp
   fold1Seg      = foldSegOp
-  -- permute       = permuteOp
-  -- scanl1        = scanl1Op
+  scanl         = scanOp
+  scanl1        = scan1Op
+  scanr         = scanOp
+  scanr1        = scan1Op
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -275,6 +277,54 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
     execute executableR kernel $ \f ->
       executeOp defaultSmallPPT native f mempty gamma aenv (IE 0 (size (sh :. ss))) out
     return out
+
+
+scanOp
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e)
+scanOp kernel gamma aenv stream (Z :. n)
+  = scanCore kernel gamma aenv stream n (n+1)
+
+scan1Op
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e)
+scan1Op kernel gamma aenv stream (Z :. n)
+  = $boundsCheck "scan1" "empty array" (n > 0)
+  $ scanCore kernel gamma aenv stream n n
+
+scanCore
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int
+    -> Int
+    -> LLVM Native (Vector e)
+scanCore NativeR{..} gamma aenv () n m = do
+  target <- gets llvmTarget
+  liftIO $  case gangSize (theGang target) of
+
+    -- sequential scan
+    1    -> do
+      out <- allocateArray (Z :. m)
+      execute executableR "scanS" $ \f ->
+        executeOp 1 target f mempty gamma aenv (IE 0 n) out
+      return out
+
+    -- parallel scan
+    ncpu -> do
+      error "TODO: parallel scan"
 
 
 {--
