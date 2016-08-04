@@ -48,13 +48,11 @@ import Foreign.CUDA.Analysis as CUDA
 
 
 
--- Efficient threadblock-wide reduction using the specified operator. The
--- aggregate reduction value is stored in thread zero. Supports non-commutative
--- operators.
+-- Efficient threadblock-wide scan using the specified operator.
 --
 -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
 --
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_reduce_warp_reductions.cuh
+-- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_scan_warp_scans.cuh
 --
 scanBlockSMem
     :: forall aenv e. Elt e
@@ -62,7 +60,7 @@ scanBlockSMem
     -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> Maybe (IR Int32)                                         -- ^ number of valid elements (may be less than block size)
     -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
+    -> CodeGen (IR e)                                           -- ^ thread-block-wide scan using the specified operator (lane 0 only)
 scanBlockSMem dev combine size = warpScan >=> warpAggregate
   where
     int32 :: Integral a => a -> IR Int32
@@ -110,31 +108,35 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       -- Share the per-lane aggregates
       wid   <- warpId
       lane  <- laneId
-      lastLane <- A.sub (int32 (CUDA.warpSize dev)) (lift 1) -- WARP_THREADS - 1
+      lastLane <- lift (CUDA.warpSize dev - 1)
       when (A.eq scalarType lane lastLane) $ do
         writeArray smem wid input
 
       -- Wait for each warp to finish its local scan
       __syncthreads
 
-      -- Update the total aggregate.
-      tid   <- threadIdx
-      blockAggregate <- readArray smem (lift 0)
-      let valid lane =
-            return (lift True) -- pass for now
-      in
-      iter (lift 1)
-           blockAggregate
-           (flip (A.lt scalarType) warps)
-           (flip (A.add numType) (lift 1))
-           (\step x -> if (A.eq warpId step)
-                          if valid laneId
-                             then writeVolatileArray threadSmem tid =<<
-                                  app2 combinea x =<<
-                                  readVolatileArray threadSmem tid
-                             else writeVolatileArray threadSmem tid x
-                       app2 combine x =<< readArray smem step)
-                       -- blockAggregate = combine(blockAggregate addend)
+      -- Whether or not the partial belonging to the current thread is valid
+      -- ^ number of valid elements (may be less than block size)
+      valid tid =
+        case size of
+          Nothing -> return (lift True)
+          Just s  -> A.lt scalarType tid s -- threadId < size
+
+      -- -- Unfold the aggregate process as a recursive code generation function.
+      recursiveAggregate :: Int -> IR e -> IR e -> CodeGen (IR e)
+      recursiveAggregate step partial blockAggregate
+        | step >= warps  = return x
+        | otherwise     = do
+          inclusive <- app2 combine blockAggregate partial
+          partial'  <- if A.eq scalarType warpId warps
+                           then if valid laneId
+                                   then return inclusive
+                                   else return blockAggregate
+          blockAggregate' <- app2 combine blockAggregate =<<
+                              readArray smem step
+          recursiveAggregate (step+1) partial' blockAggregate'
+
+      recursiveAggregate 1 input =<< readArray smem 0
 
 
 scanWarpSMem
