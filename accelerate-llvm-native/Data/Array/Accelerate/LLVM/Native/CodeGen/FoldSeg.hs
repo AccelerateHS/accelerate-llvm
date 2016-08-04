@@ -26,6 +26,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Exp                       ( indexHead )
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -90,12 +91,22 @@ mkFoldSegS aenv combine mseed arr seg =
   in
   makeOpenAcc "foldSegS" (paramGang ++ paramOut ++ paramEnv) $ do
 
+    -- Number of segments, useful only if reducing DIM2 and higher
+    ss <- indexHead <$> delayedExtent seg
+
     let test si = A.lt scalarType (A.fst si) end
         initial = A.pair start (lift 0)
 
         body :: IR (Int,Int) -> CodeGen (IR (Int,Int))
         body (A.unpair -> (s,inf)) = do
-          len <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) s
+          -- We can avoid an extra division if this is a DIM1 array. Higher
+          -- dimensional reductions need to wrap around the segment array at
+          -- each new lower-dimensional index.
+          s'  <- case rank (undefined::sh) of
+                   0 -> return s
+                   _ -> A.rem integralType s ss
+
+          len <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) s'
           sup <- A.add numType inf len
 
           r   <- case mseed of

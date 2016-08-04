@@ -93,6 +93,8 @@ instance Execute Native where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  foldSeg       = foldSegOp
+  fold1Seg      = foldSegOp
   -- permute       = permuteOp
   -- scanl1        = scanl1Op
   stencil1      = stencil1Op
@@ -238,7 +240,6 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
 
       return out
 
-
 foldDimOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
@@ -253,6 +254,26 @@ foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
     out <- allocateArray sh
     executeMain executableR $ \f ->
       executeOp defaultSmallPPT native f mempty gamma aenv (IE 0 (size sh)) (sz, out)
+    return out
+
+foldSegOp
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> (Z  :. Int)
+    -> LLVM Native (Array (sh :. Int) e)
+foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
+  native <- gets llvmTarget
+  let kernel | gangSize (theGang native) == 1 = "foldSegS"
+             | otherwise                      = "foldSegP"
+  --
+  liftIO $ do
+    out <- allocateArray (sh :. ss)
+    execute executableR kernel $ \f ->
+      executeOp defaultSmallPPT native f mempty gamma aenv (IE 0 (size (sh :. ss))) out
     return out
 
 
