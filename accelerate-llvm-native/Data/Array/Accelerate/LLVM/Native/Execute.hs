@@ -23,8 +23,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
   executeAcc, executeAfun1,
 
-  executeOp,
-
 ) where
 
 -- accelerate
