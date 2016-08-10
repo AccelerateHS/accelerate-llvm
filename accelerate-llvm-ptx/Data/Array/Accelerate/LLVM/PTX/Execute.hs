@@ -21,8 +21,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 
   executeAcc, executeAfun1,
 
-  executeOp,
-
 ) where
 
 -- accelerate

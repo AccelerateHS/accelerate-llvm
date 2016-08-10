@@ -23,8 +23,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
   executeAcc, executeAfun1,
 
-  executeOp,
-
 ) where
 
 -- accelerate
@@ -41,6 +39,7 @@ import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
@@ -56,7 +55,6 @@ import Data.Word                                                    ( Word8 )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Prelude                                                      hiding ( map, scanl, scanr, init, seq )
-import qualified Data.Vector                                        as V
 import qualified Prelude                                            as P
 
 import Foreign.C
@@ -232,7 +230,7 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
       let
           stripe  = max defaultLargePPT (sz `div` (ncpu * 16))
           steps   = (sz + stripe - 1) `div` stripe
-          seq     = par { theGang = V.take 1 (theGang par) }
+          seq     = par { fillP = sequentialIO (theGang par) }
 
       out <- allocateArray Z
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
