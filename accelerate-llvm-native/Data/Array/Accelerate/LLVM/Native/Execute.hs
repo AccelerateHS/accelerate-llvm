@@ -209,31 +209,36 @@ foldAllOp
     -> DIM1
     -> LLVM Native (Scalar e)
 foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
-  par   <- gets llvmTarget
-  liftIO $ case gangSize (theGang par) of
-
-    -- Sequential reduction
-    1    -> do
+  target <- gets llvmTarget
+  let
+      gang    = theGang target
+      ncpu    = gangSize gang
+      par     = target
+      seq     = par { fillP = sequentialIO gang }
+      --
+      stripe  = defaultLargePPT `max` (sz `div` (ncpu * 16))
+      steps   = (sz + stripe - 1) `div` stripe
+  --
+  if ncpu == 1 || steps <= 1
+    then liftIO $ do
+      -- sequential reduction
+      putStrLn "sequential reduction"
       out <- allocateArray Z
       execute executableR "foldAllS" $ \f ->
         executeOp 1 par f mempty gamma aenv (IE 0 sz) out
       return out
 
-    -- Parallel reduction
-    ncpu -> do
-      let
-          stripe  = max defaultLargePPT (sz `div` (ncpu * 16))
-          steps   = (sz + stripe - 1) `div` stripe
-          seq     = par { fillP = sequentialIO (theGang par) }
-
+    else liftIO $ do
+      -- parallel reduction
+      putStrLn "parallel reduction"
       out <- allocateArray Z
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
-
+      --
       execute  executableR "foldAllP1" $ \f1 -> do
        execute executableR "foldAllP2" $ \f2 -> do
         executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (sz, stripe, tmp)
         executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) (tmp, out)
-
+      --
       return out
 
 
