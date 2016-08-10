@@ -228,7 +228,7 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
     -- Parallel reduction
     ncpu -> do
       let
-          stripe  = max defaultLargePPT (sz `div` (ncpu * 16))
+          stripe  = defaultLargePPT `max` (sz `div` (ncpu * 16))
           steps   = (sz + stripe - 1) `div` stripe
           seq     = par { fillP = sequentialIO (theGang par) }
 
@@ -303,7 +303,7 @@ scan1Op kernel gamma aenv stream (Z :. n)
   $ scanCore kernel gamma aenv stream n n
 
 scanCore
-    :: Elt e
+    :: forall aenv e. Elt e
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -313,18 +313,36 @@ scanCore
     -> LLVM Native (Vector e)
 scanCore NativeR{..} gamma aenv () n m = do
   target <- gets llvmTarget
-  liftIO $  case gangSize (theGang target) of
-
-    -- sequential scan
-    1    -> do
+  let
+      par     = target
+      gang    = theGang target
+      seq     = target { fillP = sequentialIO gang }
+      ncpu    = gangSize gang
+      --
+      stripe  = defaultLargePPT `max` (n `div` (ncpu * 16))
+      steps   = (n + stripe - 1) `div` stripe
+  --
+  if ncpu == 1 || steps <= 1
+    then liftIO $ do
+      -- sequential scan
       out <- allocateArray (Z :. m)
       execute executableR "scanS" $ \f ->
-        executeOp 1 target f mempty gamma aenv (IE 0 n) out
+        executeOp 1 seq f mempty gamma aenv (IE 0 n) out
       return out
 
-    -- parallel scan
-    ncpu -> do
-      error "TODO: parallel scanOp"
+    else liftIO $ do
+      -- parallel scan
+      out <- allocateArray (Z :. m)
+      tmp <- allocateArray (Z :. steps) :: IO (Vector e)
+      --
+      execute   executableR "scanP1" $ \f1 -> do
+       execute  executableR "scanP2" $ \f2 -> do
+        execute executableR "scanP3" $ \f3 -> do
+          executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (stripe, (steps-1), out, tmp)
+          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) tmp
+          executeOp 1 par f3 mempty gamma aenv (IE 0 steps) (stripe, (steps-1), out, tmp)
+      --
+      return out
 
 scan'Op
     :: Elt e
@@ -375,47 +393,7 @@ permuteOp kernel gamma aenv () shIn dfs = do
     executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
   return out
 --}
-{--
--- Left inclusive scan
---
-scanl1Op
-    :: forall aenv e. Elt e
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> DIM1
-    -> LLVM Native (Vector e)
-scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
-  native@Native{..} <- gets llvmTarget
 
-  -- sequential reduction
-  if gangSize theGang == 1 || sz < defaultLargePPT
-     then liftIO $ do
-            out <- allocateArray (Z :. sz)
-            executeNamedFunction k "scanl1Seq" $ \f ->
-              callFFI f retVoid =<< marshal native () (0::Int, sz, out, (gamma,aenv))
-
-            return out
-
-  -- Parallel reduction
-     else let chunkSize = defaultLargePPT
-              chunks    = sz `div` chunkSize
-          in
-          liftIO $ do
-            tmp <- allocateArray (Z :. (chunks-1))      :: IO (Vector e)
-            out <- allocateArray (Z :. sz)
-
-            executeNamedFunction k "scanl1Pre"           $ \f -> do
-              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
-
-            executeNamedFunction k "scanl1Post"          $ \f ->
-              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
-
-            return out
---}
 
 stencil1Op
     :: (Shape sh, Elt a, Elt b)

@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -25,17 +26,23 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.IR                        ( IR )
+import Data.Array.Accelerate.LLVM.CodeGen.Exp                       ( indexHead )
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import Control.Applicative
 import Control.Monad
+import Data.String                                                  ( fromString )
 import Prelude                                                      as P
+
+
+data Direction = L | R
 
 
 -- 'Data.List.scanl' style left-to-right exclusive scan, but with the
@@ -194,9 +201,8 @@ mkScanS dir aenv combine mseed IRDelayed{..} =
     -- Evaluate or read the initial element. Update the read-from index
     -- appropriately.
     (v0,i1) <- case mseed of
-                 Just seed -> (,) <$> seed <*> return i0
-                 Nothing   -> (,) <$> app1 delayedLinearIndex i0
-                                  <*> next i0
+                 Just seed -> (,) <$> seed                       <*> pure i0
+                 Nothing   -> (,) <$> app1 delayedLinearIndex i0 <*> next i0
 
     -- Write first element, then continue looping through the rest
     writeArray arrOut j0 v0
@@ -277,13 +283,220 @@ mkScanP
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP dir aenv combine mseed arr =
+  foldr1 (+++) <$> sequence [ mkScanP1 dir aenv combine mseed arr
+                            , mkScanP2 dir aenv combine
+                            , mkScanP3 dir aenv combine mseed
+                            ]
+
+-- Parallel scan, step 1.
+--
+-- Threads scan a stripe of the input into a temporary array, incorporating the
+-- initial element and any fused functions on the way. The final reduction
+-- result of this chunk is written to a separate array.
+--
+mkScanP1
+    :: forall aenv e. Elt e
+    => Direction
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> Maybe (IRExp Native aenv e)
+    -> IRDelayed Native aenv (Vector e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e))
+mkScanP1 dir aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
+      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Vector e))
       paramEnv                  = envParam aenv
+      --
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      --
+      next i                    = case dir of
+                                    L -> A.add numType i (lift 1)
+                                    R -> A.sub numType i (lift 1)
+      firstChunk                = case dir of
+                                    L -> lift 0
+                                    R -> steps
   in
-  makeOpenAcc "scanP" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramSum ++ paramEnv) $ do
+
+    len <- indexHead <$> delayedExtent
+
+    -- A thread scans a non-empty stripe of the input, storing the final
+    -- reduction result into a separate array.
+    --
+    -- For exclusive scans the first chunk must incorporate the initial element
+    -- into the input and output, while all other chunks increment their output
+    -- index by one.
+    imapFromTo start end $ \chunk -> do
+      inf <- A.mul numType chunk stride
+      a   <- A.add numType inf   stride
+      sup <- A.min scalarType a  len
+
+      -- index i* is the index that we read data from. Recall that the supremum
+      -- index is exclusive
+      i0  <- case dir of
+               L -> return inf
+               R -> next sup
+
+      -- index j* is the index that we write to. Recall that for exclusive scan
+      -- the output array is one larger than the input; the first chunk uses
+      -- this spot to write the initial element, all other chunks shift by one.
+      j0  <- case mseed of
+               Nothing -> return i0
+               Just _  -> case dir of
+                            L -> if A.eq scalarType chunk firstChunk
+                                   then return i0
+                                   else next i0
+                            R -> if A.eq scalarType chunk firstChunk
+                                   then return sup
+                                   else return i0
+
+      -- Evaluate/read the initial element for this chunk. Update the read-from
+      -- index appropriately
+      (v0,i1) <- A.unpair <$> case mseed of
+                   Just seed -> if A.eq scalarType chunk firstChunk
+                                  then A.pair <$> seed                       <*> pure i0
+                                  else A.pair <$> app1 delayedLinearIndex i0 <*> next i0
+                   Nothing   ->        A.pair <$> app1 delayedLinearIndex i0 <*> next i0
+
+      -- Write first element
+      writeArray arrOut j0 v0
+      j1  <- next j0
+
+      -- Continue looping through the rest of the input
+      let cont i =
+             case dir of
+               L -> A.lt  scalarType i sup
+               R -> A.gte scalarType i inf
+
+      r   <- while (cont . A.fst3)
+                   (\(A.untrip -> (i,j,v)) -> do
+                       u  <- app1 delayedLinearIndex i
+                       v' <- case dir of
+                               L -> app2 combine v u
+                               R -> app2 combine u v
+                       writeArray arrOut j v'
+                       A.trip <$> next i <*> next j <*> pure v')
+                   (A.trip i1 j1 v0)
+
+      -- Final reduction result of this chunk
+      writeArray arrSum chunk (A.thd3 r)
+
     return_
+
+
+-- Parallel scan, step 2.
+--
+-- A single thread performs an in-place inclusive scan of the partial block
+-- sums. This forms the carry-in value which are added to the stripe partial
+-- results in the final step.
+--
+mkScanP2
+    :: forall aenv e. Elt e
+    => Direction
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e))
+mkScanP2 dir aenv combine =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Vector e))
+      paramEnv                  = envParam aenv
+      --
+      cont i                    = case dir of
+                                    L -> A.lt  scalarType i end
+                                    R -> A.gte scalarType i start
+
+      next i                    = case dir of
+                                    L -> A.add numType i (lift 1)
+                                    R -> A.sub numType i (lift 1)
+  in
+  makeOpenAcc "scanP2" (paramGang ++ paramSum ++ paramEnv) $ do
+
+    i0 <- case dir of
+            L -> return start
+            R -> next end
+
+    v0 <- readArray arrSum i0
+    i1 <- next i0
+
+    void $ while (cont . A.fst)
+                 (\(A.unpair -> (i,v)) -> do
+                    u  <- readArray arrSum i
+                    i' <- next i
+                    v' <- case dir of
+                            L -> app2 combine v u
+                            R -> app2 combine u v
+                    writeArray arrSum i v'
+                    return $ A.pair i' v')
+                 (A.pair i1 v0)
+
+    return_
+
+
+-- Parallel scan, step 3.
+--
+-- Threads combine every element of the partial block results with the carry-in
+-- value computed from step 2.
+--
+mkScanP3
+    :: forall aenv e. Elt e
+    => Direction
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> Maybe (IRExp Native aenv e)
+    -> CodeGen (IROpenAcc Native aenv (Vector e))
+mkScanP3 dir aenv combine mseed =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
+      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Vector e))
+      paramEnv                  = envParam aenv
+      --
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      --
+      next i                    = case dir of
+                                    L -> A.add numType i (lift 1)
+                                    R -> A.sub numType i (lift 1)
+      prev i                    = case dir of
+                                    L -> A.sub numType i (lift 1)
+                                    R -> A.add numType i (lift 1)
+      firstChunk                = case dir of
+                                    L -> lift 0
+                                    R -> steps
+  in
+  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramSteps : paramOut ++ paramSum ++ paramEnv) $ do
+
+    imapFromTo start end $ \chunk ->
+      A.when (A.neq scalarType chunk firstChunk) $ do
+
+        a     <- A.mul numType chunk stride
+        b     <- A.add numType a     stride
+        c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+
+        (inf,sup) <- case (dir,mseed) of
+                       (L,Just _) -> (,) <$> next a <*> next c
+                       _          -> (,) <$> pure a <*> pure c
+
+        d     <- prev chunk
+        carry <- readArray arrSum d
+
+        imapFromTo inf sup $ \i -> do
+          x <- readArray arrOut i
+          y <- case dir of
+                 L -> app2 combine carry x
+                 R -> app2 combine x carry
+          writeArray arrOut i y
+
+    return_
+
 
 mkScan'P
     :: forall aenv e. Elt e
@@ -300,12 +513,6 @@ mkScan'P dir aenv combine seed IRDelayed{..} =
       paramEnv                  = envParam aenv
   in
   makeOpenAcc "scanP" (paramGang ++ paramOut ++ paramEnv) $ do
+
     return_
-
-
--- Utilities
--- ---------
-
-data Direction = L | R
-  deriving (Eq, Show)
 
