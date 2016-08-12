@@ -303,7 +303,7 @@ mkScanP1
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP1 dir aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
@@ -330,60 +330,59 @@ mkScanP1 dir aenv combine mseed IRDelayed{..} =
     -- For exclusive scans the first chunk must incorporate the initial element
     -- into the input and output, while all other chunks increment their output
     -- index by one.
-    imapFromTo start end $ \chunk -> do
-      inf <- A.mul numType chunk stride
-      a   <- A.add numType inf   stride
-      sup <- A.min scalarType a  len
+    inf <- A.mul numType chunk stride
+    a   <- A.add numType inf   stride
+    sup <- A.min scalarType a  len
 
-      -- index i* is the index that we read data from. Recall that the supremum
-      -- index is exclusive
-      i0  <- case dir of
-               L -> return inf
-               R -> next sup
+    -- index i* is the index that we read data from. Recall that the supremum
+    -- index is exclusive
+    i0  <- case dir of
+             L -> return inf
+             R -> next sup
 
-      -- index j* is the index that we write to. Recall that for exclusive scan
-      -- the output array is one larger than the input; the first chunk uses
-      -- this spot to write the initial element, all other chunks shift by one.
-      j0  <- case mseed of
-               Nothing -> return i0
-               Just _  -> case dir of
-                            L -> if A.eq scalarType chunk firstChunk
-                                   then return i0
-                                   else next i0
-                            R -> if A.eq scalarType chunk firstChunk
-                                   then return sup
-                                   else return i0
+    -- index j* is the index that we write to. Recall that for exclusive scan
+    -- the output array is one larger than the input; the first chunk uses
+    -- this spot to write the initial element, all other chunks shift by one.
+    j0  <- case mseed of
+             Nothing -> return i0
+             Just _  -> case dir of
+                          L -> if A.eq scalarType chunk firstChunk
+                                 then return i0
+                                 else next i0
+                          R -> if A.eq scalarType chunk firstChunk
+                                 then return sup
+                                 else return i0
 
-      -- Evaluate/read the initial element for this chunk. Update the read-from
-      -- index appropriately
-      (v0,i1) <- A.unpair <$> case mseed of
-                   Just seed -> if A.eq scalarType chunk firstChunk
-                                  then A.pair <$> seed                       <*> pure i0
-                                  else A.pair <$> app1 delayedLinearIndex i0 <*> next i0
-                   Nothing   ->        A.pair <$> app1 delayedLinearIndex i0 <*> next i0
+    -- Evaluate/read the initial element for this chunk. Update the read-from
+    -- index appropriately
+    (v0,i1) <- A.unpair <$> case mseed of
+                 Just seed -> if A.eq scalarType chunk firstChunk
+                                then A.pair <$> seed                       <*> pure i0
+                                else A.pair <$> app1 delayedLinearIndex i0 <*> next i0
+                 Nothing   ->        A.pair <$> app1 delayedLinearIndex i0 <*> next i0
 
-      -- Write first element
-      writeArray arrOut j0 v0
-      j1  <- next j0
+    -- Write first element
+    writeArray arrOut j0 v0
+    j1  <- next j0
 
-      -- Continue looping through the rest of the input
-      let cont i =
-             case dir of
-               L -> A.lt  scalarType i sup
-               R -> A.gte scalarType i inf
+    -- Continue looping through the rest of the input
+    let cont i =
+           case dir of
+             L -> A.lt  scalarType i sup
+             R -> A.gte scalarType i inf
 
-      r   <- while (cont . A.fst3)
-                   (\(A.untrip -> (i,j,v)) -> do
-                       u  <- app1 delayedLinearIndex i
-                       v' <- case dir of
-                               L -> app2 combine v u
-                               R -> app2 combine u v
-                       writeArray arrOut j v'
-                       A.trip <$> next i <*> next j <*> pure v')
-                   (A.trip i1 j1 v0)
+    r   <- while (cont . A.fst3)
+                 (\(A.untrip -> (i,j,v)) -> do
+                     u  <- app1 delayedLinearIndex i
+                     v' <- case dir of
+                             L -> app2 combine v u
+                             R -> app2 combine u v
+                     writeArray arrOut j v'
+                     A.trip <$> next i <*> next j <*> pure v')
+                 (A.trip i1 j1 v0)
 
-      -- Final reduction result of this chunk
-      writeArray arrTmp chunk (A.thd3 r)
+    -- Final reduction result of this chunk
+    writeArray arrTmp chunk (A.thd3 r)
 
     return_
 
@@ -451,7 +450,7 @@ mkScanP3
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP3 dir aenv combine mseed =
   let
-      (start, end, paramGang)   = gangParam
+      (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
@@ -473,26 +472,25 @@ mkScanP3 dir aenv combine mseed =
   in
   makeOpenAcc "scanP3" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    imapFromTo start end $ \chunk ->
-      A.when (A.neq scalarType chunk firstChunk) $ do
+    A.when (A.neq scalarType chunk firstChunk) $ do
 
-        a     <- A.mul numType chunk stride
-        b     <- A.add numType a     stride
-        c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+      a     <- A.mul numType chunk stride
+      b     <- A.add numType a     stride
+      c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
 
-        (inf,sup) <- case (dir,mseed) of
-                       (L,Just _) -> (,) <$> next a <*> next c
-                       _          -> (,) <$> pure a <*> pure c
+      (inf,sup) <- case (dir,mseed) of
+                     (L,Just _) -> (,) <$> next a <*> next c
+                     _          -> (,) <$> pure a <*> pure c
 
-        d     <- prev chunk
-        carry <- readArray arrTmp d
+      d     <- prev chunk
+      carry <- readArray arrTmp d
 
-        imapFromTo inf sup $ \i -> do
-          x <- readArray arrOut i
-          y <- case dir of
-                 L -> app2 combine carry x
-                 R -> app2 combine x carry
-          writeArray arrOut i y
+      imapFromTo inf sup $ \i -> do
+        x <- readArray arrOut i
+        y <- case dir of
+               L -> app2 combine carry x
+               R -> app2 combine x carry
+        writeArray arrOut i y
 
     return_
 
