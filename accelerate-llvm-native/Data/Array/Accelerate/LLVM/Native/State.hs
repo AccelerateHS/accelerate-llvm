@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.State (
   createTarget, defaultTarget,
 
   Strategy,
-  balancedParIO, unbalancedParIO,
+  sequentialIO, balancedParIO, unbalancedParIO,
 
 ) where
 
@@ -37,6 +37,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
+import qualified Data.Vector                                    as V
 
 import GHC.Conc
 
@@ -62,6 +63,15 @@ createTarget caps strategy = do
 -- | The strategy for balancing work amongst the available worker threads.
 --
 type Strategy = Gang -> Executable
+
+
+-- | Execute an operation sequentially with a single thread
+--
+sequentialIO :: Strategy
+sequentialIO gang =
+  Executable $ \_ range after fill ->
+    timed $ seqIO Single.mkResource (V.take 1 gang) range fill after
+
 
 -- | Execute a computation without load balancing. Each thread computes an
 -- equally sized chunk of the input. No work stealing occurs.
@@ -111,7 +121,9 @@ balancedParIO gang =
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  createTarget [0 .. numCapabilities - 1] balancedParIO
+  case numCapabilities of
+    1 -> createTarget [0]        sequentialIO
+    n -> createTarget [0 .. n-1] balancedParIO
 
 
 -- Debugging

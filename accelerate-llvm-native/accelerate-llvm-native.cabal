@@ -49,7 +49,6 @@ Flag internal-checks
 Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.Native
-    Data.Array.Accelerate.LLVM.Native.Internal
 
   other-modules:
     Data.Array.Accelerate.LLVM.Native.Array.Data
@@ -70,8 +69,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
     Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
---    Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
---    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment

@@ -23,8 +23,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
   executeAcc, executeAfun1,
 
-  executeOp,
-
 ) where
 
 -- accelerate
@@ -41,6 +39,7 @@ import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
@@ -55,8 +54,7 @@ import Data.Monoid                                                  ( mempty )
 import Data.Word                                                    ( Word8 )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
-import Prelude                                                      hiding ( map, scanl, scanr, init, seq )
-import qualified Data.Vector                                        as V
+import Prelude                                                      hiding ( map, sum, scanl, scanr, init, seq )
 import qualified Prelude                                            as P
 
 import Foreign.C
@@ -95,8 +93,12 @@ instance Execute Native where
   fold1         = fold1Op
   foldSeg       = foldSegOp
   fold1Seg      = foldSegOp
-  -- permute       = permuteOp
-  -- scanl1        = scanl1Op
+  scanl         = scanOp
+  scanl1        = scan1Op
+  scanl'        = scan'Op
+  scanr         = scanOp
+  scanr1        = scan1Op
+  scanr'        = scan'Op
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -226,16 +228,16 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
     -- Parallel reduction
     ncpu -> do
       let
-          stripe  = max defaultLargePPT (sz `div` (ncpu * 16))
-          steps   = (sz + stripe - 1) `div` stripe
-          seq     = par { theGang = V.take 1 (theGang par) }
+          stride  = defaultLargePPT `max` (sz `div` (ncpu * 16))
+          steps   = (sz + stride - 1) `div` stride
+          seq     = par { fillP = sequentialIO (theGang par) }
 
       out <- allocateArray Z
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
 
       execute  executableR "foldAllP1" $ \f1 -> do
        execute executableR "foldAllP2" $ \f2 -> do
-        executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (sz, stripe, tmp)
+        executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (sz, stride, tmp)
         executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) (tmp, out)
 
       return out
@@ -277,6 +279,116 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
     return out
 
 
+scanOp
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e)
+scanOp kernel gamma aenv stream (Z :. n)
+  = scanCore kernel gamma aenv stream n (n+1)
+
+scan1Op
+    :: Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e)
+scan1Op kernel gamma aenv stream (Z :. n)
+  = $boundsCheck "scan1" "empty array" (n > 0)
+  $ scanCore kernel gamma aenv stream n n
+
+scanCore
+    :: forall aenv e. Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int
+    -> Int
+    -> LLVM Native (Vector e)
+scanCore NativeR{..} gamma aenv () n m = do
+  target <- gets llvmTarget
+  let
+      par     = target
+      gang    = theGang target
+      seq     = target { fillP = sequentialIO gang }
+      ncpu    = gangSize gang
+      --
+      stride  = defaultLargePPT `max` (n `div` (ncpu * 16))
+      steps   = (n + stride - 1) `div` stride
+      steps'  = steps - 1
+  --
+  if ncpu == 1 || steps <= 1
+    then liftIO $ do
+      -- sequential scan
+      out <- allocateArray (Z :. m)
+      execute executableR "scanS" $ \f ->
+        executeOp 1 seq f mempty gamma aenv (IE 0 n) out
+      return out
+
+    else liftIO $ do
+      -- parallel scan
+      out <- allocateArray (Z :. m)
+      tmp <- allocateArray (Z :. steps) :: IO (Vector e)
+      --
+      execute   executableR "scanP1" $ \f1 -> do
+       execute  executableR "scanP2" $ \f2 -> do
+        execute executableR "scanP3" $ \f3 -> do
+          executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (stride, steps', out, tmp)
+          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) tmp
+          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+      --
+      return out
+
+scan'Op
+    :: forall aenv e. Elt e
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM Native (Vector e, Scalar e)
+scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
+  target <- gets llvmTarget
+  let
+      gang    = theGang target
+      ncpu    = gangSize gang
+      par     = target
+      seq     = target { fillP = sequentialIO gang }
+      --
+      stride  = defaultLargePPT `max` (n `div` (ncpu * 16))
+      steps   = (n + stride - 1) `div` stride
+      steps'  = steps - 1
+  --
+  if ncpu == 1 || steps <= 1
+    then liftIO $ do
+      -- sequential scan
+      out <- allocateArray sh
+      sum <- allocateArray Z
+      execute executableR "scanS" $ \f ->
+        executeOp 1 seq f mempty gamma aenv (IE 0 n) (out,sum)
+      return (out,sum)
+
+    else liftIO $ do
+      tmp <- allocateArray (Z :. steps) :: IO (Vector e)
+      out <- allocateArray sh
+      sum <- allocateArray Z
+
+      execute   executableR "scanP1" $ \f1 -> do
+       execute  executableR "scanP2" $ \f2 -> do
+        execute executableR "scanP3" $ \f3 -> do
+          executeOp 1 par f1 mempty gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
+          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps)  (sum, tmp)
+          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+
+      return (out,sum)
+
+
 {--
 -- Forward permutation, specified by an indexing mapping into an array and a
 -- combination function to combine elements.
@@ -302,47 +414,7 @@ permuteOp kernel gamma aenv () shIn dfs = do
     executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
   return out
 --}
-{--
--- Left inclusive scan
---
-scanl1Op
-    :: forall aenv e. Elt e
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> DIM1
-    -> LLVM Native (Vector e)
-scanl1Op (NativeR k) gamma aenv () (Z :. sz) = do
-  native@Native{..} <- gets llvmTarget
 
-  -- sequential reduction
-  if gangSize theGang == 1 || sz < defaultLargePPT
-     then liftIO $ do
-            out <- allocateArray (Z :. sz)
-            executeNamedFunction k "scanl1Seq" $ \f ->
-              callFFI f retVoid =<< marshal native () (0::Int, sz, out, (gamma,aenv))
-
-            return out
-
-  -- Parallel reduction
-     else let chunkSize = defaultLargePPT
-              chunks    = sz `div` chunkSize
-          in
-          liftIO $ do
-            tmp <- allocateArray (Z :. (chunks-1))      :: IO (Vector e)
-            out <- allocateArray (Z :. sz)
-
-            executeNamedFunction k "scanl1Pre"           $ \f -> do
-              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                callFFI f retVoid =<< marshal native () (start,end,chunkSize,tmp,(gamma,aenv))
-
-            executeNamedFunction k "scanl1Post"          $ \f ->
-              runExecutable fillP 1 (IE 0 chunks) mempty $ \start end _ -> do
-                callFFI f retVoid =<< marshal native () (start,end,(chunks-1),chunkSize,sz,tmp,out,(gamma,aenv))
-
-            return out
---}
 
 stencil1Op
     :: (Shape sh, Elt a, Elt b)
