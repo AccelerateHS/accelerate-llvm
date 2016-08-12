@@ -230,7 +230,7 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
       -- Sequential reduction
       out <- allocateArray Z
       execute executableR "foldAllS" $ \f ->
-        executeOp 1 par f mempty gamma aenv (IE 0 sz) out
+        executeOp 1 seq f mempty gamma aenv (IE 0 sz) out
       return out
 
     else liftIO $ do
