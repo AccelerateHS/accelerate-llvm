@@ -93,12 +93,12 @@ instance Execute Native where
   fold1         = fold1Op
   foldSeg       = foldSegOp
   fold1Seg      = foldSegOp
-  scanl         = scanOp L
-  scanl1        = scan1Op L
-  scanl'        = scan'Op L
-  scanr         = scanOp R
-  scanr1        = scan1Op R
-  scanr'        = scan'Op R
+  scanl         = scanOp
+  scanl1        = scan1Op
+  scanl'        = scan'Op
+  scanr         = scanOp
+  scanr1        = scan1Op
+  scanr'        = scan'Op
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -279,44 +279,39 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
     return out
 
 
-data Direction = L | R
-
 scanOp
     :: Elt e
-    => Direction
-    -> ExecutableR Native
+    => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> DIM1
     -> LLVM Native (Vector e)
-scanOp dir kernel gamma aenv stream (Z :. n)
-  = scanCore dir kernel gamma aenv stream n (n+1)
+scanOp kernel gamma aenv stream (Z :. n)
+  = scanCore kernel gamma aenv stream n (n+1)
 
 scan1Op
     :: Elt e
-    => Direction
-    -> ExecutableR Native
+    => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> DIM1
     -> LLVM Native (Vector e)
-scan1Op dir kernel gamma aenv stream (Z :. n)
+scan1Op kernel gamma aenv stream (Z :. n)
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore dir kernel gamma aenv stream n n
+  $ scanCore kernel gamma aenv stream n n
 
 scanCore
     :: forall aenv e. Elt e
-    => Direction
-    -> ExecutableR Native
+    => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Int
     -> Int
     -> LLVM Native (Vector e)
-scanCore dir NativeR{..} gamma aenv () n m = do
+scanCore NativeR{..} gamma aenv () n m = do
   target <- gets llvmTarget
   let
       par     = target
@@ -346,22 +341,19 @@ scanCore dir NativeR{..} gamma aenv () n m = do
         execute executableR "scanP3" $ \f3 -> do
           executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (stride, steps', out, tmp)
           executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) tmp
-          case dir of
-            L -> executeOp 1 par f3 mempty gamma aenv (IE 1 steps)  (stride, out, tmp)
-            R -> executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
       --
       return out
 
 scan'Op
     :: forall aenv e. Elt e
-    => Direction
-    -> ExecutableR Native
+    => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> DIM1
     -> LLVM Native (Vector e, Scalar e)
-scan'Op dir NativeR{..} gamma aenv () sh@(Z :. n) = do
+scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
   target <- gets llvmTarget
   let
       gang    = theGang target
@@ -390,11 +382,9 @@ scan'Op dir NativeR{..} gamma aenv () sh@(Z :. n) = do
       execute   executableR "scanP1" $ \f1 -> do
        execute  executableR "scanP2" $ \f2 -> do
         execute executableR "scanP3" $ \f3 -> do
-          executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (stride, steps', out, tmp)
-          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) (sum, tmp)
-          case dir of
-            L -> executeOp 1 par f3 mempty gamma aenv (IE 1 steps)  (stride, out, tmp)
-            R -> executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+          executeOp 1 par f1 mempty gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
+          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps)  (sum, tmp)
+          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
 
       return (out,sum)
 

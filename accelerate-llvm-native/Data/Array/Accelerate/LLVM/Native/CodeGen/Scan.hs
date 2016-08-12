@@ -441,7 +441,8 @@ mkScanP2 dir aenv combine =
 -- Threads combine every element of the partial block results with the carry-in
 -- value computed from step 2.
 --
--- Note that we don't launch a thread for the first chunk.
+-- Note that we launch (chunks-1) threads, because the first chunk does not need
+-- extra processing (has no carry-in value).
 --
 mkScanP3
     :: forall aenv e. Elt e
@@ -469,16 +470,25 @@ mkScanP3 dir aenv combine mseed =
   in
   makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    a     <- A.mul numType chunk stride
-    b     <- A.add numType a     stride
-    c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+    -- Determine which chunk will be carrying in values for. Compute appropriate
+    -- start and end indices.
+    a     <- case dir of
+               L -> next chunk
+               R -> pure chunk
+
+    b     <- A.mul numType a stride
+    c     <- A.add numType b stride
+    d     <- A.min scalarType c (indexHead (irArrayShape arrOut))
 
     (inf,sup) <- case (dir,mseed) of
-                   (L,Just _) -> (,) <$> next a <*> next c
-                   _          -> (,) <$> pure a <*> pure c
+                   (L,Just _) -> (,) <$> next b <*> next d
+                   _          -> (,) <$> pure b <*> pure d
 
-    d     <- prev chunk
-    carry <- readArray arrTmp d
+    -- Carry in value from the previous chunk
+    e     <- case dir of
+               L -> pure chunk
+               R -> prev chunk
+    carry <- readArray arrTmp e
 
     imapFromTo inf sup $ \i -> do
       x <- readArray arrOut i
@@ -647,7 +657,8 @@ mkScan'P2 dir aenv combine =
 -- Similar to mkScanP3, except that indices are shifted by one since the output
 -- array is the same size as the input (despite being an exclusive scan).
 --
--- Note that we don't launch a thread for the first chunk.
+-- Launch (chunks-1) threads, because the first chunk does not need extra
+-- processing.
 --
 mkScan'P3
     :: forall aenv e. Elt e
@@ -674,15 +685,25 @@ mkScan'P3 dir aenv combine =
   in
   makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    a     <- A.mul numType chunk stride
-    b     <- A.add numType a     stride
-    c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+    -- Determine which chunk we will be carrying in the values of, and compute
+    -- the appropriate start and end indices
+    a     <- case dir of
+               L -> next chunk
+               R -> pure chunk
 
-    inf   <- next a
-    sup   <- next c
+    b     <- A.mul numType a stride
+    c     <- A.add numType b stride
+    d     <- A.min scalarType c (indexHead (irArrayShape arrOut))
 
-    d     <- prev chunk
-    carry <- readArray arrTmp d
+    inf   <- next b
+    sup   <- next d
+
+    -- Carry-value from the previous chunk
+    e     <- case dir of
+               L -> pure chunk
+               R -> prev chunk
+
+    carry <- readArray arrTmp e
 
     imapFromTo inf sup $ \i -> do
       x <- readArray arrOut i
