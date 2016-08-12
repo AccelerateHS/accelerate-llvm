@@ -441,6 +441,8 @@ mkScanP2 dir aenv combine =
 -- Threads combine every element of the partial block results with the carry-in
 -- value computed from step 2.
 --
+-- Note that we don't launch a thread for the first chunk.
+--
 mkScanP3
     :: forall aenv e. Elt e
     => Direction
@@ -455,8 +457,6 @@ mkScanP3 dir aenv combine mseed =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
       stride                    = local           scalarType ("ix.stride" :: Name Int)
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
       --
@@ -466,31 +466,26 @@ mkScanP3 dir aenv combine mseed =
       prev i                    = case dir of
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
-      firstChunk                = case dir of
-                                    L -> lift 0
-                                    R -> steps
   in
-  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    A.when (A.neq scalarType chunk firstChunk) $ do
+    a     <- A.mul numType chunk stride
+    b     <- A.add numType a     stride
+    c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
 
-      a     <- A.mul numType chunk stride
-      b     <- A.add numType a     stride
-      c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+    (inf,sup) <- case (dir,mseed) of
+                   (L,Just _) -> (,) <$> next a <*> next c
+                   _          -> (,) <$> pure a <*> pure c
 
-      (inf,sup) <- case (dir,mseed) of
-                     (L,Just _) -> (,) <$> next a <*> next c
-                     _          -> (,) <$> pure a <*> pure c
+    d     <- prev chunk
+    carry <- readArray arrTmp d
 
-      d     <- prev chunk
-      carry <- readArray arrTmp d
-
-      imapFromTo inf sup $ \i -> do
-        x <- readArray arrOut i
-        y <- case dir of
-               L -> app2 combine carry x
-               R -> app2 combine x carry
-        writeArray arrOut i y
+    imapFromTo inf sup $ \i -> do
+      x <- readArray arrOut i
+      y <- case dir of
+             L -> app2 combine carry x
+             R -> app2 combine x carry
+      writeArray arrOut i y
 
     return_
 
@@ -652,6 +647,8 @@ mkScan'P2 dir aenv combine =
 -- Similar to mkScanP3, except that indices are shifted by one since the output
 -- array is the same size as the input (despite being an exclusive scan).
 --
+-- Note that we don't launch a thread for the first chunk.
+--
 mkScan'P3
     :: forall aenv e. Elt e
     => Direction
@@ -665,8 +662,6 @@ mkScan'P3 dir aenv combine =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
       stride                    = local           scalarType ("ix.stride" :: Name Int)
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
       --
@@ -676,30 +671,25 @@ mkScan'P3 dir aenv combine =
       prev i                    = case dir of
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
-      firstChunk                = case dir of
-                                    L -> lift 0
-                                    R -> steps
   in
-  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    A.when (A.neq scalarType chunk firstChunk) $ do
+    a     <- A.mul numType chunk stride
+    b     <- A.add numType a     stride
+    c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
 
-      a     <- A.mul numType chunk stride
-      b     <- A.add numType a     stride
-      c     <- A.min scalarType b (indexHead (irArrayShape arrOut))
+    inf   <- next a
+    sup   <- next c
 
-      inf   <- next a
-      sup   <- next c
+    d     <- prev chunk
+    carry <- readArray arrTmp d
 
-      d     <- prev chunk
-      carry <- readArray arrTmp d
-
-      imapFromTo inf sup $ \i -> do
-        x <- readArray arrOut i
-        y <- case dir of
-               L -> app2 combine carry x
-               R -> app2 combine x carry
-        writeArray arrOut i y
+    imapFromTo inf sup $ \i -> do
+      x <- readArray arrOut i
+      y <- case dir of
+             L -> app2 combine carry x
+             R -> app2 combine x carry
+      writeArray arrOut i y
 
     return_
 
