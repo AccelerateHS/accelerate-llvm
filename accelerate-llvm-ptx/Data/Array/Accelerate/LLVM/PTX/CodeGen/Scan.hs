@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
+-- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -16,8 +16,8 @@
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
-  mkFold,
-  mkFold1,
+  mkScan,
+  mkScan1,
 
 ) where
 
@@ -50,7 +50,7 @@ import Foreign.CUDA.Analysis as CUDA
 
 -- Scan an array of arbitrary rank along the innermost dimension only.
 --
-mkScanDim
+mkScan
     :: forall aenv sh e. (Shape sh, Elt e)
     =>          DeviceProperties                                -- ^ properties of the target GPU
     ->          Gamma         aenv                              -- ^ array environment
@@ -58,13 +58,13 @@ mkScanDim
     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldDim dev aenv combine mseed IRDelayed{..} =
+mkScan dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "scan" (paramGang ++ paramOut ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
