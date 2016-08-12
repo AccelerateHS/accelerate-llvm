@@ -48,6 +48,100 @@ import Foreign.CUDA.Analysis as CUDA
 
 
 
+-- Scan an array of arbitrary rank along the innermost dimension only.
+--
+mkScanDim
+    :: forall aenv sh e. (Shape sh, Elt e)
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
+    ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
+mkFoldDim dev aenv combine mseed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    -- If the innermost dimension is smaller than the number of threads in the
+    -- block, those threads will never contribute to the output.
+    tid <- threadIdx
+    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    when (A.lt scalarType tid sz) $ do
+
+      -- Thread blocks iterate over the outer dimensions.
+      --
+      gd    <- gridDim
+      bid   <- blockIdx
+      seg0  <- A.add numType start bid
+      for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
+
+        -- Wait for threads to catch up before starting this segment. We could
+        -- also place this at the bottom of the loop, but here allows threads to
+        -- exit quickly on the last iteration.
+        __syncthreads
+
+        -- Step 1: scan on each block to get local sums
+        from  <- A.mul numType seg  sz          -- first linear index this block will scan
+        to    <- A.add numType from sz          -- last linear index this block will scan (exclusive)
+
+        i0    <- A.add numType from tid
+        x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+        bd    <- blockDim
+        r0    <- if A.gte scalarType sz bd
+                   then scanBlockSMem dev combine Nothing x0
+                   else scanBlockSMem dev combine (Just sz) x0
+
+        -- Step 2: scan over the last element in a block
+        next  <- A.add numType from bd
+        r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \offset r -> do
+
+          -- Wait for all threads to catch up before starting the next stripe
+          __syncthreads
+
+          -- Threads cooperatively scan this stripe of the input
+          i     <- A.add numType offset tid
+          i'    <- A.fromIntegral integralType numType i
+          valid <- A.sub numType to offset
+          r'    <- if A.gte scalarType valid bd
+                      -- All threads of the block are valid, so we can avoid
+                      -- bounds checks.
+                      then do
+                        x <- app1 delayedLinearIndex i'
+                        scanBlockSMem dev combine Nothing x
+
+                      -- Otherwise we require bounds checks when reading the
+                      -- input and during the scan.
+                      else
+                      if A.lt scalarType i to
+                        then do
+                          x <- app1 delayedLinearIndex i'
+                          scanBlockSMem dev combine (Just valid) x
+                        else
+                          return r
+
+          if A.eq scalarType tid $ lift (blockDim - 1)
+            then app2 combine r r'
+            else return r'
+
+        -- Step 3: Write the scan aggregate result to each thread
+        --
+        x' <- if A.neq scalarType tid $ lift (blockDim - 1)
+                then app2 combine r0 r
+                else return r
+
+
+        -- Step 4: Every thread writes the scan result of this dimension to
+        -- memory.
+        --
+        writeArray arrOut seg =<< return x'
+
+    return_
+
+
 -- Efficient threadblock-wide scan using the specified operator.
 --
 -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
