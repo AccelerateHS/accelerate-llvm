@@ -142,16 +142,36 @@ mkFoldSegP aenv combine mseed arr seg =
   in
   makeOpenAcc "foldSegP" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    imapFromTo start end $ \i -> do
+    -- Number of segments and size of the innermost dimension. These are
+    -- required if we are reducing a DIM2 or higher array, to properly compute
+    -- the start and end indices of the portion of the array to reduce. Note
+    -- that this is a segment-offset array computed by 'scanl (+) 0' of the
+    -- segment length array, so its size has increased by one.
+    sz <- indexHead <$> delayedExtent arr
+    ss <- do n <- indexHead <$> delayedExtent seg
+             A.sub numType n (lift 1)
+
+    imapFromTo start end $ \s -> do
+
+      i   <- case rank (undefined::sh) of
+               0 -> return s
+               _ -> A.rem integralType s ss
       j   <- A.add numType i (lift 1)
-      inf <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) i
-      sup <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) j
+      u   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) i
+      v   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) j
+
+      (inf,sup) <- A.unpair <$> case rank (undefined::sh) of
+                     0 -> return (A.pair u v)
+                     _ -> do q <- A.quot integralType s ss
+                             a <- A.mul numType q sz
+                             A.pair <$> A.add numType u a <*> A.add numType v a
 
       r   <- case mseed of
                Just seed -> do z <- seed
                                reduceFromTo  inf sup (app2 combine) z (app1 (delayedLinearIndex arr))
                Nothing   ->    reduce1FromTo inf sup (app2 combine)   (app1 (delayedLinearIndex arr))
-      writeArray arrOut i r
+
+      writeArray arrOut s r
 
     return_
 

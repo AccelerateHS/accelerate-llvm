@@ -117,11 +117,11 @@ simpleOp
     -> sh
     -> LLVM Native (Array sh e)
 simpleOp NativeR{..} gamma aenv () sh = do
-  native <- gets llvmTarget
+  target <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultLargePPT native f mempty gamma aenv (IE 0 (size sh)) out
+      executeOp defaultLargePPT target f mempty gamma aenv (IE 0 (size sh)) out
     return out
 
 simpleNamed
@@ -134,11 +134,11 @@ simpleNamed
     -> sh
     -> LLVM Native (Array sh e)
 simpleNamed fun NativeR{..} gamma aenv () sh = do
-  native <- gets llvmTarget
+  target <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
     execute executableR fun $ \f ->
-      executeOp defaultLargePPT native f mempty gamma aenv (IE 0 (size sh)) out
+      executeOp defaultLargePPT target f mempty gamma aenv (IE 0 (size sh)) out
     return out
 
 
@@ -215,23 +215,27 @@ foldAllOp
     -> DIM1
     -> LLVM Native (Scalar e)
 foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
-  par   <- gets llvmTarget
-  liftIO $ case gangSize (theGang par) of
-
-    -- Sequential reduction
-    1    -> do
+  target <- gets llvmTarget
+  let
+      par     = target
+      gang    = theGang target
+      seq     = target { fillP = sequentialIO gang }
+      ncpu    = gangSize gang
+      --
+      stride  = defaultLargePPT `max` (sz `div` (ncpu * 16))
+      steps   = (sz + stride - 1) `div` stride
+      steps'  = steps - 1
+  --
+  if ncpu == 1 || steps <= 1
+    then liftIO $ do
+      -- Sequential reduction
       out <- allocateArray Z
       execute executableR "foldAllS" $ \f ->
         executeOp 1 par f mempty gamma aenv (IE 0 sz) out
       return out
 
-    -- Parallel reduction
-    ncpu -> do
-      let
-          stride  = defaultLargePPT `max` (sz `div` (ncpu * 16))
-          steps   = (sz + stride - 1) `div` stride
-          seq     = par { fillP = sequentialIO (theGang par) }
-
+    else liftIO $ do
+      -- Parallel reduction
       out <- allocateArray Z
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
 
@@ -251,11 +255,11 @@ foldDimOp
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
-  native <- gets llvmTarget
+  target <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultSmallPPT native f mempty gamma aenv (IE 0 (size sh)) (sz, out)
+      executeOp defaultSmallPPT target f mempty gamma aenv (IE 0 (size sh)) (sz, out)
     return out
 
 foldSegOp
@@ -268,14 +272,18 @@ foldSegOp
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
 foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
-  native <- gets llvmTarget
-  let kernel | gangSize (theGang native) == 1 = "foldSegS"
-             | otherwise                      = "foldSegP"
+  target <- gets llvmTarget
+  let
+      ncpu               = gangSize (theGang target)
+      kernel | ncpu == 1 = "foldSegS"
+             | otherwise = "foldSegP"
+      n      | ncpu == 1 = ss
+             | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
   --
   liftIO $ do
-    out <- allocateArray (sh :. ss)
+    out <- allocateArray (sh :. n)
     execute executableR kernel $ \f ->
-      executeOp defaultSmallPPT native f mempty gamma aenv (IE 0 (size (sh :. ss))) out
+      executeOp defaultSmallPPT target f mempty gamma aenv (IE 0 (size (sh :. n))) out
     return out
 
 
