@@ -26,7 +26,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -38,7 +37,7 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import Control.Applicative
 import Data.Typeable
-import Prelude                                                      as P
+import Prelude                                                      as P hiding ( length )
 
 
 -- Reduce a (possibly empty) array along the innermost dimension. The reduction
@@ -98,9 +97,8 @@ mkFoldDim aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      name                      = "ix.stride" :: Name Int
-      paramStride               = scalarParameter scalarType name
-      stride                    = local           scalarType name
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
   in
   makeOpenAcc "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
 
@@ -193,10 +191,10 @@ mkFoldAllP1 aenv combine IRDelayed{..} =
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
       (arrTmp,  paramTmp)       = mutableArray ("tmp" :: Name (Vector e))
-      length                    = local           scalarType ("length" :: Name Int)
-      stride                    = local           scalarType ("stride" :: Name Int)
-      paramLength               = scalarParameter scalarType ("length" :: Name Int)
-      paramStride               = scalarParameter scalarType ("stride" :: Name Int)
+      length                    = local           scalarType ("ix.length" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
+      paramLength               = scalarParameter scalarType ("ix.length" :: Name Int)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
   in
   makeOpenAcc "foldAllP1" (paramGang ++ paramLength : paramStride : paramTmp ++ paramEnv) $ do
 

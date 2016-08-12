@@ -121,7 +121,9 @@ balancedParIO gang =
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  createTarget [0 .. numCapabilities - 1] balancedParIO
+  case numCapabilities of
+    1 -> createTarget [0]        sequentialIO
+    n -> createTarget [0 .. n-1] balancedParIO
 
 
 -- Debugging
