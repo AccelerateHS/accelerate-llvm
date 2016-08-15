@@ -79,40 +79,42 @@ class TypeOf op where
 instance TypeOf Instruction where
   typeOf ins =
     case ins of
-      Add _ x _         -> typeOf x
-      Sub _ x _         -> typeOf x
-      Mul _ x _         -> typeOf x
-      Quot _ x _        -> typeOf x
-      Rem _ x _         -> typeOf x
-      Div _ x _         -> typeOf x
-      ShiftL _ x _      -> typeOf x
-      ShiftRL _ x _     -> typeOf x
-      ShiftRA _ x _     -> typeOf x
-      BAnd _ x _        -> typeOf x
-      BOr _ x _         -> typeOf x
-      BXor _ x _        -> typeOf x
-      LAnd _ _          -> type'
-      LOr _ _           -> type'
-      LNot _            -> type'
-      Load t _ _        -> PrimType (ScalarPrimType t)
-      Store _ _ _       -> VoidType
-      GetElementPtr x _ -> typeOf x
-      FTrunc _ t _      -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
-      FExt _ t _        -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
-      Trunc _ t _       -> case t of
-                             IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
-                             NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
-      Ext _ t _         -> case t of
-                             IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
-                             NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
-      FPToInt _ t _     -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType t)))
-      IntToFP _ t _     -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
-      BitCast t _       -> PrimType (ScalarPrimType t)
-      PtrCast t _       -> PrimType t
-      Cmp{}             -> type'
-      Select t _ _ _    -> PrimType (ScalarPrimType t)
-      Phi t _           -> PrimType t
-      Call f _          -> funResultType f
+      Add _ x _             -> typeOf x
+      Sub _ x _             -> typeOf x
+      Mul _ x _             -> typeOf x
+      Quot _ x _            -> typeOf x
+      Rem _ x _             -> typeOf x
+      Div _ x _             -> typeOf x
+      ShiftL _ x _          -> typeOf x
+      ShiftRL _ x _         -> typeOf x
+      ShiftRA _ x _         -> typeOf x
+      BAnd _ x _            -> typeOf x
+      BOr _ x _             -> typeOf x
+      BXor _ x _            -> typeOf x
+      LAnd _ _              -> type'
+      LOr _ _               -> type'
+      LNot _                -> type'
+      Load t _ _            -> PrimType (ScalarPrimType t)
+      Store _ _ _           -> VoidType
+      GetElementPtr x _     -> typeOf x
+      Fence _               -> VoidType
+      AtomicRMW _ _ _ _ x _ -> typeOf x
+      FTrunc _ t _          -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      FExt _ t _            -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      Trunc _ t _           -> case t of
+                                 IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
+                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
+      Ext _ t _             -> case t of
+                                 IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
+                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
+      FPToInt _ t _         -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType t)))
+      IntToFP _ t _         -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      BitCast t _           -> PrimType (ScalarPrimType t)
+      PtrCast t _           -> PrimType t
+      Cmp{}                 -> type'
+      Select t _ _ _        -> PrimType (ScalarPrimType t)
+      Phi t _               -> PrimType t
+      Call f _              -> funResultType f
         where
           funResultType :: GlobalFunction args t -> Type t
           funResultType (Lam _ _ l) = funResultType l

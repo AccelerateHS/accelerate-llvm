@@ -36,6 +36,7 @@ import Data.Array.Accelerate.Array.Sugar
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Compare
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
@@ -366,7 +367,7 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp :: Ordering -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
 lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)

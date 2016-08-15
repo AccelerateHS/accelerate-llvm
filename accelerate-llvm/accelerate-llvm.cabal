@@ -87,6 +87,10 @@ Library
     LLVM.General.AST.Type.Flags
     LLVM.General.AST.Type.Global
     LLVM.General.AST.Type.Instruction
+    LLVM.General.AST.Type.Instruction.Atomic
+    LLVM.General.AST.Type.Instruction.Compare
+    LLVM.General.AST.Type.Instruction.RMW
+    LLVM.General.AST.Type.Instruction.Volatile
     LLVM.General.AST.Type.Metadata
     LLVM.General.AST.Type.Name
     LLVM.General.AST.Type.Operand

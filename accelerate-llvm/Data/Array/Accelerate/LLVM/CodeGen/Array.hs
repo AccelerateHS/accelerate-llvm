@@ -26,6 +26,7 @@ import Prelude                                                          hiding (
 import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
@@ -50,7 +51,7 @@ readVolatileArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> 
 readVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) =
   IR <$> readArrayData Volatile ix (eltType (undefined::e)) adata
 
-readArrayData :: Volatile -> Operand int -> TupleType t -> Operands t -> CodeGen (Operands t)
+readArrayData :: Volatility -> Operand int -> TupleType t -> Operands t -> CodeGen (Operands t)
 readArrayData volatile ix = read
   where
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
@@ -58,7 +59,7 @@ readArrayData volatile ix = read
     read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair <$> read t2 a2 <*> read t1 a1
     read (SingleTuple t)   (ptr t -> arr)  = ir' t   <$> readArrayPrim t volatile arr ix
 
-readArrayPrim :: ScalarType e -> Volatile -> Operand (Ptr e) -> Operand int -> CodeGen (Operand e)
+readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen (Operand e)
 readArrayPrim t volatile arr ix = do
   p <- instr' $ GetElementPtr arr [ix]
   v <- instr' $ Load t volatile p
@@ -78,7 +79,7 @@ writeVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
   writeArrayData Volatile ix (eltType (undefined::e)) adata val
 
 
-writeArrayData :: Volatile -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen ()
+writeArrayData :: Volatility -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen ()
 writeArrayData volatile ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
@@ -86,7 +87,7 @@ writeArrayData volatile ix = write
     write (PairTuple t2 t1) (OP_Pair a2 a1) (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
     write (SingleTuple t)   (ptr t -> arr)  (op' t -> val)  = writeArrayPrim volatile arr ix val
 
-writeArrayPrim :: Volatile -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
+writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
 writeArrayPrim volatile arr i v = do
   p <- instr' $ GetElementPtr arr [i]
   _ <- instr' $ Store volatile p v

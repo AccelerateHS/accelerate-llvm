@@ -22,12 +22,13 @@ import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
+import LLVM.General.AST.Type.Instruction.Atomic
+import LLVM.General.AST.Type.Instruction.Compare
+import LLVM.General.AST.Type.Instruction.RMW
+import LLVM.General.AST.Type.Instruction.Volatile
 
--- | Predicate for comparison instruction
---
-data Predicate = EQ | NE | LT | LE | GT | GE
+import Prelude                                            hiding ( Ordering )
 
-data Volatile = Volatile | NonVolatile
 
 -- | Non-terminating instructions
 --
@@ -113,7 +114,6 @@ data Instruction a where
 
   -- Bitwise Binary Operations
   -- <http://llvm.org/docs/LangRef.html#bitwise-binary-operations>
-
   -- <http://llvm.org/docs/LangRef.html#and-instruction>
   --
   BAnd          :: IntegralType a
@@ -164,13 +164,13 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#load-instruction>
   --
   Load          :: ScalarType a
-                -> Volatile
+                -> Volatility
                 -> Operand (Ptr a)
                 -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#store-instruction>
   --
-  Store         :: Volatile
+  Store         :: Volatility
                 -> Operand (Ptr a)
                 -> Operand a
                 -> Instruction ()
@@ -181,9 +181,31 @@ data Instruction a where
                 -> [Operand i]
                 -> Instruction (Ptr a)
 
-  -- Fence
-  -- CmpXchg
-  -- AtomicRMW
+  -- <http://llvm.org/docs/LangRef.html#i-fence>
+  --
+  Fence         :: Atomicity
+                -> Instruction ()
+
+  -- <http://llvm.org/docs/LangRef.html#cmpxchg-instruction>
+  --
+  -- CmpXchg       :: IntegralType a
+  --               -> Volatility
+  --               -> Operand (Ptr a)
+  --               -> Operand a              -- expected value
+  --               -> Operand a              -- replacement value
+  --               -> Atomicity              -- on success
+  --               -> MemoryOrdering         -- on failure (see docs for restrictions)
+  --               -> Instruction (a, Bool)  -- XXX: Type ??
+
+  -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
+  --
+  AtomicRMW     :: IntegralType a
+                -> Volatility
+                -> RMWOperation
+                -> Operand (Ptr a)
+                -> Operand a
+                -> Atomicity
+                -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#trunc-to-instruction>
   --
@@ -253,7 +275,7 @@ data Instruction a where
   -- We treat non-scalar types as signed/unsigned integer values.
   --
   Cmp           :: ScalarType a
-                -> Predicate
+                -> Ordering
                 -> Operand a
                 -> Operand a
                 -> Instruction Bool
