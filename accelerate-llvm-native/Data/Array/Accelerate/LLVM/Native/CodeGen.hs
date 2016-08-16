@@ -24,6 +24,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 import Data.Array.Accelerate.LLVM.Native.Target
 
@@ -41,7 +42,7 @@ instance Skeleton Native where
   scanr _       = mkScanr
   scanr1 _      = mkScanr1
   scanr' _      = mkScanr'
---  permute _     = mkPermute
+  permute _     = mkPermute
 
 instance Expression Native
 

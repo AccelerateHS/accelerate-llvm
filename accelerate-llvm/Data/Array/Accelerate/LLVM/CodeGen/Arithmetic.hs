@@ -417,12 +417,12 @@ lor x y =
     else y
 
 -- These implementations are strict in both arguments.
-_land :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-_land (op scalarType -> x) (op scalarType -> y)
+land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+land' (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-_lor  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
-_lor (op scalarType -> x) (op scalarType -> y)
+lor' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor' (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen (IR Bool)

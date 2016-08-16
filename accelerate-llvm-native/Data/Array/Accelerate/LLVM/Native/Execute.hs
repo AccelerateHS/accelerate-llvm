@@ -34,6 +34,7 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
+import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold               ( matchShapeType )
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
@@ -99,6 +100,7 @@ instance Execute Native where
   scanr         = scanOp
   scanr1        = scan1Op
   scanr'        = scan'Op
+  permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -396,7 +398,6 @@ scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
       return (out,sum)
 
 
-{--
 -- Forward permutation, specified by an indexing mapping into an array and a
 -- combination function to combine elements.
 --
@@ -406,9 +407,37 @@ permuteOp
     -> Gamma aenv
     -> Aval aenv
     -> Stream
+    -> Bool
     -> sh
     -> Array sh' e
     -> LLVM Native (Array sh' e)
+permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
+  target <- gets llvmTarget
+  out    <- if inplace
+              then return dfs
+              else cloneArray dfs
+  let
+      gang    = theGang target
+      ncpu    = gangSize gang
+      par     = target
+      seq     = target { fillP = sequentialIO gang }
+      --
+      n       = size shIn
+  --
+  if ncpu == 1 || n <= defaultLargePPT
+    then liftIO $ do
+      -- sequential permutation
+      execute executableR "permuteS" $ \f ->
+        executeOp 1 seq f mempty gamma aenv (IE 0 n) out
+
+    else liftIO $ do
+      -- parallel permutation
+      error "TODO: parallel forward permutation"
+
+  return out
+
+
+{--
 permuteOp kernel gamma aenv () shIn dfs = do
   let n                         = size (shape dfs)
       unlocked                  = 0
