@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -32,6 +33,7 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -107,5 +109,5 @@ ptr t (op' t -> x) =
   case x of
     LocalReference _ n                    -> LocalReference ptr_t (rename n)
     ConstantOperand (GlobalReference _ n) -> ConstantOperand (GlobalReference ptr_t (rename n))
-    ConstantOperand ScalarConstant{}      -> error "unexpected scalar constant"
+    ConstantOperand ScalarConstant{}      -> $internalError "read/writeArray" "unexpected scalar constant"
 
