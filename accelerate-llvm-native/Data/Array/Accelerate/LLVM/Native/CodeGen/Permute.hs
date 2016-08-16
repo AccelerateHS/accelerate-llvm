@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 -- Copyright   : [2016] Trevor L. McDonell
@@ -16,8 +17,8 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt )
+import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -33,6 +34,13 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
+
+import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Atomic
+import LLVM.General.AST.Type.Instruction.RMW                        as RMW
+import LLVM.General.AST.Type.Instruction.Volatile
+import LLVM.General.AST.Type.Operand
+import LLVM.General.AST.Type.Representation
 
 
 -- Forward permutation specified by an indexing mapping. The resulting array is
@@ -51,8 +59,8 @@ mkPermute
     -> IRDelayed Native aenv (Array sh e)
     -> CodeGen (IROpenAcc Native aenv (Array sh' e))
 mkPermute aenv combine project arr =
-  mkPermuteS aenv combine project arr
-
+  (+++) <$> mkPermuteS aenv combine project arr
+        <*> mkPermuteP aenv combine project arr
 
 
 -- Forward permutation which does not require locking the output array. This
@@ -98,6 +106,102 @@ mkPermuteS aenv combine project IRDelayed{..} =
     return_
 
 
+-- Parallel forward permutation has to take special care because different
+-- threads could concurrently try to update the same memory location. Where
+-- available we make use of special atomic instructions and other optimisations,
+-- but in the general case each element of the output array has a lock which
+-- must be obtained by the thread before it can update that memory location.
+--
+-- TODO: After too many failures to acquire the lock on an element, the thread
+-- should back off and try a different element, adding this failed element to
+-- a queue or some such.
+--
+mkPermuteP
+    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    => Gamma aenv
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRFun1    Native aenv (sh -> sh')
+    -> IRDelayed Native aenv (Array sh e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP aenv combine project IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
+      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "permuteP" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+
+    sh <- delayedExtent
+
+    imapFromTo start end $ \i -> do
+
+      ix  <- indexOfInt sh i
+      ix' <- app1 project ix
+
+      -- project element onto the destination array and (atomically) update
+      unless (ignore ix') $ do
+        j <- intOfIndex (irArrayShape arrOut) ix'
+        x <- app1 delayedLinearIndex i
+
+        atomically arrLock j $ do
+          y <- readArray arrOut j
+          r <- app2 combine x y
+          writeArray arrOut j r
+
+    return_
+
+
+-- Atomically execute the critical section only when the lock at the given array
+-- index is obtained. The thread spins waiting for the lock to be released and
+-- there is no backoff strategy in case the lock is contended.
+--
+-- It is important that the thread loops trying to acquire the lock without
+-- writing data anything until the lock value changes. Then, because of MESI
+-- caching protocols there will be no bus traffic while the CPU waits for the
+-- value to change.
+--
+-- <https://en.wikipedia.org/wiki/Spinlock#Significant_optimizations>
+--
+atomically
+    :: IRArray (Vector Word8)
+    -> IR Int
+    -> CodeGen a
+    -> CodeGen a
+atomically barriers i action = do
+  let
+      lock      = integral integralType 1
+      unlock    = integral integralType 0
+      unlocked  = lift 0
+  --
+  spin <- newBlock "spinlock.entry"
+  crit <- newBlock "spinlock.critical-section"
+  exit <- newBlock "spinlock.exit"
+
+  addr <- instr' $ GetElementPtr (ptr (op integralType (irArrayData barriers))) [op integralType i]
+  _    <- br spin
+
+  -- Atomically (attempt to) set the lock slot to the locked state. If the slot
+  -- was unlocked we just acquired it, otherwise the state remains unchanged and
+  -- we spin until it becomes available.
+  setBlock spin
+  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  ok   <- A.eq scalarType old unlocked
+  _    <- cbr ok crit spin
+
+  -- We just acquired the lock; perform the critical section then release the
+  -- lock and exit. For ("some") x86 processors, an unlocked MOV instruction
+  -- could be used rather than the slower XCHG, due to subtle memory ordering
+  -- rules.
+  setBlock crit
+  r    <- action
+  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- br exit
+
+  setBlock exit
+  return r
+
+
 -- Helper functions
 -- ----------------
 
@@ -113,4 +217,17 @@ ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
                                                            y <- go tsz isz sz
                                                            land' x y
     go (SingleTuple t)     ig         sz              = A.eq t (ir t (scalar t ig)) (ir t (op' t sz))
+
+
+-- XXX: hack because we can't properly manipulate pointer-type operands.
+--
+ptr :: Operand Word8 -> Operand (Ptr Word8)
+ptr x =
+  let
+      rename (Name n)   = Name n
+      rename (UnName n) = UnName n
+  in
+  case x of
+    LocalReference _ n -> LocalReference type' (rename n)
+    ConstantOperand{}  -> $internalError "atomically" "expected local reference"
 

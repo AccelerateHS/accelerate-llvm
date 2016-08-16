@@ -432,24 +432,13 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
 
     else liftIO $ do
       -- parallel permutation
-      error "TODO: parallel forward permutation"
+      barrier@(Array _ adb) <- allocateArray (Z :. n) :: IO (Vector Word8)
+      memset (ptrsOfArrayData adb) 0 n
+      execute executableR "permuteP" $ \f ->
+        executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) (out, barrier)
 
   return out
 
-
-{--
-permuteOp kernel gamma aenv () shIn dfs = do
-  let n                         = size (shape dfs)
-      unlocked                  = 0
-  --
-  out    <- cloneArray dfs
-  native <- gets llvmTarget
-  liftIO $ do
-    barrier@(Array _ adata) <- liftIO $ allocateArray (Z :. n)  :: IO (Vector Word8)
-    memset (ptrsOfArrayData adata) unlocked n
-    executeOp native kernel mempty gamma aenv (IE 0 (size shIn)) (barrier, out)
-  return out
---}
 
 
 stencil1Op
