@@ -68,16 +68,25 @@ mkScan dev aenv combine mseed IRDelayed{..} =
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
-    tid <- threadIdx
-    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    gd    <- gridDim
+    bid   <- blockIdx
+    bd    <- blockDim
+    tid   <- threadIdx
+    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+
+    a0 <- A.add scalarType sz bd
+    a1 <- A.add scalarType a0 (lift 1)
+    numBlock <- A.quot scalarType a1 bd
+
+    start' <- lift 0
+    end'   <- numBlock
+
     when (A.lt scalarType tid sz) $ do
 
       -- Thread blocks iterate over the outer dimensions.
       --
-      gd    <- gridDim
-      bid   <- blockIdx
-      seg0  <- A.add numType start bid
-      for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
+      seg0  <- A.add numType start' bid
+      for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
 
         -- Wait for threads to catch up before starting this segment. We could
         -- also place this at the bottom of the loop, but here allows threads to
@@ -85,59 +94,28 @@ mkScan dev aenv combine mseed IRDelayed{..} =
         __syncthreads
 
         -- Step 1: scan on each block to get local sums
-        from  <- A.mul numType seg  sz          -- first linear index this block will scan
-        to    <- A.add numType from sz          -- last linear index this block will scan (exclusive)
+        from  <- A.mul numType seg  bd          -- first linear index this block will scan
+        toTmp <- A.add numType from bd
+        to    <- if A.lt scalarType sz toTmp    -- last linear index this block will scan (exclusive)
+                   then sz
+                   else toTmp
+        valid <- A.sub numType to from          -- number of valid elements
 
-        i0    <- A.add numType from tid
-        x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
-        bd    <- blockDim
-        r0    <- if A.gte scalarType sz bd
-                   then scanBlockSMem dev combine Nothing x0
-                   else scanBlockSMem dev combine (Just sz) x0
-
-        -- Step 2: scan over the last element in a block
-        next  <- A.add numType from bd
-        r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \offset r -> do
-
-          -- Wait for all threads to catch up before starting the next stripe
-          __syncthreads
-
-          -- Threads cooperatively scan this stripe of the input
-          i     <- A.add numType offset tid
-          i'    <- A.fromIntegral integralType numType i
-          valid <- A.sub numType to offset
-          r'    <- if A.gte scalarType valid bd
-                      -- All threads of the block are valid, so we can avoid
-                      -- bounds checks.
-                      then do
-                        x <- app1 delayedLinearIndex i'
-                        scanBlockSMem dev combine Nothing x
-
-                      -- Otherwise we require bounds checks when reading the
-                      -- input and during the scan.
-                      else
-                      if A.lt scalarType i to
-                        then do
-                          x <- app1 delayedLinearIndex i'
-                          scanBlockSMem dev combine (Just valid) x
-                        else
-                          return r
-
-          if A.eq scalarType tid $ lift (blockDim - 1)
-            then app2 combine r r'
-            else return r'
+        i    <- A.add numType from tid
+        x    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+        r1   <- scanBlockSMem dev combine (Just valid) x
+        writeArray arrOut i r1
 
         -- Step 3: Write the scan aggregate result to each thread
         --
-        x' <- if A.neq scalarType tid $ lift (blockDim - 1)
-                then app2 combine r0 r
-                else return r
 
+        -- x' <- if A.neq scalarType tid $ lift (blockDim - 1)
+        --         then app2 combine x r
+        --         else return r
 
         -- Step 4: Every thread writes the scan result of this dimension to
         -- memory.
         --
-        writeArray arrOut seg =<< return x'
 
     return_
 
