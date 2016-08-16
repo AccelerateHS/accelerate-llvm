@@ -212,9 +212,15 @@ instance Downcast Volatility Bool where
   downcast Volatile    = True
   downcast NonVolatile = False
 
+#if MIN_VERSION_llvm_general_pure(3,5,0)
 instance Downcast Synchronisation L.SynchronizationScope where
   downcast SingleThread = L.SingleThread
   downcast CrossThread  = L.CrossThread
+#elif MIN_VERSION_llvm_general_pure(3,4,0)
+instance Downcast Atomicity L.Atomicity where
+  downcast (SingleThread, mo) = L.Atomicity False (downcast mo)
+  downcast (CrossThread,  mo) = L.Atomicity True  (downcast mo)
+#endif
 
 instance Downcast MemoryOrdering L.MemoryOrdering where
   downcast Unordered              = L.Unordered
