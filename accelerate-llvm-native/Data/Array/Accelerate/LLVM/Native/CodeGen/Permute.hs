@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
 
@@ -29,12 +29,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Instruction.Atomic
 import LLVM.General.AST.Type.Instruction.RMW                        as RMW
@@ -43,6 +45,7 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Control.Applicative
+import Data.Typeable
 import Prelude
 
 
@@ -57,9 +60,9 @@ import Prelude
 mkPermute
     :: (Shape sh, Shape sh', Elt e)
     => Gamma aenv
-    -> IRFun2    Native aenv (e -> e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
+    -> IRPermuteFun Native aenv (e -> e -> e)
+    -> IRFun1       Native aenv (sh -> sh')
+    -> IRDelayed    Native aenv (Array sh e)
     -> CodeGen (IROpenAcc Native aenv (Array sh' e))
 mkPermute aenv combine project arr =
   (+++) <$> mkPermuteS aenv combine project arr
@@ -77,11 +80,11 @@ mkPermute aenv combine project arr =
 mkPermuteS
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
-    -> IRFun2    Native aenv (e -> e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
+    -> IRPermuteFun Native aenv (e -> e -> e)
+    -> IRFun1       Native aenv (sh -> sh')
+    -> IRDelayed    Native aenv (Array sh e)
     -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteS aenv combine project IRDelayed{..} =
+mkPermuteS aenv IRPermuteFun{..} project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
@@ -122,18 +125,75 @@ mkPermuteS aenv combine project IRDelayed{..} =
 mkPermuteP
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
+    -> IRPermuteFun Native aenv (e -> e -> e)
+    -> IRFun1       Native aenv (sh -> sh')
+    -> IRDelayed    Native aenv (Array sh e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP aenv IRPermuteFun{..} project arr =
+  case atomicRMW of
+    Nothing       -> mkPermuteP_mutex aenv combine project arr
+    Just (rmw, f) -> mkPermuteP_rmw   aenv rmw f   project arr
+
+
+mkPermuteP_rmw
+    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    => Gamma aenv
+    -> RMWOperation
+    -> IRFun1    Native aenv (e -> e)
+    -> IRFun1    Native aenv (sh -> sh')
+    -> IRDelayed Native aenv (Array sh e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "permuteP_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    sh <- delayedExtent
+
+    imapFromTo start end $ \i -> do
+
+      ix  <- indexOfInt sh i
+      ix' <- app1 project ix
+
+      unless (ignore ix') $ do
+        j <- intOfIndex (irArrayShape arrOut) ix'
+        x <- app1 delayedLinearIndex i
+        r <- app1 update x
+
+        case rmw of
+          Exchange
+            -> writeArray arrOut j r
+          --
+          _ | SingleTuple s@(NumScalarType (IntegralNumType t)) <- eltType (undefined::e)
+            , Just adata <- gcast (irArrayData arrOut)
+            , Just r'    <- gcast r
+            -> do
+                  addr <- instr' $ GetElementPtr (ptr s (op t adata)) [op integralType j]
+                  _    <- instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+                  return ()
+          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+
+    return_
+
+
+mkPermuteP_mutex
+    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    => Gamma aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRFun1    Native aenv (sh -> sh')
     -> IRDelayed Native aenv (Array sh e)
     -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP aenv combine project IRDelayed{..} =
+mkPermuteP_mutex aenv combine project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
       (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "permuteP" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
 
     sh <- delayedExtent
 
@@ -181,7 +241,7 @@ atomically barriers i action = do
   crit <- newBlock "spinlock.critical-section"
   exit <- newBlock "spinlock.exit"
 
-  addr <- instr' $ GetElementPtr (ptr (op integralType (irArrayData barriers))) [op integralType i]
+  addr <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
   _    <- br spin
 
   -- Atomically (attempt to) set the lock slot to the locked state. If the slot
@@ -224,13 +284,14 @@ ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
 
 -- XXX: hack because we can't properly manipulate pointer-type operands.
 --
-ptr :: Operand Word8 -> Operand (Ptr Word8)
-ptr x =
+ptr :: ScalarType a -> Operand a -> Operand (Ptr a)
+ptr t x =
   let
       rename (Name n)   = Name n
       rename (UnName n) = UnName n
+      ptr_t             = PrimType (PtrPrimType t defaultAddrSpace)
   in
   case x of
-    LocalReference _ n -> LocalReference type' (rename n)
+    LocalReference _ n -> LocalReference ptr_t (rename n)
     ConstantOperand{}  -> $internalError "atomically" "expected local reference"
 

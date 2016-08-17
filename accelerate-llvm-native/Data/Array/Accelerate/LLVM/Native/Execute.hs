@@ -432,13 +432,19 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
 
     else liftIO $ do
       -- parallel permutation
-      barrier@(Array _ adb) <- allocateArray (Z :. n) :: IO (Vector Word8)
-      memset (ptrsOfArrayData adb) 0 n
-      execute executableR "permuteP" $ \f ->
-        executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) (out, barrier)
+      symbols <- nm executableR
+      if "permuteP_rmw" `elem` symbols
+        then do
+          execute executableR "permuteP_rmw" $ \f ->
+            executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) out
+
+        else do
+          barrier@(Array _ adb) <- allocateArray (Z :. n) :: IO (Vector Word8)
+          memset (ptrsOfArrayData adb) 0 n
+          execute executableR "permuteP_mutex" $ \f ->
+            executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) (out, barrier)
 
   return out
-
 
 
 stencil1Op

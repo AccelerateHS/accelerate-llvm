@@ -16,6 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Module (
   Module,
   compileModule,
   execute, executeMain,
+  nm,
 
 ) where
 
@@ -84,6 +85,14 @@ executeMain (Module ft) k =
     case functionTable of
       []      -> $internalError "executeMain" "no functions defined in module"
       (_,f):_ -> k $ \argv -> callFFI f retVoid argv
+
+
+-- | Display the global (external) symbol table for this module.
+--
+nm :: Module -> IO [String]
+nm (Module ft) =
+  withLifetime ft $ \FunctionTable{..} ->
+    return $ map fst functionTable
 
 
 -- Compile a given module into executable code.
