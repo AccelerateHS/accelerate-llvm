@@ -42,6 +42,9 @@ import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
+import Control.Applicative
+import Prelude
+
 
 -- Forward permutation specified by an indexing mapping. The resulting array is
 -- initialised with the given defaults, and any further values that are permuted
