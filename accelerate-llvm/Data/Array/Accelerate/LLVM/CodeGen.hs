@@ -80,21 +80,23 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     Stencil2 f b1 a1 b2 a2  -> stencil2 arch aenv (travF2 f) (travB a1 b1) (travM a1) (travB a2 b2) (travM a2)
 
     -- Non-computation forms: sadness
-    Alet{}                  -> unexpectedError pacc
-    Avar{}                  -> unexpectedError pacc
-    Apply{}                 -> unexpectedError pacc
-    Acond{}                 -> unexpectedError pacc
-    Awhile{}                -> unexpectedError pacc
-    Atuple{}                -> unexpectedError pacc
-    Aprj{}                  -> unexpectedError pacc
-    Use{}                   -> unexpectedError pacc
-    Unit{}                  -> unexpectedError pacc
-    Aforeign{}              -> unexpectedError pacc
-    Reshape{}               -> unexpectedError pacc
+    Alet{}                  -> unexpectedError
+    Avar{}                  -> unexpectedError
+    Apply{}                 -> unexpectedError
+    Acond{}                 -> unexpectedError
+    Awhile{}                -> unexpectedError
+    Atuple{}                -> unexpectedError
+    Aprj{}                  -> unexpectedError
+    Use{}                   -> unexpectedError
+    Unit{}                  -> unexpectedError
+    Aforeign{}              -> unexpectedError
+    Reshape{}               -> unexpectedError
 
-    Replicate{}             -> fusionError pacc
-    Slice{}                 -> fusionError pacc
-    ZipWith{}               -> fusionError pacc
+    Replicate{}             -> fusionError
+    Slice{}                 -> fusionError
+    ZipWith{}               -> fusionError
+
+    Collect{}               -> unsupportedError
 
   where
     -- code generation for delayed arrays
@@ -128,6 +130,8 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
       $ IR (constant (eltType (undefined::e)) c)
 
     -- sadness
-    unexpectedError x   = $internalError "llvmOfOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp x
-    fusionError x       = $internalError "llvmOfOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp x
+    fusionError, unexpectedError, unsupportedError :: error
+    fusionError      = $internalError "llvmOfOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc
+    unexpectedError  = $internalError "llvmOfOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp pacc
+    unsupportedError = $internalError "llvmOfOpenAcc" $ "unsupported array primitive: " ++ showPreAccOp pacc
 

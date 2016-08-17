@@ -179,6 +179,8 @@ compileOpenAcc = traverseAcc
         Stencil2 f b1 a1 b2 a2  -> exec =<< liftA3 stencil2             <$> travF f <*> travM a1 <*> travM a2
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
+        Collect{}               -> unsupportedError
+
       where
         travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         travA acc = case acc of
@@ -231,6 +233,10 @@ compileOpenAcc = traverseAcc
                  -> DelayedOpenAcc aenv a
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
         foreignA = error "todo: compile/foreign array computations"
+
+        -- sadness
+        unsupportedError :: error
+        unsupportedError = $internalError "llvmOfOpenAcc" $ "unsupported array primitive: " ++ showPreAccOp pacc
 
 
     -- Traverse a scalar expression
