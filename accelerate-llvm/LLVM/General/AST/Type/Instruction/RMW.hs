@@ -21,9 +21,9 @@ data RMWOperation
     | Add
     | Sub
     | And
+    | Nand
     | Or
     | Xor
-    | Nand
     | Min
     | Max
 
