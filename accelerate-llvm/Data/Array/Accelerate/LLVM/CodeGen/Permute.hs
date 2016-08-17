@@ -96,16 +96,14 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
 
     rmwOp :: DelayedOpenExp (((),e),e) aenv e -> Maybe (RMWOperation, DelayedOpenExp (((),e),e) aenv e)
     rmwOp (PrimApp f xs)
-      | PrimAdd{}    <- f        = (Add,) <$> extract xs
-      | PrimSub{}    <- f        = (Sub,) <$> extract xs
-      | PrimMin{}    <- f        = (Min,) <$> extract xs
-      | PrimMax{}    <- f        = (Max,) <$> extract xs
-      | PrimBOr{}    <- f        = (Or,)  <$> extract xs
-      | PrimBAnd{}   <- f        = (And,) <$> extract xs
-      | PrimBXor{}   <- f        = (Xor,) <$> extract xs
-      | PrimBNot{}   <- f
-      , Just (And,x) <- rmwOp xs = Just (Nand, x)
-    rmwOp _                      = Nothing
+      | PrimAdd{}  <- f = (Add,) <$> extract xs
+      | PrimSub{}  <- f = (Sub,) <$> extract xs
+      | PrimMin{}  <- f = (Min,) <$> extract xs
+      | PrimMax{}  <- f = (Max,) <$> extract xs
+      | PrimBOr{}  <- f = (Or,)  <$> extract xs
+      | PrimBAnd{} <- f = (And,) <$> extract xs
+      | PrimBXor{} <- f = (Xor,) <$> extract xs
+    rmwOp _             = Nothing
 
     -- Determine which argument to a binary function was the new value being
     -- combined. This only works when the old value is used unmodified, but that
