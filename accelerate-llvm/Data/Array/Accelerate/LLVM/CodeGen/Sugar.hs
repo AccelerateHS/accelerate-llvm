@@ -30,6 +30,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 
+-- Scalar expressions
+-- ------------------
+
 -- | LLVM IR is in single static assignment, so we need to be able to generate
 -- fresh names for each application of a scalar function or expression.
 --
@@ -46,6 +49,10 @@ data IROpenFun1 arch env aenv t where
 data IROpenFun2 arch env aenv t where
   IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
+
+
+-- Arrays
+-- ------
 
 data IROpenAcc arch aenv arrs where
   IROpenAcc :: [Kernel arch aenv arrs]

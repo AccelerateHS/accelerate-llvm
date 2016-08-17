@@ -166,6 +166,7 @@ class Remote arch => Execute arch where
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
+                -> Bool
                 -> sh
                 -> Array sh' e
                 -> LLVM arch (Array sh' e)
@@ -291,7 +292,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Scanr1 _ a                  -> scanr1 kernel gamma aenv stream =<< extent a
     Scanl' _ _ a                -> scanl' kernel gamma aenv stream =<< extent a
     Scanr' _ _ a                -> scanr' kernel gamma aenv stream =<< extent a
-    Permute _ d _ a             -> join $ permute kernel gamma aenv stream <$> extent a <*> travA d
+    Permute _ d _ a             -> join $ permute kernel gamma aenv stream (inplace d) <$> extent a <*> travA d
     Stencil _ _ a               -> stencil1 kernel gamma aenv stream =<< travA a
     Stencil2 _ _ a _ b          -> join $ stencil2 kernel gamma aenv stream <$> travA a <*> travA b
 
@@ -323,6 +324,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     extent :: Shape sh => ExecOpenAcc arch aenv (Array sh e) -> LLVM arch sh
     extent ExecAcc{}     = $internalError "executeOpenAcc" "expected delayed array"
     extent (EmbedAcc sh) = travE sh
+
+    inplace :: ExecOpenAcc arch aenv a -> Bool
+    inplace (ExecAcc _ _ Avar{}) = False
+    inplace _                    = True
 
     -- Skeleton implementation
     -- -----------------------
