@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# LANGUAGE PatternGuards       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 -- Copyright   : [2016] Trevor L. McDonell
@@ -57,7 +58,7 @@ mkScan
     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkScan dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
@@ -74,6 +75,7 @@ mkScan dev aenv combine mseed IRDelayed{..} =
     tid   <- threadIdx
     sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
+    -- numBlock = (size + blockDim - 1) / blockDim
     a0 <- A.add scalarType sz bd
     a1 <- A.add scalarType a0 (lift 1)
     numBlock <- A.quot scalarType a1 bd
@@ -106,14 +108,14 @@ mkScan dev aenv combine mseed IRDelayed{..} =
         r1   <- scanBlockSMem dev combine (Just valid) x
         writeArray arrOut i r1
 
-        -- Step 3: Write the scan aggregate result to each thread
+        -- Step 2: Write the scan aggregate result to each thread
         --
 
         -- x' <- if A.neq scalarType tid $ lift (blockDim - 1)
         --         then app2 combine x r
         --         else return r
 
-        -- Step 4: Every thread writes the scan result of this dimension to
+        -- Step 3: Every thread writes the scan result of this dimension to
         -- memory.
         --
 
@@ -187,26 +189,32 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       -- Wait for each warp to finish its local scan
       __syncthreads
 
-      -- Whether or not the partial belonging to the current thread is valid
-      valid tid =
-        case size of
-          Nothing -> return (lift True)
-          Just s  -> A.lt scalarType tid s -- threadId < size
+      -- -- Whether or not the partial belonging to the current thread is valid
+      -- valid tid =
+      --   case size of
+      --     Nothing -> return (lift True)
+      --     Just s  -> A.lt scalarType tid s -- threadId < size
 
       -- -- Unfold the aggregate process as a recursive code generation function.
       recursiveAggregate :: Int -> IR e -> IR e -> CodeGen (IR e)
       recursiveAggregate step partial blockAggregate
-        | step >= warps  = return x
-        | otherwise     = do
-          inclusive <- app2 combine blockAggregate partial
-          partial'  <- if A.eq scalarType warpId warps
-                           then if valid threadId
-                                   then return inclusive
-                                   else return blockAggregate
-                           else return partial
-          blockAggregate' <- app2 combine blockAggregate =<<
-                              readArray smem step
-          recursiveAggregate (step+1) partial' blockAggregate'
+        | (step >= warps)  = return x
+        | otherwise       = do
+            inclusive <- app2 combine blockAggregate partial
+            partial'  <- if A.eq scalarType warpId warps
+                             then
+                               let valid tid =
+                                     case size of
+                                       Nothing -> return (left True)
+                                       Just n -> A.lt scalarType tid s
+                               in
+                                 if valid threadId
+                                     then return inclusive
+                                     else return blockAggregate
+                             else return partial
+            blockAggregate' <- app2 combine blockAggregate =<<
+                                readArray smem step
+            recursiveAggregate (step+1) partial' blockAggregate'
 
       recursiveAggregate 1 input =<< readArray smem 0
 
