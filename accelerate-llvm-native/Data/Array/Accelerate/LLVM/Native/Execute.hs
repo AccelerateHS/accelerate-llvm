@@ -224,10 +224,10 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
       seq     = target { fillP = sequentialIO gang }
       ncpu    = gangSize gang
       --
-      stride  = defaultLargePPT `max` (sz `div` (ncpu * 16))
+      stride  = defaultLargePPT `min` ((sz + ncpu - 1) `div` ncpu)
       steps   = (sz + stride - 1) `div` stride
   --
-  if ncpu == 1 || steps <= 1
+  if ncpu == 1 || sz <= defaultLargePPT
     then liftIO $ do
       -- Sequential reduction
       out <- allocateArray Z
@@ -280,11 +280,12 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
              | otherwise = "foldSegP"
       n      | ncpu == 1 = ss
              | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
+      ppt = defaultSmallPPT `min` ((n + ncpu - 1) `div` ncpu)
   --
   liftIO $ do
     out <- allocateArray (sh :. n)
     execute executableR kernel $ \f ->
-      executeOp defaultSmallPPT target f mempty gamma aenv (IE 0 (size (sh :. n))) out
+      executeOp ppt target f mempty gamma aenv (IE 0 (size (sh :. n))) out
     return out
 
 
@@ -328,11 +329,11 @@ scanCore NativeR{..} gamma aenv () n m = do
       seq     = target { fillP = sequentialIO gang }
       ncpu    = gangSize gang
       --
-      stride  = defaultLargePPT `max` (n `div` (ncpu * 16))
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
       steps   = (n + stride - 1) `div` stride
       steps'  = steps - 1
   --
-  if ncpu == 1 || steps <= 1
+  if ncpu == 1 || n <= 2 * defaultLargePPT
     then liftIO $ do
       -- sequential scan
       out <- allocateArray (Z :. m)
@@ -370,11 +371,11 @@ scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
       par     = target
       seq     = target { fillP = sequentialIO gang }
       --
-      stride  = defaultLargePPT `max` (n `div` (ncpu * 16))
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
       steps   = (n + stride - 1) `div` stride
       steps'  = steps - 1
   --
-  if ncpu == 1 || steps <= 1
+  if ncpu == 1 || n <= 2 * defaultLargePPT
     then liftIO $ do
       -- sequential scan
       out <- allocateArray sh
