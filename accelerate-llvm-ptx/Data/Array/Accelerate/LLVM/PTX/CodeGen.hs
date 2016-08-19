@@ -30,7 +30,7 @@ instance Skeleton PTX where
 --  transform     = mkTransform
   fold          = mkFold
   fold1         = mkFold1
-  scan          = mkScan
+  scanl         = mkScan
 
 instance Expression PTX
 

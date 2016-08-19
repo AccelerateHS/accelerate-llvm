@@ -5,6 +5,8 @@
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# LANGUAGE PatternGuards       #-}
+{-# LANGUAGE RebindableSyntax    #-}
+
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 -- Copyright   : [2016] Trevor L. McDonell
@@ -18,7 +20,6 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
   mkScan,
-  mkScan1,
 
 ) where
 
@@ -61,13 +62,24 @@ import Prelude                                                      as P
 --
 mkScan
     :: forall aenv sh e. (Shape sh, Elt e)
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRExp     PTX aenv e
+    -> IRDelayed PTX aenv (Array (sh :. Int) e)
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkScan (deviceProperties . ptxContext -> dev) aenv f z acc
+  = mkScanAll dev aenv f (Just z) acc
+
+mkScanAll
+    :: forall aenv sh e. (Shape sh, Elt e)
     =>          DeviceProperties                                -- ^ properties of the target GPU
     ->          Gamma         aenv                              -- ^ array environment
     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkScan dev aenv combine mseed IRDelayed{..} =
+mkScanAll dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
@@ -203,30 +215,33 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       --     Nothing -> return (lift True)
       --     Just s  -> A.lt scalarType tid s -- threadId < size
 
-      recursiveAggregate 1 input warps smem =<< readArray smem 0
+      element <- readArray smem (int32 0)
+      recursiveAggregate (lift 1) input warps smem element
       where
         -- Unfold the aggregate process as a recursive code generation function.
-        recursiveAggregate :: Int -> IR e -> IR e -> IRArray (Vector e) -> IR e -> CodeGen (IR e)
-        recursiveAggregate step partial warps smem blockAggregate
-          | (step >= warps)  = return partial
-          | otherwise       = do
+        recursiveAggregate :: IR Int32 -> IR e -> IR Int32 -> IRArray (Vector e) -> IR e -> CodeGen (IR e)
+        recursiveAggregate step partial warps smem blockAggregate =
+          if (A.gt scalarType step warps)
+             then return partial
+             else do
               inclusive <- app2 combine blockAggregate partial
-              partial'  <- if A.eq scalarType warpId warps
+              wid   <- warpId
+              tid   <- threadIdx
+              partial'  <- if A.eq scalarType wid warps
                                then
-                                 let valid tid =
+                                 let valid t =
                                        case size of
                                          Nothing -> return (lift True)
-                                         Just n -> A.lt scalarType tid n
+                                         Just n -> A.lt scalarType t n
                                  in
-                                   if valid threadIdx
+                                   if valid tid
                                        then return inclusive
                                        else return blockAggregate
                                else return partial
               blockAggregate' <- app2 combine blockAggregate =<<
                                   readArray smem step
-              recursiveAggregate (step+1) partial' blockAggregate'
-
-
+              step' <- A.add numType step (lift 1)
+              recursiveAggregate step' partial' warps smem blockAggregate'
 
 scanWarpSMem
   :: forall aenv e. Elt e
