@@ -22,31 +22,39 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
 ) where
 
-import Data.Typeable
-import Control.Monad hiding (when)
-
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Analysis.Type
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..) )
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic as A
+-- accelerate-llvm-*
+import LLVM.General.AST.Type.Representation
+
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop as Loop
 
-import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base as PTXBase
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
+import Data.Array.Accelerate.LLVM.PTX.Target
 
-import Foreign.CUDA.Analysis as CUDA
+-- cuda
+import Foreign.CUDA.Analysis                                        ( DeviceProperties )
+import qualified Foreign.CUDA.Analysis                              as CUDA
 
+import Control.Applicative                                          ( (<$>), (<*>) )
+import Control.Monad                                                ( (>=>) )
+import Data.String                                                  ( fromString )
+import Data.Typeable
+import Data.Bits                                                    as P
+import Prelude                                                      as P
 
 
 -- Scan an array of arbitrary rank along the innermost dimension only.
@@ -76,19 +84,19 @@ mkScan dev aenv combine mseed IRDelayed{..} =
     sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
     -- numBlock = (size + blockDim - 1) / blockDim
-    a0 <- A.add scalarType sz bd
-    a1 <- A.add scalarType a0 (lift 1)
-    numBlock <- A.quot scalarType a1 bd
+    a0 <- A.add numType sz bd
+    a1 <- A.add numType a0 (lift 1)
+    numBlock <- A.quot integralType a1 bd
 
-    start' <- lift 0
-    end'   <- numBlock
+    start' <- return (lift 0)
+    end'   <- return numBlock
 
     when (A.lt scalarType tid sz) $ do
 
       -- Thread blocks iterate over the outer dimensions.
       --
       seg0  <- A.add numType start' bid
-      for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
+      Loop.for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
 
         -- Wait for threads to catch up before starting this segment. We could
         -- also place this at the bottom of the loop, but here allows threads to
@@ -99,8 +107,8 @@ mkScan dev aenv combine mseed IRDelayed{..} =
         from  <- A.mul numType seg  bd          -- first linear index this block will scan
         toTmp <- A.add numType from bd
         to    <- if A.lt scalarType sz toTmp    -- last linear index this block will scan (exclusive)
-                   then sz
-                   else toTmp
+                    then return sz
+                    else return toTmp
         valid <- A.sub numType to from          -- number of valid elements
 
         i    <- A.add numType from tid
@@ -182,7 +190,7 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       -- Share the per-lane aggregates
       wid   <- warpId
       lane  <- laneId
-      lastLane <- lift (CUDA.warpSize dev - 1)
+      lastLane <- return (int32 (CUDA.warpSize dev - 1))
       when (A.eq scalarType lane lastLane) $ do
         writeArray smem wid input
 
@@ -195,28 +203,29 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       --     Nothing -> return (lift True)
       --     Just s  -> A.lt scalarType tid s -- threadId < size
 
-      -- -- Unfold the aggregate process as a recursive code generation function.
-      recursiveAggregate :: Int -> IR e -> IR e -> CodeGen (IR e)
-      recursiveAggregate step partial blockAggregate
-        | (step >= warps)  = return x
-        | otherwise       = do
-            inclusive <- app2 combine blockAggregate partial
-            partial'  <- if A.eq scalarType warpId warps
-                             then
-                               let valid tid =
-                                     case size of
-                                       Nothing -> return (left True)
-                                       Just n -> A.lt scalarType tid s
-                               in
-                                 if valid threadId
-                                     then return inclusive
-                                     else return blockAggregate
-                             else return partial
-            blockAggregate' <- app2 combine blockAggregate =<<
-                                readArray smem step
-            recursiveAggregate (step+1) partial' blockAggregate'
+      recursiveAggregate 1 input warps smem =<< readArray smem 0
+      where
+        -- Unfold the aggregate process as a recursive code generation function.
+        recursiveAggregate :: Int -> IR e -> IR e -> IRArray (Vector e) -> IR e -> CodeGen (IR e)
+        recursiveAggregate step partial warps smem blockAggregate
+          | (step >= warps)  = return partial
+          | otherwise       = do
+              inclusive <- app2 combine blockAggregate partial
+              partial'  <- if A.eq scalarType warpId warps
+                               then
+                                 let valid tid =
+                                       case size of
+                                         Nothing -> return (lift True)
+                                         Just n -> A.lt scalarType tid n
+                                 in
+                                   if valid threadIdx
+                                       then return inclusive
+                                       else return blockAggregate
+                               else return partial
+              blockAggregate' <- app2 combine blockAggregate =<<
+                                  readArray smem step
+              recursiveAggregate (step+1) partial' blockAggregate'
 
-      recursiveAggregate 1 input =<< readArray smem 0
 
 
 scanWarpSMem
@@ -235,25 +244,25 @@ scanWarpSMem dev combine smem size = scanStep 0
     -- Number steps required to scan warp
     steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
 
-  valid i =
-    case size of
-      Nothing -> return (lift True)
-      Just n  -> A.lt scalarType i n
+    valid i =
+      case size of
+        Nothing -> return (lift True)
+        Just n  -> A.lt scalarType i n
 
-  -- unfold the scan as a recursive code generation function
-  scanStep :: Int -> IR e -> CodeGen (IR e)
-  scanStep step x
-    | step >= steps               = return x
-    | offset <- 1 `P.shiftL` step = do
-      -- share input through buffer
-      lane <-laneId
-      idx  <- A.add numType lane (lift 16) -- lane_id + HALF_WARP_SIZE
-      writeVolatileArray smem idx x
+    -- unfold the scan as a recursive code generation function
+    scanStep :: Int -> IR e -> CodeGen (IR e)
+    scanStep step x
+      | step >= steps               = return x
+      | offset <- 1 `P.shiftL` step = do
+        -- share input through buffer
+        lane <-laneId
+        idx  <- A.add numType lane (lift 16) -- lane_id + HALF_WARP_SIZE
+        writeVolatileArray smem idx x
 
-      -- update input if in range
-      i    <- A.sub numType idx (lift offset)
-      x'   <- if valid i
-                 then app2 combine x =<< readVolatileArray smem i
-                 else return x
+        -- update input if in range
+        i    <- A.sub numType idx (lift offset)
+        x'   <- if valid i
+                   then app2 combine x =<< readVolatileArray smem i
+                   else return x
 
-      scanStep (step + 1) x'
+        scanStep (step + 1) x'
