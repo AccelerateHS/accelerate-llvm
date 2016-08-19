@@ -87,25 +87,23 @@ mkScanAll dev aenv combine mseed IRDelayed{..} =
   in
   makeOpenAcc "scan" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    -- If the innermost dimension is smaller than the number of threads in the
-    -- block, those threads will never contribute to the output.
     gd    <- gridDim
     bid   <- blockIdx
     bd    <- blockDim
     tid   <- threadIdx
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent -- size of input array
 
-    -- numBlock = (size + blockDim - 1) / blockDim
+    -- separate the array by blockDim
     a0 <- A.add numType sz bd
     a1 <- A.add numType a0 (lift 1)
-    numBlock <- A.quot integralType a1 bd
+    numBlock <- A.quot integralType a1 bd -- numBlock = (size + blockDim - 1) / blockDim
 
     start' <- return (lift 0)
     end'   <- return numBlock
 
     when (A.lt scalarType tid sz) $ do
 
-      -- Thread blocks iterate over the outer dimensions.
+      -- Thread blocks iterate over the entire array
       --
       seg0  <- A.add numType start' bid
       Loop.for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
