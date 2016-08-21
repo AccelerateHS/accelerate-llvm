@@ -85,7 +85,7 @@ mkScanAll dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "scan" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "ScanP1" (paramGang ++ paramOut ++ paramEnv) $ do
 
     gd       <- gridDim
     bid      <- blockIdx
@@ -227,9 +227,12 @@ isThreadValid tid size =
 
 -- Unfold the aggregate warps process as a recursive code generation function.
 recursiveAggregate :: forall aenv e. Elt e
-                   => Int32 -> Int32 -> IR e
+                   => Int32
+                   -> Int32
+                   -> IR e
                    -> IRFun2 PTX aenv (e -> e -> e)
-                   -> Maybe (IR Int32) -> IRArray (Vector e)
+                   -> Maybe (IR Int32)
+                   -> IRArray (Vector e)
                    -> IR e -> CodeGen (IR e)
 recursiveAggregate step warps partial combine size smem blockAggregate
   | step >= warps = return partial
