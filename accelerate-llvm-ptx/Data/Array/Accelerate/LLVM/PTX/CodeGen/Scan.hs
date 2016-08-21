@@ -87,19 +87,19 @@ mkScanAll dev aenv combine mseed IRDelayed{..} =
   in
   makeOpenAcc "scan" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    gd    <- gridDim
-    bid   <- blockIdx
-    bd    <- blockDim
-    tid   <- threadIdx
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent -- size of input array
+    gd       <- gridDim
+    bid      <- blockIdx
+    bd       <- blockDim
+    tid      <- threadIdx
+    sz       <- A.fromIntegral integralType numType . indexHead =<< delayedExtent -- size of input array
 
     -- separate the array by blockDim
-    a0 <- A.add numType sz bd
-    a1 <- A.add numType a0 (lift 1)
+    a0       <- A.add numType sz bd
+    a1       <- A.add numType a0 (lift 1)
     numBlock <- A.quot integralType a1 bd -- numBlock = (size + blockDim - 1) / blockDim
 
-    start' <- return (lift 0)
-    end'   <- return numBlock
+    start'   <- return (lift 0)
+    end'     <- return numBlock
 
     when (A.lt scalarType tid sz) $ do
 
@@ -121,9 +121,9 @@ mkScanAll dev aenv combine mseed IRDelayed{..} =
                     else return toTmp
         valid <- A.sub numType to from          -- number of valid elements
 
-        i    <- A.add numType from tid
-        x    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-        r1   <- scanBlockSMem dev combine (Just valid) x
+        i     <- A.add numType from tid
+        x     <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+        r1    <- scanBlockSMem dev combine (Just valid) x
         writeArray arrOut i r1
 
         -- Step 2: Write the scan aggregate result to each thread
@@ -213,33 +213,40 @@ scanBlockSMem dev combine size = warpScan >=> warpAggregate
       --     Nothing -> return (lift True)
       --     Just s  -> A.lt scalarType tid s -- threadId < size
 
+      warpNum <- return (P.fromIntegral . CUDA.warpSize $ dev)
       element <- readArray smem (int32 0)
-      recursiveAggregate (lift 1) input warps smem element
-      where
-        -- Unfold the aggregate process as a recursive code generation function.
-        recursiveAggregate :: IR Int32 -> IR e -> IR Int32 -> IRArray (Vector e) -> IR e -> CodeGen (IR e)
-        recursiveAggregate step partial warps smem blockAggregate =
-          if (A.gt scalarType step warps)
-             then return partial
-             else do
-              inclusive <- app2 combine blockAggregate partial
-              wid   <- warpId
-              tid   <- threadIdx
-              partial'  <- if A.eq scalarType wid warps
-                               then
-                                 let valid t =
-                                       case size of
-                                         Nothing -> return (lift True)
-                                         Just n -> A.lt scalarType t n
-                                 in
-                                   if valid tid
-                                       then return inclusive
-                                       else return blockAggregate
-                               else return partial
-              blockAggregate' <- app2 combine blockAggregate =<<
-                                  readArray smem step
-              step' <- A.add numType step (lift 1)
-              recursiveAggregate step' partial' warps smem blockAggregate'
+      recursiveAggregate 1 warpNum input combine size smem element
+
+
+isThreadValid :: IR Int32 -> Maybe (IR Int32) -> CodeGen (IR Bool)
+isThreadValid tid size =
+  case size of
+    Nothing -> return (lift True)
+    Just n  -> A.lt scalarType tid n
+
+
+-- Unfold the aggregate warps process as a recursive code generation function.
+recursiveAggregate :: forall aenv e. Elt e
+                   => Int32 -> Int32 -> IR e
+                   -> IRFun2 PTX aenv (e -> e -> e)
+                   -> Maybe (IR Int32) -> IRArray (Vector e)
+                   -> IR e -> CodeGen (IR e)
+recursiveAggregate step warps partial combine size smem blockAggregate
+  | step >= warps = return partial
+  | otherwise    = do
+      inclusive <- app2 combine blockAggregate partial
+      wid       <- warpId
+      tid       <- threadIdx
+      partial'  <- if A.eq scalarType wid (lift warps)
+                       then
+                           if isThreadValid tid size
+                               then return inclusive
+                               else return blockAggregate
+                       else return partial
+      blockAggregate' <- app2 combine blockAggregate =<<
+        readArray smem (lift step)
+      recursiveAggregate (step+1) warps partial' combine size smem blockAggregate'
+
 
 scanWarpSMem
   :: forall aenv e. Elt e
