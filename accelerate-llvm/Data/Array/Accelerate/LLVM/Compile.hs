@@ -33,6 +33,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -43,7 +44,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp )
+import Prelude                                                  hiding ( exp, unzip )
 
 
 class Compile arch where
@@ -68,6 +69,11 @@ data ExecOpenAcc arch aenv a where
 
   EmbedAcc :: (Shape sh, Elt e)
            => PreExp (ExecOpenAcc arch) aenv sh
+           -> ExecOpenAcc arch aenv (Array sh e)
+
+  UnzipAcc :: (Elt t, Elt e)
+           => TupleIdx (TupleRepr t) e
+           -> Idx aenv (Array sh t)
            -> ExecOpenAcc arch aenv (Array sh e)
 
 
@@ -159,7 +165,9 @@ compileOpenAcc = traverseAcc
 
         -- Producers
         Generate e f            -> exec =<< liftA2 Generate             <$> travE e <*> travF f
-        Map f a                 -> exec =<< liftA2 Map                  <$> travF f <*> travA a
+        Map f a
+          | Just b <- unzip f a -> return b
+          | otherwise           -> exec =<< liftA2 Map                  <$> travF f <*> travA a
         ZipWith f a b           -> exec =<< liftA3 ZipWith              <$> travF f <*> travA a <*> travA b
         Transform e p f a       -> exec =<< liftA4 Transform            <$> travE e <*> travF p <*> travF f <*> travA a
 
@@ -222,8 +230,23 @@ compileOpenAcc = traverseAcc
              -> LLVM arch (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
         wrap = return . liftA (ExecAcc noKernel mempty)
 
-        noKernel :: ExecutableR arch
-        noKernel =  $internalError "compile" "no kernel module for this node"
+        -- Unzips of manifest array data can be done in constant time without
+        -- executing any array programs. We split them out here into a separate
+        -- case of 'ExecAcc' so that the execution phase does not have to
+        -- continually perform the below check (in particular; 'run1').
+        unzip :: PreFun DelayedOpenAcc aenv (a -> b)
+              -> DelayedOpenAcc aenv (Array sh a)
+              -> Maybe (ExecOpenAcc arch aenv (Array sh b))
+        unzip f a
+          | Lam (Body (Prj tix (Var ZeroIdx)))  <- f
+          , Delayed sh index _                  <- a
+          , Shape u                             <- sh
+          , Manifest (Avar ix)                  <- u
+          , Lam (Body (Index v (Var ZeroIdx)))  <- index
+          , Just REFL                           <- match u v
+          = Just (UnzipAcc tix ix)
+        unzip _ _
+          = Nothing
 
         -- If there is a foreign call for the LLVM backend, don't bother
         -- compiling the pure version
@@ -235,8 +258,8 @@ compileOpenAcc = traverseAcc
         foreignA = error "todo: compile/foreign array computations"
 
         -- sadness
-        unsupportedError :: error
-        unsupportedError = $internalError "llvmOfOpenAcc" $ "unsupported array primitive: " ++ showPreAccOp pacc
+        noKernel         = $internalError "compile" "no kernel module for this node"
+        unsupportedError = $internalError "llvmOfOpenAcc" ("unsupported array primitive: " ++ showPreAccOp pacc)
 
 
     -- Traverse a scalar expression
