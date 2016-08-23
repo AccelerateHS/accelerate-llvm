@@ -252,16 +252,23 @@ scanCore exe gamma aenv stream sh' = do
   ptx <- gets llvmTarget
   let
     k1 = lookupKernel "ScanP1" exe
-    scanIntro :: (sh :. Int) -> LLVM PTX (Array (sh :. Int) e)
-    scanIntro (sh :. sz) = do
+    k2 = lookupKernel "ScanP2" exe
+    k3 = lookupKernel "ScanP3" exe
+
+    doScan :: (sh :. Int) -> LLVM PTX (Array (sh :. Int) e)
+    doScan (sh :. sz) = do
       let numElements       = size sh * sz
           numBlocks         = (kernelThreadBlocks k1) numElements
       --
       out <- allocateRemote (sh :. numElements)
+      -- tmp <- allocateRemote (sh :. numBlocks)
       liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
+      -- liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 numBlocks) tmp
+      -- liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numBlocks) tmp
+      -- liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) tmp
       return out
 
-  scanIntro sh'
+  doScan sh'
 
 
 -- Using the defaulting instances for stencil operations (for now).
