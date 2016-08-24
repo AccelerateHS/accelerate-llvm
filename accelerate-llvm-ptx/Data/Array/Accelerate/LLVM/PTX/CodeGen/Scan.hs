@@ -71,6 +71,7 @@ mkScan
 mkScan (deviceProperties . ptxContext -> dev) aenv f z acc
   = mkScanAll dev aenv f (Just z) acc
 
+
 mkScanAll
     :: forall aenv sh e. (Shape sh, Elt e)
     =>          DeviceProperties                                -- ^ properties of the target GPU
@@ -79,16 +80,30 @@ mkScanAll
     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkScanAll dev aenv combine mseed IRDelayed{..} = do
+mkScanAll dev aenv combine mseed arr =
+  foldr1 (+++) <$> sequence [ mkScanAllP1 dev aenv combine mseed arr
+                          , mkScanAllP2 dev aenv combine mseed
+                          , mkScanAllP3 dev aenv combine mseed
+                          ]
+
+
+-- Step 1: scan on each block to get local sums
+--
+mkScanAllP1
+    :: forall aenv sh e. (Shape sh, Elt e)
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
+    ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Array sh e))
       paramEnv                  = envParam aenv
-
-  -- Step 1: scan on each block to get local sums
-  --
-  p1 <- makeOpenAcc "ScanP1" (paramGang ++ paramOut ++ paramEnv) $ do
+  in
+  makeOpenAcc "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
 
     gd       <- gridDim
     bid      <- blockIdx
@@ -129,23 +144,52 @@ mkScanAll dev aenv combine mseed IRDelayed{..} = do
 
     return_
 
-  -- Step 2: Gather the last element in every block to a temporary array
-  --
-  p2 <- makeOpenAcc "ScanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
+
+-- Step 2: Gather the last element in every block to a temporary array
+--
+mkScanAllP2
+    :: forall aenv sh e. (Shape sh, Elt e)
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkScanAllP2 dev aenv combine mseed =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Array sh e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "scanP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     bd          <- blockDim
     lastElement <- A.sub numType bd (lift 1)
 
     tid         <- threadIdx
     bid         <- blockIdx
-    x           <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType tid
+    x           <- readArray arrOut tid
     when (A.eq scalarType tid lastElement) $ do
        writeArray arrTmp bid x
 
     return_
 
-  -- Step 3: Every thread writes the combine result to memory
-  --
-  p3 <- makeOpenAcc "ScanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+-- Step 3: Every thread writes the combine result to memory
+--
+mkScanAllP3
+    :: forall aenv sh e. (Shape sh, Elt e)
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkScanAllP3 dev aenv combine mseed =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Array sh e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     tid      <- threadIdx
     bid      <- blockIdx
     when (A.gt scalarType bid (lift 0)) $ do
@@ -155,58 +199,6 @@ mkScanAll dev aenv combine mseed IRDelayed{..} = do
       writeArray arrOut tid z
 
     return_
-
-  return p1
-
-
--- mkScanP3
---     :: forall aenv sh e. (Shape sh, Elt e)
---     =>          DeviceProperties                                -- ^ properties of the target GPU
---     ->          Gamma         aenv                              -- ^ array environment
---     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
---     -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
---     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
---     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
--- mkScanP3 dev aenv combine mseed IRDelayed{..} =
---   let
---       (start, end, paramGang)   = gangParam
---       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
---       paramEnv                  = envParam aenv
---   in
---   makeOpenAcc "ScanP2" (paramGang ++ paramOut ++ paramEnv) $ do
---         -- Step 2: Write the scan aggregate result to each thread
---         --
---
---         -- x' <- if A.neq scalarType tid $ lift (blockDim - 1)
---         --         then app2 combine x r
---         --         else return r
---
---         -- Step 3: Every thread writes the scan result of this dimension to
---
---     gd       <- gridDim
---     bid      <- blockIdx
---     bd       <- blockDim
---     tid      <- threadIdx
---     sz       <- A.fromIntegral integralType numType . indexHead =<< delayedExtent -- size of input array
---
---     -- separate the array by blockDim
---     a0       <- A.add numType sz bd
---     a1       <- A.add numType a0 (lift 1)
---     numBlock <- A.quot integralType a1 bd -- numBlock = (size + blockDim - 1) / blockDim
---
---     start'   <- return (lift 0)
---     end'     <- return numBlock
---
---     when (A.lt scalarType tid sz) $ do
---
---       -- Thread blocks iterate over the entire array
---       --
---       seg0  <- A.add numType start' bid
---       Loop.for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
---
---         -- Wait for threads to catch up before starting this segment. We could
---         -- also place this at the bottom of the loop, but here allows threads to
---         -- exit quickly on the last iteration.
 
 
 
