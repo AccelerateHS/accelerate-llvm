@@ -51,6 +51,9 @@ evalNative = evalLLVM
 -- | Create a Native execution target by spawning a worker thread on each of the
 -- given capabilities, using the given strategy to load balance the workers.
 --
+-- Note that it is *not* safe to use the same target concurrently from different
+-- threads; instead, create separate targets for each thread.
+--
 createTarget
     :: [Int]
     -> Strategy

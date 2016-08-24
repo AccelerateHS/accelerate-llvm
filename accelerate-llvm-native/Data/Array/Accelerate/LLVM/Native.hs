@@ -65,7 +65,13 @@ import System.IO.Unsafe
 
 -- | Compile and run a complete embedded array program.
 --
--- Note that it is recommended that you use 'run1' whenever possible.
+-- NOTE:
+--
+--  1. It is recommended that you use 'run1' whenever possible.
+--
+--  2. It is *not* safe to call 'run' concurrently from different threads.
+--     Instead, use 'createTarget' and 'runWith' so that each thread executes
+--     using its own thread gang.
 --
 run :: Arrays a => Acc a -> a
 run = runWith defaultTarget
