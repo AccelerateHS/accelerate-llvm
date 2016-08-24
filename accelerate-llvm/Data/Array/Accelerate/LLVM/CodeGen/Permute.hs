@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Permute
 -- Copyright   : [2016] Trevor L. McDonell
