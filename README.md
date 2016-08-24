@@ -81,7 +81,7 @@ Current status
 - [x] scanl1, scanr1
 - [x] scanl', scanr'
 - [x] foldSeg
-- [ ] permute
+- [x] permute
 - [x] stencil (preliminary support)
 - [x] stencil2 (preliminary support)
 - [ ] foreign functions
