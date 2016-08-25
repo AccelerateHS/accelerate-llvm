@@ -193,8 +193,8 @@ foldAllOp exe gamma aenv stream sh' = do
 
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
       foldRec out@(Array (sh,sz) adata) =
-        let numElements       = R.size sh * sz
-            numBlocks         = (kernelThreadBlocks k2) numElements
+        let numElements       = size sh * sz
+            numBlocks         = (kernelThreadBlocks k1) numElements
         in if sz <= 1
               then do
                 -- We have recursed to a single block already. Trim the
@@ -229,6 +229,7 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
   return out
 
+
 scanOp
     :: (Shape sh, Elt e)
     => ExecutableR PTX
@@ -248,27 +249,25 @@ scanCore
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array (sh :. Int) e)
-scanCore exe gamma aenv stream sh' = do
+scanCore exe gamma aenv stream (sh :. sz) = do
   ptx <- gets llvmTarget
   let
-    k1 = lookupKernel "ScanP1" exe
-    k2 = lookupKernel "ScanP2" exe
-    k3 = lookupKernel "ScanP3" exe
+    k1 = lookupKernel "scanP1" exe
+    k2 = lookupKernel "scanP2" exe
+    k3 = lookupKernel "scanP3" exe
+    numElements = size sh * sz
+    numBlocks   = (kernelThreadBlocks k1) numElements
 
-    doScan :: (sh :. Int) -> LLVM PTX (Array (sh :. Int) e)
-    doScan (sh :. sz) = do
-      let numElements       = size sh * sz
-          numBlocks         = (kernelThreadBlocks k1) numElements
-      --
-      out <- allocateRemote (sh :. numElements)
-      -- tmp <- allocateRemote (sh :. numBlocks)
-      liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
-      -- liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 numBlocks) tmp
-      -- liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numBlocks) tmp
-      -- liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) tmp
-      return out
-
-  doScan sh'
+  --
+  out <- allocateRemote (sh :. sz)
+  tmp <- allocateRemote (sh :. numBlocks)
+  liftIO $ do
+    --
+    executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
+    executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
+    executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+  return out
 
 
 -- Using the defaulting instances for stencil operations (for now).

@@ -113,7 +113,7 @@ mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
 
     -- Divide the array by blockDim
     a0       <- A.add numType sz bd
-    a1       <- A.add numType a0 (lift 1)
+    a1       <- A.sub numType a0 (lift 1)
     numBlock <- A.quot integralType a1 bd -- numBlock = (size + blockDim - 1) / blockDim
 
     start'   <- return (lift 0)
@@ -122,8 +122,9 @@ mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
     when (A.lt scalarType tid sz) $ do
 
       -- Thread blocks iterate over the entire array
-      seg0  <- A.add numType start' bid
+      seg0  <- A.add numType start' bid         -- bid
       Loop.for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
+        -- bid, bid + sg, bid + 2*sg ...
 
         -- Wait for threads to catch up before starting this segment. We could
         -- also place this at the bottom of the loop, but here allows threads to
@@ -201,13 +202,7 @@ mkScanAllP3 dev aenv combine mseed =
     return_
 
 
-
--- Efficient threadblock-wide scan using the specified operator.
---
--- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_scan_warp_scans.cuh
---
+-- Naive Scan Algorithm
 scanBlockSMem
     :: forall aenv e. Elt e
     => DeviceProperties                                         -- ^ properties of the target device
@@ -215,139 +210,191 @@ scanBlockSMem
     -> Maybe (IR Int32)                                         -- ^ number of valid elements (may be less than block size)
     -> IR e                                                     -- ^ calling thread's input element
     -> CodeGen (IR e)                                           -- ^ thread-block-wide scan using the specified operator (lane 0 only)
-scanBlockSMem dev combine size = warpScan >=> warpAggregate
+scanBlockSMem dev combine size input = do
+  bd     <- blockDim
+  length <- A.mul numType bd $ int32 2
+  smem   <- sharedMem length (int32 0)
+  scanStep (int32 1) (int32 1) smem
+
   where
     int32 :: Integral a => a -> IR Int32
     int32 = lift . P.fromIntegral
 
-    -- Temporary storage required for each warp
-    bytes           = sizeOf (eltType (undefined::e))
-    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+    scanStep :: IR Int32 -> IR Int32 -> IRArray (Vector e) -> CodeGen (IR e)
+    scanStep offset flag smem = do
+      n    <- blockDim
+      tid  <- threadIdx
+      if A.gte scalarType offset n
+         then readVolatileArray smem tid
+         else do
+           pout <- return flag
+           pin  <- A.sub numType (int32 1) pout
 
-    -- Step 1: Scan in every warp
-    --
-    warpScan :: IR e -> CodeGen (IR e)
-    warpScan input = do
-      -- Allocate (1.5 * warpSize) elements of shared memory for each warp
-      wid   <- warpId
-      skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem (int32 warp_smem_elems) skip
+           i0 <- A.mul numType n   pout
+           i1 <- A.add numType i0  tid                  -- i1 = pout * n + tid
+           x  <- readVolatileArray smem i1
 
-      -- Are we doing bounds checking for this warp?
-      --
-      case size of
-        -- The entire thread block is valid, so skip bounds checks.
-        Nothing ->
-          scanWarpSMem dev combine smem Nothing input
+           i2 <- A.mul numType pin n
+           i3 <- A.add numType i2  tid                  -- i3 = pin * n + tid
+           y1 <- readVolatileArray smem i3
 
-        -- Otherwise check how many elements are valid for this warp. If it is
-        -- full then we can still skip bounds checks for it.
-        Just n -> do
-          offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
-          valid  <- A.sub numType n offset
-          if A.gte scalarType valid (int32 (CUDA.warpSize dev))
-            then scanWarpSMem dev combine smem Nothing input
-            else scanWarpSMem dev combine smem (Just valid) input
+           i4 <- A.sub numType i3  offset               -- i4 = pin * n + tid - offset
+           y2 <- readVolatileArray smem i4
+           z  <- app2 combine x y2
 
-    -- Step 2: Aggregate per-warp scan
-    --
-    warpAggregate :: IR e -> CodeGen (IR e)
-    warpAggregate input = do
-      -- Allocate #warps elements of shared memory
-      bid   <- blockDim
-      warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
-      skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem warps skip
+           writeVolatileArray smem i1 =<< if A.lt scalarType tid offset
+                                             then return z
+                                             else return y2
 
-      -- Share the per-lane aggregates
-      wid   <- warpId
-      lane  <- laneId
-      lastLane <- return (int32 (CUDA.warpSize dev - 1))
-      when (A.eq scalarType lane lastLane) $ do
-        writeArray smem wid input
-
-      -- Wait for each warp to finish its local scan
-      __syncthreads
-
-      -- -- Whether or not the partial belonging to the current thread is valid
-      -- valid tid =
-      --   case size of
-      --     Nothing -> return (lift True)
-      --     Just s  -> A.lt scalarType tid s -- threadId < size
-
-      warpNum <- return (P.fromIntegral . CUDA.warpSize $ dev)
-      element <- readArray smem (int32 0)
-      recursiveAggregate 1 warpNum input combine size smem element
+           offset' <- A.mul numType offset (lift 2)
+           flag'   <- A.sub numType (lift 1) flag
+           scanStep offset' flag' smem
 
 
-isThreadValid :: IR Int32 -> Maybe (IR Int32) -> CodeGen (IR Bool)
-isThreadValid tid size =
-  case size of
-    Nothing -> return (lift True)
-    Just n  -> A.lt scalarType tid n
 
-
--- Unfold the aggregate warps process as a recursive code generation function.
-recursiveAggregate :: forall aenv e. Elt e
-                   => Int32
-                   -> Int32
-                   -> IR e
-                   -> IRFun2 PTX aenv (e -> e -> e)
-                   -> Maybe (IR Int32)
-                   -> IRArray (Vector e)
-                   -> IR e -> CodeGen (IR e)
-recursiveAggregate step warps partial combine size smem blockAggregate
-  | step >= warps = return partial
-  | otherwise    = do
-      inclusive <- app2 combine blockAggregate partial
-      wid       <- warpId
-      tid       <- threadIdx
-      partial'  <- if A.eq scalarType wid (lift warps)
-                       then
-                           if isThreadValid tid size
-                               then return inclusive
-                               else return blockAggregate
-                       else return partial
-      blockAggregate' <- app2 combine blockAggregate =<<
-        readArray smem (lift step)
-      recursiveAggregate (step+1) warps partial' combine size smem blockAggregate'
-
-
-scanWarpSMem
-  :: forall aenv e. Elt e
-  => DeviceProperties
-  -> IRFun2 PTX aenv (e -> e -> e)
-  -> IRArray (Vector e)
-  -> Maybe (IR Int32)
-  -> IR e
-  -> CodeGen (IR e)
-scanWarpSMem dev combine smem size = scanStep 0
-  where
-    log2 :: Double -> Double
-    log2 = P.logBase 2
-
-    -- Number steps required to scan warp
-    steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
-
-    valid i =
-      case size of
-        Nothing -> return (lift True)
-        Just n  -> A.lt scalarType i n
-
-    -- unfold the scan as a recursive code generation function
-    scanStep :: Int -> IR e -> CodeGen (IR e)
-    scanStep step x
-      | step >= steps               = return x
-      | offset <- 1 `P.shiftL` step = do
-        -- share input through buffer
-        lane <-laneId
-        idx  <- A.add numType lane (lift 16) -- lane_id + HALF_WARP_SIZE
-        writeVolatileArray smem idx x
-
-        -- update input if in range
-        i    <- A.sub numType idx (lift offset)
-        x'   <- if valid i
-                   then app2 combine x =<< readVolatileArray smem i
-                   else return x
-
-        scanStep (step + 1) x'
+-- -- Efficient threadblock-wide scan using the specified operator.
+-- --
+-- -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
+-- --
+-- -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_scan_warp_scans.cuh
+-- --
+-- scanBlockSMem
+--     :: forall aenv e. Elt e
+--     => DeviceProperties                                         -- ^ properties of the target device
+--     -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+--     -> Maybe (IR Int32)                                         -- ^ number of valid elements (may be less than block size)
+--     -> IR e                                                     -- ^ calling thread's input element
+--     -> CodeGen (IR e)                                           -- ^ thread-block-wide scan using the specified operator (lane 0 only)
+-- scanBlockSMem dev combine size = warpScan >=> warpAggregate
+--   where
+--     int32 :: Integral a => a -> IR Int32
+--     int32 = lift . P.fromIntegral
+--
+--     -- Temporary storage required for each warp
+--     bytes           = sizeOf (eltType (undefined::e))
+--     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+--
+--     -- Step 1: Scan in every warp
+--     --
+--     warpScan :: IR e -> CodeGen (IR e)
+--     warpScan input = do
+--       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
+--       wid   <- warpId
+--       skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
+--       smem  <- sharedMem (int32 warp_smem_elems) skip
+--
+--       -- Are we doing bounds checking for this warp?
+--       --
+--       case size of
+--         -- The entire thread block is valid, so skip bounds checks.
+--         Nothing ->
+--           scanWarpSMem dev combine smem Nothing input
+--
+--         -- Otherwise check how many elements are valid for this warp. If it is
+--         -- full then we can still skip bounds checks for it.
+--         Just n -> do
+--           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
+--           valid  <- A.sub numType n offset
+--           if A.gte scalarType valid (int32 (CUDA.warpSize dev))
+--             then scanWarpSMem dev combine smem Nothing input
+--             else scanWarpSMem dev combine smem (Just valid) input
+--
+--     -- ATTENTION
+--     -- Step 2: Aggregate per-warp scan
+--     --
+--     warpAggregate :: IR e -> CodeGen (IR e)
+--     warpAggregate input = do
+--       -- Allocate #warps elements of shared memory
+--       bid   <- blockDim
+--       warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
+--       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
+--       smem  <- sharedMem warps skip
+--
+--       -- Share the per-lane aggregates
+--       wid   <- warpId
+--       lane  <- laneId
+--       lastLane <- return (int32 (CUDA.warpSize dev - 1))
+--       when (A.eq scalarType lane lastLane) $ do
+--         writeArray smem wid input
+--
+--       -- Wait for each warp to finish its local scan
+--       __syncthreads
+--
+--       -- ATTENTION
+--       warpNum <- return (P.fromIntegral . CUDA.warpSize $ dev)
+--       element <- readArray smem (int32 0)
+--       recursiveAggregate 1 warpNum input combine size smem element
+--
+--
+-- -- Whether or not the partial belonging to the current thread is valid
+-- isThreadValid :: IR Int32 -> Maybe (IR Int32) -> CodeGen (IR Bool)
+-- isThreadValid tid size =
+--   case size of
+--     Nothing -> return (lift True)
+--     Just n  -> A.lt scalarType tid n
+--
+--
+-- -- Unfold the aggregate warps process as a recursive code generation function.
+-- recursiveAggregate :: forall aenv e. Elt e
+--                    => Int32
+--                    -> Int32
+--                    -> IR e
+--                    -> IRFun2 PTX aenv (e -> e -> e)
+--                    -> Maybe (IR Int32)
+--                    -> IRArray (Vector e)
+--                    -> IR e -> CodeGen (IR e)
+-- recursiveAggregate step warps partial combine size smem blockAggregate
+--   | step >= warps = return partial
+--   | otherwise    = do
+--       inclusive <- app2 combine blockAggregate partial
+--       wid       <- warpId
+--       tid       <- threadIdx
+--       partial'  <- if A.eq scalarType wid (lift warps)
+--                        then
+--                            if isThreadValid tid size
+--                                then return inclusive
+--                                else return blockAggregate
+--                        else return partial
+--       blockAggregate' <- app2 combine blockAggregate =<<
+--         readArray smem (lift step)
+--       recursiveAggregate (step+1) warps partial' combine size smem blockAggregate'
+--
+--
+-- scanWarpSMem
+--   :: forall aenv e. Elt e
+--   => DeviceProperties
+--   -> IRFun2 PTX aenv (e -> e -> e)
+--   -> IRArray (Vector e)
+--   -> Maybe (IR Int32)
+--   -> IR e
+--   -> CodeGen (IR e)
+-- scanWarpSMem dev combine smem size = scanStep 0
+--   where
+--     log2 :: Double -> Double
+--     log2 = P.logBase 2
+--
+--     -- Number steps required to scan warp: log2(warpSize)
+--     steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
+--
+--     valid i =
+--       case size of
+--         Nothing -> return (lift True)
+--         Just n  -> A.lt scalarType i n
+--
+--     -- unfold the scan as a recursive code generation function
+--     scanStep :: Int -> IR e -> CodeGen (IR e)
+--     scanStep step x
+--       | step >= steps               = return x
+--       | offset <- 1 `P.shiftL` step = do
+--         -- share input through buffer
+--         lane <-laneId
+--         idx  <- A.add numType lane (lift $ (CUDA.warpSize dev) `div` 2) -- lane_id + HALF_WARP_SIZE
+--         writeVolatileArray smem idx x
+--
+--         -- update input if in range
+--         i    <- A.sub numType idx (lift offset)
+--         x'   <- if valid i
+--                    then app2 combine x =<< readVolatileArray smem i
+--                    else return x
+--
+--         scanStep (step + 1) x'
