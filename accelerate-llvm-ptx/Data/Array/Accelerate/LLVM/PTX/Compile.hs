@@ -48,6 +48,7 @@ import Data.Array.Accelerate.LLVM.Util
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
 import Data.Array.Accelerate.LLVM.PTX.Compile.Link
+import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import qualified  Data.Array.Accelerate.LLVM.PTX.Debug              as Debug
