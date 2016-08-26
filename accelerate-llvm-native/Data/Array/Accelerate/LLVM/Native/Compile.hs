@@ -42,8 +42,9 @@ import Data.Array.Accelerate.LLVM.Native.Compile.Link
 import Data.Array.Accelerate.LLVM.Native.Compile.Module
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
-import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
+import Data.Array.Accelerate.LLVM.Native.Foreign                ( )
+import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- standard library
