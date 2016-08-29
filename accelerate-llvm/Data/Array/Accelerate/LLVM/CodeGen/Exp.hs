@@ -120,7 +120,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Var ix                      -> return $ prj ix env
         Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
         PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
-        PrimApp f x                 -> llvmOfPrimFun f =<< cvtE x
+        PrimApp f x                 -> primFun f x
         IndexNil                    -> return indexNil
         IndexAny                    -> return indexAny
         IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
@@ -272,6 +272,96 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go _ _ _
           = $internalError "union" "expected shape with Int components"
 
+    primFun :: (Elt a, Elt r)
+            => PrimFun (a -> r)
+            -> DelayedOpenExp env aenv a
+            -> CodeGen (IR r)
+    primFun f x =
+      let
+          -- The Accelerate language and its code generator are hyper-strict.
+          -- However, we must not eagerly evaluate the arguments to logical
+          -- operations (&&*) and (||*) so that they can short-circuit. Since we
+          -- only have unary functions, this is a little tricky for us.
+          --
+          -- 'inl' and 'inr' attempt to destruct the incoming AST so that we can
+          -- evaluate the left or right components of a pair individually. It
+          -- should be noted that there are other cases which can evaluate to
+          -- pairs; 'Constant', 'Let' and 'Var', for example, but these cases
+          -- are (probably) not applicable in this context.
+          --
+          inl :: (Elt a, Elt b) => DelayedOpenExp env aenv (a,b) -> IROpenExp arch env aenv a
+          inl (Tuple (SnocTup (SnocTup NilTup a) _)) = cvtE a
+          inl t                                      = cvtE $ Prj (SuccTupIdx ZeroTupIdx) t
+
+          inr :: (Elt a, Elt b) => DelayedOpenExp env aenv (a,b) -> IROpenExp arch env aenv b
+          inr (Tuple (SnocTup _ b)) = cvtE b
+          inr t                     = cvtE $ Prj ZeroTupIdx t
+      in
+      case f of
+        PrimAdd t               -> A.uncurry (A.add t)     =<< cvtE x
+        PrimSub t               -> A.uncurry (A.sub t)     =<< cvtE x
+        PrimMul t               -> A.uncurry (A.mul t)     =<< cvtE x
+        PrimNeg t               -> A.negate t              =<< cvtE x
+        PrimAbs t               -> A.abs t                 =<< cvtE x
+        PrimSig t               -> A.signum t              =<< cvtE x
+        PrimQuot t              -> A.uncurry (A.quot t)    =<< cvtE x
+        PrimRem t               -> A.uncurry (A.rem t)     =<< cvtE x
+        PrimQuotRem t           -> A.uncurry (A.quotRem t) =<< cvtE x
+        PrimIDiv t              -> A.uncurry (A.idiv t)    =<< cvtE x
+        PrimMod t               -> A.uncurry (A.mod t)     =<< cvtE x
+        PrimDivMod t            -> A.uncurry (A.divMod t)  =<< cvtE x
+        PrimBAnd t              -> A.uncurry (A.band t)    =<< cvtE x
+        PrimBOr t               -> A.uncurry (A.bor t)     =<< cvtE x
+        PrimBXor t              -> A.uncurry (A.xor t)     =<< cvtE x
+        PrimBNot t              -> A.complement t          =<< cvtE x
+        PrimBShiftL t           -> A.uncurry (A.shiftL t)  =<< cvtE x
+        PrimBShiftR t           -> A.uncurry (A.shiftR t)  =<< cvtE x
+        PrimBRotateL t          -> A.uncurry (A.rotateL t) =<< cvtE x
+        PrimBRotateR t          -> A.uncurry (A.rotateR t) =<< cvtE x
+        PrimFDiv t              -> A.uncurry (A.fdiv t)    =<< cvtE x
+        PrimRecip t             -> A.recip t               =<< cvtE x
+        PrimSin t               -> A.sin t                 =<< cvtE x
+        PrimCos t               -> A.cos t                 =<< cvtE x
+        PrimTan t               -> A.tan t                 =<< cvtE x
+        PrimSinh t              -> A.sinh t                =<< cvtE x
+        PrimCosh t              -> A.cosh t                =<< cvtE x
+        PrimTanh t              -> A.tanh t                =<< cvtE x
+        PrimAsin t              -> A.asin t                =<< cvtE x
+        PrimAcos t              -> A.acos t                =<< cvtE x
+        PrimAtan t              -> A.atan t                =<< cvtE x
+        PrimAsinh t             -> A.asinh t               =<< cvtE x
+        PrimAcosh t             -> A.acosh t               =<< cvtE x
+        PrimAtanh t             -> A.atanh t               =<< cvtE x
+        PrimAtan2 t             -> A.uncurry (A.atan2 t)   =<< cvtE x
+        PrimExpFloating t       -> A.exp t                 =<< cvtE x
+        PrimFPow t              -> A.uncurry (A.fpow t)    =<< cvtE x
+        PrimSqrt t              -> A.sqrt t                =<< cvtE x
+        PrimLog t               -> A.log t                 =<< cvtE x
+        PrimLogBase t           -> A.uncurry (A.logBase t) =<< cvtE x
+        PrimTruncate ta tb      -> A.truncate ta tb        =<< cvtE x
+        PrimRound ta tb         -> A.round ta tb           =<< cvtE x
+        PrimFloor ta tb         -> A.floor ta tb           =<< cvtE x
+        PrimCeiling ta tb       -> A.ceiling ta tb         =<< cvtE x
+        PrimIsNaN t             -> A.isNaN t               =<< cvtE x
+        PrimLt t                -> A.uncurry (A.lt t)      =<< cvtE x
+        PrimGt t                -> A.uncurry (A.gt t)      =<< cvtE x
+        PrimLtEq t              -> A.uncurry (A.lte t)     =<< cvtE x
+        PrimGtEq t              -> A.uncurry (A.gte t)     =<< cvtE x
+        PrimEq t                -> A.uncurry (A.eq t)      =<< cvtE x
+        PrimNEq t               -> A.uncurry (A.neq t)     =<< cvtE x
+        PrimMax t               -> A.uncurry (A.max t)     =<< cvtE x
+        PrimMin t               -> A.uncurry (A.min t)     =<< cvtE x
+        PrimLAnd                -> A.land (inl x) (inr x)  -- short circuit
+        PrimLOr                 -> A.lor  (inl x) (inr x)  -- short circuit
+        PrimLNot                -> A.lnot                  =<< cvtE x
+        PrimOrd                 -> A.ord                   =<< cvtE x
+        PrimChr                 -> A.chr                   =<< cvtE x
+        PrimBoolToInt           -> A.boolToInt             =<< cvtE x
+        PrimFromIntegral ta tb  -> A.fromIntegral ta tb    =<< cvtE x
+        PrimToFloating ta tb    -> A.toFloating ta tb      =<< cvtE x
+        PrimCoerce ta tb        -> A.coerce ta tb          =<< cvtE x
+          -- no missing patterns, whoo!
+
 
 -- | Extract the head of an index
 --
@@ -345,75 +435,4 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"
-
-
--- Primitive functions
--- ===================
-
--- | Generate llvm operations for primitive scalar functions
---
-llvmOfPrimFun :: (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
-llvmOfPrimFun (PrimAdd t)               = A.uncurry (A.add t)
-llvmOfPrimFun (PrimSub t)               = A.uncurry (A.sub t)
-llvmOfPrimFun (PrimMul t)               = A.uncurry (A.mul t)
-llvmOfPrimFun (PrimNeg t)               = A.negate t
-llvmOfPrimFun (PrimAbs t)               = A.abs t
-llvmOfPrimFun (PrimSig t)               = A.signum t
-llvmOfPrimFun (PrimQuot t)              = A.uncurry (A.quot t)
-llvmOfPrimFun (PrimRem t)               = A.uncurry (A.rem t)
-llvmOfPrimFun (PrimQuotRem t)           = A.uncurry (A.quotRem t)
-llvmOfPrimFun (PrimIDiv t)              = A.uncurry (A.idiv t)
-llvmOfPrimFun (PrimMod t)               = A.uncurry (A.mod t)
-llvmOfPrimFun (PrimDivMod t)            = A.uncurry (A.divMod t)
-llvmOfPrimFun (PrimBAnd t)              = A.uncurry (A.band t)
-llvmOfPrimFun (PrimBOr t)               = A.uncurry (A.bor t)
-llvmOfPrimFun (PrimBXor t)              = A.uncurry (A.xor t)
-llvmOfPrimFun (PrimBNot t)              = A.complement t
-llvmOfPrimFun (PrimBShiftL t)           = A.uncurry (A.shiftL t)
-llvmOfPrimFun (PrimBShiftR t)           = A.uncurry (A.shiftR t)
-llvmOfPrimFun (PrimBRotateL t)          = A.uncurry (A.rotateL t)
-llvmOfPrimFun (PrimBRotateR t)          = A.uncurry (A.rotateR t)
-llvmOfPrimFun (PrimFDiv t)              = A.uncurry (A.fdiv t)
-llvmOfPrimFun (PrimRecip t)             = A.recip t
-llvmOfPrimFun (PrimSin t)               = A.sin t
-llvmOfPrimFun (PrimCos t)               = A.cos t
-llvmOfPrimFun (PrimTan t)               = A.tan t
-llvmOfPrimFun (PrimSinh t)              = A.sinh t
-llvmOfPrimFun (PrimCosh t)              = A.cosh t
-llvmOfPrimFun (PrimTanh t)              = A.tanh t
-llvmOfPrimFun (PrimAsin t)              = A.asin t
-llvmOfPrimFun (PrimAcos t)              = A.acos t
-llvmOfPrimFun (PrimAtan t)              = A.atan t
-llvmOfPrimFun (PrimAsinh t)             = A.asinh t
-llvmOfPrimFun (PrimAcosh t)             = A.acosh t
-llvmOfPrimFun (PrimAtanh t)             = A.atanh t
-llvmOfPrimFun (PrimAtan2 t)             = A.uncurry (A.atan2 t)
-llvmOfPrimFun (PrimExpFloating t)       = A.exp t
-llvmOfPrimFun (PrimFPow t)              = A.uncurry (A.fpow t)
-llvmOfPrimFun (PrimSqrt t)              = A.sqrt t
-llvmOfPrimFun (PrimLog t)               = A.log t
-llvmOfPrimFun (PrimLogBase t)           = A.uncurry (A.logBase t)
-llvmOfPrimFun (PrimTruncate ta tb)      = A.truncate ta tb
-llvmOfPrimFun (PrimRound ta tb)         = A.round ta tb
-llvmOfPrimFun (PrimFloor ta tb)         = A.floor ta tb
-llvmOfPrimFun (PrimCeiling ta tb)       = A.ceiling ta tb
-llvmOfPrimFun (PrimIsNaN t)             = A.isNaN t
-llvmOfPrimFun (PrimLt t)                = A.uncurry (A.lt t)
-llvmOfPrimFun (PrimGt t)                = A.uncurry (A.gt t)
-llvmOfPrimFun (PrimLtEq t)              = A.uncurry (A.lte t)
-llvmOfPrimFun (PrimGtEq t)              = A.uncurry (A.gte t)
-llvmOfPrimFun (PrimEq t)                = A.uncurry (A.eq t)
-llvmOfPrimFun (PrimNEq t)               = A.uncurry (A.neq t)
-llvmOfPrimFun (PrimMax t)               = A.uncurry (A.max t)
-llvmOfPrimFun (PrimMin t)               = A.uncurry (A.min t)
-llvmOfPrimFun PrimLAnd                  = A.uncurry A.land'     -- TLM: wrong!
-llvmOfPrimFun PrimLOr                   = A.uncurry A.lor'      -- TLM: wrong!
-llvmOfPrimFun PrimLNot                  = A.lnot
-llvmOfPrimFun PrimOrd                   = A.ord
-llvmOfPrimFun PrimChr                   = A.chr
-llvmOfPrimFun PrimBoolToInt             = A.boolToInt
-llvmOfPrimFun (PrimFromIntegral ta tb)  = A.fromIntegral ta tb
-llvmOfPrimFun (PrimToFloating ta tb)    = A.toFloating ta tb
-llvmOfPrimFun (PrimCoerce ta tb)        = A.coerce ta tb
-  -- no missing patterns, whoo!
 

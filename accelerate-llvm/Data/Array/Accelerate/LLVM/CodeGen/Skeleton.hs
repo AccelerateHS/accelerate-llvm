@@ -30,6 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
@@ -148,10 +149,10 @@ class Skeleton arch where
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Gamma          aenv
-                -> IRFun2    arch aenv (e -> e -> e)
-                -> IRFun1    arch aenv (sh -> sh')
-                -> IRDelayed arch aenv (Array sh e)
+                -> Gamma             aenv
+                -> IRPermuteFun arch aenv (e -> e -> e)
+                -> IRFun1       arch aenv (sh -> sh')
+                -> IRDelayed    arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
   backpermute   :: (Shape sh, Shape sh', Elt e)

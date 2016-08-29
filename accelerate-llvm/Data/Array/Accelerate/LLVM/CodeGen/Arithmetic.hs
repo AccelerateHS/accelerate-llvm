@@ -36,6 +36,7 @@ import Data.Array.Accelerate.Array.Sugar
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Compare
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
@@ -366,7 +367,7 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp :: Ordering -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
 lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
@@ -415,13 +416,12 @@ lor x y =
     then return $ ir scalarType (scalar scalarType True)
     else y
 
--- TLM: These implementations are strict in both arguments, but logical
---      operators should short-circuit. This needs to be fixed!!
+-- These implementations are strict in both arguments.
 land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 land' (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor'  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 lor' (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
@@ -510,6 +510,22 @@ uncurry f (unpair -> (x,y)) = f x y
 
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
+
+
+fst3 :: IR (a, b, c) -> IR a
+fst3 (IR (OP_Pair (OP_Pair (OP_Pair OP_Unit x) _) _)) = IR x
+
+snd3 :: IR (a, b, c) -> IR b
+snd3 (IR (OP_Pair (OP_Pair _ y) _)) = IR y
+
+thd3 :: IR (a, b, c) -> IR c
+thd3 (IR (OP_Pair _ z)) = IR z
+
+trip :: IR a -> IR b -> IR c -> IR (a, b, c)
+trip (IR x) (IR y) (IR z) = IR $ OP_Pair (OP_Pair (OP_Pair OP_Unit x) y) z
+
+untrip :: IR (a, b, c) -> (IR a, IR b, IR c)
+untrip t = (fst3 t, snd3 t, thd3 t)
 
 
 -- | Lift a constant value into an constant in the intermediate representation.

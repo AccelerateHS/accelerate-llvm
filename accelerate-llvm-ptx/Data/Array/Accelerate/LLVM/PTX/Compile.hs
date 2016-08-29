@@ -23,48 +23,49 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 ) where
 
 -- llvm-general
-import LLVM.General.Context                                     ( Context )
-import LLVM.General.AST                                         hiding ( Module )
-import LLVM.General.AST.Global
-import qualified LLVM.General.AST                               as AST
-import qualified LLVM.General.Analysis                          as LLVM
-import qualified LLVM.General.Module                            as LLVM
-import qualified LLVM.General.Context                           as LLVM
-import qualified LLVM.General.PassManager                       as LLVM
+import LLVM.General.Context                                         ( Context )
+import LLVM.General.AST                                             hiding ( Module )
+import qualified LLVM.General.AST                                   as AST
+import qualified LLVM.General.AST.Name                              as LLVM
+import qualified LLVM.General.Analysis                              as LLVM
+import qualified LLVM.General.Context                               as LLVM
+import qualified LLVM.General.Module                                as LLVM
+import qualified LLVM.General.PassManager                           as LLVM
 
 -- accelerate
-import Data.Array.Accelerate.Error                              ( internalError )
-import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
+import Data.Array.Accelerate.Error                                  ( internalError )
+import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                ( Module(..) )
+import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 #ifdef ACCELERATE_USE_NVVM
 import Data.Array.Accelerate.LLVM.Util
 #endif
 
-import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Compile.Link
-import Data.Array.Accelerate.LLVM.PTX.CodeGen                  ( )
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
+import Data.Array.Accelerate.LLVM.PTX.CodeGen
+import Data.Array.Accelerate.LLVM.PTX.Compile.Link
+import Data.Array.Accelerate.LLVM.PTX.Target
 
-import qualified  Data.Array.Accelerate.LLVM.PTX.Debug          as Debug
+import qualified  Data.Array.Accelerate.LLVM.PTX.Debug              as Debug
 
 -- cuda
-import qualified Foreign.CUDA.Analysis                          as CUDA
-import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Analysis                              as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
 #ifdef ACCELERATE_USE_NVVM
-import qualified Foreign.NVVM                                   as NVVM
+import qualified Foreign.NVVM                                       as NVVM
 #endif
 
 -- standard library
-import Data.ByteString                                          ( ByteString )
+import Data.ByteString                                              ( ByteString )
 import Control.Monad.Except
 import Control.Monad.State
 import Text.Printf
-import qualified Data.ByteString.Char8                          as B
+import qualified Data.ByteString.Char8                              as B
+import qualified Data.Map                                           as Map
 
 
 instance Compile PTX where
@@ -93,13 +94,13 @@ compileForPTX
     -> LLVM PTX (ExecutableR PTX)
 compileForPTX acc aenv = do
   target <- gets llvmTarget
-  let Module ast = llvmOfOpenAcc target acc aenv
-      dev        = ptxDeviceProperties target
-      globals    = globalFunctions (moduleDefinitions ast)
+  let
+      Module ast md = llvmOfOpenAcc target acc aenv
+      dev           = ptxDeviceProperties target
 
   liftIO . LLVM.withContext $ \ctx -> do
     ptx  <- compileModule dev ctx ast
-    funs <- sequence [ linkFunction acc dev ptx f | f <- globals ]
+    funs <- sequence [ linkFunction ptx f x | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
     return $! PTXR funs ptx
 
 
@@ -228,12 +229,11 @@ linkPTX name ptx = do
 -- If we are in debug mode, print statistics on kernel resource usage, etc.
 --
 linkFunction
-    :: DelayedOpenAcc aenv a
-    -> CUDA.DeviceProperties            -- device properties
-    -> CUDA.Module                      -- the compiled module
+    :: CUDA.Module                      -- the compiled module
     -> String                           -- __global__ entry function name
+    -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
-linkFunction acc dev mdl name = do
+linkFunction mdl name configure = do
   f     <- CUDA.getFun mdl name
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
@@ -241,8 +241,8 @@ linkFunction acc dev mdl name = do
   lmem  <- CUDA.requires f CUDA.LocalSizeBytes
   maxt  <- CUDA.requires f CUDA.MaxKernelThreadsPerBlock
 
-  let occ               = determineOccupancy acc dev maxt regs ssmem
-      (cta,blocks,smem) = launchConfig acc dev occ
+  let
+      (occ, cta, grid, smem) = configure maxt regs ssmem
 
       msg1, msg2 :: String
       msg1 = printf "entry function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
@@ -255,9 +255,10 @@ linkFunction acc dev mdl name = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel f occ smem cta blocks name
+  return $ Kernel f occ smem cta grid name
 
 
+{--
 -- | Extract the names of the function definitions from the module.
 --
 -- Note: [Extracting global function names]
@@ -276,4 +277,5 @@ globalFunctions defs =
       , not (null basicBlocks)
       , let Name n = name
       ]
+--}
 

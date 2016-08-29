@@ -171,7 +171,8 @@ gangIO gang action = mask $ \restore -> do
   main  <- myThreadId
 
   -- Send requests to the threads
-  V.forM_ gang $ \Worker{..} ->
+  V.forM_ gang $ \Worker{..} -> do
+    writeIORef consecutiveFailures 0
     putMVar requestVar $ ReqDo (reflectExceptionsTo main . restore . action)
 
   -- Wait for all requests to complete

@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -14,6 +15,9 @@
 --
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
+
+  -- Types
+  DeviceProperties, KernelMetadata(..),
 
   -- Thread identifiers
   blockDim, gridDim, threadIdx, blockIdx, warpSize,
@@ -33,7 +37,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
   -- Kernel definitions
   (+++),
-  makeOpenAcc,
+  makeOpenAcc, makeOpenAccWith,
 
 ) where
 
@@ -68,7 +72,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import Data.Array.Accelerate.LLVM.PTX.Target                            ( PTX )
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
+import Data.Array.Accelerate.LLVM.PTX.Context
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 -- Thread identifiers
@@ -254,23 +260,42 @@ sharedMem n@(op integralType -> m) (op integralType -> offset) = do
 -- Global kernel definitions
 -- -------------------------
 
+data instance KernelMetadata PTX = KM_PTX LaunchConfig
+
 -- | Combine kernels into a single program
 --
 (+++) :: IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a -> IROpenAcc PTX aenv a
 IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 
--- | Create a single kernel program
+
+-- | Create a single kernel program with the default launch configuration.
 --
-makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc PTX aenv a)
-makeOpenAcc name param kernel = do
-  body <- makeKernel name param kernel
+makeOpenAcc
+    :: PTX
+    -> Label
+    -> [LLVM.Parameter]
+    -> CodeGen ()
+    -> CodeGen (IROpenAcc PTX aenv a)
+makeOpenAcc (deviceProperties . ptxContext -> dev) =
+  makeOpenAccWith (simpleLaunchConfig dev)
+
+-- | Create a single kernel program with the given launch analysis information.
+--
+makeOpenAccWith
+    :: LaunchConfig
+    -> Label
+    -> [LLVM.Parameter]
+    -> CodeGen ()
+    -> CodeGen (IROpenAcc PTX aenv a)
+makeOpenAccWith config name param kernel = do
+  body  <- makeKernel config name param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --
-makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel PTX aenv a)
-makeKernel name@(Label l) param kernel = do
+makeKernel :: LaunchConfig -> Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel PTX aenv a)
+makeKernel config name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
   addMetadata "nvvm.annotations"
@@ -278,10 +303,13 @@ makeKernel name@(Label l) param kernel = do
     , Just . MetadataStringOperand $ "kernel"
     , Just . MetadataOperand       $ scalar scalarType (1::Int)
     ]
-  return . Kernel $ LLVM.functionDefaults
-    { LLVM.returnType  = LLVM.VoidType
-    , LLVM.name        = downcast name
-    , LLVM.parameters  = (param, False)
-    , LLVM.basicBlocks = code
+  return $ Kernel
+    { kernelMetadata = KM_PTX config
+    , unKernel       = LLVM.functionDefaults
+                     { LLVM.returnType  = LLVM.VoidType
+                     , LLVM.name        = downcast name
+                     , LLVM.parameters  = (param, False)
+                     , LLVM.basicBlocks = code
+                     }
     }
 

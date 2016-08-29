@@ -22,6 +22,10 @@ module Data.Array.Accelerate.LLVM.Native.Execute.LBS
 -- is meant for operations such as multidimensional reduction, where each input
 -- index corresponds to a non-unit amount of work.
 --
+-- These should really be dynamic values based on how long it took to execute
+-- the last chunk, increase or decrease the chunk size to ensure quick
+-- turnaround and also low scheduler overhead.
+--
 defaultLargePPT :: Int
 defaultLargePPT = 2048
 

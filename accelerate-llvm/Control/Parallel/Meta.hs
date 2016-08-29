@@ -13,7 +13,6 @@
 module Control.Parallel.Meta
   where
 
-import Data.Maybe
 import Data.Monoid
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
@@ -21,7 +20,6 @@ import Data.Sequence                                            ( Seq )
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
 import qualified Data.Sequence                                  as Seq
-import Prelude                                                  hiding ( init )
 
 import GHC.Base                                                 ( quotInt, remInt )
 
@@ -93,7 +91,6 @@ data Executable = Executable {
         :: Int          -- Profitable parallelism threshold (PPT)
         -> Range        -- The range to execute over
         -> Finalise     -- Post-processing function, given the ranges processed by this thread.
-        -> Maybe Action -- Initialisation to execute over the first range only
         -> Action       -- The main function to execute
         -> IO ()
   }
@@ -104,12 +101,12 @@ data Executable = Executable {
 -- thread actually handled.
 --
 data Finalise = Finalise {
-    runFinalise :: Int -> Seq Range -> IO ()
+    runFinalise :: Seq Range -> IO ()
   }
 
 instance Monoid Finalise where
-  mempty                            = Finalise $ \_   _ -> return ()
-  Finalise f1 `mappend` Finalise f2 = Finalise $ \tid r -> f1 tid r >> f2 tid r
+  mempty                            = Finalise $ \_ -> return ()
+  Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
 
 
 -- | Run a parallel work-stealing operation.
@@ -154,48 +151,44 @@ runParIO
     :: Resource
     -> Gang
     -> Range
-    -> Maybe Action
     -> Action
     -> Finalise
     -> IO ()
-runParIO resource gang range init action after
-  | gangSize gang == 1  = seqIO resource gang range init action after
-  | otherwise           = parIO resource gang range init action after
+runParIO resource gang range action after
+  | gangSize gang == 1  = seqIO resource gang range action after
+  | otherwise           = parIO resource gang range action after
 
 seqIO
     :: Resource
     -> Gang
     -> Range
-    -> Maybe Action
     -> Action
     -> Finalise
     -> IO ()
-seqIO _ _    Empty    _    _      after = runFinalise after 0 Seq.empty
-seqIO _ gang (IE u v) init action after =
-  gangIO gang $ \thread -> do
-    fromMaybe action init u v thread
-    runFinalise after thread (Seq.singleton (IE u v))
+seqIO _ _    Empty    _      after = runFinalise after Seq.empty
+seqIO _ gang (IE u v) action after = do
+  gangIO gang $ action u v
+  runFinalise after (Seq.singleton (IE u v))
 
 parIO
     :: Resource
     -> Gang
     -> Range
-    -> Maybe Action
     -> Action
     -> Finalise
     -> IO ()
-parIO _        _    Empty        _    _      after = runFinalise after 0 Seq.empty
-parIO resource gang (IE inf sup) init action after =
+parIO _        _    Empty        _      after = runFinalise after Seq.empty
+parIO resource gang (IE inf sup) action after =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
           me    = V.unsafeIndex gang thread
 
-          loop go rs = do
+          loop rs = do
             work <- runWorkSearch (workSearch resource) me
             case work of
               -- Got a work unit. Execute it then search for more.
-              Just r@(IE u v)   -> go u v thread >> loop action (rs `R.append` r)
+              Just r@(IE u v)   -> action u v thread >> loop (rs `R.append` r)
 
               -- If the work search failed (which is random), to be extra safe
               -- make sure all the work queues are exhausted before exiting.
@@ -203,14 +196,13 @@ parIO resource gang (IE inf sup) init action after =
                 done <- exhausted gang
                 if done
                    then return rs
-                   else loop go rs
+                   else loop rs
 
       ranges <- if start >= end
                   then return Seq.empty
-                  else pushL (workpool me) (IE start end) >>
-                       loop (fromMaybe action init) Seq.empty
+                  else pushL (workpool me) (IE start end) >> loop Seq.empty
 
-      runFinalise after thread (compress ranges)
+      runFinalise after (compress ranges)
   where
     len                 = sup - inf
     workers             = gangSize gang

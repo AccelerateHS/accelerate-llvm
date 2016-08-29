@@ -40,13 +40,13 @@ import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
-import Foreign.CUDA.Analysis                                        ( DeviceProperties )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
@@ -61,7 +61,8 @@ import Prelude                                                      as P
 -- associative to allow for an efficient parallel implementation, but the
 -- initial element does /not/ need to be a neutral element of operator.
 --
--- TODO: Specialise for commutative operations (such as (+))
+-- TODO: Specialise for commutative operations (such as (+)) and those with
+--       a neutral element {(+), 0}
 --
 mkFold
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -71,20 +72,22 @@ mkFold
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFold (deviceProperties . ptxContext -> dev) aenv f z acc
+mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
   | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
-  = mkFoldAll dev aenv f (Just z) acc
+  = (+++) <$> mkFoldAll  dev aenv f (Just z) acc
+          <*> mkFoldFill ptx aenv z
 
   | otherwise
-  = (+++) <$> mkFoldDim dev aenv f (Just z) acc
-          <*> mkFoldFill aenv z
+  = (+++) <$> mkFoldDim  dev aenv f (Just z) acc
+          <*> mkFoldFill ptx aenv z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
 -- function must be associative to allow for an efficient parallel
 -- implementation.
 --
--- TODO: Specialise for commutative operations (such as (+))
+-- TODO: Specialise for commutative operations (such as (+)) and those with
+--       a neutral element {(+), 0}
 --
 mkFold1
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -101,7 +104,22 @@ mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
   = mkFoldDim dev aenv f Nothing acc
 
 
--- Reduce an array of arbitrary rank to a single element.
+-- Reduce an array to a single element.
+--
+-- Thread blocks cooperatively reduce a stripe of the input (one element per
+-- thread) to a single element, which is stored into a temporary array. This is
+-- repeated recursively until only a single element remains.
+--
+-- Since the input may be a delayed array, this process is implemented in two
+-- kernels. The first phase incorporates any fused/embedded input arrays, while
+-- the second (and subsequent) phases read from the manifest temporary array.
+--
+-- TODO: This uses a static decomposition of the input space. However, for
+--       architectures with fast atomic operations to global memory (which may
+--       be all 2.0 and later architectures, constituting everything supported
+--       by the LLVM-based toolchain), we might prefer to dynamically allocate
+--       sections of the input as threads complete each block. We should
+--       investigate this.
 --
 mkFoldAll
     :: forall aenv e. Elt e
@@ -136,8 +154,16 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      smem n                    = warps * (1 + per_warp) * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAcc "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "fold" (paramGang ++ paramOut ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
@@ -218,11 +244,12 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 --
 mkFoldFill
     :: (Shape sh, Elt e)
-    => Gamma aenv
+    => PTX
+    -> Gamma aenv
     -> IRExp PTX aenv e
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill aenv seed =
-  mkGenerate aenv (IRFun1 (const seed))
+mkFoldFill ptx aenv seed =
+  mkGenerate ptx aenv (IRFun1 (const seed))
 
 
 

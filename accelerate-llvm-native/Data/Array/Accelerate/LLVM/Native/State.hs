@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.State (
   createTarget, defaultTarget,
 
   Strategy,
-  balancedParIO, unbalancedParIO,
+  sequentialIO, balancedParIO, unbalancedParIO,
 
 ) where
 
@@ -37,7 +37,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
-import Prelude                                                  hiding ( init )
+import qualified Data.Vector                                    as V
 
 import GHC.Conc
 
@@ -50,6 +50,9 @@ evalNative = evalLLVM
 
 -- | Create a Native execution target by spawning a worker thread on each of the
 -- given capabilities, using the given strategy to load balance the workers.
+--
+-- Note that it is *not* safe to use the same target concurrently from different
+-- threads; instead, create separate targets for each thread.
 --
 createTarget
     :: [Int]
@@ -64,13 +67,22 @@ createTarget caps strategy = do
 --
 type Strategy = Gang -> Executable
 
+
+-- | Execute an operation sequentially with a single thread
+--
+sequentialIO :: Strategy
+sequentialIO gang =
+  Executable $ \_ range after fill ->
+    timed $ seqIO Single.mkResource (V.take 1 gang) range fill after
+
+
 -- | Execute a computation without load balancing. Each thread computes an
 -- equally sized chunk of the input. No work stealing occurs.
 --
 unbalancedParIO :: Strategy
 unbalancedParIO gang =
-  Executable $ \_ range after init fill ->
-    timed $ runParIO Single.mkResource gang range init fill after
+  Executable $ \_ range after fill ->
+    timed $ runParIO Single.mkResource gang range fill after
 
 
 -- | Execute a computation where threads use work stealing (based on lazy
@@ -81,11 +93,11 @@ unbalancedParIO gang =
 --
 balancedParIO :: Strategy
 balancedParIO gang =
-  Executable $ \ppt range after init fill ->
+  Executable $ \ppt range after fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
     in
-    timed $ runParIO resource gang range init fill after
+    timed $ runParIO resource gang range fill after
 
 
 -- Top-level mutable state
@@ -112,7 +124,9 @@ balancedParIO gang =
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  createTarget [0 .. numCapabilities - 1] balancedParIO
+  case numCapabilities of
+    1 -> createTarget [0]        sequentialIO
+    n -> createTarget [0 .. n-1] balancedParIO
 
 
 -- Debugging
