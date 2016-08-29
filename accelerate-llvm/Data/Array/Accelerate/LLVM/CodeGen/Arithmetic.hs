@@ -90,11 +90,12 @@ signum t x =
             s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
             return s
       --
+      -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
       | IntegralDict <- integralDict i
       -> do let wsib = finiteBitSize (undefined::a)
-            y <- negate t x
-            l <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
-            r <- shiftRL i y (ir integralType (integral integralType (wsib P.- 1)))
+            z <- neq (NumScalarType t) x (ir t (num t 0))
+            l <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            r <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
             s <- bor i l r
             return s
     --
