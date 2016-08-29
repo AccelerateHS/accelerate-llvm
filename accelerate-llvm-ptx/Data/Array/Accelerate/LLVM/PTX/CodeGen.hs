@@ -31,10 +31,14 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 instance Skeleton PTX where
   map           = mkMap
   generate      = mkGenerate
---  transform     = mkTransform
   fold          = mkFold
   fold1         = mkFold1
-  scanl         = mkScan
+  scanl         = mkScanl
+  scanl1        = mkScanl1
+  scanl'        = mkScanl'
+  scanr         = mkScanr
+  scanr1        = mkScanr1
+  scanr'        = mkScanr'
 
 instance Expression PTX
 

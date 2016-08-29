@@ -191,7 +191,7 @@ foldAllOp exe gamma aenv stream sh' = do
 
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
       foldRec out@(Array (sh,sz) adata) =
-        let numElements       = size sh * sz
+        let numElements       = R.size sh * sz
             numBlocks         = (kernelThreadBlocks k1) numElements
         in if sz <= 1
               then do
@@ -207,6 +207,7 @@ foldAllOp exe gamma aenv stream sh' = do
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
+
 
 foldDimOp
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -229,42 +230,38 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
 
 
 scanOp
-    :: (Shape sh, Elt e)
+    :: Elt e
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> (sh :. Int)
-    -> LLVM PTX (Array (sh :. Int) e)
-scanOp kernel gamma aenv stream sh
-  = scanCore kernel gamma aenv stream sh
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scanOp kernel gamma aenv stream (Z :. n) =
+  scanCore kernel gamma aenv stream n
 
 scanCore
-    :: forall aenv sh e. (Shape sh, Elt e)
+    :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> (sh :. Int)
-    -> LLVM PTX (Array (sh :. Int) e)
-scanCore exe gamma aenv stream (sh :. sz) = do
+    -> Int
+    -> LLVM PTX (Vector e)
+scanCore exe gamma aenv stream n = do
   ptx <- gets llvmTarget
   let
     k1 = lookupKernel "scanP1" exe
-    k2 = lookupKernel "scanP2" exe
-    k3 = lookupKernel "scanP3" exe
-    numElements = size sh * sz
-    numBlocks   = (kernelThreadBlocks k1) numElements
-
+    -- k2 = lookupKernel "scanP2" exe
+    -- k3 = lookupKernel "scanP3" exe
   --
-  out <- allocateRemote (sh :. sz)
-  tmp <- allocateRemote (sh :. numBlocks)
+  out <- allocateRemote (Z :. n)
+  -- tmp <- allocateRemote (sh :. numBlocks)
   liftIO $ do
-    --
-    executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
-    executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
-    executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
-    executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    executeOp ptx k1 mempty gamma aenv stream (IE 0 n) out
+    -- executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    -- executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
+    -- executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
   return out
 
 

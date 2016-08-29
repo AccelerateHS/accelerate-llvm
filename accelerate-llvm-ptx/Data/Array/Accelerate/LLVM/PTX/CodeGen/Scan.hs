@@ -19,14 +19,15 @@
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
-  mkScan,
+  mkScanl, mkScanl1, mkScanl',
+  mkScanr, mkScanr1, mkScanr',
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..) )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Elt, eltType )
 
 -- accelerate-llvm-*
 import LLVM.General.AST.Type.Representation
@@ -41,6 +42,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
@@ -58,57 +60,164 @@ import Data.Bits                                                    as P
 import Prelude                                                      as P
 
 
--- Scan an array of arbitrary rank along the innermost dimension only.
+data Direction = L | R
+
+-- 'Data.List.scanl' style left-to-right exclusive scan, but with the
+-- restriction that the combination function must be associative to enable
+-- efficient parallel implementation.
 --
-mkScan
-    :: forall aenv sh e. (Shape sh, Elt e)
+-- > scanl (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> Array (Z :. 11) [10,10,11,13,16,20,25,31,38,46,55]
+--
+mkScanl
+    :: Elt e
     => PTX
     -> Gamma         aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRExp     PTX aenv e
-    -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkScan (deviceProperties . ptxContext -> dev) aenv f z acc
-  = mkScanAll dev aenv f (Just z) acc
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanl (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+  foldr1 (+++) <$> sequence [ mkScanP1 L dev aenv combine (Just seed) arr
+                            -- , mkScanP2 L ...
+                            -- , mkScanP3 L ...
+                            ]
 
-
-mkScanAll
-    :: forall aenv sh e. (Shape sh, Elt e)
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
-    ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkScanAll dev aenv combine mseed arr =
-  foldr1 (+++) <$> sequence [ mkScanAllP1 dev aenv combine mseed arr
-                          , mkScanAllP2 dev aenv combine mseed
-                          , mkScanAllP3 dev aenv combine mseed
-                          ]
-
-
--- Step 1: scan on each block to get local sums
+-- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
+-- restriction that the combination function must be associative to enable
+-- efficient parallel implementation. The array must not be empty.
 --
-mkScanAllP1
-    :: forall aenv sh e. (Shape sh, Elt e)
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive scan
-    ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
+-- > scanl1 (+) (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> Array (Z :. 10) [0,1,3,6,10,15,21,28,36,45]
+--
+mkScanl1
+    :: forall aenv e. Elt e
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanl1 (deviceProperties . ptxContext -> dev) aenv combine arr =
+  error "TODO: mkScanl1"
+
+
+-- Variant of 'scanl' where the final result is returned in a separate array.
+--
+-- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> ( Array (Z :. 10) [10,10,11,13,16,20,25,31,38,46]
+--       , Array Z [55]
+--       )
+--
+mkScanl'
+    :: forall aenv e. Elt e
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRExp     PTX aenv e
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
+mkScanl' (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+  error "TODO: mkScanl'"
+
+
+-- 'Data.List.scanr' style right-to-left exclusive scan, but with the
+-- restriction that the combination function must be associative to enable
+-- efficient parallel implementation.
+--
+-- > scanr (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> Array (Z :. 11) [55,55,54,52,49,45,40,34,27,19,10]
+--
+mkScanr
+    :: forall aenv e. Elt e
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRExp     PTX aenv e
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanr (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+  error "TODO: mkScanr"
+
+-- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
+-- restriction that the combination function must be associative to enable
+-- efficient parallel implementation. The array must not be empty.
+--
+-- > scanr (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> Array (Z :. 10) [45,45,44,42,39,35,30,24,17,9]
+--
+mkScanr1
+    :: forall aenv e. Elt e
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanr1 (deviceProperties . ptxContext -> dev) aenv combine arr =
+  error "TODO: mkScanr1"
+
+-- Variant of 'scanr' where the final result is returned in a separate array.
+--
+-- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
+-- >
+-- > ==> ( Array (Z :. 10) [55,54,52,49,45,40,34,27,19,10]
+--       , Array Z [55]
+--       )
+--
+mkScanr'
+    :: forall aenv e. Elt e
+    => PTX
+    -> Gamma         aenv
+    -> IRFun2    PTX aenv (e -> e -> e)
+    -> IRExp     PTX aenv e
+    -> IRDelayed PTX aenv (Vector e)
+    -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
+mkScanr' (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+  error "mkScanr'"
+
+
+-- Core implementation
+-- -------------------
+
+-- Parallel scan, step 1.
+--
+-- Threads scan a stripe of the input into a temporary array, incorporating the
+-- initial element and any fused functions along the way. The final reduction
+-- result of this chunk is written into a separate array, which will be used to
+-- compute the carry-in value.
+--
+mkScanP1
+    :: forall aenv e. Elt e
+    => Direction
+    -> DeviceProperties                             -- ^ properties of the target GPU
+    -> Gamma aenv                                   -- ^ array environment
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe (IRExp PTX aenv e)                     -- ^ seed element, if this is an exclusive scan
+    -> IRDelayed PTX aenv (Vector e)                -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanP1 dir dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      smem n                    = warps * per_warp * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAcc "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
     tid <- threadIdx
-    x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType tid
-    r <- scanBlockSMem dev combine Nothing x
+    x   <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType tid
+    r   <- scanBlockSMem dev combine Nothing x
     writeArray arrOut tid r
-
 
     -- gd       <- gridDim
     -- bid      <- blockIdx
@@ -151,6 +260,7 @@ mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
     return_
 
 
+{--
 -- Step 2: Gather the last element in every block to a temporary array
 --
 mkScanAllP2
@@ -178,7 +288,9 @@ mkScanAllP2 dev aenv combine mseed =
        writeArray arrTmp bid x
 
     return_
+--}
 
+{--
 -- Step 3: Every thread writes the combine result to memory
 --
 mkScanAllP3
@@ -205,6 +317,7 @@ mkScanAllP3 dev aenv combine mseed =
       writeArray arrOut tid z
 
     return_
+--}
 
 
 -- Efficient threadblock-wide scan using the specified operator.
@@ -355,3 +468,4 @@ scanWarpSMem dev combine smem size = scanStep 0
                  else return x
 
         scanStep (step + 1) x'
+
