@@ -15,10 +15,10 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
-import Prelude                                                      hiding ( fromIntegral )
+import Prelude                                                  hiding ( fromIntegral )
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -30,24 +30,25 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
-import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
+import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 
 
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
 mkMap :: forall aenv sh a b. Elt b
-      => Gamma         aenv
+      => PTX
+      -> Gamma         aenv
       -> IRFun1    PTX aenv (a -> b)
       -> IRDelayed PTX aenv (Array sh a)
       -> CodeGen (IROpenAcc PTX aenv (Array sh b))
-mkMap aenv apply IRDelayed{..} =
+mkMap ptx aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc ptx "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       i' <- fromIntegral integralType numType i

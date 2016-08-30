@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, ($), (++), (==), undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, Either(..), ($), (++), (==), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                ( finiteBitSize )
@@ -36,6 +36,7 @@ import Data.Array.Accelerate.Array.Sugar
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Compare
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
@@ -89,23 +90,25 @@ signum t x =
             s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
             return s
       --
+      -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
       | IntegralDict <- integralDict i
       -> do let wsib = finiteBitSize (undefined::a)
-            y <- negate t x
-            l <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
-            r <- shiftRL i y (ir integralType (integral integralType (wsib P.- 1)))
+            z <- neq (NumScalarType t) x (ir t (num t 0))
+            l <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            r <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
             s <- bor i l r
             return s
     --
+    -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
     FloatingNumType f
       | FloatingDict <- floatingDict f
-      , EltDict      <- numElt t
-      -> if gt (NumScalarType t) x (ir f (floating f 0))
-            then return $ ir f (floating f 1)
-            else if lt (NumScalarType t) x (ir f (floating f 0))
-                    then return $ ir f (floating f (P.negate 1))
-                    else return $ ir f (floating f 0)
-
+      -> do
+            l <- gt (NumScalarType t) x (ir f (floating f 0))
+            r <- lt (NumScalarType t) x (ir f (floating f 0))
+            u <- instr (IntToFP (Right nonNumType) f (op scalarType l))
+            v <- instr (IntToFP (Right nonNumType) f (op scalarType r))
+            s <- sub t u v
+            return s
 
 -- Operations from Integral and Bits
 -- ---------------------------------
@@ -366,7 +369,7 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Predicate -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp :: Ordering -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
 lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
@@ -415,13 +418,12 @@ lor x y =
     then return $ ir scalarType (scalar scalarType True)
     else y
 
--- TLM: These implementations are strict in both arguments, but logical
---      operators should short-circuit. This needs to be fixed!!
+-- These implementations are strict in both arguments.
 land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 land' (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor'  :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
 lor' (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
@@ -453,7 +455,7 @@ fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b
 fromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
-      -> instr (IntToFP i1 f x)
+      -> instr (IntToFP (Left i1) f x)
 
     IntegralNumType (i2 :: IntegralType b)
       | IntegralDict <- integralDict i1
@@ -471,7 +473,7 @@ toFloating :: forall a b. NumType a -> FloatingType b -> IR a -> CodeGen (IR b)
 toFloating n1 f2 (op n1 -> x) =
   case n1 of
     IntegralNumType i1
-      -> instr (IntToFP i1 f2 x)
+      -> instr (IntToFP (Left i1) f2 x)
 
     FloatingNumType (f1 :: FloatingType a)
       | FloatingDict <- floatingDict f1
@@ -510,6 +512,22 @@ uncurry f (unpair -> (x,y)) = f x y
 
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
+
+
+fst3 :: IR (a, b, c) -> IR a
+fst3 (IR (OP_Pair (OP_Pair (OP_Pair OP_Unit x) _) _)) = IR x
+
+snd3 :: IR (a, b, c) -> IR b
+snd3 (IR (OP_Pair (OP_Pair _ y) _)) = IR y
+
+thd3 :: IR (a, b, c) -> IR c
+thd3 (IR (OP_Pair _ z)) = IR z
+
+trip :: IR a -> IR b -> IR c -> IR (a, b, c)
+trip (IR x) (IR y) (IR z) = IR $ OP_Pair (OP_Pair (OP_Pair OP_Unit x) y) z
+
+untrip :: IR (a, b, c) -> (IR a, IR b, IR c)
+untrip t = (fst3 t, snd3 t, thd3 t)
 
 
 -- | Lift a constant value into an constant in the intermediate representation.

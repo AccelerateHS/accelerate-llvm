@@ -10,12 +10,16 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.CodeGen
-  where
+module Data.Array.Accelerate.LLVM.PTX.CodeGen (
+
+  KernelMetadata(..),
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.CodeGen
 
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
@@ -25,8 +29,8 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
-  map _         = mkMap
-  generate _    = mkGenerate
+  map           = mkMap
+  generate      = mkGenerate
 --  transform     = mkTransform
   fold          = mkFold
   fold1         = mkFold1

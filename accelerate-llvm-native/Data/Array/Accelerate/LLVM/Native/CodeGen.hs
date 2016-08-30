@@ -10,17 +10,23 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen
-  where
+module Data.Array.Accelerate.LLVM.Native.CodeGen (
+
+  KernelMetadata(..),
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.CodeGen
 
-import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
+import Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
--- import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where
@@ -28,7 +34,15 @@ instance Skeleton Native where
   generate _    = mkGenerate
   fold _        = mkFold
   fold1 _       = mkFold1
---  permute _     = mkPermute
+  foldSeg _     = mkFoldSeg
+  fold1Seg _    = mkFold1Seg
+  scanl _       = mkScanl
+  scanl1 _      = mkScanl1
+  scanl' _      = mkScanl'
+  scanr _       = mkScanr
+  scanr1 _      = mkScanr1
+  scanr' _      = mkScanr'
+  permute _     = mkPermute
 
 instance Expression Native
 

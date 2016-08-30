@@ -25,9 +25,12 @@ module Data.Array.Accelerate.LLVM.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
@@ -43,7 +46,7 @@ import Data.Array.Accelerate.LLVM.Execute.Environment
 -- library
 import Control.Monad
 import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp, map, scanl, scanr, scanl1, scanr1 )
+import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
 
 
 class Remote arch => Execute arch where
@@ -166,6 +169,7 @@ class Remote arch => Execute arch where
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
+                -> Bool
                 -> sh
                 -> Array sh' e
                 -> LLVM arch (Array sh' e)
@@ -278,7 +282,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Generate sh _               -> generate kernel gamma aenv stream    =<< travE sh
     Transform sh _ _ _          -> transform kernel gamma aenv stream   =<< travE sh
     Backpermute sh _ _          -> backpermute kernel gamma aenv stream =<< travE sh
-    Reshape sh a                -> reshapeOp <$> travE sh <*> travA a
+    Reshape sh a                -> reshape <$> travE sh <*> travA a
 
     -- Consumers
     Fold _ _ a                  -> fold  kernel gamma aenv stream =<< extent a
@@ -291,7 +295,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Scanr1 _ a                  -> scanr1 kernel gamma aenv stream =<< extent a
     Scanl' _ _ a                -> scanl' kernel gamma aenv stream =<< extent a
     Scanr' _ _ a                -> scanr' kernel gamma aenv stream =<< extent a
-    Permute _ d _ a             -> join $ permute kernel gamma aenv stream <$> extent a <*> travA d
+    Permute _ d _ a             -> join $ permute kernel gamma aenv stream (inplace d) <$> extent a <*> travA d
     Stencil _ _ a               -> stencil1 kernel gamma aenv stream =<< travA a
     Stencil2 _ _ a _ b          -> join $ stencil2 kernel gamma aenv stream <$> travA a <*> travA b
 
@@ -300,8 +304,12 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Slice{}                     -> fusionError
     ZipWith{}                   -> fusionError
 
+    Collect{}                   -> unsupportedError
+
   where
-    fusionError = $internalError "execute" "unexpected fusible matter"
+    fusionError, unsupportedError :: error
+    fusionError      = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
+    unsupportedError = $internalError "execute" $ "unsupported array primitive: " ++ showPreAccOp pacc
 
     -- Term traversals
     -- ---------------
@@ -317,16 +325,22 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
 
     -- get the extent of an embedded array
     extent :: Shape sh => ExecOpenAcc arch aenv (Array sh e) -> LLVM arch sh
-    extent ExecAcc{}     = $internalError "executeOpenAcc" "expected delayed array"
-    extent (EmbedAcc sh) = travE sh
+    extent ExecAcc{}       = $internalError "executeOpenAcc" "expected delayed array"
+    extent (EmbedAcc sh)   = travE sh
+    extent (UnzipAcc _ ix) = let AsyncR _ a = aprj ix aenv
+                             in  return $ shape a
+
+    inplace :: ExecOpenAcc arch aenv a -> Bool
+    inplace (ExecAcc _ _ Avar{}) = False
+    inplace _                    = True
 
     -- Skeleton implementation
     -- -----------------------
 
     -- Change the shape of an array without altering its contents. This does not
     -- execute any kernel programs.
-    reshapeOp :: Shape sh => sh -> Array sh' e -> Array sh e
-    reshapeOp sh (Array sh' adata)
+    reshape :: Shape sh => sh -> Array sh' e -> Array sh e
+    reshape sh (Array sh' adata)
       = $boundsCheck "reshape" "shape mismatch" (size sh == R.size sh')
       $ Array (fromElt sh) adata
 
@@ -346,6 +360,20 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
       ok  <- indexRemote r 0
       if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
             else return a
+
+executeOpenAcc (UnzipAcc tup v) aenv stream = do
+  let AsyncR event arr = aprj v aenv
+  after stream event
+  return $ unzip tup arr
+  where
+    unzip :: forall t sh e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> Array sh t -> Array sh e
+    unzip tix (Array sh adata) = Array sh $ go tix (eltType (undefined::t)) adata
+      where
+        go :: TupleIdx v e -> TupleType t' -> ArrayData t' -> ArrayData (EltRepr e)
+        go (SuccTupIdx ix) (PairTuple t _) (AD_Pair x _)           = go ix t x
+        go ZeroTupIdx      (PairTuple _ t) (AD_Pair _ x)
+          | Just REFL <- matchTupleType t (eltType (undefined::e)) = x
+        go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 
 
 -- Scalar expression evaluation

@@ -40,11 +40,21 @@ timed
     -> Maybe Stream
     -> IO ()
     -> IO ()
-#ifdef ACCELERATE_DEBUG
 {-# INLINE timed #-}
-timed f str stream action = do
-  enabled <- queryFlag f
-  if enabled
+timed f msg =
+  monitorProcTime (queryFlag f) (\t1 t2 -> traceIO f (msg t1 t2))
+
+monitorProcTime
+    :: IO Bool
+    -> (Double -> Double -> IO ())
+    -> Maybe Stream
+    -> IO ()
+    -> IO ()
+{-# INLINE monitorProcTime #-}
+#if ACCELERATE_DEBUG
+monitorProcTime enabled display stream action = do
+  yes <- enabled
+  if yes
     then do
       gpuBegin  <- Event.create []
       gpuEnd    <- Event.create []
@@ -67,15 +77,14 @@ timed f str stream action = do
         Event.destroy gpuBegin
         Event.destroy gpuEnd
         --
-        traceIO f (str gpuTime wallTime)
+        display gpuTime wallTime
       --
       return ()
 
     else
       action
 #else
-{-# INLINE timed #-}
-timed _ _ _ action = action
+monitorProcTime _ _ _ action = action
 #endif
 
 {-# INLINE elapsed #-}

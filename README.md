@@ -77,11 +77,11 @@ Current status
 - [x] reshape
 - [x] fold (multidimensional)
 - [x] foldAll (parallel)
-- [ ] scanl, scanr
-- [ ] scanl1, scanr1
-- [ ] scanl', scanr'
-- [ ] foldSeg
-- [ ] permute
+- [x] scanl, scanr
+- [x] scanl1, scanr1
+- [x] scanl', scanr'
+- [x] foldSeg
+- [x] permute
 - [x] stencil (preliminary support)
 - [x] stencil2 (preliminary support)
 - [ ] foreign functions
@@ -95,7 +95,7 @@ Current status
 - [x] backpermute/transform
 - [x] slice/replicate
 - [x] reshape
-- [ ] fold (multidimensional)
+- [x] fold (multidimensional)
 - [ ] foldAll (parallel optimisation)
 - [ ] scanl, scanr
 - [ ] scanl1, scanr1
