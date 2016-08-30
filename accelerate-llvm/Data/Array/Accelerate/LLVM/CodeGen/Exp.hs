@@ -259,8 +259,8 @@ llvmOfOpenExp arch top env aenv = cvtE top
     while p f x =
       L.while (app1 p) (app1 f) =<< x
 
-    foreignE :: (Elt a, Elt b, Foreign arch, A.Foreign f)
-             => f a b
+    foreignE :: (Elt a, Elt b, Foreign arch, A.Foreign asm)
+             => asm (a -> b)
              -> IR a
              -> CodeGen (IR b)
     foreignE asm x =

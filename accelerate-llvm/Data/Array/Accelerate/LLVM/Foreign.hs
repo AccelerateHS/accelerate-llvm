@@ -26,15 +26,15 @@ import Data.Typeable
 -- array and scalar expressions.
 --
 class Foreign arch where
-  foreignAcc :: (A.Foreign f, Typeable a, Typeable b)
+  foreignAcc :: (A.Foreign asm, Typeable a, Typeable b)
              => arch {- dummy -}
-             -> f a b
+             -> asm (a -> b)
              -> Maybe (StreamR arch -> a -> LLVM arch b)
   foreignAcc _ _ = Nothing
 
-  foreignExp :: (A.Foreign f, Typeable x, Typeable y)
+  foreignExp :: (A.Foreign asm, Typeable x, Typeable y)
              => arch {- dummy -}
-             -> f x y
+             -> asm (x -> y)
              -> Maybe (IRFun1 arch () (x -> y))
   foreignExp _ _ = Nothing
 

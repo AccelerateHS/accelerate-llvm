@@ -358,8 +358,8 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
             else return a
 
     -- Foreign functions
-    foreignA :: (Arrays a, Arrays b, Foreign arch, S.Foreign f)
-             => f a b
+    foreignA :: (Arrays a, Arrays b, Foreign arch, S.Foreign asm)
+             => asm (a -> b)
              -> a
              -> LLVM arch b
     foreignA asm a =

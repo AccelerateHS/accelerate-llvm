@@ -255,8 +255,8 @@ compileOpenAcc = traverseAcc
         -- Subsequent phases, if they encounter a foreign node, can assume that
         -- it is for them. Otherwise, drop this term and continue walking down
         -- the list of alternate implementations.
-        foreignA :: (Arrays a, Arrays b, A.Foreign f)
-                 => f a b
+        foreignA :: (Arrays a, Arrays b, A.Foreign asm)
+                 => asm         (a -> b)
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
                  -> LLVM arch (ExecOpenAcc arch aenv b)
@@ -329,8 +329,8 @@ compileOpenAcc = traverseAcc
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = $internalError "bind" "expected array variable"
 
-        foreignE :: (Elt a, Elt b, A.Foreign f)
-                 => f a b
+        foreignE :: (Elt a, Elt b, A.Foreign asm)
+                 => asm           (a -> b)
                  -> DelayedFun () (a -> b)
                  -> DelayedOpenExp env aenv a
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
