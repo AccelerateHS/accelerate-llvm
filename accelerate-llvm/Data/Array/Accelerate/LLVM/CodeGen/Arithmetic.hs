@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, ($), (++), (==), undefined, otherwise, flip, fromInteger )
+import Prelude                                                  ( Eq, Num, Either(..), ($), (++), (==), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                ( finiteBitSize )
@@ -99,15 +99,16 @@ signum t x =
             s <- bor i l r
             return s
     --
+    -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
     FloatingNumType f
       | FloatingDict <- floatingDict f
-      , EltDict      <- numElt t
-      -> if gt (NumScalarType t) x (ir f (floating f 0))
-            then return $ ir f (floating f 1)
-            else if lt (NumScalarType t) x (ir f (floating f 0))
-                    then return $ ir f (floating f (P.negate 1))
-                    else return $ ir f (floating f 0)
-
+      -> do
+            l <- gt (NumScalarType t) x (ir f (floating f 0))
+            r <- lt (NumScalarType t) x (ir f (floating f 0))
+            u <- instr (IntToFP (Right nonNumType) f (op scalarType l))
+            v <- instr (IntToFP (Right nonNumType) f (op scalarType r))
+            s <- sub t u v
+            return s
 
 -- Operations from Integral and Bits
 -- ---------------------------------
@@ -454,7 +455,7 @@ fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b
 fromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
-      -> instr (IntToFP i1 f x)
+      -> instr (IntToFP (Left i1) f x)
 
     IntegralNumType (i2 :: IntegralType b)
       | IntegralDict <- integralDict i1
@@ -472,7 +473,7 @@ toFloating :: forall a b. NumType a -> FloatingType b -> IR a -> CodeGen (IR b)
 toFloating n1 f2 (op n1 -> x) =
   case n1 of
     IntegralNumType i1
-      -> instr (IntToFP i1 f2 x)
+      -> instr (IntToFP (Left i1) f2 x)
 
     FloatingNumType (f1 :: FloatingType a)
       | FloatingDict <- floatingDict f1

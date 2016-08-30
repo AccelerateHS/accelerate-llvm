@@ -173,7 +173,7 @@ instance Downcast (Instruction a) L.Instruction where
     | signed t                      = L.FPToSI (downcast x) (downcast t) md
     | otherwise                     = L.FPToUI (downcast x) (downcast t) md
   downcast (IntToFP t t' x)
-    | signed t                      = L.SIToFP (downcast x) (downcast t') md
+    | either signed signed t        = L.SIToFP (downcast x) (downcast t') md
     | otherwise                     = L.UIToFP (downcast x) (downcast t') md
   downcast (BitCast t x)            = L.BitCast (downcast x) (downcast t) md
   downcast (PtrCast t x)            = L.BitCast (downcast x) (downcast t) md

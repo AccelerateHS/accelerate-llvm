@@ -247,7 +247,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#uitofp-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#sitofp-to-instruction>
   --
-  IntToFP       :: IntegralType a
+  IntToFP       :: Either (IntegralType a) (NonNumType a)
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
