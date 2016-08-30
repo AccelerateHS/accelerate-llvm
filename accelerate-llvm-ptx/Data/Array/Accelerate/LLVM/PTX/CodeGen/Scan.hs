@@ -45,6 +45,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 
 -- cuda
 import Foreign.CUDA.Analysis                                        ( DeviceProperties )
@@ -103,7 +104,7 @@ mkScanAllP1 dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith (simpleLaunchConfig dev) "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
     tid <- threadIdx
     x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType tid
     r <- scanBlockSMem dev combine Nothing x
@@ -167,7 +168,7 @@ mkScanAllP2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "scanP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith (simpleLaunchConfig dev) "scanP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     bd          <- blockDim
     lastElement <- A.sub numType bd (lift 1)
 
@@ -195,7 +196,7 @@ mkScanAllP3 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith (simpleLaunchConfig dev) "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     tid      <- threadIdx
     bid      <- blockIdx
     when (A.gt scalarType bid (lift 0)) $ do

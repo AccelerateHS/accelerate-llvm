@@ -191,7 +191,7 @@ foldAllOp exe gamma aenv stream sh' = do
 
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
       foldRec out@(Array (sh,sz) adata) =
-        let numElements       = size sh * sz
+        let numElements       = R.size sh * sz
             numBlocks         = (kernelThreadBlocks k1) numElements
         in if sz <= 1
               then do
@@ -254,17 +254,17 @@ scanCore exe gamma aenv stream (sh :. sz) = do
     k2 = lookupKernel "scanP2" exe
     k3 = lookupKernel "scanP3" exe
     numElements = size sh * sz
-    numBlocks   = (kernelThreadBlocks k1) numElements
+    -- numBlocks   = (kernelThreadBlocks k1) numElements
 
   --
   out <- allocateRemote (sh :. sz)
-  tmp <- allocateRemote (sh :. numBlocks)
+  -- tmp <- allocateRemote (sh :. numBlocks)
   liftIO $ do
     --
     executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
-    executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
-    executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
-    executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    -- executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    -- executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
+    -- executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
   return out
 
 
