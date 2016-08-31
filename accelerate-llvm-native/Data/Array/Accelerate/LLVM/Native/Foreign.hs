@@ -36,15 +36,13 @@ import Data.Typeable
 
 
 instance Foreign Native where
-  foreignAcc _ (ff :: asm (a -> b)) =
-    case cast ff of
-      Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) -> Just (const asm)
-      Nothing                                        -> Nothing
+  foreignAcc _ (ff :: asm (a -> b))
+    | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just (const asm)
+    | otherwise                                                 = Nothing
 
-  foreignExp _ (ff :: asm (x -> y)) =
-    case cast ff of
-      Just (ForeignExp _ asm :: ForeignExp (x -> y)) -> Just asm
-      Nothing                                        -> Nothing
+  foreignExp _ (ff :: asm (x -> y))
+    | Just (ForeignExp _ asm :: ForeignExp (x -> y)) <- cast ff = Just asm
+    | otherwise                                                 = Nothing
 
 
 instance S.Foreign ForeignAcc where
