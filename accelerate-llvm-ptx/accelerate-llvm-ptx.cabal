@@ -51,6 +51,7 @@ Flag internal-checks
 Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.PTX
+    Data.Array.Accelerate.LLVM.PTX.Foreign
 
   other-modules:
     Data.Array.Accelerate.LLVM.PTX.Analysis.Device
@@ -61,7 +62,6 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Array.Table
     Data.Array.Accelerate.LLVM.PTX.Context
     Data.Array.Accelerate.LLVM.PTX.Debug
-    Data.Array.Accelerate.LLVM.PTX.Foreign
     Data.Array.Accelerate.LLVM.PTX.State
     Data.Array.Accelerate.LLVM.PTX.Target
 
