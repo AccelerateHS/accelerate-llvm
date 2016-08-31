@@ -18,8 +18,12 @@ module Data.Array.Accelerate.LLVM.PTX.Foreign (
   ForeignExp(..),
 
   -- useful re-exports
+  LLVM,
   PTX,
   liftIO,
+  withDevicePtr,
+  module Data.Array.Accelerate.LLVM.PTX.Array.Data,
+  module Data.Array.Accelerate.LLVM.PTX.Execute.Async,
 
 ) where
 
@@ -29,8 +33,10 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Foreign
+import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.PTX.Array.Prim
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Stream )
 
 import Control.Monad.State
 import Data.Typeable

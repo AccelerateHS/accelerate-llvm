@@ -18,8 +18,10 @@ module Data.Array.Accelerate.LLVM.Native.Foreign (
   ForeignExp(..),
 
   -- useful re-exports
+  LLVM,
   Native,
   liftIO,
+  module Data.Array.Accelerate.LLVM.Native.Array.Data,
 
 ) where
 
@@ -29,6 +31,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Foreign
+import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Control.Monad.State
