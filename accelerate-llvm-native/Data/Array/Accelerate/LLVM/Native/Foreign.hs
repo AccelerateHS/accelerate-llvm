@@ -1,5 +1,7 @@
+{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Foreign
@@ -74,4 +76,7 @@ data ForeignExp f where
   ForeignExp :: String
              -> IRFun1 Native () (x -> y)
              -> ForeignExp (x -> y)
+
+deriving instance Typeable ForeignAcc
+deriving instance Typeable ForeignExp
 

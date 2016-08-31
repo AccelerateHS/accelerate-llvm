@@ -1,5 +1,7 @@
+{-# LANGUAGE DeriveDataTypeable  #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving  #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Foreign
@@ -71,4 +73,7 @@ data ForeignExp f where
   ForeignExp :: String
              -> IRFun1 PTX () (x -> y)
              -> ForeignExp (x -> y)
+
+deriving instance Typeable ForeignAcc
+deriving instance Typeable ForeignExp
 
