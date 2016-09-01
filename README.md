@@ -35,7 +35,7 @@ Example using [Homebrew](http://brew.sh) on Mac OS X:
 ```
 $ brew update
 $ brew install libffi
-$ brew install homebrew/versions/llvm34 --all-targets
+$ brew install homebrew/versions/llvm35 --all-targets
 ```
 
 Then, installation using
@@ -43,7 +43,7 @@ Then, installation using
 to point it to the appropriate configuration file, for example:
 
 ```
-$ stack --stack-yaml=stack-7.8.yaml build
+$ stack --stack-yaml=stack-7.10.yaml build
 ```
 
 If installing via `cabal`, note that you will need to tell the `llvm-general`
@@ -84,7 +84,7 @@ Current status
 - [x] permute
 - [x] stencil (preliminary support)
 - [x] stencil2 (preliminary support)
-- [ ] foreign functions
+- [x] foreign functions
 
 
 **PTX backend**
@@ -104,7 +104,7 @@ Current status
 - [ ] permute
 - [x] stencil (preliminary support)
 - [x] stencil2 (preliminary support)
-- [ ] foreign functions
+- [x] foreign functions
 
 
  [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
