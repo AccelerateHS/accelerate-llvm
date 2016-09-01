@@ -35,7 +35,7 @@ Example using [Homebrew](http://brew.sh) on Mac OS X:
 ```
 $ brew update
 $ brew install libffi
-$ brew install llvm34 --all-targets
+$ brew install homebrew/versions/llvm34 --all-targets
 ```
 
 Then, installation using
