@@ -18,14 +18,14 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen (
 
-  Skeleton(..), Expression(..), Intrinsic(..), KernelMetadata,
+  Skeleton(..), Intrinsic(..), KernelMetadata,
   llvmOfOpenAcc,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
@@ -42,6 +42,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Foreign
 
 -- standard library
 import Prelude                                                  hiding ( map, scanl, scanl1, scanr, scanr1 )
@@ -51,7 +52,7 @@ import Prelude                                                  hiding ( map, sc
 --
 {-# INLINEABLE llvmOfOpenAcc #-}
 llvmOfOpenAcc
-    :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Expression arch)
+    :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => arch
     -> DelayedOpenAcc aenv arrs
     -> Gamma aenv

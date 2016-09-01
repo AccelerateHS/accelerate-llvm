@@ -44,5 +44,3 @@ instance Skeleton Native where
   scanr' _      = mkScanr'
   permute _     = mkPermute
 
-instance Expression Native
-

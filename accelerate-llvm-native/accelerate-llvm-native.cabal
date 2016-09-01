@@ -49,6 +49,7 @@ Flag internal-checks
 Library
   exposed-modules:
     Data.Array.Accelerate.LLVM.Native
+    Data.Array.Accelerate.LLVM.Native.Foreign
 
   other-modules:
     Data.Array.Accelerate.LLVM.Native.Array.Data

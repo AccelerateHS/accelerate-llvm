@@ -23,13 +23,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.Permute (
 
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Foreign
 
 import LLVM.General.AST.Type.Instruction.RMW
 
@@ -63,7 +64,7 @@ data IRPermuteFun arch aenv t where
 -- let-bindings.
 --
 llvmOfPermuteFun
-    :: forall arch aenv e. Expression arch
+    :: forall arch aenv e. Foreign arch
     => arch
     -> DelayedFun aenv (e -> e -> e)
     -> Gamma aenv

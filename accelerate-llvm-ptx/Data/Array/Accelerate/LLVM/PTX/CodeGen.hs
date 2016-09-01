@@ -34,5 +34,3 @@ instance Skeleton PTX where
   fold          = mkFold
   fold1         = mkFold1
 
-instance Expression PTX
-

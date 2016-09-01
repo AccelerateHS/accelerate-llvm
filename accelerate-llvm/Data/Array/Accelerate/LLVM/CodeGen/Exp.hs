@@ -22,16 +22,16 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
 import Prelude                                                      hiding ( exp, any )
-import qualified Data.IntMap                                        as IM
 
 import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                            hiding ( toTuple, shape, intersect, union )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign, toTuple, shape, intersect, union )
 import Data.Array.Accelerate.Array.Representation                   ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
+import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -40,30 +40,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                     ( CodeGen )
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
-
-
--- | A class covering code generation for a subset of the scalar operations.
--- All operations (except Foreign) have a default instance, but this allows a
--- backend to specialise the implementation for the more complex operations.
---
-class Expression arch where
-  eforeign      :: (Foreign f, Elt x, Elt y)
-                => arch
-                -> f x y
-                -> IRFun1    arch ()   (x -> y)
-                -> IROpenExp arch env aenv x
-                -> IROpenExp arch env aenv y
-  eforeign = $internalError "eforeign" "default instance not implemented yet"
-
-  while         :: Elt a
-                => IROpenFun1 arch env aenv (a -> Bool)
-                -> IROpenFun1 arch env aenv (a -> a)
-                -> IROpenExp  arch env aenv a
-                -> IROpenExp  arch env aenv a
-  while p f x =
-    L.while (app1 p) (app1 f) =<< x
 
 
 -- Scalar expressions
@@ -71,7 +50,7 @@ class Expression arch where
 
 {-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
-    :: Expression arch
+    :: Foreign arch
     => arch
     -> DelayedFun aenv (a -> b)
     -> Gamma aenv
@@ -81,7 +60,7 @@ llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible
 
 {-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
-    :: Expression arch
+    :: Foreign arch
     => arch
     -> DelayedFun aenv (a -> b -> c)
     -> Gamma aenv
@@ -96,7 +75,7 @@ llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impo
 --
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
-    :: forall arch env aenv _t. Expression arch
+    :: forall arch env aenv _t. Foreign arch
     => arch
     -> DelayedOpenExp env aenv _t
     -> Val env
@@ -128,7 +107,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexTail ix                -> indexTail <$> cvtE ix
         Prj ix tup                  -> prjT ix <$> cvtE tup
         Tuple tup                   -> cvtT tup
-        Foreign asm native x        -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
+        Foreign asm _ x             -> foreignE asm =<< cvtE x
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
@@ -271,6 +250,23 @@ llvmOfOpenExp arch top env aenv = cvtE top
                return $ OP_Pair sh' sz'
         go _ _ _
           = $internalError "union" "expected shape with Int components"
+
+    while :: Elt a
+          => IROpenFun1 arch env aenv (a -> Bool)
+          -> IROpenFun1 arch env aenv (a -> a)
+          -> IROpenExp  arch env aenv a
+          -> IROpenExp  arch env aenv a
+    while p f x =
+      L.while (app1 p) (app1 f) =<< x
+
+    foreignE :: (Elt a, Elt b, Foreign arch, A.Foreign asm)
+             => asm (a -> b)
+             -> IR a
+             -> CodeGen (IR b)
+    foreignE asm x =
+      case foreignExp arch asm of
+        Just f  -> app1 f x
+        Nothing -> $internalError "foreignE" "failed to recover foreign expression the second time"
 
     primFun :: (Elt a, Elt r)
             => PrimFun (a -> r)

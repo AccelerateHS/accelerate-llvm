@@ -31,13 +31,15 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
+import qualified Data.Array.Accelerate.Array.Sugar              as A
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
@@ -47,7 +49,7 @@ import Control.Applicative                                      hiding ( Const )
 import Prelude                                                  hiding ( exp, unzip )
 
 
-class Compile arch where
+class Foreign arch => Compile arch where
   data ExecutableR arch
 
   -- | Compile an accelerate computation into some backend-specific executable format
@@ -151,7 +153,7 @@ compileOpenAcc = traverseAcc
         Aprj ix tup             -> node =<< liftA (Aprj ix)     <$> travA    tup
 
         -- Foreign
-        Aforeign ff afun a      -> node =<< foreignA ff afun a
+        Aforeign ff afun a      -> foreignA ff afun a
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
@@ -248,14 +250,24 @@ compileOpenAcc = traverseAcc
         unzip _ _
           = Nothing
 
-        -- If there is a foreign call for the LLVM backend, don't bother
-        -- compiling the pure version
-        foreignA :: (Arrays a, Arrays b, Foreign f)
-                 => f a b
+        -- Is there a foreign version available for this backend? If so, we
+        -- leave that node in the AST and strip out the remaining terms.
+        -- Subsequent phases, if they encounter a foreign node, can assume that
+        -- it is for them. Otherwise, drop this term and continue walking down
+        -- the list of alternate implementations.
+        foreignA :: (Arrays a, Arrays b, A.Foreign asm)
+                 => asm         (a -> b)
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
-        foreignA = error "todo: compile/foreign array computations"
+                 -> LLVM arch (ExecOpenAcc arch aenv b)
+        foreignA asm f a =
+          case foreignAcc (undefined :: arch) asm of
+            Just{}  -> node =<< liftA (Aforeign asm err) <$> travA a
+            Nothing -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
+            where
+              absurd :: Idx () t -> Idx aenv t
+              absurd = absurd
+              err    = $internalError "compile" "failed to recover foreign function the second time"
 
         -- sadness
         noKernel         = $internalError "compile" "no kernel module for this node"
@@ -317,12 +329,27 @@ compileOpenAcc = traverseAcc
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = $internalError "bind" "expected array variable"
 
-        foreignE :: (Elt a, Elt b, Foreign f)
-                 => f a b
+        foreignE :: (Elt a, Elt b, A.Foreign asm)
+                 => asm           (a -> b)
                  -> DelayedFun () (a -> b)
                  -> DelayedOpenExp env aenv a
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
-        foreignE = error "todo: compile/foreign expressions"
+        foreignE asm f x =
+          case foreignExp (undefined :: arch) asm of
+            Just{}                      -> liftA2 (Foreign asm) <$> travF' f <*> travE x
+            Nothing | Lam (Body b) <- f -> liftA2 Let           <$> travE  x <*> travE (weaken absurd (weakenE zero b))
+            _                           -> error "the slow regard of silent things"
+          where
+            absurd :: Idx () t -> Idx aenv t
+            absurd = absurd
+
+            zero :: Idx ((), a) t -> Idx (env,a) t
+            zero ZeroIdx = ZeroIdx
+            zero notzero = zero notzero
+
+            travF' :: DelayedFun () (a -> b)
+                   -> LLVM arch (IntMap (Idx' aenv), PreFun (ExecOpenAcc arch) () (a -> b))
+            travF' = fmap (pure . snd) . travF
 
 
 -- Compilation
