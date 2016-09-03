@@ -50,6 +50,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 -- library
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
+import Data.Word                                                ( Word32 )
 import Data.List                                                ( find )
 import Data.Monoid                                              ( mempty )
 import Text.Printf                                              ( printf )
@@ -81,6 +82,7 @@ instance Execute PTX where
   fold          = foldOp
   fold1         = fold1Op
   scanl         = scanOp
+  permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -266,6 +268,30 @@ scanCore exe gamma aenv stream (sh :. sz) = do
     -- executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
     -- executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
   return out
+
+
+permuteOp
+    :: (Shape sh, Shape sh', Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Bool
+    -> sh
+    -> Array sh' e
+    -> LLVM PTX (Array sh' e)
+permuteOp kernel gamma aenv stream inplace shIn dfs = do
+    ptx <- gets llvmTarget
+    let
+      k = lookupKernel "permute_mutex" kernel
+      n = size shIn
+    --
+    out <- return dfs
+    barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
+    --
+    liftIO $ do
+      executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
+    return out
 
 
 -- Using the defaulting instances for stencil operations (for now).

@@ -22,6 +22,7 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 -- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
@@ -35,6 +36,7 @@ instance Skeleton PTX where
   fold          = mkFold
   fold1         = mkFold1
   scanl         = mkScan
+  permute       = mkPermute
 
 instance Expression PTX
 

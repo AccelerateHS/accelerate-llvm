@@ -157,10 +157,10 @@ mkPermuteP_mutex dev aenv combine project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
+      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word32))
       paramEnv                  = envParam aenv
   in
-  makeOpenAccWith (simpleLaunchConfig dev) "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAccWith (simpleLaunchConfig dev) "permute_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
 
     sh <- delayedExtent
 
@@ -195,7 +195,7 @@ mkPermuteP_mutex dev aenv combine project IRDelayed{..} =
 -- <https://en.wikipedia.org/wiki/Spinlock#Significant_optimizations>
 --
 atomically
-    :: IRArray (Vector Word8)
+    :: IRArray (Vector Word32)
     -> IR Int
     -> CodeGen a
     -> CodeGen a
