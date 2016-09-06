@@ -1,7 +1,9 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -18,9 +20,11 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
   where
 
 -- accelerate
+import Data.Array.Accelerate.Analysis.Match
+import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
-import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -35,9 +39,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 
 import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Instruction
@@ -49,6 +54,7 @@ import LLVM.General.AST.Type.Representation
 
 import Control.Applicative
 import Data.Typeable
+import Data.String                                                  ( fromString )
 import Prelude
 
 
@@ -197,40 +203,23 @@ mkPermuteP_mutex dev aenv combine project IRDelayed{..} =
 atomically
     :: IRArray (Vector Word32)
     -> IR Int
-    -> CodeGen a
-    -> CodeGen a
-atomically barriers i action = do
-  let
-      lock      = integral integralType 1
-      unlock    = integral integralType 0
-      unlocked  = lift 0
-  --
-  spin <- newBlock "spinlock.entry"
-  crit <- newBlock "spinlock.critical-section"
-  exit <- newBlock "spinlock.exit"
+    -> CodeGen e
+    -> CodeGen (IR e)
+atomically barriers i action =
+  while (\done -> (A.eq scalarType done (lift 0)))
+        (\done -> do
+          addr   <- readArray barriers i
+          oldVal <- AtomicRMW integralType NonVolatile Exchange addr (lift 1)
+          done'  <- if (A.eq scalarType oldVal (lift 0))
+                      then do
+                        action
+                        AtomicRMW integralType NonVolatile Exchange addr (lift 0)
+                        return (lift 1)
+                      else return (lift 0)
+          __syncthreads
+          return done')
+        (lift 0)
 
-  addr <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
-  _    <- br spin
-
-  -- Atomically (attempt to) set the lock slot to the locked state. If the slot
-  -- was unlocked we just acquired it, otherwise the state remains unchanged and
-  -- we spin until it becomes available.
-  setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
-  ok   <- A.eq scalarType old unlocked
-  _    <- cbr ok crit spin
-
-  -- We just acquired the lock; perform the critical section then release the
-  -- lock and exit. For ("some") x86 processors, an unlocked MOV instruction
-  -- could be used rather than the slower XCHG, due to subtle memory ordering
-  -- rules.
-  setBlock crit
-  r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
-  _    <- br exit
-
-  setBlock exit
-  return r
 
 
 -- Helper functions
