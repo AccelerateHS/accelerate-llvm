@@ -208,14 +208,18 @@ atomically
     -> CodeGen ()
     -> CodeGen ()
 atomically barriers i action = do
-  addr  <- instr $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
+  let
+    lock = integral integralType 1
+    unlock = integral integralType 0
+  --
+  addr  <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
   void $ L.while return
           (const $ do
-            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 1) (CrossThread, Acquire)
+            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock (CrossThread, Acquire)
             if (A.eq scalarType oldVal (lift 0))
-              then
+               then do
                 action
-                instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
+                instr' $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
                 return (lift True)
               else
                 return (lift False))
