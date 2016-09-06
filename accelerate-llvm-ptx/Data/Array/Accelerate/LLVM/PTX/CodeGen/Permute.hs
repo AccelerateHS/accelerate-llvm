@@ -31,12 +31,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
+import Data.Array.Accelerate.LLVM.CodeGen.Exp                       hiding ( while )
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as L
+import Data.Array.Accelerate.LLVM.CodeGen.Loop
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -213,7 +213,7 @@ atomically barriers i action = do
     unlock = integral integralType 0
   --
   addr  <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
-  void $ L.while return
+  void $ while return
           (const $ do
             oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock (CrossThread, Acquire)
             if (A.eq scalarType oldVal (lift 0))
