@@ -56,6 +56,7 @@ import Control.Applicative
 import Data.Typeable
 import Data.String                                                  ( fromString )
 import Prelude
+import Control.Monad                                                ( void )
 
 
 -- Forward permutation specified by an indexing mapping. The resulting array is
@@ -203,22 +204,23 @@ mkPermuteP_mutex dev aenv combine project IRDelayed{..} =
 atomically
     :: IRArray (Vector Word32)
     -> IR Int
-    -> CodeGen e
-    -> CodeGen (IR e)
+    -> CodeGen ()
+    -> CodeGen ()
 atomically barriers i action =
-  while (\done -> (A.eq scalarType done (lift 0)))
-        (\done -> do
-          addr   <- readArray barriers i
-          oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 1) (CrossThread, Acquire)
-          done'  <- if (A.eq scalarType oldVal (lift 0))
-                      then do
-                        action
-                        instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
-                        return (lift 1)
-                      else return (lift 0)
-          __syncthreads
-          return done')
-        (lift 0)
+  void $ do
+    addr  <- instr $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
+    while (\done -> (A.eq scalarType done (lift 0)))
+          (\done -> do
+            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 1) (CrossThread, Acquire)
+            done'  <- if (A.eq scalarType oldVal (lift 0))
+                        then do
+                          action
+                          instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
+                          return (lift 1)
+                        else return (lift 0)
+            __syncthreads
+            return done')
+          (lift 0)
 
 
 
