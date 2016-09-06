@@ -36,6 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as L
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -206,21 +207,19 @@ atomically
     -> IR Int
     -> CodeGen ()
     -> CodeGen ()
-atomically barriers i action =
-  void $ do
-    addr  <- instr $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
-    while (\done -> (A.eq scalarType done (lift 0)))
-          (\done -> do
+atomically barriers i action = do
+  addr  <- instr $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
+  void $ L.while return
+          (const $ do
             oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 1) (CrossThread, Acquire)
-            done'  <- if (A.eq scalarType oldVal (lift 0))
-                        then do
-                          action
-                          instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
-                          return (lift 1)
-                        else return (lift 0)
-            __syncthreads
-            return done')
-          (lift 0)
+            if (A.eq scalarType oldVal (lift 0))
+              then
+                action
+                instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
+                return (lift True)
+              else
+                return (lift False))
+          (lift False)
 
 
 
