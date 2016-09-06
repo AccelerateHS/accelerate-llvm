@@ -209,11 +209,11 @@ atomically barriers i action =
   while (\done -> (A.eq scalarType done (lift 0)))
         (\done -> do
           addr   <- readArray barriers i
-          oldVal <- AtomicRMW integralType NonVolatile Exchange addr (lift 1)
+          oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 1) (CrossThread, Acquire)
           done'  <- if (A.eq scalarType oldVal (lift 0))
                       then do
                         action
-                        AtomicRMW integralType NonVolatile Exchange addr (lift 0)
+                        instr $ AtomicRMW integralType NonVolatile Exchange addr (lift 0) (CrossThread, Release)
                         return (lift 1)
                       else return (lift 0)
           __syncthreads
