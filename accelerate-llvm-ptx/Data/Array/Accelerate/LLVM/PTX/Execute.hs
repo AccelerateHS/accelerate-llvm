@@ -288,9 +288,12 @@ permuteOp kernel gamma aenv stream inplace shIn dfs = do
     --
     out <- return dfs
     barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
-    --
+    CUDA.memset (ptrsOfArrayData adb) 0 n
+     --
     liftIO $ do
+      putStrLn "execute permute start"
       executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
+      putStrLn "execute permute end"
     return out
 
 
