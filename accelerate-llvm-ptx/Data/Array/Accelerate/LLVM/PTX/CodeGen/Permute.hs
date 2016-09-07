@@ -220,10 +220,10 @@ atomically barriers i action = do
                then do
                 action
                 instr' $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
-                return (lift True)
+                return (lift False)
               else
-                return (lift False))
-          (lift False)
+                return (lift True))
+          (lift True)
 
 
 
