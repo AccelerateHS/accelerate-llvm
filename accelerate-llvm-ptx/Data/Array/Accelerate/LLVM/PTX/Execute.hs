@@ -33,6 +33,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( withDevicePtr )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
@@ -288,13 +289,11 @@ permuteOp kernel gamma aenv stream inplace shIn dfs = do
     --
     out <- return dfs
     barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
-    CUDA.memset (ptrsOfArrayData adb) 0 n
-     --
-    liftIO $ do
-      putStrLn "execute permute start"
-      executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
-      putStrLn "execute permute end"
-    return out
+    withDevicePtr adb $ \p_barrier -> liftIO $ do
+      withLifetime stream $ \st    -> do
+        CUDA.memsetAsync p_barrier n 0 (Just st)
+        executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
+        return (Nothing, out)
 
 
 -- Using the defaulting instances for stencil operations (for now).
