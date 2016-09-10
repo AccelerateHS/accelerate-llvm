@@ -209,17 +209,19 @@ atomically
     -> CodeGen ()
 atomically barriers i action = do
   let
-    lock = integral integralType 1
-    unlock = integral integralType 0
+    lock     = integral integralType 1
+    unlock   = integral integralType 0
+    unlocked = lift 0
   --
   addr  <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
   void $ while return
           (const $ do
-            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock (CrossThread, Acquire)
-            if (A.eq scalarType oldVal (lift 0))
-               then do
+            __syncthreads
+            oldVal <- instr $ AtomicRMW integralType NoVolatile Exchange addr lock (CrossThread, Acquire)
+            if (A.eq scalarType oldVal unlocked)
+              then do
                 action
-                instr' $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+                instr' $ AtomicRMW integralType NoVolatile Exchange addr unlock (CrossThread, Release)
                 return (lift False)
               else
                 return (lift True))
