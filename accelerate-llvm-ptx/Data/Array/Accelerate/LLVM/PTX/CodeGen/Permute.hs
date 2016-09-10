@@ -217,11 +217,11 @@ atomically barriers i action = do
   void $ while return
           (const $ do
             __syncthreads
-            oldVal <- instr $ AtomicRMW integralType NoVolatile Exchange addr lock (CrossThread, Acquire)
+            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock (CrossThread, Acquire)
             if (A.eq scalarType oldVal unlocked)
               then do
                 action
-                instr' $ AtomicRMW integralType NoVolatile Exchange addr unlock (CrossThread, Release)
+                instr' $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
                 return (lift False)
               else
                 return (lift True))
