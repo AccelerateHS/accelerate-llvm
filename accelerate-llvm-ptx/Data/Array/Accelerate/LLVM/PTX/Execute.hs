@@ -286,8 +286,8 @@ permuteOp kernel gamma aenv stream inplace shIn dfs = do
     --
     out <- return dfs
     barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
-    withDevicePtr adb $ \p_barrier -> liftIO $ do
-      withLifetime stream $ \st    -> do
+    withDevicePtr adb     $ \p_barrier -> liftIO $ do
+      withLifetime stream $ \st        -> do
         CUDA.memsetAsync p_barrier n 0 (Just st)
         executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
         return (Nothing, out)

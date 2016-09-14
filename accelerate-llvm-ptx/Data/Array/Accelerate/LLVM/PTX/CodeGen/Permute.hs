@@ -195,38 +195,91 @@ mkPermuteP_mutex dev aenv combine project IRDelayed{..} =
 -- index is obtained. The thread spins waiting for the lock to be released and
 -- there is no backoff strategy in case the lock is contended.
 --
--- It is important that the thread loops trying to acquire the lock without
--- writing data anything until the lock value changes. Then, because of MESI
--- caching protocols there will be no bus traffic while the CPU waits for the
--- value to change.
+-- The canonical implementation of a spin-lock looks like this:
 --
--- <https://en.wikipedia.org/wiki/Spinlock#Significant_optimizations>
+-- > do {
+-- >   old = atomic_exchange(&lock[i], 1);
+-- > } while (old == 1);
+-- >
+-- > /* critical section */
+-- >
+-- > atomic_exchange(&lock[i], 0);
+--
+-- The initial loop repeatedly attempts to take the lock by writing a 1 (locked)
+-- into the lock slot. Once the 'old' state of the lock returns 0 (unlocked),
+-- then we just acquired the lock and the atomic section can be computed.
+-- Finally, the lock is released by writing 0 back to the lock slot.
+--
+-- However, there is a complication with CUDA devices because all threads in
+-- a warp must execute in lockstep (with predicated execution). In the above
+-- setup, once a thread acquires a lock, then it will be disabled and stop
+-- participating in the loop, waiting for all other threads (to acquire their
+-- locks) before continuing program execution. If two threads in the same warp
+-- attempt to acquire the same lock, then once the lock is acquired by one
+-- thread then it will sit idle waiting while the second thread spins attempting
+-- to grab a lock that will never be released because the first thread (which
+-- holds the lock) can not make progress. DEADLOCK.
+--
+-- To prevent this situation we must invert the algorithm so that threads can
+-- always make progress, until each warp in the thread has committed their
+-- result.
+--
+-- > done = 0;
+-- > do {
+-- >   if ( atomic_exchange(&lock[i], 1) == 0 ) {
+-- >
+-- >     /* critical section */
+-- >
+-- >     done = 1;
+-- >     atomic_exchange(&lock[i], 0);
+-- >   }
+-- > } while ( done == 0 );
 --
 atomically
     :: IRArray (Vector Word32)
     -> IR Int
-    -> CodeGen ()
-    -> CodeGen ()
+    -> CodeGen a
+    -> CodeGen a
 atomically barriers i action = do
   let
-    lock     = integral integralType 1
-    unlock   = integral integralType 0
-    unlocked = lift 0
+      lock    = integral integralType 1
+      unlock  = integral integralType 0
+      unlock' = lift 0
   --
-  addr  <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
-  void $ while return
-          (const $ do
-            __syncthreads
-            oldVal <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock (CrossThread, Acquire)
-            if (A.eq scalarType oldVal unlocked)
-              then do
-                action
-                instr' $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
-                return (lift False)
-              else
-                return (lift True))
-          (lift True)
+  spin <- newBlock "spinlock.entry"
+  crit <- newBlock "spinlock.critical-start"
+  skip <- newBlock "spinlock.critical-end"
+  exit <- newBlock "spinlock.exit"
 
+  addr <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
+  _    <- br spin
+
+  -- Loop until this thread has completed its critical section. If the slot was
+  -- unlocked then we just acquired the lock and the thread can perform the
+  -- critical section, otherwise skip to the bottom of the critical section.
+  setBlock spin
+  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  ok   <- A.eq scalarType old unlock'
+  no   <- cbr ok crit skip
+
+  -- If we just acquired the lock, execute the critical section
+  setBlock crit
+  r    <- action
+  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  yes  <- br skip
+
+  -- At the base of the critical section, threads participate in a memory fence
+  -- to ensure the lock state is committed to memory. Depending on which
+  -- incoming edge the thread arrived at this block from determines whether they
+  -- have completed their critical section.
+  setBlock skip
+  done <- phi [(lift True, yes), (lift False, no)]
+
+  __syncthreads
+  _    <- cbr done exit spin
+
+  setBlock exit
+  return r
 
 
 -- Helper functions

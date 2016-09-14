@@ -177,7 +177,10 @@ compileModuleNVPTX dev name mdl =
     -- NOTE: Currently we require keeping this at level 2, otherwise incorrect
     --       code is generated for multidimensional folds.
     --
-    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 2 }
+    -- NOTE: It seems that incorrect code is generated for permute (spinlock) if
+    --       any optimisation level is used at all.
+    --
+    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 0 }
         runError e = either ($internalError "compileModuleNVPTX") id `fmap` runExceptT e
 
     LLVM.withPassManager pss $ \pm -> do
