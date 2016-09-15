@@ -372,6 +372,7 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast ReadOnly     = L.ReadOnly
   downcast ReadNone     = L.ReadNone
   downcast AlwaysInline = L.AlwaysInline
+  downcast NoDuplicate  = L.NoDuplicate
 
 #if MIN_VERSION_llvm_general_pure(3,5,0)
 instance Downcast GroupID L.GroupID where
