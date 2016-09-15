@@ -169,7 +169,7 @@ gangParam =
 -- | Call a builtin CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen ()
-barrier f = void $ call (Body VoidType f) [NoUnwind] -- Convergent
+barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate] -- Convergent
 
 
 -- | Wait until all threads in the thread block have reached this point and all
