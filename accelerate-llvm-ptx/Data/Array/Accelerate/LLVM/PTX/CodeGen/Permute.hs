@@ -103,54 +103,55 @@ mkPermuteP
     -> IRDelayed    PTX aenv (Array sh e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
 mkPermuteP dev aenv IRPermuteFun{..} project arr =
-  mkPermuteP_mutex dev aenv combine project arr
-  --   case atomicRMW of
-  --     Nothing       -> mkPermuteP_mutex aenv combine project arr
-  --     Just (rmw, f) -> mkPermuteP_rmw   aenv rmw f   project arr
+  case atomicRMW of
+    Nothing       -> mkPermuteP_mutex dev aenv combine project arr
+    Just (rmw, f) -> mkPermuteP_rmw   dev aenv rmw f   project arr
 
 
--- mkPermuteP_rmw
---     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
---     => Gamma aenv
---     -> RMWOperation
---     -> IRFun1    PTX aenv (e -> e)
---     -> IRFun1    PTX aenv (sh -> sh')
---     -> IRDelayed PTX aenv (Array sh e)
---     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
--- mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
---   let
---       (start, end, paramGang)   = gangParam
---       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
---       paramEnv                  = envParam aenv
---   in
---   makeOpenAcc "permuteP_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
---
---     sh <- delayedExtent
---
---     imapFromTo start end $ \i -> do
---
---       ix  <- indexOfInt sh i
---       ix' <- app1 project ix
---
---       unless (ignore ix') $ do
---         j <- intOfIndex (irArrayShape arrOut) ix'
---         x <- app1 delayedLinearIndex i
---         r <- app1 update x
---
---         case rmw of
---           Exchange
---             -> writeArray arrOut j r
---           --
---           _ | SingleTuple s@(NumScalarType (IntegralNumType t)) <- eltType (undefined::e)
---             , Just adata <- gcast (irArrayData arrOut)
---             , Just r'    <- gcast r
---             -> do
---                   addr <- instr' $ GetElementPtr (ptr s (op t adata)) [op integralType j]
---                   _    <- instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
---                   return ()
---           _ -> $internalError "mkPermute_rmw" "unexpected transition"
---
---     return_
+mkPermuteP_rmw
+    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    => DeviceProperties
+    -> Gamma aenv
+    -> RMWOperation
+    -> IRFun1    PTX aenv (e -> e)
+    -> IRFun1    PTX aenv (sh -> sh')
+    -> IRDelayed PTX aenv (Array sh e)
+    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
+mkPermuteP_rmw dev aenv rmw update project IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAccWith (simpleLaunchConfig dev) "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    sh <- delayedExtent
+
+    imapFromTo start end $ \i -> do
+
+      i'  <- A.fromIntegral integralType numType i
+      ix  <- indexOfInt sh i'
+      ix' <- app1 project ix
+
+      unless (ignore ix') $ do
+        j <- intOfIndex (irArrayShape arrOut) ix'
+        x <- app1 delayedLinearIndex i'
+        r <- app1 update x
+
+        case rmw of
+          Exchange
+            -> writeArray arrOut j r
+          --
+          _ | SingleTuple s@(NumScalarType (IntegralNumType t)) <- eltType (undefined::e)
+            , Just adata <- gcast (irArrayData arrOut)
+            , Just r'    <- gcast r
+            -> do
+                  addr <- instr' $ GetElementPtr (ptr s (op t adata)) [op integralType j]
+                  _    <- instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+                  return ()
+          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+
+    return_
 
 
 mkPermuteP_mutex
