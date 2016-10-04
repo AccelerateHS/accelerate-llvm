@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE UnboxedTuples   #-}
@@ -118,8 +119,16 @@ pop = do
 -- fire prematurely.
 --
 mkWeakContext :: CUDA.Context -> IO () -> IO (Weak CUDA.Context)
-mkWeakContext c@(CUDA.Context (Ptr c#)) f = IO $ \s ->
-  case mkWeak# c# c f s of (# s', w #) -> (# s', Weak w #)
+mkWeakContext c@(CUDA.Context (Ptr c#)) = go
+  where
+    {-# INLINE go #-}
+#if __GLASGOW_HASKELL__ >= 800
+    go (IO f)  =  -- GHC-8.x
+#else
+    go f       =  -- GHC-7.x
+#endif
+      IO $ \s -> case mkWeak# c# c f s of
+                   (# s', w #) -> (# s', Weak w #)
 
 
 -- Debugging
