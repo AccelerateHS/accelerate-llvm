@@ -40,12 +40,9 @@ extra-deps:
 - 'transformers-0.4.3.0'
 - 'transformers-compat-0.4.0.4'
 
-# accelerate-llvm-ptx
-# - 'cuda-0.7.0.0'
-
 # update utils/cabal_macros.h whenever these versions are changed
-- 'llvm-general-3.4.6.0'
-- 'llvm-general-pure-3.4.5.4'
+- 'llvm-general-3.5.1.2'
+- 'llvm-general-pure-3.5.1.0'
 
 
 # Override default flag values for local packages and extra-deps

@@ -114,8 +114,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , fclabels                      >= 2.0
-        , llvm-general                  >= 3.2
-        , llvm-general-pure             >= 3.2
+        , llvm-general                  >= 3.5
+        , llvm-general-pure             >= 3.5
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , unordered-containers          >= 0.2
