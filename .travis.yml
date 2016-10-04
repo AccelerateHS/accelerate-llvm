@@ -21,7 +21,7 @@ matrix:
       compiler: "GHC 7.8"
       addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, libgmp-dev, cabal-install-1.18, happy-1.19.5, alex-3.1.7 ] }}
 
-    - env: GHC=7.10.3 CABAL=1.22 LLVM=3.8.0
+    - env: GHC=7.10.3 CABAL=1.22 LLVM=3.5.2
       compiler: "GHC 7.10"
       addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, libgmp-dev, cabal-install-1.22, happy-1.19.5, alex-3.1.7 ] }}
 
