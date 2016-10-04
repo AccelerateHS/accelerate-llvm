@@ -60,10 +60,10 @@ install:
 script:
   - |
       if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        cabal install
-        cabal haddock
+        travis_retry cabal install
+        travis_retry cabal haddock
       else
-        stack build --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build --no-terminal --haddock --no-haddock-deps
       fi
 
 after_success:
