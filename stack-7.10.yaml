@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 6ee059a917ae925ef0c22467f7b478c4a9fb21a1
+    commit: 020d326285947e2953cfe091dcedb037904ed37d
   extra-dep: true
 
 - location:
@@ -25,14 +25,22 @@ packages:
     commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
   extra-dep: true
 
+- location:
+    git:    https://github.com/tmcdonell/llvm-general.git
+    commit: 65779928cb92d93d3bb48b8a2036da908e4872f7
+  extra-dep: true
+  subdirs:
+    - 'llvm-general'
+    - 'llvm-general-pure'
+
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'libffi-0.1'
 - 'unique-0'
 
 # update utils/cabal_macros.h whenever these versions are changed
-- 'llvm-general-3.5.1.2'
-- 'llvm-general-pure-3.5.1.0'
+# - 'llvm-general-3.5.1.2'
+# - 'llvm-general-pure-3.5.1.0'
 
 # Override default flag values for local packages and extra-deps
 flags:
