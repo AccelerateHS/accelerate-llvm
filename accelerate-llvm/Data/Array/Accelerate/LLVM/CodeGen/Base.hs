@@ -84,6 +84,7 @@ shapeName (UnName n) i = shapeName (Name (show n)) i
 
 -- | Names of array data elements
 --
+{-# INLINEABLE irArray #-}
 irArray
     :: forall sh e. (Shape sh, Elt e)
     => Name (Array sh e)
@@ -96,6 +97,7 @@ irArray n
 -- | Generate typed local names for array data components as well as function
 -- parameters to bind those names
 --
+{-# INLINEABLE mutableArray #-}
 mutableArray
     :: forall sh e. (Shape sh, Elt e)
     => Name (Array sh e)
@@ -105,6 +107,7 @@ mutableArray name =
   , arrayParam name )
 
 
+{-# INLINEABLE travTypeToList #-}
 travTypeToList
     :: forall t a. Elt t
     => t {- dummy -}
@@ -195,6 +198,7 @@ envParam aenv = concatMap (\(Label n, Idx' v) -> toParam v (Name n)) (IM.elems a
 
 -- | Generate function parameters for an Array with given base name.
 --
+{-# INLINEABLE arrayParam #-}
 arrayParam
     :: forall sh e. (Shape sh, Elt e)
     => Name (Array sh e)

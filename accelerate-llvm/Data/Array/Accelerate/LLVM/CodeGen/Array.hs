@@ -43,12 +43,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 -- | Read a value from an array at the given index
 --
+{-# INLINEABLE readArray #-}
 readArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> CodeGen (IR e)
 readArray (IRArray _ (IR adata)) (op integralType -> ix) =
   IR <$> readArrayData NonVolatile ix (eltType (undefined::e)) adata
 
 -- | Read a value from a volatile array at the given index
 --
+{-# INLINEABLE readVolatileArray #-}
 readVolatileArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> CodeGen (IR e)
 readVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) =
   IR <$> readArrayData Volatile ix (eltType (undefined::e)) adata
@@ -70,12 +72,14 @@ readArrayPrim t volatile arr ix = do
 
 -- | Write a value into an array at the given index
 --
+{-# INLINEABLE writeArray #-}
 writeArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> IR e -> CodeGen ()
 writeArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
   writeArrayData NonVolatile ix (eltType (undefined::e)) adata val
 
 -- | Write a value into a volatile array at the given index
 --
+{-# INLINEABLE writeVolatileArray #-}
 writeVolatileArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> IR e -> CodeGen ()
 writeVolatileArray (IRArray _ (IR adata)) (op integralType -> ix) (IR val) =
   writeArrayData Volatile ix (eltType (undefined::e)) adata val
