@@ -128,8 +128,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
     indexAny = let any = Any :: Any sh
                in  IR (constant (eltType any) (fromElt any))
 
-    indexSlice :: (Shape sh, Shape sl, Elt slix)
-               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+    indexSlice :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
                -> IR slix
                -> IR sh
                -> IR sl
@@ -143,8 +142,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
           restrict sliceIdx slx sl
 
-    indexFull :: (Shape sh, Shape sl, Elt slix)
-              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+    indexFull :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
               -> IR slix
               -> IR sl
               -> IR sh
@@ -268,7 +266,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Just f  -> app1 f x
         Nothing -> $internalError "foreignE" "failed to recover foreign expression the second time"
 
-    primFun :: (Elt a, Elt r)
+    primFun :: Elt r
             => PrimFun (a -> r)
             -> DelayedOpenExp env aenv a
             -> CodeGen (IR r)

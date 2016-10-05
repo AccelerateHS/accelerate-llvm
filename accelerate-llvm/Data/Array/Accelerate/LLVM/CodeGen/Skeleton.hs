@@ -162,7 +162,7 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
-  stencil       :: (Elt a, Elt b, Stencil sh a stencil)
+  stencil       :: (Stencil sh a stencil, Elt b)
                 => arch
                 -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
@@ -170,7 +170,7 @@ class Skeleton arch where
                 -> IRManifest arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
-  stencil2      :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
+  stencil2      :: (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
                 => arch
                 -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
@@ -217,7 +217,7 @@ defaultBackpermute arch aenv p a
 
 {-# INLINEABLE defaultTransform #-}
 defaultTransform
-    :: (Skeleton arch, Shape sh, Shape sh', Elt a, Elt b)
+    :: (Skeleton arch, Shape sh', Elt b)
     => arch
     -> Gamma          aenv
     -> IRFun1    arch aenv (sh' -> sh)
@@ -232,7 +232,7 @@ defaultTransform arch aenv p f IRDelayed{..}
 
 {-# INLINEABLE defaultStencil1 #-}
 defaultStencil1
-    :: (Skeleton arch, Shape sh, Elt a, Elt b, Stencil sh a stencil)
+    :: (Skeleton arch, Stencil sh a stencil, Elt b)
     => arch
     -> Gamma aenv
     -> IRFun1 arch aenv (stencil -> b)
@@ -246,7 +246,7 @@ defaultStencil1 arch aenv f boundary (IRManifest v)
 
 {-# INLINEABLE defaultStencil2 #-}
 defaultStencil2
-    :: (Skeleton arch, Shape sh, Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
+    :: (Skeleton arch, Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
     => arch
     -> Gamma aenv
     -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)

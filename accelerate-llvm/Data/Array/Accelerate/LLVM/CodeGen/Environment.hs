@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -42,7 +43,9 @@ data Val env where
 prj :: Idx env t -> Val env -> IR t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
+#if __GLASGOW_HASKELL__ < 800
 prj _            _            = $internalError "prj" "inconsistent valuation"
+#endif
 
 
 -- Array environment

@@ -210,7 +210,7 @@ class (Remote arch, Foreign arch) => Execute arch where
 --
 {-# INLINEABLE executeAcc #-}
 executeAcc
-    :: forall arch a. (Execute arch, Arrays a)
+    :: forall arch a. Execute arch
     => ExecAcc arch a
     -> LLVM arch a
 executeAcc acc =
@@ -218,7 +218,7 @@ executeAcc acc =
 
 {-# INLINEABLE executeAfun1 #-}
 executeAfun1
-    :: forall arch a b. (Execute arch, Arrays a, Arrays b)
+    :: forall arch a b. (Execute arch, Arrays a)
     => ExecAfun arch (a -> b)
     -> a
     -> LLVM arch b
@@ -481,6 +481,6 @@ executeOpenExp rootExp env aenv stream = travE rootExp
         extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
-    index :: (Shape sh, Elt e) => Array sh e -> sh -> LLVM arch e
+    index :: Shape sh => Array sh e -> sh -> LLVM arch e
     index arr ix = indexRemote arr (toIndex (shape arr) ix)
 

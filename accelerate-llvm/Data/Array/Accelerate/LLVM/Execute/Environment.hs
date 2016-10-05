@@ -19,7 +19,10 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- accelerate
 import Data.Array.Accelerate.AST
+#if __GLASGOW_HASKELL__ < 800
 import Data.Array.Accelerate.Error
+#endif
+
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 
@@ -38,5 +41,7 @@ data AvalR arch env where
 aprj :: Idx env t -> AvalR arch env -> AsyncR arch t
 aprj ZeroIdx       (Apush _   x) = x
 aprj (SuccIdx idx) (Apush val _) = aprj idx val
+#if __GLASGOW_HASKELL__ < 800
 aprj _             _             = $internalError "aprj" "inconsistent valuation"
+#endif
 

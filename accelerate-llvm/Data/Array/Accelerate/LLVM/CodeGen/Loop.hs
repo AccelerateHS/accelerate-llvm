@@ -16,9 +16,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Prelude                                                  hiding ( fst, snd, uncurry )
 import Control.Monad
 
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
-
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -42,7 +40,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 -- | A standard 'for' loop.
 --
-for :: (Elt i, IsIntegral i)
+for :: Elt i
     => IR i                                     -- ^ starting index
     -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
     -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
@@ -54,7 +52,7 @@ for start test incr body =
 
 -- | An loop with iteration count and accumulator.
 --
-iter :: (Elt i, IsIntegral i, Elt a)
+iter :: (Elt i, Elt a)
      => IR i                                    -- ^ starting index
      -> IR a                                    -- ^ initial value
      -> (IR i -> CodeGen (IR Bool))             -- ^ index test to keep looping

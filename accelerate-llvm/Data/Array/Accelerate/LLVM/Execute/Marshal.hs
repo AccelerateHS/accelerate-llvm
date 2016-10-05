@@ -95,7 +95,7 @@ instance (Marshalable t a, Marshalable t b, Marshalable t c, Marshalable t d, Ma
 instance Marshalable t a => Marshalable t [a] where
   marshal' t s = fmap DL.concat . mapM (marshal' t s)
 
-instance (Shape sh, Elt e, Marshalable t Int, Marshalable t (ArrayData (EltRepr e)))
+instance (Shape sh, Marshalable t Int, Marshalable t (ArrayData (EltRepr e)))
     => Marshalable t (Array sh e) where
   marshal' t s (Array sh adata) =
     marshal' t s (adata, reverse (R.shapeToList sh))
