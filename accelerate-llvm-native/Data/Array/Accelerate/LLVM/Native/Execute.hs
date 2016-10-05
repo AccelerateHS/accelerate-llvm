@@ -449,7 +449,7 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
 
 
 stencil1Op
-    :: (Shape sh, Elt a, Elt b)
+    :: (Shape sh, Elt b)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -460,7 +460,7 @@ stencil1Op kernel gamma aenv stream arr
   = simpleOp kernel gamma aenv stream (shape arr)
 
 stencil2Op
-    :: (Shape sh, Elt a, Elt b, Elt c)
+    :: (Shape sh, Elt c)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
