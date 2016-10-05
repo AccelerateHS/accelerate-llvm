@@ -27,7 +27,6 @@ import LLVM.General.Context                                         ( Context )
 import LLVM.General.AST                                             hiding ( Module )
 import qualified LLVM.General.AST                                   as AST
 import qualified LLVM.General.AST.Name                              as LLVM
-import qualified LLVM.General.Analysis                              as LLVM
 import qualified LLVM.General.Context                               as LLVM
 import qualified LLVM.General.Module                                as LLVM
 import qualified LLVM.General.PassManager                           as LLVM

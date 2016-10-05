@@ -230,7 +230,7 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
 -- Using the defaulting instances for stencil operations (for now).
 --
 stencil1Op
-    :: (Shape sh, Elt a, Elt b)
+    :: (Shape sh, Elt b)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
@@ -241,7 +241,7 @@ stencil1Op kernel gamma aenv stream arr
   = simpleOp kernel gamma aenv stream (shape arr)
 
 stencil2Op
-    :: (Shape sh, Elt a, Elt b, Elt c)
+    :: (Shape sh, Elt c)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
