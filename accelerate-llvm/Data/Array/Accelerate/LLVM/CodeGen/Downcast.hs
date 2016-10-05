@@ -295,9 +295,20 @@ instance Downcast (Operand a) L.Operand where
 -- ------------------------------
 
 instance Downcast Metadata L.Operand where
+#if MIN_VERSION_llvm_general_pure(3,8,0)
+  downcast                           = L.MetadataOperand . downcast
+#else
   downcast (MetadataStringOperand s) = L.MetadataStringOperand s
-  downcast (MetadataOperand o)       = downcast o
   downcast (MetadataNodeOperand n)   = L.MetadataNodeOperand (downcast n)
+  downcast (MetadataOperand o)       = downcast o
+#endif
+
+#if MIN_VERSION_llvm_general_pure(3,8,0)
+instance Downcast Metadata L.Metadata where
+  downcast (MetadataStringOperand s) = L.MDString s
+  downcast (MetadataNodeOperand n)   = L.MDNode (downcast n)
+  downcast (MetadataOperand o)       = L.MDValue (downcast o)
+#endif
 
 instance Downcast MetadataNode L.MetadataNode where
   downcast (MetadataNode n)          = L.MetadataNode (downcast n)

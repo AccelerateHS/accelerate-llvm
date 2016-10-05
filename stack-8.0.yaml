@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-6.14
+resolver: lts-7.2
 
 packages:
 - 'accelerate-llvm'
@@ -9,15 +9,14 @@ packages:
 - 'accelerate-llvm-ptx'
 # - 'accelerate-llvm-multidev'
 
-# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 020d326285947e2953cfe091dcedb037904ed37d
+    commit: 5e194fecc5761201b21a981d12ec469538499c75
   extra-dep: true
 
 - location:
     git:    https://github.com/tmcdonell/cuda.git
-    commit: bfa5b024fbf10a312f58c5d46d766d6bd2d01e04
+    commit: 5866f6d85bd530cf419e0aeec3ff4c92a9e7c509
   extra-dep: true
 
 - location:
@@ -25,14 +24,18 @@ packages:
     commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
   extra-dep: true
 
+- location:
+    git:    https://github.com/tmcdonell/llvm-general.git
+    commit: 65779928cb92d93d3bb48b8a2036da908e4872f7
+  extra-dep: true
+  subdirs:
+    - 'llvm-general'
+    - 'llvm-general-pure'
+
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'libffi-0.1'
 - 'unique-0'
-
-# update utils/cabal_macros.h whenever these versions are changed
-- 'llvm-general-3.5.1.2'
-- 'llvm-general-pure-3.5.1.0'
 
 # Override default flag values for local packages and extra-deps
 flags:
