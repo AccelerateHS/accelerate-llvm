@@ -3,17 +3,21 @@
  * prescribed in the .stack.yaml.
  */
 
-/* package llvm-general-3.8.0.2 */
-#define VERSION_llvm_general "3.8.0.2"
+#if __GLASGOW_HASKELL__ < 800
+
+/* package llvm-general-3.5.1.2 */
+#define VERSION_llvm_general "3.5.1.2"
 #define MIN_VERSION_llvm_general(major1,major2,minor) (\
   (major1) <  3 || \
-  (major1) == 3 && (major2) <  8 || \
-  (major1) == 3 && (major2) == 8 && (minor) <= 0)
+  (major1) == 3 && (major2) <  5 || \
+  (major1) == 3 && (major2) == 5 && (minor) <= 1)
 
-/* package llvm-general-pure-3.8.0.0 */
-#define VERSION_llvm_general_pure "3.8.0.0"
+/* package llvm-general-pure-3.5.1.0 */
+#define VERSION_llvm_general_pure "3.5.1.0"
 #define MIN_VERSION_llvm_general_pure(major1,major2,minor) (\
   (major1) <  3 || \
-  (major1) == 3 && (major2) <  8 || \
-  (major1) == 3 && (major2) == 8 && (minor) <= 0)
+  (major1) == 3 && (major2) <  5 || \
+  (major1) == 3 && (major2) == 5 && (minor) <= 1)
+
+#endif
 
