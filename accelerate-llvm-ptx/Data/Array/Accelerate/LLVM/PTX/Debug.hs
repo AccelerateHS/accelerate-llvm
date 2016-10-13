@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.Debug (
 
 ) where
 
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug                      hiding ( timed )
 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event

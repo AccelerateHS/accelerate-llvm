@@ -11,17 +11,7 @@ packages:
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 46db0fd5d35e2915b0e86ace2145db22488aabea
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: 5866f6d85bd530cf419e0aeec3ff4c92a9e7c509
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/nvvm.git
-    commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
+    commit: 3e0ea9b2138bc4575b0a570b6e0f6f8dfad47695
   extra-dep: true
 
 - location:
@@ -34,7 +24,9 @@ packages:
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
+- 'cuda-0.7.5.0'
 - 'libffi-0.1'
+- 'nvvm-0.7.5.0'
 - 'unique-0'
 
 # Override default flag values for local packages and extra-deps

@@ -12,17 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 46db0fd5d35e2915b0e86ace2145db22488aabea
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: bfa5b024fbf10a312f58c5d46d766d6bd2d01e04
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/nvvm.git
-    commit: 0dcc67e35e690d1eaaebceaf8deb86a39d486d6c
+    commit: 3e0ea9b2138bc4575b0a570b6e0f6f8dfad47695
   extra-dep: true
 
 extra-deps:
@@ -41,7 +31,8 @@ extra-deps:
 - 'transformers-compat-0.4.0.4'
 
 # accelerate-llvm-ptx
-# - 'cuda-0.7.0.0'
+- 'cuda-0.7.5.0'
+- 'nvvm-0.7.5.0'
 
 # update utils/cabal_macros.h whenever these versions are changed
 - 'llvm-general-3.4.6.0'

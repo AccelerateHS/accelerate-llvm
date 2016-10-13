@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.Debug (
 
 ) where
 
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug                                  hiding ( timed )
 
 import Data.Label
 import Data.Time.Clock
