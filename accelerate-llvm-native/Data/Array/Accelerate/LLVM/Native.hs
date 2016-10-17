@@ -43,12 +43,12 @@ module Data.Array.Accelerate.LLVM.Native (
 -- accelerate
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Array.Sugar                ( Arrays )
-import Data.Array.Accelerate.Smart                      ( Acc )
-import Data.Array.Accelerate.LLVM.Native.Debug          as Debug
+import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
-import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
@@ -100,8 +100,7 @@ run' target a = execute
     execute     = do
       dumpGraph acc
       evalNative target $ do
-        acc `seq` dumpSimplStats
-        exec <- phase "compile" elapsedS (compileAcc acc)
+        exec <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
         res  <- phase "execute" elapsedP (executeAcc exec)
         return res
 
@@ -162,9 +161,8 @@ run1' using target f = \a -> using (execute a)
   where
     !acc        = convertAfunWith (config target) f
     !afun       = unsafePerformIO $ do
-                    acc `seq` dumpSimplStats
-                    acc `seq` dumpGraph acc
-                    phase "compile" elapsedS (evalNative target (compileAfun acc))
+                    dumpGraph acc
+                    phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
     execute a   =   phase "execute" elapsedP (evalNative target (executeAfun1 afun a))
 
 
@@ -194,6 +192,9 @@ config target = phases
 
 -- Debugging
 -- =========
+
+dumpStats :: MonadIO m => a -> m a
+dumpStats x = dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
 phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go
