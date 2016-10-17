@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.Debug (
 
 ) where
 
-import Data.Array.Accelerate.Debug                      hiding ( timed )
+import Data.Array.Accelerate.Debug                      hiding ( timed, elapsed )
 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event
@@ -26,6 +26,7 @@ import qualified Foreign.CUDA.Driver.Event              as Event
 import Control.Concurrent
 import Data.Label
 import Data.Time.Clock
+import Text.Printf
 
 import GHC.Float
 
@@ -76,7 +77,7 @@ monitorProcTime enabled display stream action = do
         Event.destroy gpuBegin
         Event.destroy gpuEnd
         --
-        display gpuTime wallTime
+        display wallTime gpuTime
       --
       return ()
 
@@ -85,4 +86,11 @@ monitorProcTime enabled display stream action = do
 #else
 monitorProcTime _ _ _ action = action
 #endif
+
+{-# INLINE elapsed #-}
+elapsed :: Double -> Double -> String
+elapsed wallTime gpuTime =
+  printf "%s (wall), %s (gpu)"
+    (showFFloatSIBase (Just 3) 1000 wallTime "s")
+    (showFFloatSIBase (Just 3) 1000 gpuTime "s")
 
