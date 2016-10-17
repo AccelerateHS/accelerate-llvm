@@ -231,7 +231,7 @@ executeAfun1 afun arrs = do
 {-# INLINEABLE executeOpenAfun1 #-}
 executeOpenAfun1
     :: Execute arch
-    => PreOpenAfun (ExecOpenAcc arch) aenv (a -> b)
+    => ExecOpenAfun arch aenv (a -> b)
     -> AvalR arch aenv
     -> AsyncR arch a
     -> LLVM arch b
@@ -346,8 +346,8 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     acond _   no False = travA no
 
     -- Array loops
-    awhile :: PreOpenAfun (ExecOpenAcc arch) aenv (a -> Scalar Bool)
-           -> PreOpenAfun (ExecOpenAcc arch) aenv (a -> a)
+    awhile :: ExecOpenAfun arch aenv (a -> Scalar Bool)
+           -> ExecOpenAfun arch aenv (a -> a)
            -> a
            -> LLVM arch a
     awhile p f a = do

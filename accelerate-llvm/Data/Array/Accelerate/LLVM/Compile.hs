@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.Compile (
   Compile(..),
   compileAcc, compileAfun,
 
-  ExecOpenAcc(..),
+  ExecOpenAcc(..), ExecOpenAfun,
   ExecAcc, ExecAfun,
   ExecExp, ExecOpenExp,
   ExecFun, ExecOpenFun
@@ -84,6 +84,7 @@ data ExecOpenAcc arch aenv a where
 type ExecAcc arch a     = ExecOpenAcc arch () a
 type ExecAfun arch a    = PreAfun (ExecOpenAcc arch) a
 
+type ExecOpenAfun arch  = PreOpenAfun (ExecOpenAcc arch)
 type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
 type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
 
