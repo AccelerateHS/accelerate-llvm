@@ -26,6 +26,7 @@ import qualified Foreign.CUDA.Driver.Event              as Event
 import Control.Concurrent
 import Data.Label
 import Data.Time.Clock
+import System.CPUTime
 import Text.Printf
 
 import GHC.Float
@@ -36,17 +37,17 @@ import GHC.Float
 --
 timed
     :: (Flags :-> Bool)
-    -> (Double -> Double -> String)
+    -> (Double -> Double -> Double -> String)
     -> Maybe Stream
     -> IO ()
     -> IO ()
 {-# INLINE timed #-}
 timed f msg =
-  monitorProcTime (queryFlag f) (\t1 t2 -> traceIO f (msg t1 t2))
+  monitorProcTime (queryFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
 
 monitorProcTime
     :: IO Bool
-    -> (Double -> Double -> IO ())
+    -> (Double -> Double -> Double -> IO ())
     -> Maybe Stream
     -> IO ()
     -> IO ()
@@ -59,9 +60,11 @@ monitorProcTime enabled display stream action = do
       gpuBegin  <- Event.create []
       gpuEnd    <- Event.create []
       wallBegin <- getCurrentTime
+      cpuBegin  <- getCPUTime
       Event.record gpuBegin stream
       action
       Event.record gpuEnd stream
+      cpuEnd    <- getCPUTime
       wallEnd   <- getCurrentTime
 
       -- Wait for the GPU to finish executing then display the timing execution
@@ -71,13 +74,14 @@ monitorProcTime enabled display stream action = do
       _         <- forkIO $ do
         Event.block gpuEnd
         diff    <- Event.elapsedTime gpuBegin gpuEnd
-        let gpuTime  = float2Double $ diff * 1E-3       -- milliseconds
+        let gpuTime  = float2Double $ diff * 1E-3                   -- milliseconds
+            cpuTime  = fromIntegral (cpuEnd - cpuBegin) * 1E-12     -- picoseconds
             wallTime = realToFrac (diffUTCTime wallEnd wallBegin)
 
         Event.destroy gpuBegin
         Event.destroy gpuEnd
         --
-        display wallTime gpuTime
+        display wallTime cpuTime gpuTime
       --
       return ()
 
@@ -88,9 +92,10 @@ monitorProcTime _ _ _ action = action
 #endif
 
 {-# INLINE elapsed #-}
-elapsed :: Double -> Double -> String
-elapsed wallTime gpuTime =
-  printf "%s (wall), %s (gpu)"
+elapsed :: Double -> Double -> Double -> String
+elapsed wallTime cpuTime gpuTime =
+  printf "%s (wall), %s (cpu), %s (gpu)"
     (showFFloatSIBase (Just 3) 1000 wallTime "s")
+    (showFFloatSIBase (Just 3) 1000 cpuTime "s")
     (showFFloatSIBase (Just 3) 1000 gpuTime "s")
 

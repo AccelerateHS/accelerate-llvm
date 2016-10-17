@@ -150,12 +150,12 @@ message s = s `trace` return ()
 {-# INLINE transfer #-}
 transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
-  = let showRate x t         = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-        msg wallTime gpuTime = printf "gc: %s: %s bytes @ %s, %s"
-                                  name
-                                  (showBytes bytes)
-                                  (showRate bytes wallTime)
-                                  (Debug.elapsed wallTime gpuTime)
+  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
+        msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
+                              name
+                              (showBytes bytes)
+                              (showRate bytes wall)
+                              (Debug.elapsed wall cpu gpu)
     in
     Debug.timed Debug.dump_gc msg stream action
 

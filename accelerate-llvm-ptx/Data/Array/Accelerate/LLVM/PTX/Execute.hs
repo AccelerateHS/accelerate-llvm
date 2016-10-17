@@ -313,10 +313,10 @@ launch Kernel{..} stream n args =
                     then return True
                     else Debug.queryFlag Debug.dump_exec
 
-    fst3 (x,_,_)         = x
-    msg gpuTime wallTime = do
-      Debug.addProcessorTime Debug.PTX gpuTime
+    fst3 (x,_,_)      = x
+    msg wall cpu gpu  = do
+      Debug.addProcessorTime Debug.PTX gpu
       Debug.traceIO Debug.dump_exec $
         printf "exec: %s <<< %d, %d, %d >>> %s"
-               kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed gpuTime wallTime)
+               kernelName (fst3 grid) (fst3 cta) smem (Debug.elapsed wall cpu gpu)
 
