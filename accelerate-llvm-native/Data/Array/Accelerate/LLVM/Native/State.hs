@@ -138,5 +138,5 @@ timed f = Debug.timed Debug.dump_exec elapsed f
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> String
-elapsed x y = "exec: " ++ Debug.elapsed x y
+elapsed x y = "exec: " ++ Debug.elapsedP x y
 

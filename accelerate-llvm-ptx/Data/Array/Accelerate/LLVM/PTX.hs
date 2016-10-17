@@ -64,6 +64,7 @@ import Foreign.CUDA.Driver                                        as CUDA ( CUDA
 import Control.Exception
 import Control.Monad.Trans
 import System.IO.Unsafe
+import Text.Printf
 
 
 -- Accelerate: LLVM backend for NVIDIA GPUs
@@ -109,7 +110,13 @@ runAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async a)
 runAsyncWith target a = asyncBound execute
   where
     !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= AD.copyToHostLazy)
+    execute     = do
+      dumpGraph acc
+      evalPTX target $ do
+        acc `seq` dumpSimplStats
+        exec <- phase "compile" (compileAcc acc)
+        res  <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+        return res
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -170,8 +177,11 @@ run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> IO (Asy
 run1AsyncWith target f = \a -> asyncBound (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX target (compileAfun acc) >>= dumpStats
-    execute a   = evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy)
+    !afun       = unsafePerformIO $ do
+                    acc `seq` dumpSimplStats
+                    acc `seq` dumpGraph acc
+                    phase "compile" (evalPTX target (compileAfun acc))
+    execute a   =   phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -231,9 +241,6 @@ registerPinnedAllocatorWith target =
 -- Debugging
 -- =========
 
--- Compiler phase statistics
--- -------------------------
-
-dumpStats :: MonadIO m => a -> m a
-dumpStats next = dumpSimplStats >> return next
+phase :: MonadIO m => String -> m a -> m a
+phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go
 

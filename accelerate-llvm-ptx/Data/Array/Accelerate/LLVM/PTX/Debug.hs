@@ -26,7 +26,6 @@ import qualified Foreign.CUDA.Driver.Event              as Event
 import Control.Concurrent
 import Data.Label
 import Data.Time.Clock
-import Text.Printf
 
 import GHC.Float
 
@@ -86,11 +85,4 @@ monitorProcTime enabled display stream action = do
 #else
 monitorProcTime _ _ _ action = action
 #endif
-
-{-# INLINE elapsed #-}
-elapsed :: Double -> Double -> String
-elapsed gpuTime wallTime =
-  printf "gpu: %s, wall: %s"
-    (showFFloatSIBase (Just 3) 1000 gpuTime "s")
-    (showFFloatSIBase (Just 3) 1000 wallTime "s")
 

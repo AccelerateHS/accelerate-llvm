@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
@@ -46,7 +45,7 @@ import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Array.Sugar                ( Arrays )
 import Data.Array.Accelerate.Smart                      ( Acc )
-import Data.Array.Accelerate.Debug                      as Debug
+import Data.Array.Accelerate.LLVM.Native.Debug          as Debug
 
 import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
@@ -58,6 +57,7 @@ import Control.Parallel.Meta.Worker
 -- standard library
 import Control.Monad.Trans
 import System.IO.Unsafe
+import Text.Printf
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -97,7 +97,13 @@ run' :: Arrays a => Native -> Acc a -> IO a
 run' target a = execute
   where
     !acc        = convertAccWith (config target) a
-    execute     = dumpGraph acc >> evalNative target (compileAcc acc >>= dumpStats >>= executeAcc)
+    execute     = do
+      dumpGraph acc
+      evalNative target $ do
+        acc `seq` dumpSimplStats
+        exec <- phase "compile" elapsedS (compileAcc acc)
+        res  <- phase "execute" elapsedP (executeAcc exec)
+        return res
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -155,8 +161,11 @@ run1' :: (Arrays a, Arrays b) => (IO b -> c) -> Native -> (Acc a -> Acc b) -> a 
 run1' using target f = \a -> using (execute a)
   where
     !acc        = convertAfunWith (config target) f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalNative target (compileAfun acc) >>= dumpStats
-    execute a   = evalNative target (executeAfun1 afun a)
+    !afun       = unsafePerformIO $ do
+                    acc `seq` dumpSimplStats
+                    acc `seq` dumpGraph acc
+                    phase "compile" elapsedS (evalNative target (compileAfun acc))
+    execute a   =   phase "execute" elapsedP (evalNative target (executeAfun1 afun a))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -186,6 +195,6 @@ config target = phases
 -- Debugging
 -- =========
 
-dumpStats :: MonadIO m => a -> m a
-dumpStats next = dumpSimplStats >> return next
+phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
+phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go
 
