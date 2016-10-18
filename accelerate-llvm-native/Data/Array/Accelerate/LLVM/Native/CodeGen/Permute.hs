@@ -45,6 +45,7 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Control.Applicative
+import Control.Monad                                                ( void )
 import Data.Typeable
 import Prelude
 
@@ -167,13 +168,21 @@ mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
           Exchange
             -> writeArray arrOut j r
           --
-          _ | SingleTuple s@(NumScalarType (IntegralNumType t)) <- eltType (undefined::e)
-            , Just adata <- gcast (irArrayData arrOut)
-            , Just r'    <- gcast r
+          _ | SingleTuple s <- eltType (undefined::e)
+            , Just adata    <- gcast (irArrayData arrOut)
+            , Just r'       <- gcast r
             -> do
-                  addr <- instr' $ GetElementPtr (ptr s (op t adata)) [op integralType j]
-                  _    <- instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
-                  return ()
+                  addr <- instr' $ GetElementPtr (ptr s (op s adata)) [op integralType j]
+                  --
+                  case s of
+                    NumScalarType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+                    NumScalarType t | RMW.Add <- rmw  -> atomicCAS_rmw s (A.add t r') addr
+                    NumScalarType t | RMW.Sub <- rmw  -> atomicCAS_rmw s (A.sub t r') addr
+                    _ -> case rmw of
+                           RMW.Min                    -> atomicCAS_cmp s A.lt addr (op s r')
+                           RMW.Max                    -> atomicCAS_cmp s A.gt addr (op s r')
+                           _                          -> $internalError "mkPermute_rmw" "unexpected transition"
+          --
           _ -> $internalError "mkPermute_rmw" "unexpected transition"
 
     return_
