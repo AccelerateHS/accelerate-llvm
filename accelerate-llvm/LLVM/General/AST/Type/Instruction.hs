@@ -27,6 +27,8 @@ import LLVM.General.AST.Type.Instruction.Compare
 import LLVM.General.AST.Type.Instruction.RMW
 import LLVM.General.AST.Type.Instruction.Volatile
 
+import Data.Array.Accelerate.Product                      ( ProdRepr, TupleIdx )
+
 import Prelude                                            hiding ( Ordering )
 
 
@@ -154,7 +156,11 @@ data Instruction a where
 
   -- Aggregate Operations
   -- <http://llvm.org/docs/LangRef.html#aggregate-operations>
-  -- ExtractValue
+  ExtractValue  :: ScalarType t
+                -> TupleIdx (ProdRepr tup) t
+                -> Operand tup
+                -> Instruction t
+
   -- InsertValue
 
   -- Memory Access and Addressing Operations
@@ -188,14 +194,14 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#cmpxchg-instruction>
   --
-  -- CmpXchg       :: IntegralType a
-  --               -> Volatility
-  --               -> Operand (Ptr a)
-  --               -> Operand a              -- expected value
-  --               -> Operand a              -- replacement value
-  --               -> Atomicity              -- on success
-  --               -> MemoryOrdering         -- on failure (see docs for restrictions)
-  --               -> Instruction (a, Bool)  -- XXX: Type ??
+  CmpXchg       :: IntegralType a
+                -> Volatility
+                -> Operand (Ptr a)
+                -> Operand a              -- expected value
+                -> Operand a              -- replacement value
+                -> Atomicity              -- on success
+                -> MemoryOrdering         -- on failure (see docs for restrictions)
+                -> Instruction (a, Bool)
 
   -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
   --

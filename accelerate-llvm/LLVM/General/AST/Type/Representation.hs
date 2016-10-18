@@ -21,6 +21,7 @@ module LLVM.General.AST.Type.Representation (
 ) where
 
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Product
 
 import LLVM.General.AST.Type.AddrSpace
 
@@ -51,15 +52,17 @@ import Text.Printf
 -- not precise enough for our purposes. For example, the `Add` instruction
 -- operates on operands of integer type or vector (multi) of integer types, so
 -- we would probably prefer to add multi-types as a sub-type of IntegralType,
--- FloatingType, etc...
+-- FloatingType, etc.
 --
--- Furthermore, we really only need to extend Accelerate's existing type
--- hierarchy with Void and pointers to scalar types.
+-- We minimally extend Accelerate's existing type hierarchy to support the
+-- features we require for code generation: void types, pointer types, and
+-- simple aggregate structures (for CmpXchg).
 --
 
 data Type a where
-  VoidType  ::               Type ()
-  PrimType  :: PrimType a -> Type a
+  VoidType  ::                           Type ()
+  PrimType  :: PrimType a             -> Type a
+  TupleType :: TupleType (ProdRepr a) -> Type a       -- aggregate structures
 
 data PrimType a where
   PtrPrimType     :: ScalarType a -> AddrSpace -> PrimType (Ptr a)  -- TLM: volatility??
@@ -408,8 +411,9 @@ instance IsPrim (Ptr CUChar) where
 
 
 instance Show (Type a) where
-  show VoidType     = "()"
-  show (PrimType t) = show t
+  show VoidType      = "()"
+  show (PrimType t)  = show t
+  show (TupleType t) = show t
 
 instance Show (PrimType a) where
   show (ScalarPrimType t)            = show t

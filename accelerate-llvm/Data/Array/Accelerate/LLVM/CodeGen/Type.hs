@@ -1,5 +1,6 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
@@ -94,10 +95,13 @@ instance TypeOf Instruction where
       LAnd _ _              -> type'
       LOr _ _               -> type'
       LNot _                -> type'
+      ExtractValue t _ _    -> PrimType (ScalarPrimType t)
       Load t _ _            -> PrimType (ScalarPrimType t)
       Store _ _ _           -> VoidType
       GetElementPtr x _     -> typeOf x
       Fence _               -> VoidType
+      CmpXchg t _ _ _ _ _ _ -> TupleType $ UnitTuple `PairTuple` SingleTuple (NumScalarType (IntegralNumType t))
+                                                     `PairTuple` SingleTuple scalarType
       AtomicRMW _ _ _ _ x _ -> typeOf x
       FTrunc _ t _          -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
       FExt _ t _            -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))

@@ -26,6 +26,9 @@ import Prelude                                                  hiding ( Orderin
 import Data.Bits
 import Foreign.C.Types
 
+import Data.Array.Accelerate.AST                                ( tupleIdxToInt )
+import Data.Array.Accelerate.Error
+
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 
@@ -158,10 +161,20 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (LOr x y)                = L.Or (downcast x) (downcast y) md
   downcast (BXor _ x y)             = L.Xor (downcast x) (downcast y) md
   downcast (LNot x)                 = L.Xor (downcast x) (downcast (scalar scalarType True)) md
+  downcast (ExtractValue _ tix tup) = L.ExtractValue (downcast tup) [fromIntegral $ sizeOfTuple - tupleIdxToInt tix - 1] md
+    where
+      sizeOfTuple
+        | TupleType t <- typeOf tup = go t
+        | otherwise                 = $internalError "downcast" "unexpected operand type to ExtractValue"
+      --
+      go :: TupleType t -> Int
+      go (PairTuple t _) = 1 + go t
+      go _               = 0
   downcast (Load _ v p)             = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)            = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
   downcast (GetElementPtr n i)      = L.GetElementPtr False (downcast n) (downcast i) md            -- TLM: in bounds??
   downcast (Fence a)                = L.Fence (downcast a) md
+  downcast (CmpXchg _ v p x y a m)  = L.CmpXchg (downcast v) (downcast p) (downcast x) (downcast y) (downcast a) (downcast m) md
   downcast (AtomicRMW t v op p x a) = L.AtomicRMW (downcast v) (downcast (t,op)) (downcast p) (downcast x) (downcast a) md
   downcast (Trunc _ t x)            = L.Trunc (downcast x) (downcast t) md
   downcast (FTrunc _ t x)           = L.FPTrunc (downcast x) (downcast t) md
@@ -394,8 +407,14 @@ instance Downcast GroupID L.GroupID where
 -- ------------------------------------
 
 instance Downcast (Type a) L.Type where
-  downcast VoidType     = L.VoidType
-  downcast (PrimType t) = downcast t
+  downcast VoidType      = L.VoidType
+  downcast (PrimType t)  = downcast t
+  downcast (TupleType t) = L.StructureType False (go t)
+    where
+      go :: TupleType t -> [L.Type]
+      go UnitTuple         = []
+      go (SingleTuple s)   = [downcast s]
+      go (PairTuple ta tb) = go ta ++ go tb
 
 instance Downcast (PrimType a) L.Type where
   downcast (PtrPrimType t a)  = L.PointerType (downcast t) a

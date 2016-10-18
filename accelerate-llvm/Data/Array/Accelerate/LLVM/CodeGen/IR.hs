@@ -1,6 +1,7 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE RankNTypes   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -23,6 +24,7 @@ import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
 
@@ -154,13 +156,19 @@ class IROP dict where
 instance IROP Type where
   op VoidType     _  = LocalReference VoidType (Name []) -- TLM: ???
   op (PrimType t) x  = op t x
-  ir (PrimType t) x  = ir t x
+  op TupleType{} _   = $internalError "op" "applied to aggregate structure"
+
   ir VoidType     _  = IR OP_Unit
+  ir (PrimType t) x  = ir t x
+  ir TupleType{} _   = $internalError "ir" "applied to aggregate structure"
   --
   ir' VoidType     _ = OP_Unit
   ir' (PrimType t) x = ir' t x
-  op' (PrimType t) x = op' t x
+  ir' TupleType{} _  = $internalError "ir'" "applied to aggregate structure"
+
   op' VoidType     _ = LocalReference VoidType (Name [])  -- TLM: ???
+  op' (PrimType t) x = op' t x
+  op' TupleType{} _  = $internalError "op'" "applied to aggregate structure"
 
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
