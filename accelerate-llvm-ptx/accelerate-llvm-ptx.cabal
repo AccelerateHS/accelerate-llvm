@@ -72,6 +72,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
@@ -97,8 +98,8 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-general                  >= 3.3.15
-        , llvm-general-pure             >= 3.3
+        , llvm-general                  >= 3.5
+        , llvm-general-pure             >= 3.5
         , mtl                           >= 2.2.1
         , pretty                        >= 1.1
         , time                          >= 1.4

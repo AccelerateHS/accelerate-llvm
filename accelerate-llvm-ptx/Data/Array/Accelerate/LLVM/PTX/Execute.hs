@@ -33,6 +33,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
+import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( withDevicePtr )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
@@ -50,6 +51,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 -- library
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
+import Data.Word                                                ( Word32 )
 import Data.List                                                ( find )
 import Data.Monoid                                              ( mempty )
 import Text.Printf                                              ( printf )
@@ -80,6 +82,8 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  scanl         = scanOp
+  permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
 
@@ -191,7 +195,7 @@ foldAllOp exe gamma aenv stream sh' = do
       foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
       foldRec out@(Array (sh,sz) adata) =
         let numElements       = R.size sh * sz
-            numBlocks         = (kernelThreadBlocks k2) numElements
+            numBlocks         = (kernelThreadBlocks k1) numElements
         in if sz <= 1
               then do
                 -- We have recursed to a single block already. Trim the
@@ -206,6 +210,7 @@ foldAllOp exe gamma aenv stream sh' = do
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
+
 
 foldDimOp
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -225,6 +230,67 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
   return out
+
+
+scanOp
+    :: Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scanOp kernel gamma aenv stream (Z :. n) =
+  scanCore kernel gamma aenv stream n
+
+scanCore
+    :: forall aenv e. Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int
+    -> LLVM PTX (Vector e)
+scanCore exe gamma aenv stream n = do
+  ptx <- gets llvmTarget
+  let
+    k1 = lookupKernel "scanP1" exe
+    -- k2 = lookupKernel "scanP2" exe
+    -- k3 = lookupKernel "scanP3" exe
+  --
+  out <- allocateRemote (Z :. n)
+  -- tmp <- allocateRemote (sh :. numBlocks)
+  liftIO $ do
+    executeOp ptx k1 mempty gamma aenv stream (IE 0 n) out
+    -- executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+    -- executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
+    -- executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
+  return out
+
+
+permuteOp
+    :: (Shape sh, Shape sh', Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Bool
+    -> sh
+    -> Array sh' e
+    -> LLVM PTX (Array sh' e)
+permuteOp kernel gamma aenv stream inplace shIn dfs = do
+    ptx <- gets llvmTarget
+    let
+      k = lookupKernel "permute_mutex" kernel
+      n = size shIn
+    --
+    out <- return dfs
+    barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
+    withDevicePtr adb     $ \p_barrier -> liftIO $ do
+      withLifetime stream $ \st        -> do
+        CUDA.memsetAsync p_barrier n 0 (Just st)
+        executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
+        return (Nothing, out)
 
 
 -- Using the defaulting instances for stencil operations (for now).
