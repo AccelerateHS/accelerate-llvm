@@ -37,7 +37,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Context
@@ -84,14 +83,14 @@ mkPermute
     -> IRFun1       PTX aenv (sh -> sh')
     -> IRDelayed    PTX aenv (Array sh e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute (deviceProperties . ptxContext -> dev) aenv IRPermuteFun{..} project arr =
+mkPermute ptx aenv IRPermuteFun{..} project arr =
   let
       bytes   = sizeOf (eltType (undefined :: e))
       sizeOk  = bytes == 4 || bytes == 8
   in
   case atomicRMW of
-    Just (rmw, f) | sizeOk -> mkPermute_rmw   dev aenv rmw f   project arr
-    _                      -> mkPermute_mutex dev aenv combine project arr
+    Just (rmw, f) | sizeOk -> mkPermute_rmw   ptx aenv rmw f   project arr
+    _                      -> mkPermute_mutex ptx aenv combine project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
@@ -117,14 +116,14 @@ mkPermute (deviceProperties . ptxContext -> dev) aenv IRPermuteFun{..} project a
 --
 mkPermute_rmw
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => DeviceProperties
+    => PTX
     -> Gamma aenv
     -> RMWOperation
     -> IRFun1    PTX aenv (e -> e)
     -> IRFun1    PTX aenv (sh -> sh')
     -> IRDelayed PTX aenv (Array sh e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw dev aenv rmw update project IRDelayed{..} =
+mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
@@ -135,7 +134,7 @@ mkPermute_rmw dev aenv rmw update project IRDelayed{..} =
       compute32                 = Compute 3 2
       compute60                 = Compute 6 0
   in
-  makeOpenAccWith (simpleLaunchConfig dev) "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
 
     sh <- delayedExtent
 
@@ -219,20 +218,20 @@ mkPermute_rmw dev aenv rmw update project IRDelayed{..} =
 --
 mkPermute_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => DeviceProperties
+    => PTX
     -> Gamma aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRFun1    PTX aenv (sh -> sh')
     -> IRDelayed PTX aenv (Array sh e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex dev aenv combine project IRDelayed{..} =
+mkPermute_mutex ptx aenv combine project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
       (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word32))
       paramEnv                  = envParam aenv
   in
-  makeOpenAccWith (simpleLaunchConfig dev) "permute_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc ptx "permute_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
 
     sh <- delayedExtent
 
