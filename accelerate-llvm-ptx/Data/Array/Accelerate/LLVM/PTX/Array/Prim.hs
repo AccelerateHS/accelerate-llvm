@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
   indexArray,
   peekArray, peekArrayR, peekArrayAsync, peekArrayAsyncR,
   pokeArray, pokeArrayR, pokeArrayAsync, pokeArrayAsyncR,
+  copyArray, copyArrayR, copyArrayAsync, copyArrayAsyncR,
   copyArrayPeer, copyArrayPeerR, copyArrayPeerAsync, copyArrayPeerAsyncR,
   withDevicePtr,
 
@@ -237,6 +238,74 @@ peekArrayAsyncR !stream !from !to !ad = do
     nonblocking stream $
       transfer "peekArray" bytes (Just st) $
         CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) (Just st)
+  liftIO (touchLifetime stream)
+
+
+-- | Copy data between arrays in the same context
+--
+{-# INLINEABLE copyArray #-}
+copyArray
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArray !n !src !dst =
+  blocking $ \st -> copyArrayAsync st n src dst
+
+{-# INLINEABLE copyArrayAsync #-}
+copyArrayAsync
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Stream
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayAsync !stream !n !ad_src !ad_dst = do
+  let !bytes    = n * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr        ad_src $ \src -> do
+    e <- withDevicePtr ad_dst $ \dst -> do
+      (e,()) <- nonblocking stream
+              $ transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
+      return (e,e)
+    return (e,())
+  liftIO (touchLifetime stream)
+
+{-# INLINEABLE copyArrayR #-}
+copyArrayR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayR !from !to !src !dst =
+  blocking $ \st -> copyArrayAsyncR st from to src dst
+
+{-# INLINEABLE copyArrayAsyncR #-}
+copyArrayAsyncR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Stream
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayAsyncR !stream !from !to !ad_src !ad_dst = do
+  let !n        = to - from
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr        ad_src $ \src -> do
+    e <- withDevicePtr ad_dst $ \dst -> do
+      (e,()) <- nonblocking stream
+              $ transfer "copyArray" bytes (Just st)
+              $ CUDA.copyArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
+      return (e,e)
+    return (e,())
   liftIO (touchLifetime stream)
 
 
