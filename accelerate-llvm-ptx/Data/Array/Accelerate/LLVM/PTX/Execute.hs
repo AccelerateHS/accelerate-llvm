@@ -33,7 +33,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
-import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( withDevicePtr )
+import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsync )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
@@ -53,6 +53,7 @@ import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
 import Data.Word                                                ( Word32 )
 import Data.List                                                ( find )
+import Data.Maybe                                               ( fromMaybe )
 import Data.Monoid                                              ( mempty )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
@@ -103,7 +104,7 @@ simpleOp
 simpleOp exe gamma aenv stream sh = do
   let kernel    = case ptxKernel exe of
                     k:_ -> k
-                    _   -> $internalError "simpleOp" "kernel not found"
+                    _   -> $internalError "simpleOp" "no kernels found"
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
@@ -221,9 +222,10 @@ foldDimOp
     -> LLVM PTX (Array sh e)
 foldDimOp exe gamma aenv stream (sh :. sz) = do
   let
-      kernel
-        | sz > 0    = lookupKernel "fold"     exe
-        | otherwise = lookupKernel "generate" exe
+      kernel  = fromMaybe ($internalError "foldDim" "kernel not found")
+              $ if sz > 0
+                  then lookupKernel "fold"     exe
+                  else lookupKernel "generate" exe
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
@@ -241,19 +243,27 @@ permuteOp
     -> sh
     -> Array sh' e
     -> LLVM PTX (Array sh' e)
-permuteOp kernel gamma aenv stream inplace shIn dfs = do
-    ptx <- gets llvmTarget
-    let
-      k = lookupKernel "permute_mutex" kernel
-      n = size shIn
-    --
-    out <- return dfs
-    barrier@(Array _ adb) <- allocateRemote (Z :. n) :: LLVM PTX (Vector Word32)
-    withDevicePtr adb     $ \p_barrier -> liftIO $ do
-      withLifetime stream $ \st        -> do
-        CUDA.memsetAsync p_barrier n 0 (Just st)
-        executeOp ptx k mempty gamma aenv stream (IE 0 n) (out, barrier)
-        return (Nothing, out)
+permuteOp exe gamma aenv stream inplace shIn dfs = do
+  let n       = size shIn
+      m       = size (shape dfs)
+      kernel  = case ptxKernel exe of
+                  k:_ -> k
+                  _   -> $internalError "permute" "no kernels found"
+  --
+  ptx <- gets llvmTarget
+  out <- if inplace
+           then return dfs
+           else cloneArrayAsync stream dfs
+  --
+  case kernelName kernel of
+    "permute_rmw"   -> liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 n) out
+    "permute_mutex" -> do
+      barrier@(Array _ ad) <- allocateRemote (Z :. m) :: LLVM PTX (Vector Word32)
+      memsetArrayAsync stream m 0 ad
+      liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 n) (out, barrier)
+    _               -> $internalError "permute" "unexpected kernel image"
+  --
+  return out
 
 
 -- Using the defaulting instances for stencil operations (for now).
@@ -298,11 +308,9 @@ i32 = fromIntegral
 
 -- | Retrieve the named kernel
 --
-lookupKernel :: String -> ExecutableR PTX -> Kernel
+lookupKernel :: String -> ExecutableR PTX -> Maybe Kernel
 lookupKernel name exe =
-  case find (\k -> kernelName k == name) (ptxKernel exe) of
-    Just k  -> k
-    Nothing -> $internalError "lookupKernel" ("not found: " ++ name)
+  find (\k -> kernelName k == name) (ptxKernel exe)
 
 
 -- Execute the function implementing this kernel.
