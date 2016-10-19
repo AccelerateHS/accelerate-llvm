@@ -424,6 +424,7 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
       seq     = target { fillP = sequentialIO gang }
       --
       n       = size shIn
+      m       = size (shape out)
   --
   if ncpu == 1 || n <= defaultLargePPT
     then liftIO $ do
@@ -440,8 +441,8 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
             executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) out
 
         else do
-          barrier@(Array _ adb) <- allocateArray (Z :. n) :: IO (Vector Word8)
-          memset (ptrsOfArrayData adb) 0 n
+          barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
+          memset (ptrsOfArrayData adb) 0 m
           execute executableR "permuteP_mutex" $ \f ->
             executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) (out, barrier)
 
