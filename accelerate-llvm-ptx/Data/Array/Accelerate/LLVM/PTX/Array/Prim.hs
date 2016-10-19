@@ -1,9 +1,11 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Prim
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -18,6 +20,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 
   mallocArray,
+  memsetArray, memsetArrayAsync,
   useArray, useArrayAsync,
   indexArray,
   peekArray, peekArrayR, peekArrayAsync, peekArrayAsyncR,
@@ -32,6 +35,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -48,14 +52,15 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
 -- standard library
-import Prelude                                                  hiding ( lookup )
+import Control.Exception
 import Control.Monad
 import Control.Monad.State
-import Control.Exception
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.TypeLits
 import Text.Printf
+import Prelude                                                  hiding ( lookup )
 
 
 -- | Allocate a device-side array associated with the given host array. If the
@@ -118,9 +123,9 @@ pokeArrayAsync
     -> ArrayData e
     -> LLVM PTX ()
 pokeArrayAsync !stream !n !ad = do
-  let src      = CUDA.HostPtr (ptrsOfArrayData ad)
-      bytes    = n * sizeOf (undefined :: a)
-      st       = unsafeGetValue stream
+  let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
+      !bytes    = n * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
   --
   withDevicePtr ad $ \dst ->
     nonblocking stream $
@@ -379,6 +384,38 @@ copyArrayPeerAsyncR !ctx2 !mt2 !st !from !to !ad = do
     CUDA.copyArrayPeerAsync n (src `CUDA.plusDevPtr` offset) (deviceContext ctx1)
                               (dst `CUDA.plusDevPtr` offset) (deviceContext ctx2) (Just st)
 --}
+
+
+-- | Set elements of the array to the specified value. Only 8-, 16-, and 32-bit
+-- values are supported.
+--
+{-# INLINEABLE memsetArray #-}
+memsetArray
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a, BitSize a <= 32)
+    => Int
+    -> a
+    -> ArrayData e
+    -> LLVM PTX ()
+memsetArray !n !v !ad =
+  blocking $ \st -> memsetArrayAsync st n v ad
+
+{-# INLINEABLE memsetArrayAsync #-}
+memsetArrayAsync
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a, BitSize a <= 32)
+    => Stream
+    -> Int
+    -> a
+    -> ArrayData e
+    -> LLVM PTX ()
+memsetArrayAsync !stream !n !v !ad = do
+  let !bytes = n * sizeOf (undefined :: a)
+      !st    = unsafeGetValue stream
+  --
+  withDevicePtr ad $ \ptr ->
+    nonblocking stream $
+      transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
+  liftIO (touchLifetime stream)
+
 
 {--
 -- | Lookup the device memory associated with a given host array
