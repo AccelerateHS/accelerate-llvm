@@ -82,7 +82,6 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
-  scanl         = scanOp
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -229,42 +228,6 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   out <- allocateRemote sh
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
-  return out
-
-
-scanOp
-    :: Elt e
-    => ExecutableR PTX
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> DIM1
-    -> LLVM PTX (Vector e)
-scanOp kernel gamma aenv stream (Z :. n) =
-  scanCore kernel gamma aenv stream n
-
-scanCore
-    :: forall aenv e. Elt e
-    => ExecutableR PTX
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Int
-    -> LLVM PTX (Vector e)
-scanCore exe gamma aenv stream n = do
-  ptx <- gets llvmTarget
-  let
-    k1 = lookupKernel "scanP1" exe
-    -- k2 = lookupKernel "scanP2" exe
-    -- k3 = lookupKernel "scanP3" exe
-  --
-  out <- allocateRemote (Z :. n)
-  -- tmp <- allocateRemote (sh :. numBlocks)
-  liftIO $ do
-    executeOp ptx k1 mempty gamma aenv stream (IE 0 n) out
-    -- executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
-    -- executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) tmp
-    -- executeOp ptx k3 mempty gamma aenv stream (IE 0 numElements) (tmp, out)
   return out
 
 
