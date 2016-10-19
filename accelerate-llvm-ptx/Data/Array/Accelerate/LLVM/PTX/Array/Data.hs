@@ -21,11 +21,10 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Arrays, Array(..) )
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Array.Unique                       ( UniqueArray(..) )
 import Data.Array.Accelerate.Lifetime                           ( Lifetime(..) )
 import qualified Data.Array.Accelerate.Array.Representation     as R
-import qualified Data.Array.Accelerate.Array.Sugar              as Sugar
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.State
@@ -51,8 +50,8 @@ instance Remote PTX where
 
   {-# INLINEABLE allocateRemote #-}
   allocateRemote !sh = do
-    arr <- liftIO $ Sugar.allocateArray sh
-    runArray arr (\ad -> Prim.mallocArray (Sugar.size sh) ad >> return ad)
+    arr <- liftIO $ allocateArray sh
+    runArray arr (\ad -> Prim.mallocArray (size sh) ad >> return ad)
 
   {-# INLINEABLE useRemoteR #-}
   useRemoteR !n !mst !ad = do
@@ -154,4 +153,60 @@ copyToHostLazy arrs = do
         runR ArrayEltRcuchar        ad@(AD_CUChar ua)    = AD_CUChar  <$> peekR ad ua
     in
     Array sh <$> runR arrayElt adata
+
+
+-- | Clone an array into a newly allocated array on the device.
+--
+cloneArrayAsync
+    :: (Shape sh, Elt e)
+    => Stream
+    -> Array sh e
+    -> LLVM PTX (Array sh e)
+cloneArrayAsync stream arr@(Array _ src) = do
+  out@(Array _ dst) <- allocateRemote sh
+  copyR arrayElt src dst
+  return out
+  where
+    sh  = shape arr
+    n   = size sh
+
+    copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> LLVM PTX ()
+    copyR ArrayEltRunit             _   _   = return ()
+    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 = copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
+                                              copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
+    --
+    copyR ArrayEltRint              ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint8             ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint16            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint32            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint64            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword             ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword8            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword16           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword32           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword64           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRfloat            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRdouble           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRbool             ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRchar             ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcshort           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcushort          ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcint             ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcuint            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRclong            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRculong           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcllong           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcullong          ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcfloat           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcdouble          ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcchar            ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcschar           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcuchar           ad1 ad2 = copyPrim ad1 ad2
+
+    copyPrim
+        :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+        => ArrayData e
+        -> ArrayData e
+        -> LLVM PTX ()
+    copyPrim a1 a2 = Prim.copyArrayAsync stream n a1 a2
 
