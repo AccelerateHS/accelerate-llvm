@@ -27,6 +27,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   -- Other intrinsics
   laneId, warpId,
   laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge,
+  atomicAdd_f,
 
   -- Barriers and synchronisation
   __syncthreads,
@@ -41,8 +42,9 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
 ) where
 
-import Prelude                                                          as P
 import Control.Monad                                                    ( void )
+import Text.Printf
+import Prelude                                                          as P
 
 -- llvm
 import LLVM.General.AST.Type.AddrSpace
@@ -71,6 +73,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Context
@@ -198,6 +201,35 @@ __threadfence_block = barrier "llvm.nvvm.membar.cta"
 --
 __threadfence_grid :: CodeGen ()
 __threadfence_grid = barrier "llvm.nvvm.membar.gl"
+
+
+-- Atomic functions
+-- ----------------
+
+-- LLVM provides atomic instructions for integer arguments only. CUDA provides
+-- additional support for atomic add on floating point types, which can be
+-- accessed through the following intrinsics.
+--
+atomicAdd_f :: FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen ()
+atomicAdd_f t addr val =
+  let
+      width :: Int
+      width =
+        case t of
+          TypeFloat{}   -> 32
+          TypeDouble{}  -> 64
+          TypeCFloat{}  -> 32
+          TypeCDouble{} -> 64
+
+      addrspace :: Word32
+      (t_addr, t_val, addrspace) =
+        case typeOf addr of
+          PrimType ta@(PtrPrimType tv (AddrSpace as)) -> (ta, tv, as)
+          _                                           -> $internalError "atomicAdd" "unexpected operand type"
+
+      fun = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
+  in
+  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body VoidType fun))) [NoUnwind]
 
 
 -- Shared memory
