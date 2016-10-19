@@ -63,7 +63,9 @@ script:
         travis_retry cabal install
         travis_retry cabal haddock
       else
-        travis_retry stack build --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm        --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm-native --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm-ptx    --no-terminal --haddock --no-haddock-deps
       fi
 
 after_success:
