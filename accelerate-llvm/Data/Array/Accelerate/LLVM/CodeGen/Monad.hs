@@ -325,8 +325,9 @@ phi1 target crit incoming =
       t         = case incoming of
                     []        -> $internalError "phi" "no incoming values specified"
                     (o,_):_   -> case typeOf o of
-                                   VoidType   -> $internalError "phi" "operand has type void"
-                                   PrimType x -> x
+                                   VoidType    -> $internalError "phi" "operand has void type"
+                                   TupleType{} -> $internalError "phi" "operand has aggregate type"
+                                   PrimType x  -> x
   in
   state $ \s ->
     case Seq.findIndexR (cmp target) (blockChain s) of
