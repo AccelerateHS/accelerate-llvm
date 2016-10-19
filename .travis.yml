@@ -54,7 +54,7 @@ install:
       if [ ${GHC} == head -o ! -e stack.yaml ]; then
         travis_retry cabal install --only-dependencies
       else
-        travis_retry stack build --only-dependencies --no-terminal --no-haddock-deps
+        travis_retry stack build --only-dependencies --no-terminal --no-haddock-deps --ghc-options="+RTS -A64M -n2M -RTS"
       fi
 
 script:
@@ -63,9 +63,9 @@ script:
         travis_retry cabal install
         travis_retry cabal haddock
       else
-        travis_retry stack build accelerate-llvm        --no-terminal --haddock --no-haddock-deps
-        travis_retry stack build accelerate-llvm-native --no-terminal --haddock --no-haddock-deps
-        travis_retry stack build accelerate-llvm-ptx    --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm        --no-terminal --haddock --no-haddock-deps --ghc-options="+RTS -A648M -n2M -RTS"
+        travis_retry stack build accelerate-llvm-native --no-terminal --haddock --no-haddock-deps --ghc-options="+RTS -A648M -n2M -RTS"
+        travis_retry stack build accelerate-llvm-ptx    --no-terminal --haddock --no-haddock-deps --ghc-options="+RTS -A648M -n2M -RTS"
       fi
 
 after_success:
