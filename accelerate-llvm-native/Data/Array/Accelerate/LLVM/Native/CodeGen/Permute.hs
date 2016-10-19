@@ -13,8 +13,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
-  where
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute (
+
+  mkPermute,
+
+) where
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
@@ -136,6 +139,9 @@ mkPermuteP aenv IRPermuteFun{..} project arr =
     Just (rmw, f) -> mkPermuteP_rmw   aenv rmw f   project arr
 
 
+-- Parallel forward permutation function which uses atomic instructions to
+-- implement lock-free array updates.
+--
 mkPermuteP_rmw
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
@@ -188,6 +194,9 @@ mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
     return_
 
 
+-- Parallel forward permutation function which uses a spinlock to acquire
+-- a mutex before updating the value at that location.
+--
 mkPermuteP_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
