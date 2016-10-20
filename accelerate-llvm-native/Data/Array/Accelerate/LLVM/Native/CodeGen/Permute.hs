@@ -13,11 +13,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute (
-
-  mkPermute,
-
-) where
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
+  where
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )

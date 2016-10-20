@@ -24,20 +24,22 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Analysis.Match
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
-import Data.Array.Accelerate.Array.Sugar
-import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsync )
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold              ( matchShapeType )
+import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
-import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
@@ -172,7 +174,7 @@ foldOp exe gamma aenv stream sh@(sx :. _)
       _ -> foldCore exe gamma aenv stream sh
 
 foldCore
-    :: (Shape sh, Elt e)
+    :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
@@ -180,74 +182,55 @@ foldCore
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
 foldCore exe gamma aenv stream sh
-  | rank sh == 1  = foldAllOp exe gamma aenv stream sh
-  | otherwise     = foldDimOp exe gamma aenv stream sh
+  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  = foldAllOp exe gamma aenv stream sh
+
+  | otherwise
+  = foldDimOp exe gamma aenv stream sh
 
 
 foldAllOp
-    :: forall aenv z e. (Shape z, Elt e)
+    :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> (z :. Int)
-    -> LLVM PTX (Array z e)
-foldAllOp exe gamma aenv stream (sz :. n) = do
+    -> DIM1
+    -> LLVM PTX (Scalar e)
+foldAllOp exe gamma aenv stream (Z :. n) = do
   ptx <- gets llvmTarget
   let
       err     = $internalError "foldAll" "kernel not found"
-      k1      = fromMaybe err (lookupKernel "foldAllS"  exe)
+      ks      = fromMaybe err (lookupKernel "foldAllS"  exe)
       km1     = fromMaybe err (lookupKernel "foldAllM1" exe)
       km2     = fromMaybe err (lookupKernel "foldAllM2" exe)
-
-      -- See if we can compute this in a single step
-      steps   = kernelThreadBlocks k1 n
-
-  out   <- allocateRemote sz
-
-  if steps == 1
-    then liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 n) out
-    else error "foldAllOp/multi-block"
-
-  return out
-
-
-
-{--
-  ptx <- gets llvmTarget
-  let
-      (k1,k2)   = case ptxKernel exe of
-                    u:v:_       -> (u,v)
-                    _           -> $internalError "foldAllOp" "kernel not found"
-
-      foldIntro :: (sh :. Int) -> LLVM PTX (Array sh e)
-      foldIntro (sh:.sz) = do
-        let numElements       = size sh * sz
-            numBlocks         = (kernelThreadBlocks k1) numElements
-        --
-        out <- allocateRemote (sh :. numBlocks)
-        liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 numElements) out
-        foldRec out
-
-      foldRec :: Array (sh :. Int) e -> LLVM PTX (Array sh e)
-      foldRec out@(Array (sh,sz) adata) =
-        let numElements       = R.size sh * sz
-            numBlocks         = (kernelThreadBlocks k1) numElements
-        in if sz <= 1
-              then do
-                -- We have recursed to a single block already. Trim the
-                -- intermediate working vector to the final scalar array.
-                return $! Array sh adata
-
-              else do
-                -- Keep cooperatively reducing the output array in-place.
-                -- Note that we must continue to update the tracked size
-                -- so the recursion knows when to stop.
-                liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 numElements) out
-                foldRec $! Array (sh,numBlocks) adata
   --
-  foldIntro sh'
---}
+  if kernelThreadBlocks ks n == 1
+    then do
+      -- The array is small enough that we can compute it in a single step
+      out   <- allocateRemote Z
+      liftIO $ executeOp ptx ks mempty gamma aenv stream (IE 0 n) out
+      return out
+
+    else do
+      -- Multi-kernel reduction to a single element. The first kernel integrates
+      -- any delayed elements, and the second is called recursively until
+      -- reaching a single element.
+      let
+          rec :: Vector e -> LLVM PTX (Scalar e)
+          rec tmp@(Array ((),m) adata)
+            | m <= 1    = return $ Array () adata
+            | otherwise = do
+                let s = m `multipleOf` kernelThreadBlockSize km2
+                out   <- allocateRemote (Z :. s)
+                liftIO $ executeOp ptx km2 mempty gamma aenv stream (IE 0 s) (tmp, out)
+                rec out
+      --
+      let s = n `multipleOf` kernelThreadBlockSize km1
+      tmp   <- allocateRemote (Z :. s)
+      liftIO $ executeOp ptx km1 mempty gamma aenv stream (IE 0 s) tmp
+      rec tmp
+
 
 foldDimOp
     :: forall aenv sh e. (Shape sh, Elt e)

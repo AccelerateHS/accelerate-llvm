@@ -15,12 +15,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold (
-
-  mkFold,
-  mkFold1,
-
-) where
+module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
+  where
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
@@ -50,7 +46,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
-import Control.Monad                                                ( (>=>) )
+import Control.Monad                                                ( (>=>), (<=<) )
 import Data.String                                                  ( fromString )
 import Data.Typeable
 import Data.Bits                                                    as P
@@ -205,7 +201,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -214,6 +210,37 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM1" (paramGang ++ paramTmp ++ paramEnv) $ do
+
+    -- Each thread block cooperatively reduces a stripe of the input and stores
+    -- that value into a temporary array at a corresponding index. Since the
+    -- order of operations remains fixed, this method supports non-commutative
+    -- reductions.
+    --
+    tid   <- threadIdx
+    bid   <- blockIdx
+    gd    <- gridDim
+    bd    <- blockDim
+    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+
+    seg0  <- A.add numType start bid
+    for seg0
+      ( \seg -> A.lt scalarType seg end )
+      ( \seg -> A.add numType seg gd )
+      $ \seg -> do
+
+        -- Wait for all threads to catch up before beginning the stripe
+        __syncthreads
+
+        -- Bounds of the input array we will reduce between
+        from  <- A.mul numType seg  bd
+        step  <- A.add numType from bd
+        to    <- A.min scalarType sz step
+
+        -- Threads cooperatively reduce this stripe
+        reduceFromTo dev from to combine
+          (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
+          (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
+
     return_
 
 
@@ -231,10 +258,10 @@ mkFoldAllM2 dev aenv combine mseed =
   let
       (start, end, paramGang)   = gangParam
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -243,6 +270,42 @@ mkFoldAllM2 dev aenv combine mseed =
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+
+    -- Threads cooperatively reduce a stripe of the input (temporary) array
+    -- output from the first phase, storing the results into another temporary.
+    -- When only a single thread block remains, we have reached the final
+    -- reduction step and add the initial element (for exclusive reductions).
+    --
+    tid   <- threadIdx
+    bid   <- blockIdx
+    gd    <- gridDim
+    bd    <- blockDim
+
+    sz    <- A.fromIntegral integralType numType $ indexHead (irArrayShape arrTmp)
+    seg0  <- A.add numType start bid
+    for seg0
+      ( \seg -> A.lt scalarType seg end )
+      ( \seg -> A.add numType seg gd )
+      $ \seg -> do
+
+        -- Wait for all threads to catch up before beginning the stripe
+        __syncthreads
+
+        -- Bounds of the input we will reduce between
+        from  <- A.mul numType seg  bd
+        step  <- A.add numType from bd
+        to    <- A.min scalarType sz step
+
+        -- Threads cooperatively reduce this stripe
+        reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
+          when (A.eq scalarType tid (lift 0)) $
+            writeArray arrOut seg =<<
+              case mseed of
+                Nothing -> return r
+                Just z  -> if A.eq scalarType bd (lift 1)
+                             then flip (app2 combine) r =<< z   -- Note: initial element on the left
+                             else return r
+
     return_
 
 
@@ -515,6 +578,48 @@ reduceWarpSMem dev combine smem size = reduce 0
 --     -> CodeGen (IR e)                                           -- ^ final result
 -- reduceWarpShfl combine input =
 --   error "TODO: PTX.reduceWarpShfl"
+
+
+-- Reduction loops
+-- ---------------
+
+reduceFromTo
+    :: Elt a
+    => DeviceProperties
+    -> IR Int32                                 -- ^ starting index
+    -> IR Int32                                 -- ^ final index (exclusive)
+    -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
+    -> (IR Int32 -> CodeGen (IR a))             -- ^ function to retrieve element at index
+    -> (IR a -> CodeGen ())                     -- ^ what to do with the value
+    -> CodeGen ()
+reduceFromTo dev from to combine get set = do
+
+  tid   <- threadIdx
+  bd    <- blockDim
+
+  valid <- A.sub numType to from
+  i     <- A.add numType from tid
+
+  _     <- if A.gte scalarType valid bd
+             then do
+               -- All threads in the block will participate in the reduction, so
+               -- we can avoid bounds checks
+               x <- get i
+               r <- reduceBlockSMem dev combine Nothing x
+               set r
+
+               return (IR OP_Unit :: IR ())     -- unsightly, but free
+             else do
+               -- Only in-bounds threads can read their input and participate in
+               -- the reduction
+               when (A.lt scalarType i to) $ do
+                 x <- get i
+                 r <- reduceBlockSMem dev combine (Just valid) x
+                 set r
+
+               return (IR OP_Unit :: IR ())
+
+  return ()
 
 
 -- Utilities
