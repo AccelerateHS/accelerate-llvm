@@ -102,9 +102,27 @@ simpleOp
     -> sh
     -> LLVM PTX (Array sh e)
 simpleOp exe gamma aenv stream sh = do
-  let kernel    = case ptxKernel exe of
-                    k:_ -> k
-                    _   -> $internalError "simpleOp" "no kernels found"
+  let kernel  = case ptxKernel exe of
+                  k:_ -> k
+                  _   -> $internalError "simpleOp" "no kernels found"
+  --
+  out <- allocateRemote sh
+  ptx <- gets llvmTarget
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  return out
+
+simpleNamed
+    :: (Shape sh, Elt e)
+    => String
+    -> ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> LLVM PTX (Array sh e)
+simpleNamed fun exe gamma aenv stream sh = do
+  let kernel  = fromMaybe ($internalError "simpleNamed" ("not found: " ++ fun))
+              $ lookupKernel fun exe
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
@@ -134,11 +152,11 @@ fold1Op
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-fold1Op kernel gamma aenv stream sh@(sx :. sz)
+fold1Op exe gamma aenv stream sh@(sx :. sz)
   = $boundsCheck "fold1" "empty array" (sz > 0)
   $ case size sh of
-      0 -> allocateRemote sx
-      _ -> foldCore kernel gamma aenv stream sh
+      0 -> allocateRemote sx    -- empty, but possibly with one or more non-zero dimensions
+      _ -> foldCore exe gamma aenv stream sh
 
 foldOp
     :: (Shape sh, Elt e)
@@ -148,11 +166,10 @@ foldOp
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldOp kernel gamma aenv stream sh@(sx :. _)
-  = foldCore kernel gamma aenv stream
-  $ case size sh of
-      0 -> listToShape (P.map (max 1) (shapeToList sx)) :. 0
-      _ -> sh
+foldOp exe gamma aenv stream sh@(sx :. _)
+  = case size sh of
+      0 -> simpleNamed "generate" exe gamma aenv stream (listToShape (P.map (max 1) (shapeToList sx)))
+      _ -> foldCore exe gamma aenv stream sh
 
 foldCore
     :: (Shape sh, Elt e)
@@ -162,21 +179,41 @@ foldCore
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldCore kernel gamma aenv stream sh
-  | rank sh == 1  = foldAllOp kernel gamma aenv stream sh
-  | otherwise     = foldDimOp kernel gamma aenv stream sh
+foldCore exe gamma aenv stream sh
+  | rank sh == 1  = foldAllOp exe gamma aenv stream sh
+  | otherwise     = foldDimOp exe gamma aenv stream sh
 
--- See note: [Marshalling foldAll output arrays]
---
+
 foldAllOp
-    :: forall aenv sh e. (Shape sh, Elt e)
+    :: forall aenv z e. (Shape z, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> (sh :. Int)
-    -> LLVM PTX (Array sh e)
-foldAllOp exe gamma aenv stream sh' = do
+    -> (z :. Int)
+    -> LLVM PTX (Array z e)
+foldAllOp exe gamma aenv stream (sz :. n) = do
+  ptx <- gets llvmTarget
+  let
+      err     = $internalError "foldAll" "kernel not found"
+      k1      = fromMaybe err (lookupKernel "foldAllS"  exe)
+      km1     = fromMaybe err (lookupKernel "foldAllM1" exe)
+      km2     = fromMaybe err (lookupKernel "foldAllM2" exe)
+
+      -- See if we can compute this in a single step
+      steps   = kernelThreadBlocks k1 n
+
+  out   <- allocateRemote sz
+
+  if steps == 1
+    then liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 n) out
+    else error "foldAllOp/multi-block"
+
+  return out
+
+
+
+{--
   ptx <- gets llvmTarget
   let
       (k1,k2)   = case ptxKernel exe of
@@ -210,7 +247,7 @@ foldAllOp exe gamma aenv stream sh' = do
                 foldRec $! Array (sh,numBlocks) adata
   --
   foldIntro sh'
-
+--}
 
 foldDimOp
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -276,8 +313,8 @@ stencil1Op
     -> Stream
     -> Array sh a
     -> LLVM PTX (Array sh b)
-stencil1Op kernel gamma aenv stream arr
-  = simpleOp kernel gamma aenv stream (shape arr)
+stencil1Op exe gamma aenv stream arr
+  = simpleOp exe gamma aenv stream (shape arr)
 
 stencil2Op
     :: (Shape sh, Elt c)
@@ -288,8 +325,8 @@ stencil2Op
     -> Array sh a
     -> Array sh b
     -> LLVM PTX (Array sh c)
-stencil2Op kernel gamma aenv stream arr brr
-  = simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op exe gamma aenv stream arr brr
+  = simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
 
 
 -- Skeleton execution
@@ -304,7 +341,6 @@ defaultPPT = 32768
 {-# INLINE i32 #-}
 i32 :: Int -> Int32
 i32 = fromIntegral
-
 
 -- | Retrieve the named kernel
 --

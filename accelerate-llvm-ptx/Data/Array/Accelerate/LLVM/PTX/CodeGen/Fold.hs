@@ -106,31 +106,144 @@ mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
 
 -- Reduce an array to a single element.
 --
--- Thread blocks cooperatively reduce a stripe of the input (one element per
--- thread) to a single element, which is stored into a temporary array. This is
--- repeated recursively until only a single element remains.
+-- Since reductions consume arrays that have been fused into them, parallel
+-- reduction requires two separate kernels. At an example, take vector dot
+-- product:
 --
--- Since the input may be a delayed array, this process is implemented in two
--- kernels. The first phase incorporates any fused/embedded input arrays, while
--- the second (and subsequent) phases read from the manifest temporary array.
+-- > dotp xs ys = fold (+) 0 (zipWith (*) xs ys)
 --
--- TODO: This uses a static decomposition of the input space. However, for
---       architectures with fast atomic operations to global memory (which may
---       be all 2.0 and later architectures, constituting everything supported
---       by the LLVM-based toolchain), we might prefer to dynamically allocate
---       sections of the input as threads complete each block. We should
---       investigate this.
+-- 1. The first pass reads in the fused array data, in this case corresponding
+--    to the function (\i -> (xs!i) * (ys!i)).
+--
+-- 2. The second pass reads in the manifest array data from the first step and
+--    directly reduces the array. This can be done recursively in-place until
+--    only a single element remains.
+--
+-- In both phases, thread blocks cooperatively reduce a stripe of the input (one
+-- element per thread) to a single element, which is stored to the output array.
 --
 mkFoldAll
     :: forall aenv e. Elt e
     =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma            aenv                           -- ^ array environment
+    ->          Gamma         aenv                              -- ^ array environment
     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
     -> Maybe   (IRExp     PTX aenv e)                           -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Scalar e))
-mkFoldAll _dev _aenv _combine _mseed IRDelayed{..} =
-  error "TODO: PTX.mkFoldAll"
+mkFoldAll dev aenv combine mseed acc =
+  foldr1 (+++) <$> sequence [ mkFoldAllS  dev aenv combine mseed acc
+                            , mkFoldAllM1 dev aenv combine       acc
+                            , mkFoldAllM2 dev aenv combine mseed
+                            ]
+
+
+-- Reduction to an array to a single element, for small arrays which can be
+-- processed by a single thread block.
+--
+mkFoldAllS
+    :: forall aenv e. Elt e
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe   (IRExp     PTX aenv e)
+    ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+mkFoldAllS dev aenv combine mseed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
+      smem n                    = warps * (1 + per_warp) * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
+  in
+  makeOpenAccWith config "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    tid <- threadIdx
+    bd  <- blockDim
+
+    -- We can assume that there is only a single thread block
+    i0  <- A.add numType start tid
+    sz  <- A.sub numType end start
+    when (A.lt scalarType i0 end) $ do
+
+      -- Thread reads initial element and then participates in block-wide
+      -- reduction.
+      x0 <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+      r0 <- if A.eq scalarType sz bd
+              then reduceBlockSMem dev combine Nothing   x0
+              else reduceBlockSMem dev combine (Just sz) x0
+
+      when (A.eq scalarType tid (lift 0)) $
+        writeArray arrOut tid =<<
+          case mseed of
+            Nothing -> return r0
+            Just z  -> flip (app2 combine) r0 =<< z   -- Note: initial element on the left
+
+    return_
+
+
+-- Reduction of an entire array to a single element. This kernel implements step
+-- one for reducing large arrays which must be processed by multiple thread
+-- blocks.
+--
+mkFoldAllM1
+    :: forall aenv e. Elt e
+    =>          DeviceProperties                                -- ^ properties of the target GPU
+    ->          Gamma         aenv                              -- ^ array environment
+    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+mkFoldAllM1 dev aenv combine IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
+      paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      smem n                    = warps * (1 + per_warp) * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
+  in
+  makeOpenAccWith config "foldAllM1" (paramGang ++ paramTmp ++ paramEnv) $ do
+    return_
+
+
+-- Reduction of an array to a single element, (recursive) step 2 of multi-block
+-- reduction algorithm.
+--
+mkFoldAllM2
+    :: forall aenv e. Elt e
+    =>          DeviceProperties
+    ->          Gamma         aenv
+    ->          IRFun2    PTX aenv (e -> e -> e)
+    -> Maybe   (IRExp     PTX aenv e)
+    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+mkFoldAllM2 dev aenv combine mseed =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      smem n                    = warps * (1 + per_warp) * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
+  in
+  makeOpenAccWith config "foldAllM2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+    return_
 
 
 -- Reduce an array of arbitrary rank along the innermost dimension only.
@@ -146,7 +259,7 @@ mkFoldDim
     =>          DeviceProperties                                -- ^ properties of the target GPU
     ->          Gamma         aenv                              -- ^ array environment
     ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp PTX aenv e)                               -- ^ seed element, if this is an exclusive reduction
+    -> Maybe   (IRExp     PTX aenv e)                           -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFoldDim dev aenv combine mseed IRDelayed{..} =
@@ -250,7 +363,6 @@ mkFoldFill
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFoldFill ptx aenv seed =
   mkGenerate ptx aenv (IRFun1 (const seed))
-
 
 
 -- Efficient threadblock-wide reduction using the specified operator. The

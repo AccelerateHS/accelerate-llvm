@@ -14,6 +14,7 @@ module Data.Array.Accelerate.LLVM.PTX.Analysis.Launch (
 
   DeviceProperties, Occupancy, LaunchConfig,
   simpleLaunchConfig, launchConfig,
+  multipleOf,
 
 ) where
 
