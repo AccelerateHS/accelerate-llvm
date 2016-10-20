@@ -175,10 +175,7 @@ compileModuleNVPTX dev name mdl =
 
     -- Run the standard optimisation pass
     --
-    -- NOTE: Currently we require keeping this at level 2, otherwise incorrect
-    --       code is generated for multidimensional folds.
-    --
-    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 2 }
+    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
         runError e = either ($internalError "compileModuleNVPTX") id `fmap` runExceptT e
 
     LLVM.withPassManager pss $ \pm -> do
