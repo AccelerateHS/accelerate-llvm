@@ -21,7 +21,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  fresh, declare, intrinsic,
+  fresh, freshName,
+  declare,
+  intrinsic,
 
   -- basic blocks
   Block,

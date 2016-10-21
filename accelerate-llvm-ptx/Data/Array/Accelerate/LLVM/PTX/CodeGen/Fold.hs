@@ -459,7 +459,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
       skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem (int32 warp_smem_elems) skip
+      smem  <- dynamicSharedMem (int32 warp_smem_elems) skip
 
       -- Are we doing bounds checking for this warp?
       --
@@ -485,7 +485,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       bid   <- blockDim
       warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem warps skip
+      smem  <- dynamicSharedMem warps skip
 
       -- Share the per-lane aggregates
       wid   <- warpId

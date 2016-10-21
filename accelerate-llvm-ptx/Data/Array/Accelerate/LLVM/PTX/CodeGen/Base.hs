@@ -34,7 +34,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   __threadfence_block, __threadfence_grid,
 
   -- Shared memory
-  sharedMem,
+  staticSharedMem,
+  dynamicSharedMem,
 
   -- Kernel definitions
   (+++),
@@ -57,6 +58,7 @@ import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
+import qualified LLVM.General.AST.Linkage                               as LLVM
 import qualified LLVM.General.AST.Name                                  as LLVM
 import qualified LLVM.General.AST.Type                                  as LLVM
 
@@ -236,18 +238,49 @@ atomicAdd_f t addr val =
 -- Shared memory
 -- -------------
 
+-- Declare a new statically allocated array in the __shared__ memory address
+-- space, with enough storage to contain the given number of elements.
+--
+staticSharedMem
+    :: forall e. Elt e
+    => Word64
+    -> CodeGen (IRArray (Vector e))
+staticSharedMem n = do
+  ad    <- go (eltType (undefined::e))
+  return $ IRArray { irArrayShape = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
+                   , irArrayData  = IR ad
+                   }
+  where
+    go :: TupleType s -> CodeGen (Operands s)
+    go UnitTuple         = return OP_Unit
+    go (PairTuple t1 t2) = OP_Pair <$> go t1 <*> go t2
+    go (SingleTuple t)   = do
+      nm <- freshName
+      declare $ LLVM.globalVariableDefaults
+        { LLVM.addrSpace = LLVM.AddrSpace 3
+        , LLVM.type'     = LLVM.ArrayType n (downcast t)
+        , LLVM.linkage   = LLVM.Internal
+        , LLVM.name      = downcast nm
+        , LLVM.alignment = 4
+        }
+      return . ir' t $ ConstantOperand
+                     $ GlobalReference (PrimType (ArrayType n t)) nm
+
+
 -- External declaration in shared memory address space. This must be declared in
 -- order to access memory allocated dynamically by the CUDA driver. This results
 -- in the following global declaration:
 --
 -- > @__shared__ = external addrspace(3) global [0 x i8]
 --
-initialiseSharedMemory :: CodeGen (Operand (Ptr Word8))
-initialiseSharedMemory = do
+initialiseDynamicSharedMemory :: CodeGen (Operand (Ptr Word8))
+initialiseDynamicSharedMemory = do
   declare $ LLVM.globalVariableDefaults
     { LLVM.addrSpace = LLVM.AddrSpace 3
     , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
+    , LLVM.linkage   = LLVM.External
     , LLVM.name      = LLVM.Name "__shared__"
+    , LLVM.alignment = 4
     }
   return $ ConstantOperand $ GlobalReference type' "__shared__"
 
@@ -255,20 +288,20 @@ initialiseSharedMemory = do
 -- Declared a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
 --
-sharedMem
+dynamicSharedMem
     :: forall e int. (Elt e, IsIntegral int)
     => IR int                                 -- number of array elements
     -> IR int                                 -- #bytes of shared memory the have already been allocated
     -> CodeGen (IRArray (Vector e))
-sharedMem n@(op integralType -> m) (op integralType -> offset) = do
-  smem <- initialiseSharedMemory
+dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
+  smem <- initialiseDynamicSharedMemory
   let
       -- XXX: This is a hack because we can't create the evidence to traverse an
       -- 'EltRepr (Ptr a)' type and associated encoding with operands.
       ptr :: Operand (Ptr a) -> Operand a
       ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType t) (Name x)
       ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType t) (UnName x)
-      ptr _ = $internalError "sharedMem" "unexpected constant operand"
+      ptr _ = $internalError "dynamicSharedMem" "unexpected constant operand"
 
       go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
       go UnitTuple         i  = return (i, OP_Unit)
