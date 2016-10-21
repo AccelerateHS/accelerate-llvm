@@ -106,7 +106,7 @@ writeArrayPrim volatile arr i v = do
 ptr :: ScalarType t -> Operands t -> Operand (Ptr t)
 ptr t (op' t -> x) =
   let
-      ptr_t             = PrimType (PtrPrimType t defaultAddrSpace)
+      ptr_t             = PrimType (PtrPrimType (ScalarPrimType t) defaultAddrSpace)
       rename (Name n)   = Name n
       rename (UnName n) = UnName n
   in

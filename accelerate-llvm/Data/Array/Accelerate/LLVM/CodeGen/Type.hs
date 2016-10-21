@@ -100,8 +100,9 @@ instance TypeOf Instruction where
       Store _ _ _           -> VoidType
       GetElementPtr x _     -> typeOf x
       Fence _               -> VoidType
-      CmpXchg t _ _ _ _ _ _ -> TupleType $ UnitTuple `PairTuple` SingleTuple (NumScalarType (IntegralNumType t))
-                                                     `PairTuple` SingleTuple scalarType
+      CmpXchg t _ _ _ _ _ _ -> PrimType $ TupleType
+                             $ UnitTuple `PairTuple` SingleTuple (NumScalarType (IntegralNumType t))
+                                         `PairTuple` SingleTuple scalarType
       AtomicRMW _ _ _ _ x _ -> typeOf x
       FTrunc _ t _          -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
       FExt _ t _            -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))

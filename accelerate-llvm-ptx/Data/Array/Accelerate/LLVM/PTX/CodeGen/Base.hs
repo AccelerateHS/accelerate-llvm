@@ -224,8 +224,9 @@ atomicAdd_f t addr val =
       addrspace :: Word32
       (t_addr, t_val, addrspace) =
         case typeOf addr of
-          PrimType ta@(PtrPrimType tv (AddrSpace as)) -> (ta, tv, as)
-          _                                           -> $internalError "atomicAdd" "unexpected operand type"
+          PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
+            -> (ta, tv, as)
+          _ -> $internalError "atomicAdd" "unexpected operand type"
 
       fun = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
   in
@@ -265,8 +266,8 @@ sharedMem n@(op integralType -> m) (op integralType -> offset) = do
       -- XXX: This is a hack because we can't create the evidence to traverse an
       -- 'EltRepr (Ptr a)' type and associated encoding with operands.
       ptr :: Operand (Ptr a) -> Operand a
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType (ScalarPrimType t)) (Name x)
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType (ScalarPrimType t)) (UnName x)
+      ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType t) (Name x)
+      ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType t) (UnName x)
       ptr _ = $internalError "sharedMem" "unexpected constant operand"
 
       go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
@@ -277,7 +278,7 @@ sharedMem n@(op integralType -> m) (op integralType -> offset) = do
         return $ (i2, OP_Pair p2 p1)
       go (SingleTuple t)   i  = do
         p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
-        q <- instr' $ PtrCast (PtrPrimType t (AddrSpace 3)) p
+        q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) (AddrSpace 3)) p
         a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
         b <- instr' $ Add numType i a
         return (b, ir' t (ptr q))

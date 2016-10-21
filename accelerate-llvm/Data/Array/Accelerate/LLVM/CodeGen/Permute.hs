@@ -214,7 +214,7 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
   spin  <- newBlock "rmw.spin"
   exit  <- newBlock "rmw.exit"
 
-  addr' <- instr' $ PtrCast (PtrPrimType si defaultAddrSpace) addr
+  addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   init' <- instr' $ Load si NonVolatile addr'
   old'  <- fresh
   top   <- br spin
@@ -303,7 +303,7 @@ atomicCAS_cmp' t i cmp addr val | EltDict <- scalarElt t = do
   exit  <- newBlock "cas.exit"
 
   -- The new value and address to swap cast to integral type
-  addr' <- instr' $ PtrCast (PtrPrimType si defaultAddrSpace) addr
+  addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   val'  <- instr' $ BitCast si val
   old   <- fresh
 

@@ -304,7 +304,7 @@ ptr t x =
   let
       rename (Name n)   = Name n
       rename (UnName n) = UnName n
-      ptr_t             = PrimType (PtrPrimType t defaultAddrSpace)
+      ptr_t             = PrimType (PtrPrimType (ScalarPrimType t) defaultAddrSpace)
   in
   case x of
     LocalReference _ n -> LocalReference ptr_t (rename n)

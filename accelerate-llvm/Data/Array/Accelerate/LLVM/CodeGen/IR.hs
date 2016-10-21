@@ -156,24 +156,24 @@ class IROP dict where
 instance IROP Type where
   op VoidType     _  = LocalReference VoidType (Name []) -- TLM: ???
   op (PrimType t) x  = op t x
-  op TupleType{} _   = $internalError "op" "applied to aggregate structure"
 
   ir VoidType     _  = IR OP_Unit
   ir (PrimType t) x  = ir t x
-  ir TupleType{} _   = $internalError "ir" "applied to aggregate structure"
   --
   ir' VoidType     _ = OP_Unit
   ir' (PrimType t) x = ir' t x
-  ir' TupleType{} _  = $internalError "ir'" "applied to aggregate structure"
 
   op' VoidType     _ = LocalReference VoidType (Name [])  -- TLM: ???
   op' (PrimType t) x = op' t x
-  op' TupleType{} _  = $internalError "op'" "applied to aggregate structure"
 
 instance IROP PrimType where
-  op (ScalarPrimType t) = op t
-  op (PtrPrimType s _)  = scalar s
+  op = prim
     where
+      prim :: PrimType a -> IR a -> Operand a
+      prim (ScalarPrimType t)                 = op t
+      prim (PtrPrimType (ScalarPrimType t) _) = scalar t
+      prim _                                  = $internalError "op" "unexpected type"
+
       scalar :: ScalarType a -> IR (Ptr a) -> Operand (Ptr a)
       scalar (NonNumScalarType t) = nonnum t
       scalar (NumScalarType t)    = num t
@@ -215,9 +215,13 @@ instance IROP PrimType where
       floating TypeCFloat{}  (IR (OP_PtrCFloat  x)) = x
       floating TypeCDouble{} (IR (OP_PtrCDouble x)) = x
 
-  ir (ScalarPrimType t) = ir t
-  ir (PtrPrimType s _)  = scalar s
+  ir = prim
     where
+      prim :: PrimType a -> Operand a -> IR a
+      prim (ScalarPrimType t)                 = ir t
+      prim (PtrPrimType (ScalarPrimType t) _) = scalar t
+      prim _                                  = $internalError "ir" "unexpected type"
+
       scalar :: ScalarType a -> Operand (Ptr a) -> IR (Ptr a)
       scalar (NonNumScalarType t) = nonnum t
       scalar (NumScalarType t)    = num t
@@ -259,9 +263,13 @@ instance IROP PrimType where
       floating TypeCFloat{}  = IR . OP_PtrCFloat
       floating TypeCDouble{} = IR . OP_PtrCDouble
 
-  op' (ScalarPrimType t) = op' t
-  op' (PtrPrimType s _)  = scalar s
+  op' = prim
     where
+      prim :: PrimType a -> Operands a -> Operand a
+      prim (ScalarPrimType t)                 = op' t
+      prim (PtrPrimType (ScalarPrimType t) _) = scalar t
+      prim _                                  = $internalError "op'" "unexpected type"
+
       scalar :: ScalarType a -> Operands (Ptr a) -> Operand (Ptr a)
       scalar (NonNumScalarType t) = nonnum t
       scalar (NumScalarType t)    = num t
@@ -303,9 +311,13 @@ instance IROP PrimType where
       floating TypeCFloat{}  (OP_PtrCFloat  x) = x
       floating TypeCDouble{} (OP_PtrCDouble x) = x
 
-  ir' (ScalarPrimType t) = ir' t
-  ir' (PtrPrimType s _)  = scalar s
+  ir' = prim
     where
+      prim :: PrimType a -> Operand a -> Operands a
+      prim (ScalarPrimType t)                 = ir' t
+      prim (PtrPrimType (ScalarPrimType t) _) = scalar t
+      prim _                                  = $internalError "ir'" "unexpected type"
+
       scalar :: ScalarType a -> Operand (Ptr a) -> Operands (Ptr a)
       scalar (NonNumScalarType t) = nonnum t
       scalar (NumScalarType t)    = num t
