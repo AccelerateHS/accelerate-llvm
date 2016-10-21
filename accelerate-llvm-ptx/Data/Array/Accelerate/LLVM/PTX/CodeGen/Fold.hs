@@ -217,29 +217,23 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
     -- reductions.
     --
     tid   <- threadIdx
-    bid   <- blockIdx
-    gd    <- gridDim
     bd    <- blockDim
     sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
-    seg0  <- A.add numType start bid
-    for seg0
-      ( \seg -> A.lt scalarType seg end )
-      ( \seg -> A.add numType seg gd )
-      $ \seg -> do
+    imapFromTo start end $ \seg -> do
 
-        -- Wait for all threads to catch up before beginning the stripe
-        __syncthreads
+      -- Wait for all threads to catch up before beginning the stripe
+      __syncthreads
 
-        -- Bounds of the input array we will reduce between
-        from  <- A.mul numType seg  bd
-        step  <- A.add numType from bd
-        to    <- A.min scalarType sz step
+      -- Bounds of the input array we will reduce between
+      from  <- A.mul numType seg  bd
+      step  <- A.add numType from bd
+      to    <- A.min scalarType sz step
 
-        -- Threads cooperatively reduce this stripe
-        reduceFromTo dev from to combine
-          (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
-          (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
+      -- Threads cooperatively reduce this stripe
+      reduceFromTo dev from to combine
+        (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
+        (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
 
     return_
 
@@ -277,34 +271,28 @@ mkFoldAllM2 dev aenv combine mseed =
     -- reduction step and add the initial element (for exclusive reductions).
     --
     tid   <- threadIdx
-    bid   <- blockIdx
-    gd    <- gridDim
     bd    <- blockDim
-
     sz    <- A.fromIntegral integralType numType $ indexHead (irArrayShape arrTmp)
-    seg0  <- A.add numType start bid
-    for seg0
-      ( \seg -> A.lt scalarType seg end )
-      ( \seg -> A.add numType seg gd )
-      $ \seg -> do
 
-        -- Wait for all threads to catch up before beginning the stripe
-        __syncthreads
+    imapFromTo start end $ \seg -> do
 
-        -- Bounds of the input we will reduce between
-        from  <- A.mul numType seg  bd
-        step  <- A.add numType from bd
-        to    <- A.min scalarType sz step
+      -- Wait for all threads to catch up before beginning the stripe
+      __syncthreads
 
-        -- Threads cooperatively reduce this stripe
-        reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
-          when (A.eq scalarType tid (lift 0)) $
-            writeArray arrOut seg =<<
-              case mseed of
-                Nothing -> return r
-                Just z  -> if A.eq scalarType bd (lift 1)
-                             then flip (app2 combine) r =<< z   -- Note: initial element on the left
-                             else return r
+      -- Bounds of the input we will reduce between
+      from  <- A.mul numType seg  bd
+      step  <- A.add numType from bd
+      to    <- A.min scalarType sz step
+
+      -- Threads cooperatively reduce this stripe
+      reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
+        when (A.eq scalarType tid (lift 0)) $
+          writeArray arrOut seg =<<
+            case mseed of
+              Nothing -> return r
+              Just z  -> if A.eq scalarType bd (lift 1)
+                           then flip (app2 combine) r =<< z   -- Note: initial element on the left
+                           else return r
 
     return_
 
@@ -350,10 +338,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.
       --
-      gd    <- gridDim
-      bid   <- blockIdx
-      seg0  <- A.add numType start bid
-      for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
+      imapFromTo start end $ \seg -> do
 
         -- Wait for threads to catch up before starting this segment. We could
         -- also place this at the bottom of the loop, but here allows threads to
@@ -620,6 +605,21 @@ reduceFromTo dev from to combine get set = do
                return (IR OP_Unit :: IR ())
 
   return ()
+
+
+imapFromTo
+    :: IR Int32
+    -> IR Int32
+    -> (IR Int32 -> CodeGen ())
+    -> CodeGen ()
+imapFromTo start end body = do
+  bid <- blockIdx
+  gd  <- gridDim
+  --
+  i0  <- A.add numType start bid
+  for i0 (\i -> A.lt scalarType i end)
+         (\i -> A.add numType i gd)
+         body
 
 
 -- Utilities
