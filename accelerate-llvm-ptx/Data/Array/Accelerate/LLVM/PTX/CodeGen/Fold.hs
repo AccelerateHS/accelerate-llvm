@@ -218,7 +218,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
     --
     tid   <- threadIdx
     bd    <- blockDim
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    sz    <- i32 . indexHead =<< delayedExtent
 
     imapFromTo start end $ \seg -> do
 
@@ -272,7 +272,7 @@ mkFoldAllM2 dev aenv combine mseed =
     --
     tid   <- threadIdx
     bd    <- blockDim
-    sz    <- A.fromIntegral integralType numType $ indexHead (irArrayShape arrTmp)
+    sz    <- i32 . indexHead $ irArrayShape arrTmp
 
     imapFromTo start end $ \seg -> do
 
@@ -332,7 +332,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
     tid <- threadIdx
-    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    sz  <- i32 . indexHead =<< delayedExtent
     when (A.lt scalarType tid sz) $ do
 
       -- Thread blocks iterate over the outer dimensions, each thread block
@@ -607,6 +607,14 @@ reduceFromTo dev from to combine get set = do
   return ()
 
 
+
+-- Utilities
+-- ---------
+
+i32 :: IR Int -> CodeGen (IR Int32)
+i32 = A.fromIntegral integralType numType
+
+
 imapFromTo
     :: IR Int32
     -> IR Int32
@@ -620,10 +628,6 @@ imapFromTo start end body = do
   for i0 (\i -> A.lt scalarType i end)
          (\i -> A.add numType i gd)
          body
-
-
--- Utilities
--- ---------
 
 -- Match reified shape types
 --
