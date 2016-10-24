@@ -60,14 +60,14 @@ import Text.Printf
 --
 
 data Type a where
-  VoidType  ::                           Type ()
-  PrimType  :: PrimType a             -> Type a
+  VoidType  :: Type ()
+  PrimType  :: PrimType a -> Type a
 
 data PrimType a where
-  ScalarPrimType  :: ScalarType a -> PrimType a
-  PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)  -- volatility?
-  TupleType       :: TupleType (ProdRepr a) -> PrimType a         -- HAX: aggregate structures
-  ArrayType       :: Word64 -> ScalarType a -> PrimType a         -- HAX: static array
+  ScalarPrimType :: ScalarType a -> PrimType a
+  PtrPrimType    :: PrimType a -> AddrSpace -> PrimType (Ptr a)   -- volatility?
+  TupleType      :: TupleType (ProdRepr a) -> PrimType a          -- HAX: aggregate structures
+  ArrayType      :: Word64 -> ScalarType a -> PrimType a          -- HAX: static array
 
 
 -- | All types
