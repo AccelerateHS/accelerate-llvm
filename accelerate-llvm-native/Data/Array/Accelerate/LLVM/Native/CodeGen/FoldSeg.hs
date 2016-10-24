@@ -77,11 +77,11 @@ mkFold1Seg aenv combine arr seg =
 --
 mkFoldSegS
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>        Gamma            aenv
-    ->        IRFun2    Native aenv (e -> e -> e)
-    -> Maybe (IRExp     Native aenv e)
-    ->        IRDelayed Native aenv (Array (sh :. Int) e)
-    ->        IRDelayed Native aenv (Segments i)
+    =>          Gamma            aenv
+    ->          IRFun2    Native aenv (e -> e -> e)
+    -> Maybe   (IRExp     Native aenv e)
+    ->          IRDelayed Native aenv (Array (sh :. Int) e)
+    ->          IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegS aenv combine mseed arr seg =
   let
@@ -128,11 +128,11 @@ mkFoldSegS aenv combine mseed arr seg =
 --
 mkFoldSegP
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>        Gamma            aenv
-    ->        IRFun2    Native aenv (e -> e -> e)
-    -> Maybe (IRExp     Native aenv e)
-    ->        IRDelayed Native aenv (Array (sh :. Int) e)
-    ->        IRDelayed Native aenv (Segments i)
+    =>          Gamma            aenv
+    ->          IRFun2    Native aenv (e -> e -> e)
+    -> Maybe   (IRExp     Native aenv e)
+    ->          IRDelayed Native aenv (Array (sh :. Int) e)
+    ->          IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegP aenv combine mseed arr seg =
   let
