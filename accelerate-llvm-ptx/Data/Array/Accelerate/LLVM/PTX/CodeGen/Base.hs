@@ -57,7 +57,6 @@ import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
-import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
 import qualified LLVM.General.AST.Linkage                               as LLVM
 import qualified LLVM.General.AST.Name                                  as LLVM
@@ -240,6 +239,13 @@ atomicAdd_f t addr val =
 -- Shared memory
 -- -------------
 
+sharedMemAddrSpace :: AddrSpace
+sharedMemAddrSpace = AddrSpace 3
+
+sharedMemVolatility :: Volatility
+sharedMemVolatility = Volatile
+
+
 -- Declare a new statically allocated array in the __shared__ memory address
 -- space, with enough storage to contain the given number of elements.
 --
@@ -251,24 +257,33 @@ staticSharedMem n = do
   ad    <- go (eltType (undefined::e))
   return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
                    , irArrayData       = IR ad
-                   , irArrayAddrSpace  = AddrSpace 3
-                   , irArrayVolatility = Volatile
+                   , irArrayAddrSpace  = sharedMemAddrSpace
+                   , irArrayVolatility = sharedMemVolatility
                    }
   where
     go :: TupleType s -> CodeGen (Operands s)
     go UnitTuple         = return OP_Unit
     go (PairTuple t1 t2) = OP_Pair <$> go t1 <*> go t2
     go (SingleTuple t)   = do
+      -- Declare a new global reference for the statically allocated array
+      -- located in the __shared__ memory space.
       nm <- freshName
+      sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayType n t) sharedMemAddrSpace)) nm
       declare $ LLVM.globalVariableDefaults
-        { LLVM.addrSpace = LLVM.AddrSpace 3
+        { LLVM.addrSpace = sharedMemAddrSpace
         , LLVM.type'     = LLVM.ArrayType n (downcast t)
         , LLVM.linkage   = LLVM.Internal
         , LLVM.name      = downcast nm
         , LLVM.alignment = 4
         }
-      return . ir' t $ ConstantOperand
-                     $ GlobalReference (PrimType (ArrayType n t)) nm
+
+      -- Return a pointer to the first element of the __shared__ memory array.
+      -- We do this rather than just returning the global reference directly due
+      -- to how __shared__ memory needs to be indexed with the GEP instruction.
+      p <- instr' $ GetElementPtr sm [num numType 0, num numType 0 :: Operand Int32]
+      q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
+
+      return $ ir' t (unPtr q)
 
 
 -- External declaration in shared memory address space. This must be declared in
@@ -280,7 +295,7 @@ staticSharedMem n = do
 initialiseDynamicSharedMemory :: CodeGen (Operand (Ptr Word8))
 initialiseDynamicSharedMemory = do
   declare $ LLVM.globalVariableDefaults
-    { LLVM.addrSpace = LLVM.AddrSpace 3
+    { LLVM.addrSpace = sharedMemAddrSpace
     , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
     , LLVM.linkage   = LLVM.External
     , LLVM.name      = LLVM.Name "__shared__"
@@ -308,7 +323,7 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
         return $ (i2, OP_Pair p2 p1)
       go (SingleTuple t)   i  = do
         p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
-        q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) (AddrSpace 3)) p
+        q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
         a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
         b <- instr' $ Add numType i a
         return (b, ir' t (unPtr q))
@@ -317,8 +332,8 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
   IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
   return   $ IRArray { irArrayShape      = IR $ OP_Pair OP_Unit sz
                      , irArrayData       = IR ad
-                     , irArrayAddrSpace  = AddrSpace 3
-                     , irArrayVolatility = Volatile
+                     , irArrayAddrSpace  = sharedMemAddrSpace
+                     , irArrayVolatility = sharedMemVolatility
                      }
 
 
