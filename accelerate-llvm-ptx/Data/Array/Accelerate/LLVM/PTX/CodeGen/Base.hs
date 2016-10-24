@@ -43,10 +43,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
 ) where
 
-import Control.Monad                                                    ( void )
-import Text.Printf
-import Prelude                                                          as P
-
 -- llvm
 import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
@@ -81,6 +77,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
+
+-- standard library
+import Control.Applicative
+import Control.Monad                                                    ( void )
+import Text.Printf
+import Prelude                                                          as P
 
 
 -- Thread identifiers
