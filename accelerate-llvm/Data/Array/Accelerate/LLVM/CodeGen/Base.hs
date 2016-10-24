@@ -35,6 +35,7 @@ import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
@@ -92,6 +93,8 @@ irArray
 irArray n
   = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
             (travTypeToIR (undefined::e)  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
+            defaultAddrSpace
+            NonVolatile
 
 
 -- | Generate typed local names for array data components as well as function

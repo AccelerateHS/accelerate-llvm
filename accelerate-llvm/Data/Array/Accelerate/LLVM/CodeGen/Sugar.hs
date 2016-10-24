@@ -22,6 +22,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 
 ) where
 
+import LLVM.General.AST.Type.AddrSpace
+import LLVM.General.AST.Type.Instruction.Volatile
+
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 
@@ -72,8 +75,10 @@ data IRManifest arch aenv a where
 
 data IRArray a where
   IRArray :: (Shape sh, Elt e)
-          => { irArrayShape :: IR sh    -- Array extent
-             , irArrayData  :: IR e     -- Array payloads (should really be 'Ptr e')
+          => { irArrayShape       :: IR sh        -- Array extent
+             , irArrayData        :: IR e         -- Array payloads (should really be 'Ptr e')
+             , irArrayAddrSpace   :: AddrSpace
+             , irArrayVolatility  :: Volatility
              }
           -> IRArray (Array sh e)
 

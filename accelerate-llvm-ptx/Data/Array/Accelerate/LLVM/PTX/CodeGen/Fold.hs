@@ -542,12 +542,12 @@ reduceWarpSMem dev combine smem size = reduce 0
       | offset <- 1 `P.shiftL` step = do
           -- share input through buffer
           lane <- laneId
-          writeVolatileArray smem lane x
+          writeArray smem lane x
 
           -- update input if in range
           i   <- A.add numType lane (lift offset)
           x'  <- if valid i
-                   then app2 combine x =<< readVolatileArray smem i
+                   then app2 combine x =<< readArray smem i
                    else return x
 
           reduce (step+1) x'

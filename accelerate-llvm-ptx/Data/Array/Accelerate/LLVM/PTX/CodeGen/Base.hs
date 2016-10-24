@@ -52,6 +52,7 @@ import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
@@ -247,8 +248,10 @@ staticSharedMem
     -> CodeGen (IRArray (Vector e))
 staticSharedMem n = do
   ad    <- go (eltType (undefined::e))
-  return $ IRArray { irArrayShape = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
-                   , irArrayData  = IR ad
+  return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
+                   , irArrayData       = IR ad
+                   , irArrayAddrSpace  = AddrSpace 3
+                   , irArrayVolatility = Volatile
                    }
   where
     go :: TupleType s -> CodeGen (Operands s)
@@ -318,8 +321,10 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
   --
   (_, ad) <- go (eltType (undefined::e)) offset
   IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
-  return   $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit sz
-                     , irArrayData  = IR ad
+  return   $ IRArray { irArrayShape      = IR $ OP_Pair OP_Unit sz
+                     , irArrayData       = IR ad
+                     , irArrayAddrSpace  = AddrSpace 3
+                     , irArrayVolatility = Volatile
                      }
 
 
