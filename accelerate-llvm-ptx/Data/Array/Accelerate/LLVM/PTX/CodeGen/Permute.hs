@@ -35,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -157,7 +158,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
             , Just adata    <- gcast (irArrayData arrOut)
             , Just r'       <- gcast r
             -> do
-                  addr <- instr' $ GetElementPtr (ptr_cast s (op s adata)) [op integralType j]
+                  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   let
                       rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
@@ -314,7 +315,7 @@ atomically barriers i action = do
   skip <- newBlock "spinlock.critical-end"
   exit <- newBlock "spinlock.exit"
 
-  addr <- instr' $ GetElementPtr (ptr_cast scalarType (op integralType (irArrayData barriers))) [op integralType i]
+  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
   _    <- br spin
 
   -- Loop until this thread has completed its critical section. If the slot was
@@ -360,18 +361,4 @@ ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
                                                            y <- go tsz isz sz
                                                            land' x y
     go (SingleTuple t)     ig         sz              = A.eq t (ir t (scalar t ig)) (ir t (op' t sz))
-
-
--- XXX: hack because we can't properly manipulate pointer-type operands.
---
-ptr_cast :: ScalarType a -> Operand a -> Operand (Ptr a)
-ptr_cast t x =
-  let
-      rename (Name n)   = Name n
-      rename (UnName n) = UnName n
-      ptr_t             = PrimType (PtrPrimType (ScalarPrimType t) defaultAddrSpace)
-  in
-  case x of
-    LocalReference _ n -> LocalReference ptr_t (rename n)
-    ConstantOperand{}  -> $internalError "atomically" "expected local reference"
 

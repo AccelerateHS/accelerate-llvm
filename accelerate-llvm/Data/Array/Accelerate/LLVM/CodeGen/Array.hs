@@ -21,22 +21,19 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 ) where
 
 import Control.Applicative
-import Foreign.Ptr
 import Prelude                                                          hiding ( read )
 
 import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 
@@ -51,9 +48,9 @@ readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operan
 readArrayData as v ix = read
   where
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
-    read UnitTuple          OP_Unit        = return OP_Unit
-    read (PairTuple t2 t1) (OP_Pair a2 a1) = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (SingleTuple t)   (ptr t -> arr)  = ir' t   <$> readArrayPrim t volatile arr ix
+    read UnitTuple          OP_Unit                  = return OP_Unit
+    read (PairTuple t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (SingleTuple t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
 
 readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen (Operand e)
 readArrayPrim t v arr ix = do
@@ -73,29 +70,13 @@ writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Opera
 writeArrayData as v ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
-    write UnitTuple          OP_Unit         OP_Unit        = return ()
-    write (PairTuple t2 t1) (OP_Pair a2 a1) (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (SingleTuple t)   (ptr t -> arr)  (op' t -> val)  = writeArrayPrim volatile arr ix val
+    write UnitTuple          OP_Unit                   OP_Unit        = return ()
+    write (PairTuple t2 t1) (OP_Pair a2 a1)           (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
+    write (SingleTuple t)   (asPtr as . op' t -> arr) (op' t -> val)  = writeArrayPrim v arr ix val
 
 writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
 writeArrayPrim v arr i x = do
   p <- instr' $ GetElementPtr arr [i]
   _ <- instr' $ Store v p x
   return ()
-
-
--- TODO: We should have IRArray store the array payloads with pointer type,
---       rather than faking it here.
---
-ptr :: ScalarType t -> Operands t -> Operand (Ptr t)
-ptr t (op' t -> x) =
-  let
-      ptr_t             = PrimType (PtrPrimType (ScalarPrimType t) defaultAddrSpace)
-      rename (Name n)   = Name n
-      rename (UnName n) = UnName n
-  in
-  case x of
-    LocalReference _ n                    -> LocalReference ptr_t (rename n)
-    ConstantOperand (GlobalReference _ n) -> ConstantOperand (GlobalReference ptr_t (rename n))
-    ConstantOperand ScalarConstant{}      -> $internalError "read/writeArray" "unexpected scalar constant"
 

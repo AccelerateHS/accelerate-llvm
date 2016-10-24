@@ -75,6 +75,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
@@ -299,13 +300,6 @@ dynamicSharedMem
 dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
   smem <- initialiseDynamicSharedMemory
   let
-      -- XXX: This is a hack because we can't create the evidence to traverse an
-      -- 'EltRepr (Ptr a)' type and associated encoding with operands.
-      ptr :: Operand (Ptr a) -> Operand a
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType t) (Name x)
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType t) (UnName x)
-      ptr _ = $internalError "dynamicSharedMem" "unexpected constant operand"
-
       go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
       go UnitTuple         i  = return (i, OP_Unit)
       go (PairTuple t2 t1) i0 = do
@@ -317,7 +311,7 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
         q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) (AddrSpace 3)) p
         a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
         b <- instr' $ Add numType i a
-        return (b, ir' t (ptr q))
+        return (b, ir' t (unPtr q))
   --
   (_, ad) <- go (eltType (undefined::e)) offset
   IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
