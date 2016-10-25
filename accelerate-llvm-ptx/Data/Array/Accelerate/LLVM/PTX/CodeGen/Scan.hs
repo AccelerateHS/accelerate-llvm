@@ -1,12 +1,11 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PatternGuards       #-}
+{-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
-{-# LANGUAGE PatternGuards       #-}
-{-# LANGUAGE RebindableSyntax    #-}
-
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 -- Copyright   : [2016] Trevor L. McDonell
@@ -321,6 +320,7 @@ mkScanAllP3 dev aenv combine mseed =
 --}
 
 
+{--
 -- Efficient threadblock-wide scan using the specified operator.
 --
 -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
@@ -397,16 +397,18 @@ scanBlockSMem dev combine size = warpScan -- >=> warpAggregate
       warpNum <- return (P.fromIntegral . CUDA.warpSize $ dev)
       element <- readArray smem (int32 0)
       recursiveAggregate 1 warpNum input combine size smem element
+--}
 
-
+{--
 -- Whether or not the partial belonging to the current thread is valid
 isThreadValid :: IR Int32 -> Maybe (IR Int32) -> CodeGen (IR Bool)
 isThreadValid tid size =
   case size of
     Nothing -> return (lift True)
     Just n  -> A.lt scalarType tid n
+--}
 
-
+{--
 -- Unfold the aggregate warps process as a recursive code generation function.
 recursiveAggregate :: forall aenv e. Elt e
                    => Int32
@@ -431,42 +433,53 @@ recursiveAggregate step warps partial combine size smem blockAggregate
       blockAggregate' <- app2 combine blockAggregate =<<
         readArray smem (lift step)
       recursiveAggregate (step+1) warps partial' combine size smem blockAggregate'
+--}
 
 
+-- Efficient warp-wide scan using the specified operator.
+--
+-- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
+-- routine assumes that it is allocated individually per-warp (i.e. can be
+-- indexed in the range [0, warp size)).
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/warp/specializations/warp_scan_smem.cuh
+--
 scanWarpSMem
-  :: forall aenv e. Elt e
-  => DeviceProperties
-  -> IRFun2 PTX aenv (e -> e -> e)
-  -> IRArray (Vector e)
-  -> Maybe (IR Int32)
-  -> IR e
-  -> CodeGen (IR e)
-scanWarpSMem dev combine smem size = scanStep 0
+    :: forall aenv e. Elt e
+    => DeviceProperties                             -- ^ properties of the target device
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
+    -> Maybe (IR Int32)                             -- ^ number of items to be processed by this warp, otherwise all lanes valid
+    -> IR e                                         -- ^ calling thread's input element
+    -> CodeGen (IR e)
+scanWarpSMem dev combine smem _size = scan 0
   where
     log2 :: Double -> Double
     log2 = P.logBase 2
 
-    -- Number steps required to scan warp: log2(warpSize)
-    steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
+    -- Number of steps required to scan warp
+    steps     = P.floor (log2 (P.fromIntegral (CUDA.warpSize dev)))
+    halfWarp  = P.fromIntegral (CUDA.warpSize dev `div` 2)
 
-    -- valid i =
-    --   case size of
-    --     Nothing -> return (lift True)
-    --     Just n  -> A.lt scalarType i n
-
-    -- unfold the scan as a recursive code generation function
-    scanStep :: Int -> IR e -> CodeGen (IR e)
-    scanStep step x
-      | step >= 1               = return x
+    -- Unfold the scan as a recursive code generation function
+    scan :: Int -> IR e -> CodeGen (IR e)
+    scan step x
+      | step >= steps               = return x
       | offset <- 1 `P.shiftL` step = do
-        -- share input through buffer
-        lane <-laneId
-        idx  <- A.add numType lane (lift . P.fromIntegral $ (CUDA.warpSize dev) `div` 2) -- lane_id + HALF_WARP_SIZE
-        writeVolatileArray smem idx x
-        i  <- A.sub numType idx (lift offset)             -- lane_id + HALF_WARP_SIZE - offset
-        x' <- if A.gte scalarType lane (lift offset)      -- TODO: warp divergence
-                 then app2 combine x =<< readVolatileArray smem i
-                 else return x
+          -- share partial result through shared memory buffer
+          lane <- laneId
+          i    <- A.add numType lane (lift halfWarp)
+          writeArray smem i x
 
-        scanStep (step + 1) x'
+          -- update partial result if in range
+          x'   <- if A.gte scalarType lane (lift offset)
+                    then do
+                      i' <- A.sub numType i (lift offset)     -- lane + HALF_WARP - offset
+                      x' <- readArray smem i'
+                      app2 combine x' x
+
+                    else
+                      return x
+
+          scan (step+1) x'
 
