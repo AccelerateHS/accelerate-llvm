@@ -127,6 +127,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
     -- block reduces. Note that this is a segment-offset array computed by
     -- 'scanl (+) 0' of the segment length array, so its size has increased by
     -- one.
+    --
     sz    <- i32 . indexHead =<< delayedExtent arr
     ss    <- do n <- i32 . indexHead =<< delayedExtent seg
                 A.sub numType n (lift 1)

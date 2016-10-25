@@ -85,6 +85,10 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  scanl         = scanOp
+  scanl1        = scan1Op
+  scanr         = scanOp
+  scanr1        = scan1Op
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -251,6 +255,55 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
   return out
+
+
+scanOp
+    :: Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scanOp exe gamma aenv stream (Z :. n)
+  = scanCore exe gamma aenv stream n (n+1)
+
+scan1Op
+    :: Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scan1Op exe gamma aenv stream (Z :. n)
+  = $boundsCheck "scan1" "empty array" (n > 0)
+  $ scanCore exe gamma aenv stream n n
+
+scanCore
+    :: forall aenv e. Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int                    -- input size
+    -> Int                    -- output size
+    -> LLVM PTX (Vector e)
+scanCore exe gamma aenv stream n m = do
+  let
+      err = $internalError "scanCore" "kernel not found"
+      k1  = fromMaybe err (lookupKernel "scanP1" exe)
+      --
+      s   = n `multipleOf` kernelThreadBlockSize k1
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (Z :. m)
+  tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
+  liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 n) (i32 s, out, tmp)
+
+  if s > 1
+    then $internalError "scanCore" "multi-block scan not implemented yet"
+    else return out
 
 
 permuteOp

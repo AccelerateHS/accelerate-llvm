@@ -24,9 +24,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Scalar, Vector, Elt, eltType )
 
 -- accelerate-llvm-*
 import LLVM.General.AST.Type.Representation
@@ -41,23 +40,18 @@ import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 
 -- cuda
-import Foreign.CUDA.Analysis                                        ( DeviceProperties )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
-import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>) )
 import Data.String                                                  ( fromString )
-import Data.Typeable
 import Data.Bits                                                    as P
-import Prelude                                                      as P
+import Prelude                                                      as P hiding ( last )
 
 
 data Direction = L | R
@@ -100,7 +94,8 @@ mkScanl1
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
 mkScanl1 (deviceProperties . ptxContext -> dev) aenv combine arr =
-  error "TODO: mkScanl1"
+  foldr1 (+++) <$> sequence [ mkScanP1 L dev aenv combine Nothing arr
+                            ]
 
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
@@ -119,7 +114,7 @@ mkScanl'
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
-mkScanl' (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+mkScanl' (deviceProperties . ptxContext -> _dev) _aenv _combine _seed _arr =
   error "TODO: mkScanl'"
 
 
@@ -139,7 +134,7 @@ mkScanr
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
-mkScanr (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+mkScanr (deviceProperties . ptxContext -> _dev) _aenv _combine _seed _arr =
   error "TODO: mkScanr"
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
@@ -157,7 +152,7 @@ mkScanr1
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
-mkScanr1 (deviceProperties . ptxContext -> dev) aenv combine arr =
+mkScanr1 (deviceProperties . ptxContext -> _dev) _aenv _combine _arr =
   error "TODO: mkScanr1"
 
 -- Variant of 'scanr' where the final result is returned in a separate array.
@@ -176,7 +171,7 @@ mkScanr'
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
-mkScanr' (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+mkScanr' (deviceProperties . ptxContext -> _dev) _aenv _combine _seed _arr =
   error "mkScanr'"
 
 
@@ -186,9 +181,8 @@ mkScanr' (deviceProperties . ptxContext -> dev) aenv combine seed arr =
 -- Parallel scan, step 1.
 --
 -- Threads scan a stripe of the input into a temporary array, incorporating the
--- initial element and any fused functions along the way. The final reduction
--- result of this chunk is written into a separate array, which will be used to
--- compute the carry-in value.
+-- initial element and any fused functions on the way. The final reduction
+-- result of this chunk is written to a separate array.
 --
 mkScanP1
     :: forall aenv e. Elt e
@@ -203,59 +197,98 @@ mkScanP1 dir dev aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
+      paramSteps                = scalarParameter scalarType ("ix.steps"  :: Name Int32)
+      steps                     = local           scalarType ("ix.steps"  :: Name Int32)
+      --
       config                    = launchConfig dev (CUDA.incPow2 dev) smem const
-      smem n                    = warps * per_warp * bytes
+      smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `div` ws
           per_warp  = ws + ws `div` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scanP1" (paramGang ++ paramOut ++ paramEnv) $ do
-    tid <- threadIdx
-    x   <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType tid
-    r   <- scanBlockSMem dev combine Nothing x
-    writeArray arrOut tid r
+  makeOpenAccWith config "scanP1" (paramGang ++ paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    -- gd       <- gridDim
-    -- bid      <- blockIdx
-    -- bd       <- blockDim
-    -- tid      <- threadIdx
-    -- sz       <- A.fromIntegral integralType numType . indexHead =<< delayedExtent -- size of input array
+    len <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
-    -- -- Divide the array by blockDim
-    -- a0       <- A.add numType sz bd
-    -- a1       <- A.sub numType a0 (lift 1)
-    -- numBlock <- A.quot integralType a1 bd -- numBlock = (size + blockDim - 1) / blockDim
+    -- A thread block scans a non-empty stripe of the input, storing the final
+    -- block-wide aggregate into a separate array
+    --
+    -- For exclusive scans, thread 0 of segment 0 must incorporate the initial
+    -- element into the input and output. Threads shuffle their indices
+    -- appropriately.
+    --
+    bid <- blockIdx
+    gd  <- gridDim
+    s0  <- A.add numType start bid
 
-    -- start'   <- return (lift 0)
-    -- end'     <- return numBlock
+    imapFromStepTo s0 gd end $ \chunk -> do
 
-    -- when (A.lt scalarType tid sz) $ do
+      bd  <- blockDim
+      inf <- A.mul numType chunk bd
+      a   <- A.add numType inf   bd
+      sup <- A.min scalarType a len
 
-    --   -- Thread blocks iterate over the entire array
-    --   seg0  <- A.add numType start' bid         -- bid
-    --   Loop.for seg0 (\seg -> A.lt scalarType seg end') (\seg -> A.add numType seg gd) $ \seg -> do
-    --     -- bid, bid + sg, bid + 2*sg ...
+      -- index i* is the index that this thread will read data from. Recall that
+      -- the supremum index is exclusive
+      tid <- threadIdx
+      i0  <- case dir of
+               L -> A.add numType inf tid
+               R -> do x <- A.sub numType sup tid
+                       y <- A.sub numType x (lift 1)
+                       return y
 
-    --     -- Wait for threads to catch up before starting this segment. We could
-    --     -- also place this at the bottom of the loop, but here allows threads to
-    --     -- exit quickly on the last iteration.
-    --     __syncthreads
+      -- index j* is the index that we write to. Recall that for exclusive scans
+      -- the output array is one larger than the input; the initial element will
+      -- be written into this spot by thread 0 of the first thread block.
+      j0  <- case mseed of
+               Nothing -> return i0
+               Just _  -> case dir of
+                            L -> A.add numType i0 (lift 1)
+                            R -> A.sub numType i0 (lift 1)
 
-    --     from  <- A.mul numType seg  bd          -- first linear index this block will scan
-    --     toTmp <- A.add numType from bd
-    --     to    <- if A.lt scalarType sz toTmp    -- last  linear index this block will scan
-    --                 then return sz
-    --                 else return toTmp
-    --     valid <- A.sub numType to from          -- number of valid elements
+      -- If this thread has input, read data and participate in thread-block scan
+      let valid i = case dir of
+                      L -> A.lt  scalarType i sup
+                      R -> A.gte scalarType i inf
 
-    --     i     <- A.add numType from tid
-    --     x     <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-    --     r1    <- scanBlockSMem dev combine (Just valid) x
-    --     writeArray arrOut i r1
+      when (valid i0) $ do
+        x0 <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+        x1 <- case mseed of
+                Nothing   -> return x0
+                Just seed ->
+                  let firstChunk = case dir of
+                                     L -> lift 0
+                                     R -> steps
+                  in
+                  if A.eq scalarType tid (lift 0) `A.land` A.eq scalarType chunk firstChunk
+                    then do
+                      z <- seed
+                      case dir of
+                        L -> writeArray arrOut (lift 0 :: IR Int32) z >> app2 combine z x0
+                        R -> writeArray arrOut len                  z >> app2 combine x0 z
+                    else
+                      return x0
+
+        n  <- A.sub numType sup inf
+        x2 <- if A.gte scalarType n bd
+                then scanBlockSMem dev combine Nothing  x1
+                else scanBlockSMem dev combine (Just n) x1
+
+        -- Write this thread's scan result to memory
+        writeArray arrOut j0 x2
+
+        -- The last thread also writes its result---the aggregate for this
+        -- thread block---to the temporary partial sums array. This is only
+        -- necessary for full blocks; the final partially-full tile does not
+        -- have a successor block that we need to compute a carry-in value for.
+        last <- A.sub numType bd (lift 1)
+        when (A.eq scalarType tid last) $
+          writeArray arrTmp chunk x2
 
     return_
 
