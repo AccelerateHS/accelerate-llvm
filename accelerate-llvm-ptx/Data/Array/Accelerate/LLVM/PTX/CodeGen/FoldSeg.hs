@@ -175,7 +175,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
                 else reduceBlockSMem dev combine (Just v0) x0
 
         next <- A.add numType inf bd
-        r    <- iter next r0 (\i -> A.lt scalarType i sup) (\i -> A.add numType i bd) $ \offset r -> do
+        r    <- iterFromStepTo next bd sup r0 $ \offset r -> do
 
           -- Wait for threads to catch up before beginning the next stripe
           __syncthreads

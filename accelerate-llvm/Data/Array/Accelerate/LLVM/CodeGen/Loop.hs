@@ -16,7 +16,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Prelude                                                  hiding ( fst, snd, uncurry )
 import Control.Monad
 
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar                        hiding ( iter )
+
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -36,6 +38,40 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 --     -> (IR sh -> CodeGen (IR a))                -- ^ body of the loop
 --     -> CodeGen (IR a)
 -- iterate from to body = error "CodeGen.Loop.iterate"
+
+
+-- | Execute the given function at each index in the range
+--
+imapFromStepTo
+    :: (IsNum i, Elt i)
+    => IR i                                     -- ^ starting index (inclusive)
+    -> IR i                                     -- ^ step size
+    -> IR i                                     -- ^ final index (exclusive)
+    -> (IR i -> CodeGen ())                     -- ^ loop body
+    -> CodeGen ()
+imapFromStepTo start step end body =
+  for start
+      (\i -> lt scalarType i end)
+      (\i -> add numType i step)
+      body
+
+
+-- | Iterate with an accumulator between given start and end indices, executing
+-- the given function at each.
+--
+iterFromStepTo
+    :: (IsNum i, Elt i, Elt a)
+    => IR i                                     -- ^ starting index (inclusive)
+    -> IR i                                     -- ^ step size
+    -> IR i                                     -- ^ final index (exclusive)
+    -> IR a                                     -- ^ initial value
+    -> (IR i -> IR a -> CodeGen (IR a))         -- ^ loop body
+    -> CodeGen (IR a)
+iterFromStepTo start step end seed body =
+  iter start seed
+       (\i -> lt scalarType i end)
+       (\i -> add numType i step)
+       body
 
 
 -- | A standard 'for' loop.
