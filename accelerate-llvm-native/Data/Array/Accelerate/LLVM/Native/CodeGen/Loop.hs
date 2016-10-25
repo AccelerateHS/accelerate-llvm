@@ -12,11 +12,9 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
   where
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
