@@ -320,123 +320,80 @@ mkScanAllP3 dev aenv combine mseed =
 --}
 
 
-{--
--- Efficient threadblock-wide scan using the specified operator.
+-- Efficient block-wide (inclusive) scan using the specified operator.
 --
--- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
+-- Each block requires (#warps * (1 + 1.5*warp size)) elements of dynamically
+-- allocated shared memory.
 --
--- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_scan_warp_scans.cuh
+-- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/block/specializations/block_scan_warp_scans.cuh
 --
 scanBlockSMem
     :: forall aenv e. Elt e
-    => DeviceProperties                                         -- ^ properties of the target device
-    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
-    -> Maybe (IR Int32)                                         -- ^ number of valid elements (may be less than block size)
-    -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ thread-block-wide scan using the specified operator (lane 0 only)
-scanBlockSMem dev combine size = warpScan -- >=> warpAggregate
+    => DeviceProperties                             -- ^ properties of the target device
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe (IR Int32)                             -- ^ number of valid elements (may be less than block size)
+    -> IR e                                         -- ^ calling thread's input element
+    -> CodeGen (IR e)
+scanBlockSMem dev combine size = warpScan >=> warpPrefix
   where
-    int32 :: Integral a => a -> IR Int32
+    int32 :: Integral a => a -> IR (Int32)
     int32 = lift . P.fromIntegral
 
     -- Temporary storage required for each warp
-    bytes           = sizeOf (eltType (undefined::e))
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+    warp_smem_bytes = warp_smem_elems  * sizeOf (eltType (undefined::e))
 
     -- Step 1: Scan in every warp
-    --
     warpScan :: IR e -> CodeGen (IR e)
     warpScan input = do
-      -- for debug: allocate (1.5*warpSize) size shared memory for one warp
-      smem  <- sharedMem (int32 warp_smem_elems) (int32 0)
-      scanWarpSMem dev combine smem Nothing input
-
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
-      -- wid   <- warpId
-      -- skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      -- smem  <- sharedMem (int32 warp_smem_elems) skip
+      -- (individually addressable by each warp)
+      wid   <- warpId
+      skip  <- A.mul numType wid (int32 warp_smem_bytes)
+      smem  <- dynamicSharedMem (int32 warp_smem_elems) skip
+      scanWarpSMem dev combine smem input
 
-      -- -- Are we doing bounds checking for this warp?
-      -- --
-      -- case size of
-      --   -- The entire thread block is valid, so skip bounds checks.
-      --   Nothing ->
-      --     scanWarpSMem dev combine smem Nothing input
-
-      --   -- Otherwise check how many elements are valid for this warp. If it is
-      --   -- full then we can still skip bounds checks for it.
-      --   Just n -> do
-      --     offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
-      --     valid  <- A.sub numType n offset
-      --     if A.gte scalarType valid (int32 (CUDA.warpSize dev))
-      --       then scanWarpSMem dev combine smem Nothing input
-      --       else scanWarpSMem dev combine smem (Just valid) input
-
-    -- ATTENTION
-    -- Step 2: Aggregate per-warp scan
-    --
-    warpAggregate :: IR e -> CodeGen (IR e)
-    warpAggregate input = do
+    -- Step 2: Collect the aggregate results of each warp to compute the prefix
+    -- values for each warp and combine with the partial result to compute each
+    -- thread's final value.
+    warpPrefix :: IR e -> CodeGen (IR e)
+    warpPrefix input = do
       -- Allocate #warps elements of shared memory
-      bid   <- blockDim
-      warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
-      skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem warps skip
+      bd    <- blockDim
+      warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
+      skip  <- A.mul numType warps (int32 warp_smem_bytes)
+      smem  <- dynamicSharedMem warps skip
 
-      -- Share the per-lane aggregates
+      -- Share warp aggregates
       wid   <- warpId
       lane  <- laneId
-      lastLane <- return (int32 (CUDA.warpSize dev - 1))
-      when (A.eq scalarType lane lastLane) $ do
+      when (A.eq scalarType lane (int32 (CUDA.warpSize dev - 1))) $ do
         writeArray smem wid input
 
-      -- Wait for each warp to finish its local scan
+      -- Wait for each warp to finish its local scan and share the aggregate
       __syncthreads
 
-      -- ATTENTION
-      warpNum <- return (P.fromIntegral . CUDA.warpSize $ dev)
-      element <- readArray smem (int32 0)
-      recursiveAggregate 1 warpNum input combine size smem element
---}
+      -- Compute the prefix value for this warp and add to the partial result.
+      -- This step is not required for the first warp, which has no carry-in.
+      if A.eq scalarType wid (lift 0)
+        then return input
+        else do
+          -- Every thread sequentially scans the warp aggregates to compute
+          -- their prefix value. We do this sequentially, but could also have
+          -- warp 0 do it cooperatively if we limit thread block sizes to
+          -- (warp size ^ 2).
+          steps  <- case size of
+                      Nothing -> return wid
+                      Just n  -> A.min scalarType wid =<< A.quot integralType n (int32 (CUDA.warpSize dev))
 
-{--
--- Whether or not the partial belonging to the current thread is valid
-isThreadValid :: IR Int32 -> Maybe (IR Int32) -> CodeGen (IR Bool)
-isThreadValid tid size =
-  case size of
-    Nothing -> return (lift True)
-    Just n  -> A.lt scalarType tid n
---}
+          p0     <- readArray smem (lift 0 :: IR Int32)
+          prefix <- iterFromStepTo (lift 1) (lift 1) steps p0 $ \step x ->
+                      app2 combine x =<< readArray smem step
 
-{--
--- Unfold the aggregate warps process as a recursive code generation function.
-recursiveAggregate :: forall aenv e. Elt e
-                   => Int32
-                   -> Int32
-                   -> IR e
-                   -> IRFun2 PTX aenv (e -> e -> e)
-                   -> Maybe (IR Int32)
-                   -> IRArray (Vector e)
-                   -> IR e -> CodeGen (IR e)
-recursiveAggregate step warps partial combine size smem blockAggregate
-  | step >= warps = return partial
-  | otherwise    = do
-      inclusive <- app2 combine blockAggregate partial
-      wid       <- warpId
-      tid       <- threadIdx
-      partial'  <- if A.eq scalarType wid (lift warps)
-                       then
-                           if isThreadValid tid size
-                               then return inclusive
-                               else return blockAggregate
-                       else return partial
-      blockAggregate' <- app2 combine blockAggregate =<<
-        readArray smem (lift step)
-      recursiveAggregate (step+1) warps partial' combine size smem blockAggregate'
---}
+          app2 combine prefix input
 
 
--- Efficient warp-wide scan using the specified operator.
+-- Efficient warp-wide (inclusive) scan using the specified operator.
 --
 -- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
 -- routine assumes that it is allocated individually per-warp (i.e. can be
@@ -449,10 +406,9 @@ scanWarpSMem
     => DeviceProperties                             -- ^ properties of the target device
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
-    -> Maybe (IR Int32)                             -- ^ number of items to be processed by this warp, otherwise all lanes valid
     -> IR e                                         -- ^ calling thread's input element
     -> CodeGen (IR e)
-scanWarpSMem dev combine smem _size = scan 0
+scanWarpSMem dev combine smem = scan 0
   where
     log2 :: Double -> Double
     log2 = P.logBase 2
