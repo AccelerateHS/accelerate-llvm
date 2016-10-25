@@ -85,6 +85,8 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  foldSeg       = foldSegOp
+  fold1Seg      = foldSegOp
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -250,6 +252,26 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   out <- allocateRemote sh
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  return out
+
+
+foldSegOp
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> (Z  :. Int)
+    -> LLVM PTX (Array (sh :. Int) e)
+foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
+  let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
+      kernel  = fromMaybe ($internalError "foldSeg" "kernel not found")
+              $ lookupKernel "foldSeg" exe
+  --
+  out <- allocateRemote (sh :. n)
+  ptx <- gets llvmTarget
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh * n)) out
   return out
 
 
