@@ -48,6 +48,7 @@ import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
+import Control.Applicative
 import Control.Monad                                                ( (>=>) )
 import Data.String                                                  ( fromString )
 import Data.Bits                                                    as P
