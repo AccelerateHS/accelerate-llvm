@@ -166,7 +166,7 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
     -- We can assume that there is only a single thread block
     i0  <- A.add numType start tid
     sz  <- A.sub numType end start
-    when (A.lt scalarType i0 end) $ do
+    when (A.lt scalarType i0 sz) $ do
 
       -- Thread reads initial element and then participates in block-wide
       -- reduction.
@@ -489,7 +489,10 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
         then do
           steps <- case size of
                      Nothing -> return warps
-                     Just n  -> A.quot integralType n (int32 (CUDA.warpSize dev))
+                     Just n  -> do
+                       a <- A.add numType n (int32 (CUDA.warpSize dev - 1))
+                       b <- A.quot integralType a (int32 (CUDA.warpSize dev))
+                       return b
           iterFromStepTo (lift 1) (lift 1) steps input $ \step x ->
             app2 combine x =<< readArray smem step
         else
