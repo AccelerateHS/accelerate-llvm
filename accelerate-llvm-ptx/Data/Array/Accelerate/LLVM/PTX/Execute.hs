@@ -294,6 +294,7 @@ scanCore exe gamma aenv stream n m = do
       err = $internalError "scanCore" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
+      k3  = fromMaybe err (lookupKernel "scanP3" exe)
       --
       s   = n `multipleOf` kernelThreadBlockSize k1
   --
@@ -311,8 +312,9 @@ scanCore exe gamma aenv stream n m = do
     -- Multi-block reductions need to compute the per-block prefix, then apply
     -- those values to the partial results.
     else do
-      liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s) tmp
-      return tmp
+      liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s)     tmp
+      liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 (s-1)) (tmp, out)
+      return out
 
 
 permuteOp
