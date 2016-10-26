@@ -293,17 +293,26 @@ scanCore exe gamma aenv stream n m = do
   let
       err = $internalError "scanCore" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
+      k2  = fromMaybe err (lookupKernel "scanP2" exe)
       --
       s   = n `multipleOf` kernelThreadBlockSize k1
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. m)
   tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-  liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 n) (i32 s, out, tmp)
+  liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 s) (out, tmp)
 
-  if s > 1
-    then $internalError "scanCore" "multi-block scan not implemented yet"
-    else return out
+  if s == 1
+    -- Small arrays which can be computed by a single thread block require no
+    -- additional work.
+    then do
+      return out
+
+    -- Multi-block reductions need to compute the per-block prefix, then apply
+    -- those values to the partial results.
+    else do
+      liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s) tmp
+      return tmp
 
 
 permuteOp
