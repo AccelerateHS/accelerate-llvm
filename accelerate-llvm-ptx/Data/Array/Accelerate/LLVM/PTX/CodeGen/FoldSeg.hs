@@ -101,7 +101,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) dsmem const
+      config                    = launchConfig dev (CUDA.incWarp dev) dsmem const
       dsmem n                   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
