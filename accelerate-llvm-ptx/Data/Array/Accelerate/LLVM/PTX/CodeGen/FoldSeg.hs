@@ -127,6 +127,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
     -- block reduces. Note that this is a segment-offset array computed by
     -- 'scanl (+) 0' of the segment length array, so its size has increased by
     -- one.
+    --
     sz    <- i32 . indexHead =<< delayedExtent arr
     ss    <- do n <- i32 . indexHead =<< delayedExtent seg
                 A.sub numType n (lift 1)
@@ -175,7 +176,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
                 else reduceBlockSMem dev combine (Just v0) x0
 
         next <- A.add numType inf bd
-        r    <- iter next r0 (\i -> A.lt scalarType i sup) (\i -> A.add numType i bd) $ \offset r -> do
+        r    <- iterFromStepTo next bd sup r0 $ \offset r -> do
 
           -- Wait for threads to catch up before beginning the next stripe
           __syncthreads

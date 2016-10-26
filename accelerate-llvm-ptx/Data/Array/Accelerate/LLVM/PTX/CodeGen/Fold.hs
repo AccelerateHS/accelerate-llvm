@@ -358,7 +358,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 
         -- Step 2: keep walking over the input
         next  <- A.add numType from bd
-        r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \offset r -> do
+        r     <- iterFromStepTo next bd to r0 $ \offset r -> do
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
@@ -467,8 +467,8 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
     warpAggregate :: IR e -> CodeGen (IR e)
     warpAggregate input = do
       -- Allocate #warps elements of shared memory
-      bid   <- blockDim
-      warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
+      bd    <- blockDim
+      warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
       smem  <- dynamicSharedMem warps skip
 
@@ -486,19 +486,12 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- larger thread blocks?)
       tid   <- threadIdx
       if A.eq scalarType tid (lift 0)
-        then
-          let valid step =
-                case size of
-                  Nothing -> return (lift True)
-                  Just n  -> flip (A.lt scalarType) n =<< A.mul numType step (int32 (CUDA.warpSize dev))
-          in
-          iter (lift 1)
-               input
-               (flip (A.lt scalarType) warps)
-               (flip (A.add numType) (lift 1))
-               (\step x -> if valid step
-                             then app2 combine x =<< readArray smem step
-                             else return x)
+        then do
+          steps <- case size of
+                     Nothing -> return warps
+                     Just n  -> A.quot integralType n (int32 (CUDA.warpSize dev))
+          iterFromStepTo (lift 1) (lift 1) steps input $ \step x ->
+            app2 combine x =<< readArray smem step
         else
           return input
 
@@ -623,11 +616,9 @@ imapFromTo
 imapFromTo start end body = do
   bid <- blockIdx
   gd  <- gridDim
-  --
   i0  <- A.add numType start bid
-  for i0 (\i -> A.lt scalarType i end)
-         (\i -> A.add numType i gd)
-         body
+  imapFromStepTo i0 gd end body
+
 
 -- Match reified shape types
 --
