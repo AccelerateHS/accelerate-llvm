@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -70,10 +71,11 @@ mkScanl
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
-mkScanl (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+mkScanl ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr =
   foldr1 (+++) <$> sequence [ mkScanP1 L dev aenv combine (Just seed) arr
                             , mkScanP2 L dev aenv combine
                             , mkScanP3 L dev aenv combine (Just seed)
+                            , mkScanFill ptx aenv seed
                             ]
 
 -- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
@@ -134,10 +136,11 @@ mkScanr
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Vector e)
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
-mkScanr (deviceProperties . ptxContext -> dev) aenv combine seed arr =
+mkScanr ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr =
   foldr1 (+++) <$> sequence [ mkScanP1 R dev aenv combine (Just seed) arr
                             , mkScanP2 R dev aenv combine
                             , mkScanP3 R dev aenv combine (Just seed)
+                            , mkScanFill ptx aenv seed
                             ]
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
@@ -464,6 +467,21 @@ mkScanP3 dir dev aenv combine mseed =
         writeArray arrOut i0 u
 
     return_
+
+
+-- Parallel scan, auxiliary
+--
+-- If this is an exclusive scan of an empty array, we just  fill the result with
+-- the seed element.
+--
+mkScanFill
+    :: Elt e
+    => PTX
+    -> Gamma aenv
+    -> IRExp PTX aenv e
+    -> CodeGen (IROpenAcc PTX aenv (Vector e))
+mkScanFill ptx aenv seed =
+  mkGenerate ptx aenv (IRFun1 (const seed))
 
 
 -- Efficient block-wide (inclusive) scan using the specified operator.

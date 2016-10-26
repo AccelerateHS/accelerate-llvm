@@ -51,6 +51,7 @@ import Control.Parallel.Meta                                    ( runExecutable,
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
+import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
 import Data.Word                                                ( Word32 )
@@ -295,26 +296,32 @@ scanCore exe gamma aenv stream n m = do
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
       k3  = fromMaybe err (lookupKernel "scanP3" exe)
+      k4  = fromMaybe err (lookupKernel "generate" exe)
       --
       s   = n `multipleOf` kernelThreadBlockSize k1
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. m)
-  tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-  liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 s) (out, tmp)
 
-  if s == 1
-    -- Small arrays which can be computed by a single thread block require no
-    -- additional work.
-    then do
-      return out
+  if n == 0
+    then
+      -- If this is an exclusive scan of an empty array, just fill the result
+      -- with the seed element
+      liftIO $ executeOp ptx k4 mempty gamma aenv stream (IE 0 m) out
 
-    -- Multi-block reductions need to compute the per-block prefix, then apply
-    -- those values to the partial results.
     else do
-      liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s)     tmp
-      liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 (s-1)) (tmp, out)
-      return out
+      -- Small arrays which can be computed by a single thread block require no
+      -- additional work.
+      tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
+      liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 s) (out, tmp)
+
+      -- Multi-block reductions need to compute the per-block prefix, then apply
+      -- those values to the partial results.
+      when (s > 1) $ do
+        liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s)     tmp
+        liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 (s-1)) (tmp, out)
+
+  return out
 
 
 permuteOp
