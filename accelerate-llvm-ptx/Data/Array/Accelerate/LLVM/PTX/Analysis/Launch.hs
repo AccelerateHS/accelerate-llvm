@@ -59,7 +59,7 @@ launchConfig dev candidates dynamic_smem grid_size maxThreads registers static_s
   let
       (cta, occ)  = optimalBlockSizeOf dev (filter (<= maxThreads) candidates) (const registers) smem
       maxGrid     = multiProcessorCount dev * activeThreadBlocks occ
-      grid n      = maxGrid `min` grid_size n cta
+      grid n      = maxGrid `min` grid_size n cta `max` 1
       smem n      = static_smem + dynamic_smem n
   in
   ( occ, cta, grid, dynamic_smem cta )
