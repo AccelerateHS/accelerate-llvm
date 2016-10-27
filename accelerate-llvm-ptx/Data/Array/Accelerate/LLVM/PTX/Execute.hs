@@ -87,7 +87,7 @@ instance Execute PTX where
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
-  fold1Seg      = foldSegOp
+  fold1Seg      = fold1SegOp
   scanl         = scanOp
   scanl1        = scan1Op
   scanr         = scanOp
@@ -269,7 +269,36 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM PTX (Array (sh :. Int) e)
-foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
+foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) =
+  case ss of
+    1 -> simpleNamed "generate" exe gamma aenv stream (sh :. 1)
+    _ -> foldSegCore exe gamma aenv stream sh ss
+
+fold1SegOp
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> (Z  :. Int)
+    -> LLVM PTX (Array (sh :. Int) e)
+fold1SegOp exe gamma aenv stream (sh :. _) (Z :. ss) =
+  case ss of
+    1 -> allocateRemote (sh :. 0)
+    _ -> foldSegCore exe gamma aenv stream sh ss
+
+
+foldSegCore
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int
+    -> LLVM PTX (Array (sh :. Int) e)
+foldSegCore exe gamma aenv stream sh ss = do
   let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
       kernel  = fromMaybe ($internalError "foldSeg" "kernel not found")
               $ lookupKernel "foldSeg" exe

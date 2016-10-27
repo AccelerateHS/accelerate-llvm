@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Vector, Shape(rank), (:.), Elt(..) )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Shape(rank), (:.), Elt(..) )
 
 -- accelerate-llvm-*
 import LLVM.General.AST.Type.Representation
@@ -38,6 +38,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, imapFromTo )
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -61,8 +62,9 @@ mkFoldSeg
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSeg (deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
-  mkFoldSegP dev aenv combine (Just seed) arr seg
+mkFoldSeg ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
+  (+++) <$> mkFoldSegP dev aenv combine (Just seed) arr seg
+        <*> mkFoldSegFill ptx aenv seed
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
 -- segments are non-empty.
@@ -160,6 +162,14 @@ mkFoldSegP dev aenv combine mseed arr seg =
                                           a <- A.mul numType q sz
                                           A.pair <$> A.add numType u a <*> A.add numType v a
 
+      -- For an exclusive reduction, if this segment is empty then the first
+      -- thread should just write out the initial element.
+      case mseed of
+        Nothing -> return ()
+        Just z  ->
+          when (A.eq scalarType inf sup `land` A.eq scalarType tid (lift 0)) $
+            writeArray arrOut s =<< z
+
       -- Initialise local sum and then keep walking over the input until the
       -- entire segment is reduced.
       i0 <- A.add numType inf tid
@@ -209,6 +219,19 @@ mkFoldSegP dev aenv combine mseed arr seg =
               Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
     return_
+
+
+-- Exclusive reductions where the segments array is empty just fill the lower
+-- dimensions with the initial element
+--
+mkFoldSegFill
+    :: (Shape sh, Elt e)
+    => PTX
+    -> Gamma aenv
+    -> IRExp PTX aenv e
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSegFill ptx aenv seed =
+  mkGenerate ptx aenv (IRFun1 (const seed))
 
 
 i32 :: IsIntegral a => IR a -> CodeGen (IR Int32)
