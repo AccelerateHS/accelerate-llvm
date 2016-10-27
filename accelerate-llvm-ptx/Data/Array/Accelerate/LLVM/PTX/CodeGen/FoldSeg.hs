@@ -38,7 +38,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, imapFromTo )
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -62,9 +61,8 @@ mkFoldSeg
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSeg ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
-  (+++) <$> mkFoldSegP dev aenv combine (Just seed) arr seg
-        <*> mkFoldSegFill ptx aenv seed
+mkFoldSeg (deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
+  mkFoldSegP dev aenv combine (Just seed) arr seg
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
 -- segments are non-empty.
@@ -219,19 +217,6 @@ mkFoldSegP dev aenv combine mseed arr seg =
               Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
     return_
-
-
--- Exclusive reductions where the segments array is empty just fill the lower
--- dimensions with the initial element
---
-mkFoldSegFill
-    :: (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
-    -> IRExp PTX aenv e
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegFill ptx aenv seed =
-  mkGenerate ptx aenv (IRFun1 (const seed))
 
 
 i32 :: IsIntegral a => IR a -> CodeGen (IR Int32)
