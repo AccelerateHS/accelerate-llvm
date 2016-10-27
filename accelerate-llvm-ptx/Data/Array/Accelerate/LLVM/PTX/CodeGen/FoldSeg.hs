@@ -98,7 +98,7 @@ mkFoldSegP
 mkFoldSegP dev aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
       --
       config                    = launchConfig dev (CUDA.incWarp dev) dsmem const
@@ -119,7 +119,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
     -- a single coalesced read, since they will be sequential in the
     -- segment-offset array.
     --
-    smem  <- staticSharedMem 2 :: CodeGen (IRArray (Vector i))
+    smem  <- staticSharedMem 2
 
     -- Compute the number of segments and size of the innermost dimension. These
     -- are required if we are reducing a rank-2 or higher array, to properly
@@ -144,14 +144,13 @@ mkFoldSegP dev aenv combine mseed arr seg =
                _ -> A.rem integralType s ss
         j <- A.add numType i tid
         v <- app1 (delayedLinearIndex seg) =<< A.fromIntegral integralType numType j
-        writeArray smem tid v
-        return ()
+        writeArray smem tid =<< i32 v
 
       -- Once all threads have caught up, begin work on the new segment.
       __syncthreads
 
-      u <- i32 =<< readArray smem (lift 0 :: IR Int32)
-      v <- i32 =<< readArray smem (lift 1 :: IR Int32)
+      u <- readArray smem (lift 0 :: IR Int32)
+      v <- readArray smem (lift 1 :: IR Int32)
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
