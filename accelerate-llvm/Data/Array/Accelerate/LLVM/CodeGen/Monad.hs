@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -133,10 +134,13 @@ runLLVM  ll =
   in
   Module { moduleMetadata = md
          , unModule       = LLVM.Module
-                          { LLVM.moduleName         = name
-                          , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
-                          , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
-                          , LLVM.moduleDefinitions  = definitions
+                          { LLVM.moduleName           = name
+#if MIN_VERSION_llvm_general(3,9,0)
+                          , LLVM.moduleSourceFileName = []
+#endif
+                          , LLVM.moduleDataLayout     = targetDataLayout (undefined::arch)
+                          , LLVM.moduleTargetTriple   = targetTriple (undefined::arch)
+                          , LLVM.moduleDefinitions    = definitions
                           }
          }
 

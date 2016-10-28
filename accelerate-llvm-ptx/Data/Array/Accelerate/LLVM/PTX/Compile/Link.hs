@@ -84,8 +84,8 @@ withLibdeviceNVPTX dev ctx ast next =
       runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  ->
       runError $ LLVM.withModuleFromAST ctx nvvmReflect                            $ \refl ->
       runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
-        runError $ LLVM.linkModules False mdl refl
-        runError $ LLVM.linkModules False mdl libd
+        runError $ linkModules mdl refl
+        runError $ linkModules mdl libd
         Debug.traceIO Debug.dump_cc msg
         next mdl
   where
@@ -96,6 +96,20 @@ withLibdeviceNVPTX dev ctx ast next =
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", " (Set.toList externs)
+
+
+-- | Link LLVM modules by copying parts of the second argument into the first.
+--
+linkModules
+    :: LLVM.Module            -- module into which to link (destination: contains all symbols)
+    -> LLVM.Module            -- module to copy into the other (this is destroyed in the process)
+    -> ExceptT String IO ()
+linkModules =
+#if MIN_VERSION_llvm_general(3,9,0)
+    LLVM.linkModules
+#else
+    LLVM.linkModules False
+#endif
 
 
 -- | Lower an LLVM AST to C++ objects and prepare it for linking against
