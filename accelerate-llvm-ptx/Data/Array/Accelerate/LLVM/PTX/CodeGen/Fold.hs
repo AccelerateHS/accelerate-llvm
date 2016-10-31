@@ -353,7 +353,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
         x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
         bd    <- blockDim
         r0    <- if A.gte scalarType sz bd
-                   then reduceBlockSMem dev combine Nothing x0
+                   then reduceBlockSMem dev combine Nothing   x0
                    else reduceBlockSMem dev combine (Just sz) x0
 
         -- Step 2: keep walking over the input
@@ -459,7 +459,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
           valid  <- A.sub numType n offset
           if A.gte scalarType valid (int32 (CUDA.warpSize dev))
-            then reduceWarpSMem dev combine smem Nothing input
+            then reduceWarpSMem dev combine smem Nothing      input
             else reduceWarpSMem dev combine smem (Just valid) input
 
     -- Step 2: Aggregate per-warp reductions
