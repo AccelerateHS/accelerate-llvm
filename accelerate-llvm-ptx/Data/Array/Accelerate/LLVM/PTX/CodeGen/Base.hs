@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -103,6 +104,17 @@ threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
+#if MIN_VERSION_llvm_general(3,9,0)
+laneId :: CodeGen (IR Int32)
+laneId      = specialPTXReg "llvm.nvvm.read.ptx.sreg.laneid"
+
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
+laneMask_eq = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.eq"
+laneMask_lt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.lt"
+laneMask_le = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.le"
+laneMask_gt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.gt"
+laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
+#else
 laneId :: CodeGen (IR Int32)
 laneId      = specialPTXReg "llvm.ptx.read.laneid"
 
@@ -112,6 +124,7 @@ laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
 laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
 laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
+#endif
 
 -- | NOTE: The special register %warpid as volatile value and is not guaranteed
 --         to be constant over the lifetime of a thread or thread block.
