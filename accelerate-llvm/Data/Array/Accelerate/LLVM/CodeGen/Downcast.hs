@@ -293,6 +293,9 @@ instance Downcast (Constant a) LC.Constant where
         TypeCUChar{}    -> fromIntegral (fromEnum x)
         TypeCSChar{}    -> fromIntegral (fromEnum x)
 
+  downcast (UndefConstant t)
+    = LC.Undef (downcast t)
+
   downcast (GlobalReference t n)
     = LC.GlobalReference (downcast t) (downcast n)
 

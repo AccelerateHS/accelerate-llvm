@@ -32,6 +32,9 @@ data Constant a where
                         -> a
                         -> Constant a
 
+  UndefConstant         :: Type a
+                        -> Constant a
+
   GlobalReference       :: Type a
                         -> Name a
                         -> Constant a

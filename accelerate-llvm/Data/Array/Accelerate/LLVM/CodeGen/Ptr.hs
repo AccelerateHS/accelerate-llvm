@@ -39,6 +39,7 @@ asPtr as x =
   case x of
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
+    ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
     ConstantOperand ScalarConstant{}      -> $internalError "asPtr" "unexpected scalar constant"
 
 -- Treat a pointer operand as a scalar. This is a hack because we can't unpack
@@ -58,5 +59,6 @@ unPtr x =
   case x of
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
+    ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
     ConstantOperand ScalarConstant{}      -> $internalError "unPtr" "unexpected scalar constant"
 
