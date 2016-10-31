@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -34,7 +35,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   __threadfence_block, __threadfence_grid,
 
   -- Shared memory
-  sharedMem,
+  staticSharedMem,
+  dynamicSharedMem,
 
   -- Kernel definitions
   (+++),
@@ -42,21 +44,18 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
 ) where
 
-import Control.Monad                                                    ( void )
-import Text.Printf
-import Prelude                                                          as P
-
 -- llvm
 import LLVM.General.AST.Type.AddrSpace
 import LLVM.General.AST.Type.Constant
 import LLVM.General.AST.Type.Global
 import LLVM.General.AST.Type.Instruction
+import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Metadata
 import LLVM.General.AST.Type.Name
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
-import qualified LLVM.General.AST.AddrSpace                             as LLVM
 import qualified LLVM.General.AST.Global                                as LLVM
+import qualified LLVM.General.AST.Linkage                               as LLVM
 import qualified LLVM.General.AST.Name                                  as LLVM
 import qualified LLVM.General.AST.Type                                  as LLVM
 
@@ -72,12 +71,19 @@ import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
+
+-- standard library
+import Control.Applicative
+import Control.Monad                                                    ( void )
+import Text.Printf
+import Prelude                                                          as P
 
 
 -- Thread identifiers
@@ -98,6 +104,17 @@ threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
+#if MIN_VERSION_llvm_general(3,9,0)
+laneId :: CodeGen (IR Int32)
+laneId      = specialPTXReg "llvm.nvvm.read.ptx.sreg.laneid"
+
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
+laneMask_eq = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.eq"
+laneMask_lt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.lt"
+laneMask_le = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.le"
+laneMask_gt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.gt"
+laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
+#else
 laneId :: CodeGen (IR Int32)
 laneId      = specialPTXReg "llvm.ptx.read.laneid"
 
@@ -107,6 +124,7 @@ laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
 laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
 laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
+#endif
 
 -- | NOTE: The special register %warpid as volatile value and is not guaranteed
 --         to be constant over the lifetime of a thread or thread block.
@@ -224,8 +242,9 @@ atomicAdd_f t addr val =
       addrspace :: Word32
       (t_addr, t_val, addrspace) =
         case typeOf addr of
-          PrimType ta@(PtrPrimType tv (AddrSpace as)) -> (ta, tv, as)
-          _                                           -> $internalError "atomicAdd" "unexpected operand type"
+          PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
+            -> (ta, tv, as)
+          _ -> $internalError "atomicAdd" "unexpected operand type"
 
       fun = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
   in
@@ -235,18 +254,67 @@ atomicAdd_f t addr val =
 -- Shared memory
 -- -------------
 
+sharedMemAddrSpace :: AddrSpace
+sharedMemAddrSpace = AddrSpace 3
+
+sharedMemVolatility :: Volatility
+sharedMemVolatility = Volatile
+
+
+-- Declare a new statically allocated array in the __shared__ memory address
+-- space, with enough storage to contain the given number of elements.
+--
+staticSharedMem
+    :: forall e. Elt e
+    => Word64
+    -> CodeGen (IRArray (Vector e))
+staticSharedMem n = do
+  ad    <- go (eltType (undefined::e))
+  return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
+                   , irArrayData       = IR ad
+                   , irArrayAddrSpace  = sharedMemAddrSpace
+                   , irArrayVolatility = sharedMemVolatility
+                   }
+  where
+    go :: TupleType s -> CodeGen (Operands s)
+    go UnitTuple         = return OP_Unit
+    go (PairTuple t1 t2) = OP_Pair <$> go t1 <*> go t2
+    go (SingleTuple t)   = do
+      -- Declare a new global reference for the statically allocated array
+      -- located in the __shared__ memory space.
+      nm <- freshName
+      sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayType n t) sharedMemAddrSpace)) nm
+      declare $ LLVM.globalVariableDefaults
+        { LLVM.addrSpace = sharedMemAddrSpace
+        , LLVM.type'     = LLVM.ArrayType n (downcast t)
+        , LLVM.linkage   = LLVM.Internal
+        , LLVM.name      = downcast nm
+        , LLVM.alignment = 4
+        }
+
+      -- Return a pointer to the first element of the __shared__ memory array.
+      -- We do this rather than just returning the global reference directly due
+      -- to how __shared__ memory needs to be indexed with the GEP instruction.
+      p <- instr' $ GetElementPtr sm [num numType 0, num numType 0 :: Operand Int32]
+      q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
+
+      return $ ir' t (unPtr q)
+
+
 -- External declaration in shared memory address space. This must be declared in
 -- order to access memory allocated dynamically by the CUDA driver. This results
 -- in the following global declaration:
 --
 -- > @__shared__ = external addrspace(3) global [0 x i8]
 --
-initialiseSharedMemory :: CodeGen (Operand (Ptr Word8))
-initialiseSharedMemory = do
+initialiseDynamicSharedMemory :: CodeGen (Operand (Ptr Word8))
+initialiseDynamicSharedMemory = do
   declare $ LLVM.globalVariableDefaults
-    { LLVM.addrSpace = LLVM.AddrSpace 3
+    { LLVM.addrSpace = sharedMemAddrSpace
     , LLVM.type'     = LLVM.ArrayType 0 (LLVM.IntegerType 8)
+    , LLVM.linkage   = LLVM.External
     , LLVM.name      = LLVM.Name "__shared__"
+    , LLVM.alignment = 4
     }
   return $ ConstantOperand $ GlobalReference type' "__shared__"
 
@@ -254,21 +322,14 @@ initialiseSharedMemory = do
 -- Declared a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
 --
-sharedMem
+dynamicSharedMem
     :: forall e int. (Elt e, IsIntegral int)
     => IR int                                 -- number of array elements
     -> IR int                                 -- #bytes of shared memory the have already been allocated
     -> CodeGen (IRArray (Vector e))
-sharedMem n@(op integralType -> m) (op integralType -> offset) = do
-  smem <- initialiseSharedMemory
+dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
+  smem <- initialiseDynamicSharedMemory
   let
-      -- XXX: This is a hack because we can't create the evidence to traverse an
-      -- 'EltRepr (Ptr a)' type and associated encoding with operands.
-      ptr :: Operand (Ptr a) -> Operand a
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (Name x))   = LocalReference (PrimType (ScalarPrimType t)) (Name x)
-      ptr (LocalReference (PrimType (PtrPrimType t _)) (UnName x)) = LocalReference (PrimType (ScalarPrimType t)) (UnName x)
-      ptr _ = $internalError "sharedMem" "unexpected constant operand"
-
       go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
       go UnitTuple         i  = return (i, OP_Unit)
       go (PairTuple t2 t1) i0 = do
@@ -277,15 +338,17 @@ sharedMem n@(op integralType -> m) (op integralType -> offset) = do
         return $ (i2, OP_Pair p2 p1)
       go (SingleTuple t)   i  = do
         p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
-        q <- instr' $ PtrCast (PtrPrimType t (AddrSpace 3)) p
+        q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
         a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
         b <- instr' $ Add numType i a
-        return (b, ir' t (ptr q))
+        return (b, ir' t (unPtr q))
   --
   (_, ad) <- go (eltType (undefined::e)) offset
   IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
-  return   $ IRArray { irArrayShape = IR $ OP_Pair OP_Unit sz
-                     , irArrayData  = IR ad
+  return   $ IRArray { irArrayShape      = IR $ OP_Pair OP_Unit sz
+                     , irArrayData       = IR ad
+                     , irArrayAddrSpace  = sharedMemAddrSpace
+                     , irArrayVolatility = sharedMemVolatility
                      }
 
 

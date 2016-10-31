@@ -60,13 +60,14 @@ import Text.Printf
 --
 
 data Type a where
-  VoidType  ::                           Type ()
-  PrimType  :: PrimType a             -> Type a
-  TupleType :: TupleType (ProdRepr a) -> Type a       -- aggregate structures
+  VoidType  :: Type ()
+  PrimType  :: PrimType a -> Type a
 
 data PrimType a where
-  PtrPrimType     :: ScalarType a -> AddrSpace -> PrimType (Ptr a)  -- TLM: volatility??
-  ScalarPrimType  :: ScalarType a -> PrimType a
+  ScalarPrimType :: ScalarType a -> PrimType a
+  PtrPrimType    :: PrimType a -> AddrSpace -> PrimType (Ptr a)   -- volatility?
+  TupleType      :: TupleType (ProdRepr a) -> PrimType a          -- HAX: aggregate structures
+  ArrayType      :: Word64 -> ScalarType a -> PrimType a          -- HAX: static array
 
 
 -- | All types
@@ -329,94 +330,95 @@ instance IsPrim CUChar where
   primType = ScalarPrimType scalarType
 
 instance IsPrim (Ptr Int) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Int8) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Int16) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Int32) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Int64) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word8) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word16) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word32) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word64) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CShort) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CUShort) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CInt) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CUInt) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CLong) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CULong) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CLLong) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CULLong) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Float) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Double) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CFloat) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CDouble) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Bool) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Char) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CChar) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CSChar) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr CUChar) where
-  primType = PtrPrimType scalarType defaultAddrSpace
+  primType = PtrPrimType primType defaultAddrSpace
 
 
 instance Show (Type a) where
-  show VoidType      = "()"
-  show (PrimType t)  = show t
-  show (TupleType t) = show t
+  show VoidType        = "()"
+  show (PrimType t)    = show t
 
 instance Show (PrimType a) where
   show (ScalarPrimType t)            = show t
+  show (TupleType t)                 = show t
+  show (ArrayType n t)               = printf "[%d x %s]" n (show t)
   show (PtrPrimType t (AddrSpace n)) = printf "Ptr%s %s" a p
     where
       p             = show t

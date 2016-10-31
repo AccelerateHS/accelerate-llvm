@@ -12,11 +12,9 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
   where
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
@@ -31,11 +29,7 @@ imapFromTo
     -> (IR Int -> CodeGen ())                   -- ^ apply at each index
     -> CodeGen ()
 imapFromTo start end body =
-  Loop.for start
-           (\i -> lt scalarType i end)
-           (\i -> add numType i (ir numType (num numType 1)))
-           body
-
+  Loop.imapFromStepTo start (lift 1) end body
 
 -- | Iterate with an accumulator between the start and end index, executing the
 -- given function at each.
@@ -48,8 +42,5 @@ iterFromTo
     -> (IR Int -> IR a -> CodeGen (IR a))       -- ^ apply at each index
     -> CodeGen (IR a)
 iterFromTo start end seed body =
-  Loop.iter start seed
-            (\i -> lt scalarType i end)
-            (\i -> add numType i (ir numType (num numType 1)))
-            body
+  Loop.iterFromStepTo start (lift 1) end seed body
 

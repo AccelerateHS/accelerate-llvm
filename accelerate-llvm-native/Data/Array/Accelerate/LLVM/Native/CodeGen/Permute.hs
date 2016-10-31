@@ -30,6 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
@@ -41,7 +42,6 @@ import LLVM.General.AST.Type.Instruction
 import LLVM.General.AST.Type.Instruction.Atomic
 import LLVM.General.AST.Type.Instruction.RMW                        as RMW
 import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 
 import Control.Applicative
@@ -175,7 +175,7 @@ mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
             , Just adata    <- gcast (irArrayData arrOut)
             , Just r'       <- gcast r
             -> do
-                  addr <- instr' $ GetElementPtr (ptr s (op s adata)) [op integralType j]
+                  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   case s of
                     NumScalarType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
@@ -256,7 +256,7 @@ atomically barriers i action = do
   crit <- newBlock "spinlock.critical-section"
   exit <- newBlock "spinlock.exit"
 
-  addr <- instr' $ GetElementPtr (ptr scalarType (op integralType (irArrayData barriers))) [op integralType i]
+  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
   _    <- br spin
 
   -- Atomically (attempt to) set the lock slot to the locked state. If the slot
@@ -295,18 +295,4 @@ ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
                                                            y <- go tsz isz sz
                                                            land' x y
     go (SingleTuple t)     ig         sz              = A.eq t (ir t (scalar t ig)) (ir t (op' t sz))
-
-
--- XXX: hack because we can't properly manipulate pointer-type operands.
---
-ptr :: ScalarType a -> Operand a -> Operand (Ptr a)
-ptr t x =
-  let
-      rename (Name n)   = Name n
-      rename (UnName n) = UnName n
-      ptr_t             = PrimType (PtrPrimType t defaultAddrSpace)
-  in
-  case x of
-    LocalReference _ n -> LocalReference ptr_t (rename n)
-    ConstantOperand{}  -> $internalError "atomically" "expected local reference"
 

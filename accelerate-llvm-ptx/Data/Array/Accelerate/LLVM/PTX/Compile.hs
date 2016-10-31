@@ -208,15 +208,16 @@ linkPTX name ptx = do
       d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
       flags     = concat [v,d]
   --
+  Debug.when (Debug.dump_asm) $
+    Debug.traceIO Debug.verbose (B.unpack ptx)
+
   jit   <- CUDA.loadDataEx ptx flags
 
-  Debug.when Debug.dump_asm $ do
-    Debug.traceIO Debug.verbose (B.unpack ptx)
-    Debug.traceIO Debug.dump_asm $
-      printf "ptx: compiled entry function \"%s\" in %s\n%s"
-             name
-             (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
-             (B.unpack (CUDA.jitInfoLog jit))
+  Debug.traceIO Debug.dump_asm $
+    printf "ptx: compiled entry function \"%s\" in %s\n%s"
+           name
+           (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
+           (B.unpack (CUDA.jitInfoLog jit))
 
   return $! CUDA.jitModule jit
 
@@ -240,11 +241,11 @@ linkFunction mdl name configure = do
   maxt  <- CUDA.requires f CUDA.MaxKernelThreadsPerBlock
 
   let
-      (occ, cta, grid, smem) = configure maxt regs ssmem
+      (occ, cta, grid, dsmem) = configure maxt regs ssmem
 
       msg1, msg2 :: String
-      msg1 = printf "entry function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
-                      name regs smem lmem cmem
+      msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
+                      name regs (ssmem + dsmem) lmem cmem
 
       msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
                       (CUDA.occupancy100 occ)
@@ -253,7 +254,7 @@ linkFunction mdl name configure = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel f occ smem cta grid name
+  return $ Kernel f occ dsmem cta grid name
 
 
 {--

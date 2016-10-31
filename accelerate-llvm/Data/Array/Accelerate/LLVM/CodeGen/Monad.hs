@@ -22,7 +22,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  fresh, declare, intrinsic,
+  fresh, freshName,
+  declare,
+  intrinsic,
 
   -- basic blocks
   Block,
@@ -330,7 +332,6 @@ phi1 target crit incoming =
                     []        -> $internalError "phi" "no incoming values specified"
                     (o,_):_   -> case typeOf o of
                                    VoidType    -> $internalError "phi" "operand has void type"
-                                   TupleType{} -> $internalError "phi" "operand has aggregate type"
                                    PrimType x  -> x
   in
   state $ \s ->

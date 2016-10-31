@@ -164,7 +164,8 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (ExtractValue _ tix tup) = L.ExtractValue (downcast tup) [fromIntegral $ sizeOfTuple - tupleIdxToInt tix - 1] md
     where
       sizeOfTuple
-        | TupleType t <- typeOf tup = go t
+        | PrimType p  <- typeOf tup
+        , TupleType t <- p          = go t
         | otherwise                 = $internalError "downcast" "unexpected operand type to ExtractValue"
       --
       go :: TupleType t -> Int
@@ -292,6 +293,9 @@ instance Downcast (Constant a) LC.Constant where
         TypeCUChar{}    -> fromIntegral (fromEnum x)
         TypeCSChar{}    -> fromIntegral (fromEnum x)
 
+  downcast (UndefConstant t)
+    = LC.Undef (downcast t)
+
   downcast (GlobalReference t n)
     = LC.GlobalReference (downcast t) (downcast n)
 
@@ -407,18 +411,19 @@ instance Downcast GroupID L.GroupID where
 -- ------------------------------------
 
 instance Downcast (Type a) L.Type where
-  downcast VoidType      = L.VoidType
-  downcast (PrimType t)  = downcast t
-  downcast (TupleType t) = L.StructureType False (go t)
+  downcast VoidType     = L.VoidType
+  downcast (PrimType t) = downcast t
+
+instance Downcast (PrimType a) L.Type where
+  downcast (ScalarPrimType t) = downcast t
+  downcast (PtrPrimType t a)  = L.PointerType (downcast t) a
+  downcast (ArrayType n t)    = L.ArrayType n (downcast t)
+  downcast (TupleType t)      = L.StructureType False (go t)
     where
       go :: TupleType t -> [L.Type]
       go UnitTuple         = []
       go (SingleTuple s)   = [downcast s]
       go (PairTuple ta tb) = go ta ++ go tb
-
-instance Downcast (PrimType a) L.Type where
-  downcast (PtrPrimType t a)  = L.PointerType (downcast t) a
-  downcast (ScalarPrimType t) = downcast t
 
 -- Data.Array.Accelerate.Type
 -- --------------------------

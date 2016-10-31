@@ -51,6 +51,7 @@ import Control.Parallel.Meta                                    ( runExecutable,
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
+import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
 import Data.Word                                                ( Word32 )
@@ -85,6 +86,12 @@ instance Execute PTX where
   backpermute   = simpleOp
   fold          = foldOp
   fold1         = fold1Op
+  foldSeg       = foldSegOp
+  fold1Seg      = foldSegOp
+  scanl         = scanOp
+  scanl1        = scan1Op
+  scanr         = scanOp
+  scanr1        = scan1Op
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -250,6 +257,92 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   out <- allocateRemote sh
   ptx <- gets llvmTarget
   liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  return out
+
+
+foldSegOp
+    :: (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> (sh :. Int)
+    -> (Z  :. Int)
+    -> LLVM PTX (Array (sh :. Int) e)
+foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
+  let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
+      kernel  = fromMaybe ($internalError "foldSeg" "kernel not found")
+              $ lookupKernel "foldSeg" exe
+  --
+  out <- allocateRemote (sh :. n)
+  ptx <- gets llvmTarget
+  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh * n)) out
+  return out
+
+
+scanOp
+    :: Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scanOp exe gamma aenv stream (Z :. n)
+  = scanCore exe gamma aenv stream n (n+1)
+
+scan1Op
+    :: Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e)
+scan1Op exe gamma aenv stream (Z :. n)
+  = $boundsCheck "scan1" "empty array" (n > 0)
+  $ scanCore exe gamma aenv stream n n
+
+scanCore
+    :: forall aenv e. Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Int                    -- input size
+    -> Int                    -- output size
+    -> LLVM PTX (Vector e)
+scanCore exe gamma aenv stream n m = do
+  let
+      err = $internalError "scanCore" "kernel not found"
+      k1  = fromMaybe err (lookupKernel "scanP1" exe)
+      k2  = fromMaybe err (lookupKernel "scanP2" exe)
+      k3  = fromMaybe err (lookupKernel "scanP3" exe)
+      k4  = fromMaybe err (lookupKernel "generate" exe)
+      --
+      s   = n `multipleOf` kernelThreadBlockSize k1
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (Z :. m)
+
+  if n == 0
+    then
+      -- If this is an exclusive scan of an empty array, just fill the result
+      -- with the seed element
+      liftIO $ executeOp ptx k4 mempty gamma aenv stream (IE 0 m) out
+
+    else do
+      -- Small arrays which can be computed by a single thread block require no
+      -- additional work.
+      tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
+      liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 s) (out, tmp)
+
+      -- Multi-block reductions need to compute the per-block prefix, then apply
+      -- those values to the partial results.
+      when (s > 1) $ do
+        liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s)     tmp
+        liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 (s-1)) (tmp, out)
+
   return out
 
 

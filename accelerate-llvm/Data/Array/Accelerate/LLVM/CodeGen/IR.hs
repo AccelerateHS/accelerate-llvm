@@ -73,61 +73,61 @@ data instance Operands (a,b)    = OP_Pair    (Operands a) (Operands b)
 
 -- Extra instances to support operands of pointer type
 --
-data instance Operands (Ptr Int)      = OP_PtrInt     (Operand (Ptr Int))
-data instance Operands (Ptr Int8)     = OP_PtrInt8    (Operand (Ptr Int8))
-data instance Operands (Ptr Int16)    = OP_PtrInt16   (Operand (Ptr Int16))
-data instance Operands (Ptr Int32)    = OP_PtrInt32   (Operand (Ptr Int32))
-data instance Operands (Ptr Int64)    = OP_PtrInt64   (Operand (Ptr Int64))
-data instance Operands (Ptr Word)     = OP_PtrWord    (Operand (Ptr Word))
-data instance Operands (Ptr Word8)    = OP_PtrWord8   (Operand (Ptr Word8))
-data instance Operands (Ptr Word16)   = OP_PtrWord16  (Operand (Ptr Word16))
-data instance Operands (Ptr Word32)   = OP_PtrWord32  (Operand (Ptr Word32))
-data instance Operands (Ptr Word64)   = OP_PtrWord64  (Operand (Ptr Word64))
-data instance Operands (Ptr CShort)   = OP_PtrCShort  (Operand (Ptr CShort))
-data instance Operands (Ptr CUShort)  = OP_PtrCUShort (Operand (Ptr CUShort))
-data instance Operands (Ptr CInt)     = OP_PtrCInt    (Operand (Ptr CInt))
-data instance Operands (Ptr CUInt)    = OP_PtrCUInt   (Operand (Ptr CUInt))
-data instance Operands (Ptr CLong)    = OP_PtrCLong   (Operand (Ptr CLong))
-data instance Operands (Ptr CULong)   = OP_PtrCULong  (Operand (Ptr CULong))
-data instance Operands (Ptr CLLong)   = OP_PtrCLLong  (Operand (Ptr CLLong))
-data instance Operands (Ptr CULLong)  = OP_PtrCULLong (Operand (Ptr CULLong))
-data instance Operands (Ptr Float)    = OP_PtrFloat   (Operand (Ptr Float))
-data instance Operands (Ptr Double)   = OP_PtrDouble  (Operand (Ptr Double))
-data instance Operands (Ptr CFloat)   = OP_PtrCFloat  (Operand (Ptr CFloat))
-data instance Operands (Ptr CDouble)  = OP_PtrCDouble (Operand (Ptr CDouble))
-data instance Operands (Ptr Bool)     = OP_PtrBool    (Operand (Ptr Bool))
-data instance Operands (Ptr Char)     = OP_PtrChar    (Operand (Ptr Char))
-data instance Operands (Ptr CChar)    = OP_PtrCChar   (Operand (Ptr CChar))
-data instance Operands (Ptr CSChar)   = OP_PtrCSChar  (Operand (Ptr CSChar))
-data instance Operands (Ptr CUChar)   = OP_PtrCUChar  (Operand (Ptr CUChar))
+-- data instance Operands (Ptr Int)      = OP_PtrInt     (Operand (Ptr Int))
+-- data instance Operands (Ptr Int8)     = OP_PtrInt8    (Operand (Ptr Int8))
+-- data instance Operands (Ptr Int16)    = OP_PtrInt16   (Operand (Ptr Int16))
+-- data instance Operands (Ptr Int32)    = OP_PtrInt32   (Operand (Ptr Int32))
+-- data instance Operands (Ptr Int64)    = OP_PtrInt64   (Operand (Ptr Int64))
+-- data instance Operands (Ptr Word)     = OP_PtrWord    (Operand (Ptr Word))
+-- data instance Operands (Ptr Word8)    = OP_PtrWord8   (Operand (Ptr Word8))
+-- data instance Operands (Ptr Word16)   = OP_PtrWord16  (Operand (Ptr Word16))
+-- data instance Operands (Ptr Word32)   = OP_PtrWord32  (Operand (Ptr Word32))
+-- data instance Operands (Ptr Word64)   = OP_PtrWord64  (Operand (Ptr Word64))
+-- data instance Operands (Ptr CShort)   = OP_PtrCShort  (Operand (Ptr CShort))
+-- data instance Operands (Ptr CUShort)  = OP_PtrCUShort (Operand (Ptr CUShort))
+-- data instance Operands (Ptr CInt)     = OP_PtrCInt    (Operand (Ptr CInt))
+-- data instance Operands (Ptr CUInt)    = OP_PtrCUInt   (Operand (Ptr CUInt))
+-- data instance Operands (Ptr CLong)    = OP_PtrCLong   (Operand (Ptr CLong))
+-- data instance Operands (Ptr CULong)   = OP_PtrCULong  (Operand (Ptr CULong))
+-- data instance Operands (Ptr CLLong)   = OP_PtrCLLong  (Operand (Ptr CLLong))
+-- data instance Operands (Ptr CULLong)  = OP_PtrCULLong (Operand (Ptr CULLong))
+-- data instance Operands (Ptr Float)    = OP_PtrFloat   (Operand (Ptr Float))
+-- data instance Operands (Ptr Double)   = OP_PtrDouble  (Operand (Ptr Double))
+-- data instance Operands (Ptr CFloat)   = OP_PtrCFloat  (Operand (Ptr CFloat))
+-- data instance Operands (Ptr CDouble)  = OP_PtrCDouble (Operand (Ptr CDouble))
+-- data instance Operands (Ptr Bool)     = OP_PtrBool    (Operand (Ptr Bool))
+-- data instance Operands (Ptr Char)     = OP_PtrChar    (Operand (Ptr Char))
+-- data instance Operands (Ptr CChar)    = OP_PtrCChar   (Operand (Ptr CChar))
+-- data instance Operands (Ptr CSChar)   = OP_PtrCSChar  (Operand (Ptr CSChar))
+-- data instance Operands (Ptr CUChar)   = OP_PtrCUChar  (Operand (Ptr CUChar))
 
-type instance EltRepr (Ptr Int)       = Ptr Int
-type instance EltRepr (Ptr Int8)      = Ptr Int8
-type instance EltRepr (Ptr Int16)     = Ptr Int16
-type instance EltRepr (Ptr Int32)     = Ptr Int32
-type instance EltRepr (Ptr Int64)     = Ptr Int64
-type instance EltRepr (Ptr Word)      = Ptr Word
-type instance EltRepr (Ptr Word8)     = Ptr Word8
-type instance EltRepr (Ptr Word16)    = Ptr Word16
-type instance EltRepr (Ptr Word32)    = Ptr Word32
-type instance EltRepr (Ptr Word64)    = Ptr Word64
-type instance EltRepr (Ptr CShort)    = Ptr CShort
-type instance EltRepr (Ptr CUShort)   = Ptr CUShort
-type instance EltRepr (Ptr CInt)      = Ptr CInt
-type instance EltRepr (Ptr CUInt)     = Ptr CUInt
-type instance EltRepr (Ptr CLong)     = Ptr CLong
-type instance EltRepr (Ptr CULong)    = Ptr CULong
-type instance EltRepr (Ptr CLLong)    = Ptr CLLong
-type instance EltRepr (Ptr CULLong)   = Ptr CULLong
-type instance EltRepr (Ptr Float)     = Ptr Float
-type instance EltRepr (Ptr Double)    = Ptr Double
-type instance EltRepr (Ptr CFloat)    = Ptr CFloat
-type instance EltRepr (Ptr CDouble)   = Ptr CDouble
-type instance EltRepr (Ptr Bool)      = Ptr Bool
-type instance EltRepr (Ptr Char)      = Ptr Char
-type instance EltRepr (Ptr CChar)     = Ptr CChar
-type instance EltRepr (Ptr CSChar)    = Ptr CSChar
-type instance EltRepr (Ptr CUChar)    = Ptr CUChar
+-- type instance EltRepr (Ptr Int)       = Ptr Int
+-- type instance EltRepr (Ptr Int8)      = Ptr Int8
+-- type instance EltRepr (Ptr Int16)     = Ptr Int16
+-- type instance EltRepr (Ptr Int32)     = Ptr Int32
+-- type instance EltRepr (Ptr Int64)     = Ptr Int64
+-- type instance EltRepr (Ptr Word)      = Ptr Word
+-- type instance EltRepr (Ptr Word8)     = Ptr Word8
+-- type instance EltRepr (Ptr Word16)    = Ptr Word16
+-- type instance EltRepr (Ptr Word32)    = Ptr Word32
+-- type instance EltRepr (Ptr Word64)    = Ptr Word64
+-- type instance EltRepr (Ptr CShort)    = Ptr CShort
+-- type instance EltRepr (Ptr CUShort)   = Ptr CUShort
+-- type instance EltRepr (Ptr CInt)      = Ptr CInt
+-- type instance EltRepr (Ptr CUInt)     = Ptr CUInt
+-- type instance EltRepr (Ptr CLong)     = Ptr CLong
+-- type instance EltRepr (Ptr CULong)    = Ptr CULong
+-- type instance EltRepr (Ptr CLLong)    = Ptr CLLong
+-- type instance EltRepr (Ptr CULLong)   = Ptr CULLong
+-- type instance EltRepr (Ptr Float)     = Ptr Float
+-- type instance EltRepr (Ptr Double)    = Ptr Double
+-- type instance EltRepr (Ptr CFloat)    = Ptr CFloat
+-- type instance EltRepr (Ptr CDouble)   = Ptr CDouble
+-- type instance EltRepr (Ptr Bool)      = Ptr Bool
+-- type instance EltRepr (Ptr Char)      = Ptr Char
+-- type instance EltRepr (Ptr CChar)     = Ptr CChar
+-- type instance EltRepr (Ptr CSChar)    = Ptr CSChar
+-- type instance EltRepr (Ptr CUChar)    = Ptr CUChar
 -- type instance EltRepr (Ptr (a,b))     = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b))
 -- type instance EltRepr (Ptr (a,b,c))   = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c))
 -- type instance EltRepr (Ptr (a,b,c,d)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d))
@@ -156,196 +156,26 @@ class IROP dict where
 instance IROP Type where
   op VoidType     _  = LocalReference VoidType (Name []) -- TLM: ???
   op (PrimType t) x  = op t x
-  op TupleType{} _   = $internalError "op" "applied to aggregate structure"
 
   ir VoidType     _  = IR OP_Unit
   ir (PrimType t) x  = ir t x
-  ir TupleType{} _   = $internalError "ir" "applied to aggregate structure"
   --
   ir' VoidType     _ = OP_Unit
   ir' (PrimType t) x = ir' t x
-  ir' TupleType{} _  = $internalError "ir'" "applied to aggregate structure"
 
   op' VoidType     _ = LocalReference VoidType (Name [])  -- TLM: ???
   op' (PrimType t) x = op' t x
-  op' TupleType{} _  = $internalError "op'" "applied to aggregate structure"
 
 instance IROP PrimType where
-  op (ScalarPrimType t) = op t
-  op (PtrPrimType s _)  = scalar s
-    where
-      scalar :: ScalarType a -> IR (Ptr a) -> Operand (Ptr a)
-      scalar (NonNumScalarType t) = nonnum t
-      scalar (NumScalarType t)    = num t
-
-      nonnum :: NonNumType a -> IR (Ptr a) -> Operand (Ptr a)
-      nonnum TypeBool{}   (IR (OP_PtrBool   x)) = x
-      nonnum TypeChar{}   (IR (OP_PtrChar   x)) = x
-      nonnum TypeCChar{}  (IR (OP_PtrCChar  x)) = x
-      nonnum TypeCSChar{} (IR (OP_PtrCSChar x)) = x
-      nonnum TypeCUChar{} (IR (OP_PtrCUChar x)) = x
-
-      num :: NumType a -> IR (Ptr a) -> Operand (Ptr a)
-      num (IntegralNumType t) = integral t
-      num (FloatingNumType t) = floating t
-
-      integral :: IntegralType a -> IR (Ptr a) -> Operand (Ptr a)
-      integral TypeInt{}     (IR (OP_PtrInt     x)) = x
-      integral TypeInt8{}    (IR (OP_PtrInt8    x)) = x
-      integral TypeInt16{}   (IR (OP_PtrInt16   x)) = x
-      integral TypeInt32{}   (IR (OP_PtrInt32   x)) = x
-      integral TypeInt64{}   (IR (OP_PtrInt64   x)) = x
-      integral TypeWord{}    (IR (OP_PtrWord    x)) = x
-      integral TypeWord8{}   (IR (OP_PtrWord8   x)) = x
-      integral TypeWord16{}  (IR (OP_PtrWord16  x)) = x
-      integral TypeWord32{}  (IR (OP_PtrWord32  x)) = x
-      integral TypeWord64{}  (IR (OP_PtrWord64  x)) = x
-      integral TypeCShort{}  (IR (OP_PtrCShort  x)) = x
-      integral TypeCUShort{} (IR (OP_PtrCUShort x)) = x
-      integral TypeCInt{}    (IR (OP_PtrCInt    x)) = x
-      integral TypeCUInt{}   (IR (OP_PtrCUInt   x)) = x
-      integral TypeCLong{}   (IR (OP_PtrCLong   x)) = x
-      integral TypeCULong{}  (IR (OP_PtrCULong  x)) = x
-      integral TypeCLLong{}  (IR (OP_PtrCLLong  x)) = x
-      integral TypeCULLong{} (IR (OP_PtrCULLong x)) = x
-
-      floating :: FloatingType a -> IR (Ptr a) -> Operand (Ptr a)
-      floating TypeFloat{}   (IR (OP_PtrFloat   x)) = x
-      floating TypeDouble{}  (IR (OP_PtrDouble  x)) = x
-      floating TypeCFloat{}  (IR (OP_PtrCFloat  x)) = x
-      floating TypeCDouble{} (IR (OP_PtrCDouble x)) = x
-
-  ir (ScalarPrimType t) = ir t
-  ir (PtrPrimType s _)  = scalar s
-    where
-      scalar :: ScalarType a -> Operand (Ptr a) -> IR (Ptr a)
-      scalar (NonNumScalarType t) = nonnum t
-      scalar (NumScalarType t)    = num t
-
-      nonnum :: NonNumType a -> Operand (Ptr a) -> IR (Ptr a)
-      nonnum TypeBool{}   = IR . OP_PtrBool
-      nonnum TypeChar{}   = IR . OP_PtrChar
-      nonnum TypeCChar{}  = IR . OP_PtrCChar
-      nonnum TypeCSChar{} = IR . OP_PtrCSChar
-      nonnum TypeCUChar{} = IR . OP_PtrCUChar
-
-      num :: NumType a -> Operand (Ptr a) -> IR (Ptr a)
-      num (IntegralNumType t) = integral t
-      num (FloatingNumType t) = floating t
-
-      integral :: IntegralType a -> Operand (Ptr a) -> IR (Ptr a)
-      integral TypeInt{}     = IR . OP_PtrInt
-      integral TypeInt8{}    = IR . OP_PtrInt8
-      integral TypeInt16{}   = IR . OP_PtrInt16
-      integral TypeInt32{}   = IR . OP_PtrInt32
-      integral TypeInt64{}   = IR . OP_PtrInt64
-      integral TypeWord{}    = IR . OP_PtrWord
-      integral TypeWord8{}   = IR . OP_PtrWord8
-      integral TypeWord16{}  = IR . OP_PtrWord16
-      integral TypeWord32{}  = IR . OP_PtrWord32
-      integral TypeWord64{}  = IR . OP_PtrWord64
-      integral TypeCShort{}  = IR . OP_PtrCShort
-      integral TypeCUShort{} = IR . OP_PtrCUShort
-      integral TypeCInt{}    = IR . OP_PtrCInt
-      integral TypeCUInt{}   = IR . OP_PtrCUInt
-      integral TypeCLong{}   = IR . OP_PtrCLong
-      integral TypeCULong{}  = IR . OP_PtrCULong
-      integral TypeCLLong{}  = IR . OP_PtrCLLong
-      integral TypeCULLong{} = IR . OP_PtrCULLong
-
-      floating :: FloatingType a -> Operand (Ptr a) -> IR (Ptr a)
-      floating TypeFloat{}   = IR . OP_PtrFloat
-      floating TypeDouble{}  = IR . OP_PtrDouble
-      floating TypeCFloat{}  = IR . OP_PtrCFloat
-      floating TypeCDouble{} = IR . OP_PtrCDouble
+  op (ScalarPrimType t)  = op t
+  op t                   = $internalError "op" ("unhandled type: " ++ show t)
+  ir (ScalarPrimType t)  = ir t
+  ir t                   = $internalError "ir" ("unhandeld type: " ++ show t)
 
   op' (ScalarPrimType t) = op' t
-  op' (PtrPrimType s _)  = scalar s
-    where
-      scalar :: ScalarType a -> Operands (Ptr a) -> Operand (Ptr a)
-      scalar (NonNumScalarType t) = nonnum t
-      scalar (NumScalarType t)    = num t
-
-      nonnum :: NonNumType a -> Operands (Ptr a) -> Operand (Ptr a)
-      nonnum TypeBool{}   (OP_PtrBool   x) = x
-      nonnum TypeChar{}   (OP_PtrChar   x) = x
-      nonnum TypeCChar{}  (OP_PtrCChar  x) = x
-      nonnum TypeCSChar{} (OP_PtrCSChar x) = x
-      nonnum TypeCUChar{} (OP_PtrCUChar x) = x
-
-      num :: NumType a -> Operands (Ptr a) -> Operand (Ptr a)
-      num (IntegralNumType t) = integral t
-      num (FloatingNumType t) = floating t
-
-      integral :: IntegralType a -> Operands (Ptr a) -> Operand (Ptr a)
-      integral TypeInt{}     (OP_PtrInt     x) = x
-      integral TypeInt8{}    (OP_PtrInt8    x) = x
-      integral TypeInt16{}   (OP_PtrInt16   x) = x
-      integral TypeInt32{}   (OP_PtrInt32   x) = x
-      integral TypeInt64{}   (OP_PtrInt64   x) = x
-      integral TypeWord{}    (OP_PtrWord    x) = x
-      integral TypeWord8{}   (OP_PtrWord8   x) = x
-      integral TypeWord16{}  (OP_PtrWord16  x) = x
-      integral TypeWord32{}  (OP_PtrWord32  x) = x
-      integral TypeWord64{}  (OP_PtrWord64  x) = x
-      integral TypeCShort{}  (OP_PtrCShort  x) = x
-      integral TypeCUShort{} (OP_PtrCUShort x) = x
-      integral TypeCInt{}    (OP_PtrCInt    x) = x
-      integral TypeCUInt{}   (OP_PtrCUInt   x) = x
-      integral TypeCLong{}   (OP_PtrCLong   x) = x
-      integral TypeCULong{}  (OP_PtrCULong  x) = x
-      integral TypeCLLong{}  (OP_PtrCLLong  x) = x
-      integral TypeCULLong{} (OP_PtrCULLong x) = x
-
-      floating :: FloatingType a -> Operands (Ptr a) -> Operand (Ptr a)
-      floating TypeFloat{}   (OP_PtrFloat   x) = x
-      floating TypeDouble{}  (OP_PtrDouble  x) = x
-      floating TypeCFloat{}  (OP_PtrCFloat  x) = x
-      floating TypeCDouble{} (OP_PtrCDouble x) = x
-
+  op' t                  = $internalError "op'" ("unhandled type: " ++ show t)
   ir' (ScalarPrimType t) = ir' t
-  ir' (PtrPrimType s _)  = scalar s
-    where
-      scalar :: ScalarType a -> Operand (Ptr a) -> Operands (Ptr a)
-      scalar (NonNumScalarType t) = nonnum t
-      scalar (NumScalarType t)    = num t
-
-      nonnum :: NonNumType a -> Operand (Ptr a) -> Operands (Ptr a)
-      nonnum TypeBool{}   = OP_PtrBool
-      nonnum TypeChar{}   = OP_PtrChar
-      nonnum TypeCChar{}  = OP_PtrCChar
-      nonnum TypeCSChar{} = OP_PtrCSChar
-      nonnum TypeCUChar{} = OP_PtrCUChar
-
-      num :: NumType a -> Operand (Ptr a) -> Operands (Ptr a)
-      num (IntegralNumType t) = integral t
-      num (FloatingNumType t) = floating t
-
-      integral :: IntegralType a -> Operand (Ptr a) -> Operands (Ptr a)
-      integral TypeInt{}     = OP_PtrInt
-      integral TypeInt8{}    = OP_PtrInt8
-      integral TypeInt16{}   = OP_PtrInt16
-      integral TypeInt32{}   = OP_PtrInt32
-      integral TypeInt64{}   = OP_PtrInt64
-      integral TypeWord{}    = OP_PtrWord
-      integral TypeWord8{}   = OP_PtrWord8
-      integral TypeWord16{}  = OP_PtrWord16
-      integral TypeWord32{}  = OP_PtrWord32
-      integral TypeWord64{}  = OP_PtrWord64
-      integral TypeCShort{}  = OP_PtrCShort
-      integral TypeCUShort{} = OP_PtrCUShort
-      integral TypeCInt{}    = OP_PtrCInt
-      integral TypeCUInt{}   = OP_PtrCUInt
-      integral TypeCLong{}   = OP_PtrCLong
-      integral TypeCULong{}  = OP_PtrCULong
-      integral TypeCLLong{}  = OP_PtrCLLong
-      integral TypeCULLong{} = OP_PtrCULLong
-
-      floating :: FloatingType a -> Operand (Ptr a) -> Operands (Ptr a)
-      floating TypeFloat{}   = OP_PtrFloat
-      floating TypeDouble{}  = OP_PtrDouble
-      floating TypeCFloat{}  = OP_PtrCFloat
-      floating TypeCDouble{} = OP_PtrCDouble
+  ir' t                  = $internalError "ir'" ("unhandled type: " ++ show t)
 
 instance IROP ScalarType where
   op (NumScalarType t)    = op t

@@ -150,7 +150,7 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -166,7 +166,7 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
     -- We can assume that there is only a single thread block
     i0  <- A.add numType start tid
     sz  <- A.sub numType end start
-    when (A.lt scalarType i0 end) $ do
+    when (A.lt scalarType i0 sz) $ do
 
       -- Thread reads initial element and then participates in block-wide
       -- reduction.
@@ -201,7 +201,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -217,29 +217,23 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
     -- reductions.
     --
     tid   <- threadIdx
-    bid   <- blockIdx
-    gd    <- gridDim
     bd    <- blockDim
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    sz    <- i32 . indexHead =<< delayedExtent
 
-    seg0  <- A.add numType start bid
-    for seg0
-      ( \seg -> A.lt scalarType seg end )
-      ( \seg -> A.add numType seg gd )
-      $ \seg -> do
+    imapFromTo start end $ \seg -> do
 
-        -- Wait for all threads to catch up before beginning the stripe
-        __syncthreads
+      -- Wait for all threads to catch up before beginning the stripe
+      __syncthreads
 
-        -- Bounds of the input array we will reduce between
-        from  <- A.mul numType seg  bd
-        step  <- A.add numType from bd
-        to    <- A.min scalarType sz step
+      -- Bounds of the input array we will reduce between
+      from  <- A.mul numType seg  bd
+      step  <- A.add numType from bd
+      to    <- A.min scalarType sz step
 
-        -- Threads cooperatively reduce this stripe
-        reduceFromTo dev from to combine
-          (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
-          (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
+      -- Threads cooperatively reduce this stripe
+      reduceFromTo dev from to combine
+        (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
+        (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
 
     return_
 
@@ -261,7 +255,7 @@ mkFoldAllM2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -277,34 +271,28 @@ mkFoldAllM2 dev aenv combine mseed =
     -- reduction step and add the initial element (for exclusive reductions).
     --
     tid   <- threadIdx
-    bid   <- blockIdx
-    gd    <- gridDim
     bd    <- blockDim
+    sz    <- i32 . indexHead $ irArrayShape arrTmp
 
-    sz    <- A.fromIntegral integralType numType $ indexHead (irArrayShape arrTmp)
-    seg0  <- A.add numType start bid
-    for seg0
-      ( \seg -> A.lt scalarType seg end )
-      ( \seg -> A.add numType seg gd )
-      $ \seg -> do
+    imapFromTo start end $ \seg -> do
 
-        -- Wait for all threads to catch up before beginning the stripe
-        __syncthreads
+      -- Wait for all threads to catch up before beginning the stripe
+      __syncthreads
 
-        -- Bounds of the input we will reduce between
-        from  <- A.mul numType seg  bd
-        step  <- A.add numType from bd
-        to    <- A.min scalarType sz step
+      -- Bounds of the input we will reduce between
+      from  <- A.mul numType seg  bd
+      step  <- A.add numType from bd
+      to    <- A.min scalarType sz step
 
-        -- Threads cooperatively reduce this stripe
-        reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
-          when (A.eq scalarType tid (lift 0)) $
-            writeArray arrOut seg =<<
-              case mseed of
-                Nothing -> return r
-                Just z  -> if A.eq scalarType bd (lift 1)
-                             then flip (app2 combine) r =<< z   -- Note: initial element on the left
-                             else return r
+      -- Threads cooperatively reduce this stripe
+      reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
+        when (A.eq scalarType tid (lift 0)) $
+          writeArray arrOut seg =<<
+            case mseed of
+              Nothing -> return r
+              Just z  -> if A.eq scalarType bd (lift 1)
+                           then flip (app2 combine) r =<< z   -- Note: initial element on the left
+                           else return r
 
     return_
 
@@ -331,7 +319,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incPow2 dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -344,16 +332,13 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
     tid <- threadIdx
-    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    sz  <- i32 . indexHead =<< delayedExtent
     when (A.lt scalarType tid sz) $ do
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.
       --
-      gd    <- gridDim
-      bid   <- blockIdx
-      seg0  <- A.add numType start bid
-      for seg0 (\seg -> A.lt scalarType seg end) (\seg -> A.add numType seg gd) $ \seg -> do
+      imapFromTo start end $ \seg -> do
 
         -- Wait for threads to catch up before starting this segment. We could
         -- also place this at the bottom of the loop, but here allows threads to
@@ -368,12 +353,12 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
         x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
         bd    <- blockDim
         r0    <- if A.gte scalarType sz bd
-                   then reduceBlockSMem dev combine Nothing x0
+                   then reduceBlockSMem dev combine Nothing   x0
                    else reduceBlockSMem dev combine (Just sz) x0
 
         -- Step 2: keep walking over the input
         next  <- A.add numType from bd
-        r     <- iter next r0 (\i -> A.lt scalarType i to) (\i -> A.add numType i bd) $ \offset r -> do
+        r     <- iterFromStepTo next bd to r0 $ \offset r -> do
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
@@ -459,7 +444,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
       skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem (int32 warp_smem_elems) skip
+      smem  <- dynamicSharedMem (int32 warp_smem_elems) skip
 
       -- Are we doing bounds checking for this warp?
       --
@@ -474,7 +459,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
           valid  <- A.sub numType n offset
           if A.gte scalarType valid (int32 (CUDA.warpSize dev))
-            then reduceWarpSMem dev combine smem Nothing input
+            then reduceWarpSMem dev combine smem Nothing      input
             else reduceWarpSMem dev combine smem (Just valid) input
 
     -- Step 2: Aggregate per-warp reductions
@@ -482,10 +467,10 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
     warpAggregate :: IR e -> CodeGen (IR e)
     warpAggregate input = do
       -- Allocate #warps elements of shared memory
-      bid   <- blockDim
-      warps <- A.quot integralType bid (int32 (CUDA.warpSize dev))
+      bd    <- blockDim
+      warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- sharedMem warps skip
+      smem  <- dynamicSharedMem warps skip
 
       -- Share the per-lane aggregates
       wid   <- warpId
@@ -501,19 +486,15 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- larger thread blocks?)
       tid   <- threadIdx
       if A.eq scalarType tid (lift 0)
-        then
-          let valid step =
-                case size of
-                  Nothing -> return (lift True)
-                  Just n  -> flip (A.lt scalarType) n =<< A.mul numType step (int32 (CUDA.warpSize dev))
-          in
-          iter (lift 1)
-               input
-               (flip (A.lt scalarType) warps)
-               (flip (A.add numType) (lift 1))
-               (\step x -> if valid step
-                             then app2 combine x =<< readArray smem step
-                             else return x)
+        then do
+          steps <- case size of
+                     Nothing -> return warps
+                     Just n  -> do
+                       a <- A.add numType n (int32 (CUDA.warpSize dev - 1))
+                       b <- A.quot integralType a (int32 (CUDA.warpSize dev))
+                       return b
+          iterFromStepTo (lift 1) (lift 1) steps input $ \step x ->
+            app2 combine x =<< readArray smem step
         else
           return input
 
@@ -557,12 +538,12 @@ reduceWarpSMem dev combine smem size = reduce 0
       | offset <- 1 `P.shiftL` step = do
           -- share input through buffer
           lane <- laneId
-          writeVolatileArray smem lane x
+          writeArray smem lane x
 
           -- update input if in range
           i   <- A.add numType lane (lift offset)
           x'  <- if valid i
-                   then app2 combine x =<< readVolatileArray smem i
+                   then app2 combine x =<< readArray smem i
                    else return x
 
           reduce (step+1) x'
@@ -622,8 +603,25 @@ reduceFromTo dev from to combine get set = do
   return ()
 
 
+
 -- Utilities
 -- ---------
+
+i32 :: IR Int -> CodeGen (IR Int32)
+i32 = A.fromIntegral integralType numType
+
+
+imapFromTo
+    :: IR Int32
+    -> IR Int32
+    -> (IR Int32 -> CodeGen ())
+    -> CodeGen ()
+imapFromTo start end body = do
+  bid <- blockIdx
+  gd  <- gridDim
+  i0  <- A.add numType start bid
+  imapFromStepTo i0 gd end body
+
 
 -- Match reified shape types
 --
