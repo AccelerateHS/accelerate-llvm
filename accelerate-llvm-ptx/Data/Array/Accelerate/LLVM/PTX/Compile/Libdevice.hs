@@ -101,19 +101,22 @@ instance NVVMReflect (String, ByteString) where
 nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
   AST.Module
-    { moduleName          = "nvvm-reflect"
-    , moduleDataLayout    = targetDataLayout (undefined::PTX)
-    , moduleTargetTriple  = targetTriple (undefined::PTX)
-    , moduleDefinitions   = [GlobalDefinition $ functionDefaults
-      { name                 = AST.Name "__nvvm_reflect"
-      , returnType           = downcast (integralType :: IntegralType Int32)
-      , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name (Ptr Int8))], False )
-#if MIN_VERSION_llvm_general(3,5,0)
-      , G.functionAttributes = map Right [NoUnwind, ReadNone, AlwaysInline]
-#else
-      , G.functionAttributes = [NoUnwind, ReadNone, AlwaysInline]
+    { moduleName            = "nvvm-reflect"
+#if MIN_VERSION_llvm_general(3,9,0)
+    , moduleSourceFileName  = []
 #endif
-      , basicBlocks          = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
+    , moduleDataLayout      = targetDataLayout (undefined::PTX)
+    , moduleTargetTriple    = targetTriple (undefined::PTX)
+    , moduleDefinitions     = [GlobalDefinition $ functionDefaults
+      { name                  = AST.Name "__nvvm_reflect"
+      , returnType            = downcast (integralType :: IntegralType Int32)
+      , parameters            = ( [ptrParameter scalarType (UnName 0 :: Name (Ptr Int8))], False )
+#if MIN_VERSION_llvm_general(3,5,0)
+      , G.functionAttributes  = map Right [NoUnwind, ReadNone, AlwaysInline]
+#else
+      , G.functionAttributes  = [NoUnwind, ReadNone, AlwaysInline]
+#endif
+      , basicBlocks           = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
       }]
     }
 
