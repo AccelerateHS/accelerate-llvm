@@ -28,6 +28,7 @@ import LLVM.General.AST.Type.Representation
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -45,6 +46,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
+import Control.Monad                                                ( void )
 import Data.String                                                  ( fromString )
 import Prelude                                                      as P
 
@@ -132,12 +134,13 @@ mkFoldSegP dev aenv combine mseed arr seg =
     ss    <- do n <- i32 . indexHead =<< delayedExtent seg
                 A.sub numType n (lift 1)
 
+    -- Each thread block cooperatively reduces a segment.
     imapFromTo start end $ \s -> do
 
       -- The first two threads of the block determine the indices of the
       -- segments array that we will reduce between and distribute those values
       -- to the other threads in the block.
-      tid  <- threadIdx
+      tid <- threadIdx
       when (A.lt scalarType tid (lift 2)) $ do
         i <- case rank (undefined::sh) of
                0 -> return s
@@ -160,61 +163,88 @@ mkFoldSegP dev aenv combine mseed arr seg =
                                           a <- A.mul numType q sz
                                           A.pair <$> A.add numType u a <*> A.add numType v a
 
-      -- For an exclusive reduction, if this segment is empty then the first
-      -- thread should just write out the initial element.
-      case mseed of
-        Nothing -> return ()
-        Just z  ->
-          when (A.eq scalarType inf sup `land` A.eq scalarType tid (lift 0)) $
-            writeArray arrOut s =<< z
-
-      -- Initialise local sum and then keep walking over the input until the
-      -- entire segment is reduced.
-      i0 <- A.add numType inf tid
-
-      when (A.lt scalarType i0 sup) $ do
-
-        x0 <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i0
-
-        v0 <- A.sub numType sup inf
-        bd <- blockDim
-        r0 <- if A.gte scalarType v0 bd
-                then reduceBlockSMem dev combine Nothing   x0
-                else reduceBlockSMem dev combine (Just v0) x0
-
-        next <- A.add numType inf bd
-        r    <- iterFromStepTo next bd sup r0 $ \offset r -> do
-
-          -- Wait for threads to catch up before beginning the next stripe
-          __syncthreads
-
-          -- Threads cooperatively reduce this portion of the input
-          i   <- A.add numType offset tid
-          v'  <- A.sub numType sup offset
-          r'  <- if A.gte scalarType v' bd
-                    then do
-                      x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i
-                      reduceBlockSMem dev combine Nothing x
-
-                    else
-                      if A.lt scalarType i sup
-                        then do
-                          x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i
-                          reduceBlockSMem dev combine (Just v') x
-                        else
-                          return r
-
-          -- Incorporate the value from the previous iteration.
-          if A.eq scalarType tid (lift 0)
-            then app2 combine r r'
-            else return r'
-
-        -- Thread 0 writes the result of this segment to memory
-        when (A.eq scalarType tid (lift 0)) $
-          writeArray arrOut s =<<
+      void $
+        if A.eq scalarType inf sup
+          -- This segment is empty. If this is an exclusive reduction the
+          -- first thread writes out the initial element for this segment.
+          then do
             case mseed of
-              Nothing -> return r
-              Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
+              Nothing -> return (IR OP_Unit :: IR ())
+              Just z  -> do
+                when (A.eq scalarType tid (lift 0)) $ writeArray arrOut s =<< z
+                return (IR OP_Unit)
+
+          -- This is a non-empty segment.
+          else do
+            -- Step 1: initialise local sums
+            --
+            -- NOTE: We require all threads to enter this branch and execute the
+            -- first step, even if they do not have a valid element and must
+            -- return 'undef'. If we attempt to skip this entire section for
+            -- non-participating threads (i.e. 'when (i0 < sup)'), it seems that
+            -- those threads die and will not participate in the computation of
+            -- _any_ further segment. I'm not sure if this is a CUDA oddity
+            -- (e.g. we must have all threads convergent on __syncthreads) or
+            -- a bug in NVPTX.
+            --
+            bd <- blockDim
+            i0 <- A.add numType inf tid
+            x0 <- if A.lt scalarType i0 sup
+                    then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i0
+                    else let
+                             go :: TupleType a -> Operands a
+                             go UnitTuple       = OP_Unit
+                             go (PairTuple a b) = OP_Pair (go a) (go b)
+                             go (SingleTuple t) = ir' t (undef t)
+                         in
+                         return . IR $ go (eltType (undefined::e))
+
+            v0 <- A.sub numType sup inf
+            r0 <- if A.gte scalarType v0 bd
+                    then reduceBlockSMem dev combine Nothing   x0
+                    else reduceBlockSMem dev combine (Just v0) x0
+
+            -- Step 2: keep walking over the input
+            nxt <- A.add numType inf bd
+            r   <- iterFromStepTo nxt bd sup r0 $ \offset r -> do
+
+                     -- Wait for threads to catch up before starting the next stripe
+                     __syncthreads
+
+                     i' <- A.add numType offset tid
+                     v' <- A.sub numType sup offset
+                     r' <- if A.gte scalarType v' bd
+                             -- All threads in the block are in bounds, so we
+                             -- can avoid bounds checks.
+                             then do
+                               x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                               reduceBlockSMem dev combine Nothing x'
+
+                             -- Not all threads are valid.
+                             else
+                             if A.lt scalarType i' sup
+                               then do
+                                 x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                 reduceBlockSMem dev combine (Just v') x'
+                               else
+                                 return r
+
+                     -- first thread incorporates the result from the previous
+                     -- iteration
+                     if A.eq scalarType tid (lift 0)
+                       then app2 combine r r'
+                       else return r'
+
+            -- Step 3: Thread zero writes the aggregate reduction for this
+            -- segment to memory. If this is an exclusive fold combine with the
+            -- initial element as well.
+            when (A.eq scalarType tid (lift 0)) $
+             writeArray arrOut s =<<
+               case mseed of
+                 Nothing -> return r
+                 Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
+
+            return (IR OP_Unit)
 
     return_
 
