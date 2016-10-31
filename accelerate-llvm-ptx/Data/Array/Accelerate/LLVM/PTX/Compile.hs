@@ -208,15 +208,16 @@ linkPTX name ptx = do
       d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
       flags     = concat [v,d]
   --
+  Debug.when (Debug.dump_asm) $
+    Debug.traceIO Debug.verbose (B.unpack ptx)
+
   jit   <- CUDA.loadDataEx ptx flags
 
-  Debug.when Debug.dump_asm $ do
-    Debug.traceIO Debug.verbose (B.unpack ptx)
-    Debug.traceIO Debug.dump_asm $
-      printf "ptx: compiled entry function \"%s\" in %s\n%s"
-             name
-             (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
-             (B.unpack (CUDA.jitInfoLog jit))
+  Debug.traceIO Debug.dump_asm $
+    printf "ptx: compiled entry function \"%s\" in %s\n%s"
+           name
+           (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
+           (B.unpack (CUDA.jitInfoLog jit))
 
   return $! CUDA.jitModule jit
 
