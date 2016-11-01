@@ -378,7 +378,7 @@ executeOpenAcc (UnzipAcc tup v) aenv stream = do
         go :: TupleIdx v e -> TupleType t' -> ArrayData t' -> ArrayData (EltRepr e)
         go (SuccTupIdx ix) (PairTuple t _) (AD_Pair x _)           = go ix t x
         go ZeroTupIdx      (PairTuple _ t) (AD_Pair _ x)
-          | Just REFL <- matchTupleType t (eltType (undefined::e)) = x
+          | Just Refl <- matchTupleType t (eltType (undefined::e)) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 
 

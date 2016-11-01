@@ -53,7 +53,7 @@ mkFold
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold aenv f z acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = (+++) <$> mkFoldAll  aenv f (Just z) acc
           <*> mkFoldFill aenv z
 
@@ -72,7 +72,7 @@ mkFold1
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold1 aenv f acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll aenv f Nothing acc
 
   | otherwise
@@ -300,10 +300,10 @@ matchShapeType
     :: forall sh sh'. (Shape sh, Shape sh')
     => sh
     -> sh'
-    -> Maybe (sh :=: sh')
+    -> Maybe (sh :~: sh')
 matchShapeType _ _
-  | Just REFL <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast REFL
+  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
+  = gcast Refl
 
 matchShapeType _ _
   = Nothing

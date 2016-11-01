@@ -202,7 +202,7 @@ foldCore
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldCore kernel gamma aenv stream sh
-  | Just REFL <- matchShapeType sh (undefined::DIM1)
+  | Just Refl <- matchShapeType sh (undefined::DIM1)
   = foldAllOp kernel gamma aenv stream sh
   --
   | otherwise

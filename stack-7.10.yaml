@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-6.14
+resolver: lts-6.23
 
 packages:
 - 'accelerate-llvm'
@@ -12,12 +12,12 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 95ea146fd56f3b98176e449ad6b4c3b5dc89fc83
+    commit: f9f6b41b4d6ea577809a5a6bd6b816b868096e7b
   extra-dep: true
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
-- 'cuda-0.7.5.0'
+- 'cuda-0.7.5.1'
 - 'libffi-0.1'
 - 'nvvm-0.7.5.0'
 - 'unique-0'

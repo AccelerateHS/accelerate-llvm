@@ -246,7 +246,7 @@ compileOpenAcc = traverseAcc
           , Shape u                             <- sh
           , Manifest (Avar ix)                  <- u
           , Lam (Body (Index v (Var ZeroIdx)))  <- index
-          , Just REFL                           <- match u v
+          , Just Refl                           <- match u v
           = Just (UnzipAcc tix ix)
         unzip _ _
           = Nothing

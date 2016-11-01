@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 95ea146fd56f3b98176e449ad6b4c3b5dc89fc83
+    commit: f9f6b41b4d6ea577809a5a6bd6b816b868096e7b
   extra-dep: true
 
 extra-deps:
@@ -31,7 +31,7 @@ extra-deps:
 - 'transformers-compat-0.4.0.4'
 
 # accelerate-llvm-ptx
-- 'cuda-0.7.5.0'
+- 'cuda-0.7.5.1'
 - 'nvvm-0.7.5.0'
 
 # update utils/cabal_macros.h whenever these versions are changed
