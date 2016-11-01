@@ -141,8 +141,8 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
     --
     extract :: DelayedOpenExp (((),e),e) aenv (e,e) -> Maybe (DelayedOpenExp (((),e),e) aenv e)
     extract (Tuple (SnocTup (SnocTup NilTup x) y))
-      | Just REFL <- match x (Var ZeroIdx) = Just y
-      | Just REFL <- match y (Var ZeroIdx) = Just x
+      | Just Refl <- match x (Var ZeroIdx) = Just y
+      | Just Refl <- match y (Var ZeroIdx) = Just x
     extract _
       = Nothing
 

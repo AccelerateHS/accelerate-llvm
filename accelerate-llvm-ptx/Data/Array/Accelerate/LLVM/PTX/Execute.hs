@@ -189,7 +189,7 @@ foldCore
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
 foldCore exe gamma aenv stream sh
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldAllOp exe gamma aenv stream sh
 
   | otherwise

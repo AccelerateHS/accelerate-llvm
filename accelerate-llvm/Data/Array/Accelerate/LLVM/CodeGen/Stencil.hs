@@ -194,7 +194,7 @@ bounded bndy arr@IRArray{..} ix =
                i'  <- go ti  sz iz
                return $ OP_Pair ix' i'
         go (SingleTuple t) sz iz
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = do
                IR i' <- if A.lt t (IR iz) (int 0)
                           then
@@ -234,7 +234,7 @@ bounded bndy arr@IRArray{..} ix =
               then go tsh sh ih
               else return (bool False)
         go (SingleTuple t) sz iz
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = if A.lt t (IR iz) (int 0)
               then return (bool False)
               else
@@ -286,7 +286,7 @@ cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
     go UnitTuple OP_Unit                 = OP_Pair OP_Unit ix
     go (PairTuple th tz) (OP_Pair sh sz)
       | SingleTuple t <- tz
-      , Just REFL     <- matchScalarType t (scalarType :: ScalarType Int)
+      , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = OP_Pair (go th sh) sz
     go _ _
       = $internalError "cons" "expected shape with Int components"
@@ -302,7 +302,7 @@ uncons (IR extent) = let (ix, extent') = go (eltType (undefined::(sh :. Int))) e
     go (PairTuple UnitTuple _) (OP_Pair OP_Unit v2)      = (v2, OP_Unit)
     go (PairTuple t1@(PairTuple _ t2) _) (OP_Pair v1 v3)
       | SingleTuple t <- t2
-      , Just REFL     <- matchScalarType t (scalarType :: ScalarType Int)
+      , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = let (i, v1') = go t1 v1
         in  (i, OP_Pair v1' v3)
     go _ _

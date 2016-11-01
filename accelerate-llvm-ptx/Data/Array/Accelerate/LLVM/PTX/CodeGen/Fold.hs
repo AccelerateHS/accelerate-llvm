@@ -69,7 +69,7 @@ mkFold
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = (+++) <$> mkFoldAll  dev aenv f (Just z) acc
           <*> mkFoldFill ptx aenv z
 
@@ -93,7 +93,7 @@ mkFold1
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll dev aenv f Nothing acc
 
   | otherwise
@@ -629,10 +629,10 @@ matchShapeType
     :: forall sh sh'. (Shape sh, Shape sh')
     => sh
     -> sh'
-    -> Maybe (sh :=: sh')
+    -> Maybe (sh :~: sh')
 matchShapeType _ _
-  | Just REFL <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast REFL
+  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
+  = gcast Refl
 
 matchShapeType _ _
   = Nothing

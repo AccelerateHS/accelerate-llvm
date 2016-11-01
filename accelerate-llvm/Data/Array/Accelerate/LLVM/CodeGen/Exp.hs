@@ -162,7 +162,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
       where
         go :: TupleIdx v e -> TupleType t' -> Operands t' -> Operands (EltRepr e)
         go ZeroTupIdx (PairTuple _ t) (OP_Pair _ v)
-          | Just REFL <- matchTupleType t (eltType (undefined :: e))
+          | Just Refl <- matchTupleType t (eltType (undefined :: e))
           = v
         go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _)      = go ix t tup
         go _ _ _                                                = $internalError "prjT" "inconsistent valuation"
@@ -177,7 +177,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
           -- We must assert that the reified type 'tb' of 'b' is actually
           -- equivalent to the type of 'b'. This can not fail, but is necessary
           -- because 'tb' observes the representation type of surface type 'b'.
-          | Just REFL <- matchTupleType tb (eltType (undefined::b))
+          | Just Refl <- matchTupleType tb (eltType (undefined::b))
           = do a'    <- go ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
@@ -202,13 +202,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit
           = return $ IR (constant (eltType (undefined :: Int)) 1)
         go (PairTuple tsh t) (OP_Pair sh sz)
-          | Just REFL <- matchTupleType t (eltType (undefined::Int))
+          | Just Refl <- matchTupleType t (eltType (undefined::Int))
           = do
                a <- go tsh sh
                b <- A.mul numType a (IR sz)
                return b
         go (SingleTuple t) (op' t -> i)
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = return $ ir t i
         go _ _
           = $internalError "shapeSize" "expected shape with Int components"
@@ -220,7 +220,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit OP_Unit
           = return OP_Unit
         go (SingleTuple t) sh1 sh2
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
           = do IR x <- A.min t (IR sh1) (IR sh2)
                return x
         go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
@@ -238,7 +238,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit OP_Unit
           = return OP_Unit
         go (SingleTuple t) sh1 sh2
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
           = do IR x <- A.max t (IR sh1) (IR sh2)
                return x
         go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
@@ -383,11 +383,11 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
       = return $ IR (constant (eltType (undefined :: Int)) 0)
 
     cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
-      | Just REFL <- matchTupleType t (eltType (undefined::Int))
+      | Just Refl <- matchTupleType t (eltType (undefined::Int))
       -- If we short-circuit the last dimension, we can avoid inserting
       -- a multiply by zero and add of the result.
       = case matchTupleType tsh (eltType (undefined::Z)) of
-          Just REFL -> return (IR i)
+          Just Refl -> return (IR i)
           Nothing   -> do
             a <- cvt tsh sh ix
             b <- A.mul numType a (IR sz)
@@ -395,7 +395,7 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
             return c
 
     cvt (SingleTuple t) _ (op' t -> i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return $ ir t i
 
     cvt _ _ _
@@ -412,19 +412,19 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
       = return OP_Unit
 
     cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
-      | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
+      | Just Refl <- matchTupleType tsz (eltType (undefined::Int))
       = do
            i'    <- A.quot integralType i (IR sz)
            -- If we assume the index is in range, there is no point computing
            -- the remainder of the highest dimension since (i < sz) must hold
            IR r  <- case matchTupleType tsh (eltType (undefined::Z)) of
-                      Just REFL -> return i     -- TODO: in debug mode assert (i < sz)
+                      Just Refl -> return i     -- TODO: in debug mode assert (i < sz)
                       Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
 
     cvt (SingleTuple t) _ (IR i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return i
 
     cvt _ _ _
