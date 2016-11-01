@@ -160,9 +160,7 @@ run1 = run1With defaultTarget
 -- default, automatically selected device.
 --
 run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
-run1With target f =
-  let go = run1AsyncWith target f
-  in \a -> unsafePerformIO $ wait =<< go a
+run1With = run1' unsafePerformIO
 
 
 -- | As 'run1', but the computation is executed asynchronously.
@@ -174,13 +172,15 @@ run1Async = run1AsyncWith defaultTarget
 -- | As 'run1With', but execute asynchronously.
 --
 run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> IO (Async b)
-run1AsyncWith target f = \a -> asyncBound (execute a)
+run1AsyncWith = run1' asyncBound
+
+run1' :: (Arrays a, Arrays b) => (IO b -> c) -> PTX -> (Acc a -> Acc b) -> a -> c
+run1' using target f = \a -> using (execute a)
   where
     !acc        = convertAfunWith config f
     !afun       = unsafePerformIO $ do
-                    acc `seq` dumpSimplStats
-                    acc `seq` dumpGraph acc
-                    phase "compile" (evalPTX target (compileAfun acc))
+                    dumpGraph acc
+                    phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
     execute a   =   phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
 
 
@@ -240,6 +240,9 @@ registerPinnedAllocatorWith target =
 
 -- Debugging
 -- =========
+
+dumpStats :: MonadIO m => a -> m a
+dumpStats x = dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> m a -> m a
 phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go
