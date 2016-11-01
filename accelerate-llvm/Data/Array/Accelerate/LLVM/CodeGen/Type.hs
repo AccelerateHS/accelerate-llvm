@@ -135,6 +135,7 @@ instance TypeOf Constant where
   typeOf c =
     case c of
       ScalarConstant t _        -> PrimType (ScalarPrimType t)
+      UndefConstant t           -> t
       GlobalReference t _       -> t
 
 
