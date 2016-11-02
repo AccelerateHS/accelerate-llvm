@@ -207,19 +207,10 @@ libdeviceModule arch = do
   --      fully apply this function that can be lifted out to a CAF and only
   --      executed once per program execution.
   --
-  Module{..} <- withContext $ \ctx ->
+  withContext $ \ctx ->
     either ($internalError "libdeviceModule") id `fmap`
     runExceptT (withModuleFromBitcode ctx bc moduleAST)
 
-  -- This is to avoid the warning message:
-  --
-  --   WARNING: Linking two modules of different target triples: map:
-  --            'nvptx64-nvidia-cuda' and 'nvptx-nvidia-cl.1.0'
-  --
-  -- We can't use the second target, used by libdevice*.bc, because we get an
-  -- unknown internal driver error code.
-  --
-  return $! Module { moduleTargetTriple=Nothing, .. }
 
 #if !MIN_VERSION_llvm_general(3,3,0)
 withModuleFromBitcode :: Context -> (String,ByteString) -> (LLVM.Module -> IO a) -> ErrorT String IO a

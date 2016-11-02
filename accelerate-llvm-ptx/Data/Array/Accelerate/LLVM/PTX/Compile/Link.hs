@@ -81,16 +81,21 @@ withLibdeviceNVPTX dev ctx ast next =
   case Set.null externs of
     True        -> runError $ LLVM.withModuleFromAST ctx ast next
     False       ->
-      runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  ->
-      runError $ LLVM.withModuleFromAST ctx nvvmReflect                            $ \refl ->
-      runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
+      runError $ LLVM.withModuleFromAST ctx ast                          $ \mdl  ->
+      runError $ LLVM.withModuleFromAST ctx nvvmReflect                  $ \refl ->
+      runError $ LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
         runError $ linkModules mdl refl
         runError $ linkModules mdl libd
         Debug.traceIO Debug.dump_cc msg
         next mdl
   where
+    -- Replace the target triple and datalayout from the libdevice.bc module
+    -- with those of the generated code. This avoids warnings such as "linking
+    -- two modules of different target triples..."
+    libdev      = (libdevice arch) { moduleTargetTriple = moduleTargetTriple ast
+                                   , moduleDataLayout   = moduleDataLayout ast
+                                   }
     externs     = analyse ast
-
     arch        = computeCapability dev
     runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
 
