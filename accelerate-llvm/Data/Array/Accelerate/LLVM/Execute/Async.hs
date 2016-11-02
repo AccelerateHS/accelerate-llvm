@@ -41,7 +41,12 @@ class Async arch where
   -- | Create a new execution stream that can be used to track (potentially
   -- parallel) computations
   --
-  spawn       :: LLVM arch (StreamR arch)
+  fork        :: LLVM arch (StreamR arch)
+
+  -- | Mark the given execution stream as closed. The stream may still be
+  -- executing in the background, but no new work may be submitted to it.
+  --
+  join        :: StreamR arch -> LLVM arch ()
 
   -- | Generate a new event at the end of the given execution stream. It will be
   -- filled once all prior work submitted to the stream has completed.
@@ -72,8 +77,9 @@ async :: Async arch
       => (StreamR arch -> LLVM arch a)
       -> LLVM arch (AsyncR arch a)
 async f = do
-  s <- spawn
+  s <- fork
   r <- f s
   e <- checkpoint s
+  join s
   return $ AsyncR e r
 

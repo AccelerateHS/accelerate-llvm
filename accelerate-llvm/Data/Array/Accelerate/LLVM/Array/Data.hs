@@ -42,7 +42,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
 import Control.Applicative
-import Control.Monad
+import Control.Monad                                                ( liftM, liftM2 )
 import Control.Monad.Trans
 import Data.Typeable
 import Foreign.C.Types
@@ -180,7 +180,9 @@ newRemote sh f =
 --
 {-# INLINEABLE useRemote #-}
 useRemote :: (Remote arch, Arrays arrs) => arrs -> LLVM arch arrs
-useRemote arrs = get =<< useRemoteAsync arrs =<< spawn
+useRemote arrs = do
+  AsyncR _ a <- async (useRemoteAsync arrs)
+  get a
 
 
 -- | Upload an immutable array from the host to the remote device,
@@ -197,9 +199,10 @@ useRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           useRemoteR n (Just s) ad
           after stream =<< checkpoint s
+          join s
           return ad
   --
   event  <- checkpoint stream   -- TLM: Assuming that adding events to a stream counts as things to wait for
@@ -212,7 +215,9 @@ useRemoteAsync arrs stream = do
 --
 {-# INLINEABLE copyToRemote #-}
 copyToRemote :: (Remote arch, Arrays a) => a -> LLVM arch a
-copyToRemote arrs = get =<< copyToRemoteAsync arrs =<< spawn
+copyToRemote arrs = do
+  AsyncR _ a <- async (copyToRemoteAsync arrs)
+  get a
 
 
 -- | Upload an existing array to the remote device, asynchronously.
@@ -227,9 +232,10 @@ copyToRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToRemoteR 0 n (Just s) ad
           after stream =<< checkpoint s
+          join s
           return ad
   --
   event  <- checkpoint stream
@@ -242,7 +248,9 @@ copyToRemoteAsync arrs stream = do
 --
 {-# INLINEABLE copyToHost #-}
 copyToHost :: (Remote arch, Arrays a) => a -> LLVM arch a
-copyToHost arrs = get =<< copyToHostAsync arrs =<< spawn
+copyToHost arrs = do
+  AsyncR _ a <- async (copyToHostAsync arrs)
+  get a
 
 
 -- | Copy an array from the remote device to the host, asynchronously
@@ -257,9 +265,10 @@ copyToHostAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToHostR 0 n (Just s) ad
           after stream =<< checkpoint s
+          join s
           return ad
   --
   event  <- checkpoint stream
@@ -272,7 +281,9 @@ copyToHostAsync arrs stream = do
 --
 {-# INLINEABLE copyToPeer #-}
 copyToPeer :: (Remote arch, Arrays a) => arch -> a -> LLVM arch a
-copyToPeer peer arrs = get =<< copyToPeerAsync peer arrs =<< spawn
+copyToPeer peer arrs = do
+  AsyncR _ a <- async (copyToPeerAsync peer arrs)
+  get a
 
 
 -- | As 'copyToPeer', asynchronously.
@@ -288,9 +299,10 @@ copyToPeerAsync peer arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToPeerR 0 n peer (Just s) ad
           after stream =<< checkpoint s
+          join s
           return ad
   --
   event  <- checkpoint stream

@@ -35,8 +35,11 @@ instance A.Async Native where
   type StreamR Native = ()
   type EventR  Native = ()
 
-  {-# INLINE spawn #-}
-  spawn = return ()
+  {-# INLINE fork #-}
+  fork = return ()
+
+  {-# INLINE join #-}
+  join () = return ()
 
   {-# INLINE checkpoint #-}
   checkpoint () = return ()

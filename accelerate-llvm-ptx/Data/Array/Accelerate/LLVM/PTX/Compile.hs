@@ -61,9 +61,9 @@ import qualified Foreign.NVVM                                       as NVVM
 #endif
 
 -- standard library
-import Data.ByteString                                              ( ByteString )
 import Control.Monad.Except
 import Control.Monad.State
+import Data.ByteString                                              ( ByteString )
 import Text.Printf
 import qualified Data.ByteString.Char8                              as B
 import qualified Data.Map                                           as Map

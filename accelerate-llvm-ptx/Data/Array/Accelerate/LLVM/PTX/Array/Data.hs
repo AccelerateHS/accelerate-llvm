@@ -36,7 +36,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State
+import Control.Monad.State                                      ( liftIO, gets )
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
@@ -114,10 +114,11 @@ copyToHostLazy arrs = do
         peekR ad (UniqueArray uid (Lifetime ref weak fp)) = do
           fp' <- unsafeInterleaveIO $
             evalPTX ptx $ do
-              s <- spawn
+              s <- fork
               copyToHostR 0 n (Just s) ad
               e <- checkpoint s
               block e
+              join s
               return fp
           return $ UniqueArray uid (Lifetime ref weak fp')
 

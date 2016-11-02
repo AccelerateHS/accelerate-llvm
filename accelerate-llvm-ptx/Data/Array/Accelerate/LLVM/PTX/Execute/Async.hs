@@ -43,10 +43,15 @@ instance A.Async PTX where
   type StreamR PTX = Stream
   type EventR  PTX = Event
 
-  {-# INLINEABLE spawn #-}
-  spawn = do
+  {-# INLINEABLE fork #-}
+  fork = do
     PTX{..} <- gets llvmTarget
     liftIO  $! Stream.create ptxContext ptxStreamReservoir
+
+  {-# INLINEABLE join #-}
+  join stream = do
+    PTX{..} <- gets llvmTarget
+    liftIO  $! Stream.destroy ptxContext ptxStreamReservoir stream
 
   {-# INLINEABLE checkpoint #-}
   checkpoint stream =

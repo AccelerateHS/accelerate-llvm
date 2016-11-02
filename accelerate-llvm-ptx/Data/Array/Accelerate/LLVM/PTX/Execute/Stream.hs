@@ -14,7 +14,7 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Stream (
 
-  Stream, Reservoir, new, create, streaming,
+  Stream, Reservoir, new, create, destroy, streaming,
 
 ) where
 
@@ -108,27 +108,32 @@ flush !Context{..} !ref = do
 {-# INLINEABLE create #-}
 create :: Context -> Reservoir -> IO Stream
 create _ctx !ref = do
-  s <- modifyMVar ref $ \rsv ->
-          case Seq.viewl rsv of
-            s Seq.:< ss -> do
-              message ("reuse " ++ showStream s)
-              return (ss, s)
-
-            Seq.EmptyL  -> do
-              s <- Stream.create []
-              message ("new " ++ showStream s)
-              return (Seq.empty, s)
-
+  s      <- create' ref
   stream <- newLifetime s
-  addFinalizer stream $ do
-      message ("stash stream " ++ showStream s)
-      -- TLM: We should ensure that all operations in the stream have completed
-      -- before attempting to return it to the reservoir.
-      --
-      -- forkOS $ bracket_ (push ctx) pop (Stream.block s)
-      modifyMVar_ ref $ \rsv -> return (rsv Seq.|> s)
-
+  addFinalizer stream (finaliser ref s)
   return stream
+
+create' :: Reservoir -> IO Stream.Stream
+create' !ref = do
+  ms <- modifyMVar ref (search Seq.empty)
+  case ms of
+    Just s  -> return s
+    Nothing -> Stream.create []
+  where
+    -- Search through the streams in the reservoir looking for the first
+    -- inactive one. Optimistically adding the streams to the end of the
+    -- reservoir as soon as we stop assigning new work to them (c.f. async), and
+    -- just checking they have completed before reusing them, is quicker than
+    -- having a finaliser thread block until completion before retiring them.
+    --
+    search !acc !rsv =
+      case Seq.viewl rsv of
+        Seq.EmptyL  -> return (acc, Nothing)
+        s Seq.:< ss -> do
+          done <- Stream.finished s
+          case done of
+            True  -> return (acc Seq.>< ss, Just s)
+            False -> search (acc Seq.|> s) ss
 
 
 -- | Merge a stream back into the reservoir. This must only be done once all
@@ -138,30 +143,27 @@ create _ctx !ref = do
 destroy :: Context -> Reservoir -> Stream -> IO ()
 destroy _ctx _ref = finalize
 
-{--
+
+-- | Finaliser to run when garbage collecting streams.
+--
+-- Note: [Finalising execution streams]
+--
+-- We don't actually ensure that the stream is complete before attempting to
+-- return it to the reservoir for reuse. Doing so increases overhead of the LLVM
+-- RTS due to 'forkIO', and consumes CPU time as 'Stream.block' busy-waits for
+-- the stream to complete. It is quicker to optimistically return the streams to
+-- the end of the reservoir immediately, and just check whether the stream is
+-- done before reusing it.
+--
+-- > void . forkIO $ do
+-- >   Stream.block stream
+-- >   modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
+--
+{-# INLINEABLE finaliser #-}
+finaliser :: Reservoir -> Stream.Stream -> IO ()
+finaliser !ref !stream = do
   message ("stash stream " ++ showStream stream)
-
-  -- TLM TODO: forkIO a thread to do the wait and stash. Need to test that.
-
-  -- Wait for all preceding operations submitted to the stream to complete.
-  --
-  -- Note: Placing the block here seems to force _all_ streams to block, or at
-  --       least significantly impacts the chances of other streams overlapping.
-  --       However by using the 'streaming' interface, we avoid the need to
-  --       block the stream here, because the binding will always be evaluated
-  --       before the body begins execution.
-  --
-  -- Stream.block stream
-
-  -- Note: We use a sequence here so that the old stream can be placed onto the
-  --       end of the reservoir, while new streams are popped from the front.
-  --       Since we don't block on the stream when returning it (see above),
-  --       in this configuration most likely the stream won't be required
-  --       immediately, and so it has some time yet to finish any outstanding
-  --       operations (just in case).
-  --
   modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
---}
 
 
 -- Debug

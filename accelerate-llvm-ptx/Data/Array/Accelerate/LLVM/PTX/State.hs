@@ -33,8 +33,8 @@ import Data.Range.Range                                         ( Range(..) )
 import Control.Parallel.Meta                                    ( Executable(..) )
 
 -- standard library
-import Control.Exception                                        ( bracket_, catch )
 import Control.Concurrent                                       ( runInBoundThread )
+import Control.Exception                                        ( bracket_, catch )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA

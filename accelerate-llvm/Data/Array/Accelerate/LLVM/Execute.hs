@@ -42,7 +42,7 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 
-import Data.Array.Accelerate.LLVM.Execute.Async
+import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( join )
 import Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- library
@@ -223,7 +223,8 @@ executeAfun1
     -> a
     -> LLVM arch b
 executeAfun1 afun arrs = do
-  executeOpenAfun1 afun Aempty =<< useRemoteAsync arrs =<< spawn
+  AsyncR _ a <- async (useRemoteAsync arrs)
+  executeOpenAfun1 afun Aempty a
 
 
 -- Execute an open array function of one argument
