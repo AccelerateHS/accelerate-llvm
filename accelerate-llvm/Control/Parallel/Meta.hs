@@ -19,7 +19,6 @@ import Data.Concurrent.Deque.Class
 import Data.Sequence                                            ( Seq )
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
-import qualified Data.Sequence                                  as Seq
 
 import GHC.Base                                                 ( quotInt, remInt )
 
@@ -90,7 +89,6 @@ data Executable = Executable {
     runExecutable
         :: Int          -- Profitable parallelism threshold (PPT)
         -> Range        -- The range to execute over
-        -> Finalise     -- Post-processing function, given the ranges processed by this thread.
         -> Action       -- The main function to execute
         -> IO ()
   }
@@ -152,57 +150,49 @@ runParIO
     -> Gang
     -> Range
     -> Action
-    -> Finalise
     -> IO ()
-runParIO resource gang range action after
-  | gangSize gang == 1  = seqIO resource gang range action after
-  | otherwise           = parIO resource gang range action after
+runParIO resource gang range action
+  | gangSize gang == 1  = seqIO resource gang range action
+  | otherwise           = parIO resource gang range action
 
 seqIO
     :: Resource
     -> Gang
     -> Range
     -> Action
-    -> Finalise
     -> IO ()
-seqIO _ _    Empty    _      after = runFinalise after Seq.empty
-seqIO _ gang (IE u v) action after = do
-  gangIO gang $ action u v
-  runFinalise after (Seq.singleton (IE u v))
+seqIO _ _    Empty    _      = return ()
+seqIO _ gang (IE u v) action = gangIO gang $ action u v
 
 parIO
     :: Resource
     -> Gang
     -> Range
     -> Action
-    -> Finalise
     -> IO ()
-parIO _        _    Empty        _      after = runFinalise after Seq.empty
-parIO resource gang (IE inf sup) action after =
+parIO _        _    Empty        _      = return ()
+parIO resource gang (IE inf sup) action =
   gangIO gang $ \thread -> do
       let start = splitIx thread
           end   = splitIx (thread + 1)
           me    = V.unsafeIndex gang thread
 
-          loop rs = do
+          loop  = do
             work <- runWorkSearch (workSearch resource) me
             case work of
               -- Got a work unit. Execute it then search for more.
-              Just r@(IE u v)   -> action u v thread >> loop (rs `R.append` r)
+              Just (IE u v) -> action u v thread >> loop
 
               -- If the work search failed (which is random), to be extra safe
               -- make sure all the work queues are exhausted before exiting.
-              _                 -> do
+              _             -> do
                 done <- exhausted gang
                 if done
-                   then return rs
-                   else loop rs
+                   then return ()
+                   else loop
 
-      ranges <- if start >= end
-                  then return Seq.empty
-                  else pushL (workpool me) (IE start end) >> loop Seq.empty
-
-      runFinalise after (compress ranges)
+      pushL (workpool me) (IE start end)
+      loop
   where
     len                 = sup - inf
     workers             = gangSize gang

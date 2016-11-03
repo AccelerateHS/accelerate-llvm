@@ -45,7 +45,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
-import Control.Parallel.Meta                                    ( runExecutable, Finalise )
+import Control.Parallel.Meta                                    ( runExecutable )
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -57,7 +57,6 @@ import Data.Int                                                 ( Int32 )
 import Data.Word                                                ( Word32 )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
-import Data.Monoid                                              ( mempty )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import qualified Prelude                                        as P
@@ -117,7 +116,7 @@ simpleOp exe gamma aenv stream sh = do
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
   return out
 
 simpleNamed
@@ -135,7 +134,7 @@ simpleNamed fun exe gamma aenv stream sh = do
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -216,7 +215,7 @@ foldAllOp exe gamma aenv stream (Z :. n) = do
     then do
       -- The array is small enough that we can compute it in a single step
       out   <- allocateRemote Z
-      liftIO $ executeOp ptx ks mempty gamma aenv stream (IE 0 n) out
+      liftIO $ executeOp ptx ks gamma aenv stream (IE 0 n) out
       return out
 
     else do
@@ -230,12 +229,12 @@ foldAllOp exe gamma aenv stream (Z :. n) = do
             | otherwise = do
                 let s = m `multipleOf` kernelThreadBlockSize km2
                 out   <- allocateRemote (Z :. s)
-                liftIO $ executeOp ptx km2 mempty gamma aenv stream (IE 0 s) (tmp, out)
+                liftIO $ executeOp ptx km2 gamma aenv stream (IE 0 s) (tmp, out)
                 rec out
       --
       let s = n `multipleOf` kernelThreadBlockSize km1
       tmp   <- allocateRemote (Z :. s)
-      liftIO $ executeOp ptx km1 mempty gamma aenv stream (IE 0 s) tmp
+      liftIO $ executeOp ptx km1 gamma aenv stream (IE 0 s) tmp
       rec tmp
 
 
@@ -256,7 +255,7 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -276,7 +275,7 @@ foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
   --
   out <- allocateRemote (sh :. n)
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 (size sh * n)) out
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh * n)) out
   return out
 
 
@@ -329,19 +328,19 @@ scanCore exe gamma aenv stream n m = do
     then
       -- If this is an exclusive scan of an empty array, just fill the result
       -- with the seed element
-      liftIO $ executeOp ptx k4 mempty gamma aenv stream (IE 0 m) out
+      liftIO $ executeOp ptx k4 gamma aenv stream (IE 0 m) out
 
     else do
       -- Small arrays which can be computed by a single thread block require no
       -- additional work.
       tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-      liftIO $ executeOp ptx k1 mempty gamma aenv stream (IE 0 s) (out, tmp)
+      liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (out, tmp)
 
       -- Multi-block reductions need to compute the per-block prefix, then apply
       -- those values to the partial results.
       when (s > 1) $ do
-        liftIO $ executeOp ptx k2 mempty gamma aenv stream (IE 0 s)     tmp
-        liftIO $ executeOp ptx k3 mempty gamma aenv stream (IE 0 (s-1)) (tmp, out)
+        liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
+        liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
 
   return out
 
@@ -369,11 +368,11 @@ permuteOp exe gamma aenv stream inplace shIn dfs = do
            else cloneArrayAsync stream dfs
   --
   case kernelName kernel of
-    "permute_rmw"   -> liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 n) out
+    "permute_rmw"   -> liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) out
     "permute_mutex" -> do
       barrier@(Array _ ad) <- allocateRemote (Z :. m) :: LLVM PTX (Vector Word32)
       memsetArrayAsync stream m 0 ad
-      liftIO $ executeOp ptx kernel mempty gamma aenv stream (IE 0 n) (out, barrier)
+      liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) (out, barrier)
     _               -> $internalError "permute" "unexpected kernel image"
   --
   return out
@@ -431,15 +430,14 @@ executeOp
     :: Marshalable args
     => PTX
     -> Kernel
-    -> Finalise
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Range
     -> args
     -> IO ()
-executeOp ptx@PTX{..} kernel finish gamma aenv stream r args =
-  runExecutable fillP defaultPPT r finish $ \start end _ -> do
+executeOp ptx@PTX{..} kernel gamma aenv stream r args =
+  runExecutable fillP defaultPPT r $ \start end _ -> do
     argv <- marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
     launch kernel stream (end-start) argv
 

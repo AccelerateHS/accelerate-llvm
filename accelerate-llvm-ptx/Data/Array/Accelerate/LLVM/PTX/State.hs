@@ -84,7 +84,7 @@ createTargetFromContext ctx' = do
 
 {-# INLINE simpleIO #-}
 simpleIO :: Executable
-simpleIO = Executable $ \_ppt range _after action ->
+simpleIO = Executable $ \_ppt range action ->
   case range of
     Empty       -> return ()
     IE u v      -> action u v 0

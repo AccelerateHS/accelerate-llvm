@@ -46,12 +46,11 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- Use work-stealing scheduler
 import Data.Range.Range                                             ( Range(..) )
-import Control.Parallel.Meta                                        ( runExecutable, Finalise(..) )
+import Control.Parallel.Meta                                        ( runExecutable )
 import Control.Parallel.Meta.Worker                                 ( gangSize )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
-import Data.Monoid                                                  ( mempty )
 import Data.Word                                                    ( Word8 )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
@@ -123,7 +122,7 @@ simpleOp NativeR{..} gamma aenv () sh = do
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultLargePPT target f mempty gamma aenv (IE 0 (size sh)) out
+      executeOp defaultLargePPT target f gamma aenv (IE 0 (size sh)) out
     return out
 
 simpleNamed
@@ -140,7 +139,7 @@ simpleNamed fun NativeR{..} gamma aenv () sh = do
   liftIO $ do
     out <- allocateArray sh
     execute executableR fun $ \f ->
-      executeOp defaultLargePPT target f mempty gamma aenv (IE 0 (size sh)) out
+      executeOp defaultLargePPT target f gamma aenv (IE 0 (size sh)) out
     return out
 
 
@@ -232,7 +231,7 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
       -- Sequential reduction
       out <- allocateArray Z
       execute executableR "foldAllS" $ \f ->
-        executeOp 1 seq f mempty gamma aenv (IE 0 sz) out
+        executeOp 1 seq f gamma aenv (IE 0 sz) out
       return out
 
     else liftIO $ do
@@ -242,8 +241,8 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
       --
       execute  executableR "foldAllP1" $ \f1 -> do
        execute executableR "foldAllP2" $ \f2 -> do
-        executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (sz, stride, tmp)
-        executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) (tmp, out)
+        executeOp 1 par f1 gamma aenv (IE 0 steps) (sz, stride, tmp)
+        executeOp 1 seq f2 gamma aenv (IE 0 steps) (tmp, out)
       --
       return out
 
@@ -260,7 +259,7 @@ foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultSmallPPT target f mempty gamma aenv (IE 0 (size sh)) (sz, out)
+      executeOp defaultSmallPPT target f gamma aenv (IE 0 (size sh)) (sz, out)
     return out
 
 foldSegOp
@@ -285,7 +284,7 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
   liftIO $ do
     out <- allocateArray (sh :. n)
     execute executableR kernel $ \f ->
-      executeOp ppt target f mempty gamma aenv (IE 0 (size (sh :. n))) out
+      executeOp ppt target f gamma aenv (IE 0 (size (sh :. n))) out
     return out
 
 
@@ -338,7 +337,7 @@ scanCore NativeR{..} gamma aenv () n m = do
       -- sequential scan
       out <- allocateArray (Z :. m)
       execute executableR "scanS" $ \f ->
-        executeOp 1 seq f mempty gamma aenv (IE 0 n) out
+        executeOp 1 seq f gamma aenv (IE 0 n) out
       return out
 
     else liftIO $ do
@@ -349,9 +348,9 @@ scanCore NativeR{..} gamma aenv () n m = do
       execute   executableR "scanP1" $ \f1 -> do
        execute  executableR "scanP2" $ \f2 -> do
         execute executableR "scanP3" $ \f3 -> do
-          executeOp 1 par f1 mempty gamma aenv (IE 0 steps) (stride, steps', out, tmp)
-          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps) tmp
-          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+          executeOp 1 par f1 gamma aenv (IE 0 steps) (stride, steps', out, tmp)
+          executeOp 1 seq f2 gamma aenv (IE 0 steps) tmp
+          executeOp 1 par f3 gamma aenv (IE 0 steps') (stride, out, tmp)
       --
       return out
 
@@ -381,7 +380,7 @@ scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
       out <- allocateArray sh
       sum <- allocateArray Z
       execute executableR "scanS" $ \f ->
-        executeOp 1 seq f mempty gamma aenv (IE 0 n) (out,sum)
+        executeOp 1 seq f gamma aenv (IE 0 n) (out,sum)
       return (out,sum)
 
     else liftIO $ do
@@ -392,9 +391,9 @@ scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
       execute   executableR "scanP1" $ \f1 -> do
        execute  executableR "scanP2" $ \f2 -> do
         execute executableR "scanP3" $ \f3 -> do
-          executeOp 1 par f1 mempty gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
-          executeOp 1 seq f2 mempty gamma aenv (IE 0 steps)  (sum, tmp)
-          executeOp 1 par f3 mempty gamma aenv (IE 0 steps') (stride, out, tmp)
+          executeOp 1 par f1 gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
+          executeOp 1 seq f2 gamma aenv (IE 0 steps)  (sum, tmp)
+          executeOp 1 par f3 gamma aenv (IE 0 steps') (stride, out, tmp)
 
       return (out,sum)
 
@@ -430,7 +429,7 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
     then liftIO $ do
       -- sequential permutation
       execute executableR "permuteS" $ \f ->
-        executeOp 1 seq f mempty gamma aenv (IE 0 n) out
+        executeOp 1 seq f gamma aenv (IE 0 n) out
 
     else liftIO $ do
       -- parallel permutation
@@ -438,13 +437,13 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
       if "permuteP_rmw" `elem` symbols
         then do
           execute executableR "permuteP_rmw" $ \f ->
-            executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) out
+            executeOp defaultLargePPT par f gamma aenv (IE 0 n) out
 
         else do
           barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
           memset (ptrsOfArrayData adb) 0 m
           execute executableR "permuteP_mutex" $ \f ->
-            executeOp defaultLargePPT par f mempty gamma aenv (IE 0 n) (out, barrier)
+            executeOp defaultLargePPT par f gamma aenv (IE 0 n) (out, barrier)
 
   return out
 
@@ -483,14 +482,13 @@ executeOp
     => Int
     -> Native
     -> ([Arg] -> IO ())
-    -> Finalise
     -> Gamma aenv
     -> Aval aenv
     -> Range
     -> args
     -> IO ()
-executeOp ppt native@Native{..} f finish gamma aenv r args =
-  runExecutable fillP ppt r finish $ \start end _tid ->
+executeOp ppt native@Native{..} f gamma aenv r args =
+  runExecutable fillP ppt r $ \start end _tid ->
   monitorProcTime                  $
     f =<< marshal native () (start, end, args, (gamma, aenv))
 

@@ -72,8 +72,8 @@ type Strategy = Gang -> Executable
 --
 sequentialIO :: Strategy
 sequentialIO gang =
-  Executable $ \_ range after fill ->
-    timed $ seqIO Single.mkResource (V.take 1 gang) range fill after
+  Executable $ \_ range fill ->
+    timed $ seqIO Single.mkResource (V.take 1 gang) range fill
 
 
 -- | Execute a computation without load balancing. Each thread computes an
@@ -81,8 +81,8 @@ sequentialIO gang =
 --
 unbalancedParIO :: Strategy
 unbalancedParIO gang =
-  Executable $ \_ range after fill ->
-    timed $ runParIO Single.mkResource gang range fill after
+  Executable $ \_ range fill ->
+    timed $ runParIO Single.mkResource gang range fill
 
 
 -- | Execute a computation where threads use work stealing (based on lazy
@@ -93,11 +93,11 @@ unbalancedParIO gang =
 --
 balancedParIO :: Strategy
 balancedParIO gang =
-  Executable $ \ppt range after fill ->
+  Executable $ \ppt range fill ->
     let retries  = gangSize gang
         resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
     in
-    timed $ runParIO resource gang range fill after
+    timed $ runParIO resource gang range fill
 
 
 -- Top-level mutable state
