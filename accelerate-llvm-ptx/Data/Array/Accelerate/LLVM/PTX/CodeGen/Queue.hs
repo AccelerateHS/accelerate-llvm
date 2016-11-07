@@ -10,7 +10,21 @@
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
--- Code generation for dynamically scheduled work queues.
+-- Abstractions for creating simply dynamically scheduled work queues. This
+-- works by atomically incrementing a global counter (in global memory) and
+-- distributing this result to each thread in the block (via shared memory).
+-- Thus there is an additional ~1000 cycle overhead for a thread block to
+-- determine their next work item. This also implies all thread blocks are
+-- contending for the same global counter.
+--
+-- In practice this extra overhead is not always worth paying. We use it for
+-- segmented reductions, because the length of each segment is unknown apriori
+-- and the entire thread block participates in the reduction of a segment. On
+-- the other hand, the arithmetically unbalanced mandelbrot fractal program was
+-- (generally) slower with this addition, so for now at least keep (morally)
+-- balanced operations (map, generate) with a static schedule. (Admittidely this
+-- test was on my very old 650M, so newer/more powerful GPUs with faster atomic
+-- instructions or more inflight thread blocks could benefit more.)
 --
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
