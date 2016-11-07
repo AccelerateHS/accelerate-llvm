@@ -24,7 +24,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.General.AST.Type.Constant
@@ -91,9 +90,9 @@ dequeue (queue, smem) n = do
 -- must be called before the main kernel, which uses the work queue, is invoked.
 --
 mkQueueInit
-    :: PTX
+    :: DeviceProperties
     -> CodeGen (IROpenAcc PTX aenv a)
-mkQueueInit (deviceProperties . ptxContext -> dev) =
+mkQueueInit dev =
   let
       (start, _end, paramGang)  = gangParam
       config                    = launchConfig dev [1] (\_ -> 0) (\_ _ -> 1)
