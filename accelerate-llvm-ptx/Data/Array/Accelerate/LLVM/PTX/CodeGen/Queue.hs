@@ -34,6 +34,7 @@ import LLVM.General.AST.Type.Instruction.Volatile
 import LLVM.General.AST.Type.Operand
 import LLVM.General.AST.Type.Representation
 import qualified LLVM.General.AST.Global                            as LLVM
+import qualified LLVM.General.AST.Linkage                           as LLVM
 import qualified LLVM.General.AST.Name                              as LLVM
 import qualified LLVM.General.AST.Type                              as LLVM
 import qualified LLVM.General.AST.Type.Instruction.RMW              as RMW
@@ -59,6 +60,7 @@ globalWorkQueue = do
     { LLVM.name         = downcast sn
     , LLVM.addrSpace    = sharedMemAddrSpace
     , LLVM.type'        = LLVM.IntegerType 32
+    , LLVM.linkage      = LLVM.Internal
     , LLVM.alignment    = 4
     }
   return ( ConstantOperand (GlobalReference type' "__queue__")
