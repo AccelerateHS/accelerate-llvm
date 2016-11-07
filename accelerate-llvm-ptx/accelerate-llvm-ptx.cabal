@@ -77,6 +77,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 
     Data.Array.Accelerate.LLVM.PTX.Compile
