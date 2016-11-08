@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: f9f6b41b4d6ea577809a5a6bd6b816b868096e7b
+    commit: a3eb3dffe4ce2fb2f9a32b7870e45f2df6506d19
   extra-dep: true
 
 extra-deps:
@@ -32,7 +32,7 @@ extra-deps:
 
 # accelerate-llvm-ptx
 - 'cuda-0.7.5.1'
-- 'nvvm-0.7.5.0'
+- 'nvvm-0.7.5.1'
 
 # update utils/cabal_macros.h whenever these versions are changed
 - 'llvm-general-3.5.1.2'
