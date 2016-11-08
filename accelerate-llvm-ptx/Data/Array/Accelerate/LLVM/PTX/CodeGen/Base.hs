@@ -37,6 +37,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   -- Shared memory
   staticSharedMem,
   dynamicSharedMem,
+  sharedMemAddrSpace,
 
   -- Kernel definitions
   (+++),

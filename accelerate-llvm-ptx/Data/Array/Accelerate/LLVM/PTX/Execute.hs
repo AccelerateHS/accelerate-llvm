@@ -54,12 +54,13 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.Int                                                 ( Int32 )
-import Data.Word                                                ( Word32 )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
+import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, scanl, scanr )
 import qualified Prelude                                        as P
+import qualified Data.IntMap                                    as IM
 
 
 -- Array expression evaluation
@@ -270,12 +271,16 @@ foldSegOp
     -> LLVM PTX (Array (sh :. Int) e)
 foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
   let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
-      kernel  = fromMaybe ($internalError "foldSeg" "kernel not found")
-              $ lookupKernel "foldSeg" exe
+      m       = size sh * n
+      err     = $internalError "foldSeg" "kernel not found"
+      foldseg = fromMaybe err $ lookupKernel "foldSeg" exe
+      qinit   = fromMaybe err $ lookupKernel "qinit"   exe
   --
   out <- allocateRemote (sh :. n)
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh * n)) out
+  liftIO $ do
+    executeOp ptx qinit   IM.empty aenv stream (IE 0 m) ()
+    executeOp ptx foldseg gamma    aenv stream (IE 0 m) out
   return out
 
 
