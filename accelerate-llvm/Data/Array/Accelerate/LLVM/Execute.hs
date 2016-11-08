@@ -301,12 +301,9 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Slice{}                     -> fusionError
     ZipWith{}                   -> fusionError
 
-    Collect{}                   -> unsupportedError
-
   where
-    fusionError, unsupportedError :: error
-    fusionError      = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
-    unsupportedError = $internalError "execute" $ "unsupported array primitive: " ++ showPreAccOp pacc
+    fusionError :: error
+    fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
 
     -- Term traversals
     -- ---------------

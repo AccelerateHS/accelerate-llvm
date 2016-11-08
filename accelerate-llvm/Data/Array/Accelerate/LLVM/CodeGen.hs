@@ -98,8 +98,6 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     Slice{}                 -> fusionError
     ZipWith{}               -> fusionError
 
-    Collect{}               -> unsupportedError
-
   where
     -- code generation for delayed arrays
     travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed arch aenv (Array sh e)
@@ -135,8 +133,7 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
       $ IR (constant (eltType (undefined::e)) c)
 
     -- sadness
-    fusionError, unexpectedError, unsupportedError :: error
+    fusionError, unexpectedError :: error
     fusionError      = $internalError "llvmOfOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc
     unexpectedError  = $internalError "llvmOfOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp pacc
-    unsupportedError = $internalError "llvmOfOpenAcc" $ "unsupported array primitive: " ++ showPreAccOp pacc
 

@@ -190,8 +190,6 @@ compileOpenAcc = traverseAcc
         Stencil2 f b1 a1 b2 a2  -> exec =<< liftA3 stencil2             <$> travF f <*> travM a1 <*> travM a2
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
-        Collect{}               -> unsupportedError
-
       where
         travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
         travA acc = case acc of
@@ -271,8 +269,7 @@ compileOpenAcc = traverseAcc
               err    = $internalError "compile" "failed to recover foreign function the second time"
 
         -- sadness
-        noKernel         = $internalError "compile" "no kernel module for this node"
-        unsupportedError = $internalError "llvmOfOpenAcc" ("unsupported array primitive: " ++ showPreAccOp pacc)
+        noKernel  = $internalError "compile" "no kernel module for this node"
 
 
     -- Traverse a scalar expression
