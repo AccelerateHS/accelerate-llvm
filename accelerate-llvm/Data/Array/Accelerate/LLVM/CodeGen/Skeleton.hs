@@ -101,51 +101,51 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Segments i)
                 -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanl         :: Elt e
+  scanl         :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanl'        :: Elt e
+  scanl'        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
 
-  scanl1        :: Elt e
+  scanl1        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanr         :: Elt e
-                => arch
-                -> Gamma          aenv
-                -> IRFun2    arch aenv (e -> e -> e)
-                -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
-
-  scanr'        :: Elt e
+  scanr         :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanr1        :: Elt e
+  scanr'        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
+
+  scanr1        :: (Shape sh, Elt e)
+                => arch
+                -> Gamma          aenv
+                -> IRFun2    arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => arch
