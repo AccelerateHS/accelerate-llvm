@@ -35,7 +35,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold               ( matchShapeType )
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Base               ( matchShapeType )
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
@@ -289,38 +289,39 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
 
 
 scanOp
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM Native (Vector e)
-scanOp kernel gamma aenv stream (Z :. n)
-  = scanCore kernel gamma aenv stream n (n+1)
+    -> sh :. Int
+    -> LLVM Native (Array (sh:.Int) e)
+scanOp kernel gamma aenv stream (sz :. n)
+  = scanCore kernel gamma aenv stream sz n (n+1)
 
 scan1Op
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM Native (Vector e)
-scan1Op kernel gamma aenv stream (Z :. n)
+    -> sh :. Int
+    -> LLVM Native (Array (sh:.Int) e)
+scan1Op kernel gamma aenv stream (sz :. n)
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore kernel gamma aenv stream n n
+  $ scanCore kernel gamma aenv stream sz n n
 
 scanCore
-    :: forall aenv e. Elt e
+    :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
+    -> sh
     -> Int
     -> Int
-    -> LLVM Native (Vector e)
-scanCore NativeR{..} gamma aenv () n m = do
+    -> LLVM Native (Array (sh:.Int) e)
+scanCore NativeR{..} gamma aenv () sz n m = do
   target <- gets llvmTarget
   let
       par     = target
@@ -332,18 +333,29 @@ scanCore NativeR{..} gamma aenv () n m = do
       steps   = (n + stride - 1) `div` stride
       steps'  = steps - 1
   --
-  if ncpu == 1 || n <= 2 * defaultLargePPT
+  if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
     then liftIO $ do
-      -- sequential scan
-      out <- allocateArray (Z :. m)
+      -- Either:
+      --
+      --  1. Sequential scan of an array of any rank
+      --
+      --  2. Parallel scan of multidimensional array: threads scan along the
+      --     length of the innermost dimension. Threads are scheduled over the
+      --     inner dimensions.
+      --
+      --  3. Small 1D array. Since parallel scan requires ~4n data transfer
+      --     compared to ~2n in the sequential case, it is only worthwhile if
+      --     the extra cores can offset the increased bandwidth requirements.
+      --
+      out <- allocateArray (sz :. m)
       execute executableR "scanS" $ \f ->
-        executeOp 1 seq f gamma aenv (IE 0 n) out
+        executeOp 1 par f gamma aenv (IE 0 (size sz)) out
       return out
 
     else liftIO $ do
-      -- parallel scan
-      out <- allocateArray (Z :. m)
-      tmp <- allocateArray (Z :. steps) :: IO (Vector e)
+      -- parallel one-dimensional scan
+      out <- allocateArray (sz :. m)
+      tmp <- allocateArray (Z  :. steps) :: IO (Vector e)
       --
       execute   executableR "scanP1" $ \f1 -> do
        execute  executableR "scanP2" $ \f2 -> do
@@ -354,15 +366,16 @@ scanCore NativeR{..} gamma aenv () n m = do
       --
       return out
 
+
 scan'Op
-    :: forall aenv e. Elt e
+    :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM Native (Vector e, Scalar e)
-scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
+    -> sh :. Int
+    -> LLVM Native (Array (sh:.Int) e, Array sh e)
+scan'Op NativeR{..} gamma aenv () sh@(sz :. n) = do
   target <- gets llvmTarget
   let
       gang    = theGang target
@@ -374,19 +387,18 @@ scan'Op NativeR{..} gamma aenv () sh@(Z :. n) = do
       steps   = (n + stride - 1) `div` stride
       steps'  = steps - 1
   --
-  if ncpu == 1 || n <= 2 * defaultLargePPT
+  if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
     then liftIO $ do
-      -- sequential scan
       out <- allocateArray sh
-      sum <- allocateArray Z
+      sum <- allocateArray sz
       execute executableR "scanS" $ \f ->
-        executeOp 1 seq f gamma aenv (IE 0 n) (out,sum)
+        executeOp 1 par f gamma aenv (IE 0 (size sz)) (out,sum)
       return (out,sum)
 
     else liftIO $ do
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
       out <- allocateArray sh
-      sum <- allocateArray Z
+      sum <- allocateArray sz
 
       execute   executableR "scanP1" $ \f1 -> do
        execute  executableR "scanP2" $ \f2 -> do

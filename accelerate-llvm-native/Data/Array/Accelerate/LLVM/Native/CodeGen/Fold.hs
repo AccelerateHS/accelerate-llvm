@@ -36,7 +36,6 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import Control.Applicative
-import Data.Typeable
 import Prelude                                                      as P hiding ( length )
 
 
@@ -289,22 +288,4 @@ reduce1FromTo m n f get = do
   z  <- get m
   m1 <- add numType m (ir numType (num numType 1))
   reduceFromTo m1 n f z get
-
-
--- Utilities
--- ---------
-
--- Match reified shape types
---
-matchShapeType
-    :: forall sh sh'. (Shape sh, Shape sh')
-    => sh
-    -> sh'
-    -> Maybe (sh :~: sh')
-matchShapeType _ _
-  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast Refl
-
-matchShapeType _ _
-  = Nothing
 

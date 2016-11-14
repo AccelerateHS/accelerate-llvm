@@ -1,5 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 -- Copyright   : [2015] Trevor L. McDonell
@@ -19,6 +21,8 @@ import qualified LLVM.General.AST.Type                                  as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Analysis.Match
 
 -- accelerate-llvm
 import LLVM.General.AST.Type.Name
@@ -31,6 +35,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.Target                         ( Native )
+
+import Data.Typeable                                                    ( gcast )
 
 
 -- | Generate function parameters that will specify the first and last (linear)
@@ -88,4 +94,22 @@ makeKernel name param kernel = do
                      , LLVM.basicBlocks = code
                      }
     }
+
+
+-- Shape analysis
+-- --------------
+
+-- Match reified shape types
+--
+matchShapeType
+    :: forall sh sh'. (Shape sh, Shape sh')
+    => sh
+    -> sh'
+    -> Maybe (sh :~: sh')
+matchShapeType _ _
+  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
+  = gcast Refl
+
+matchShapeType _ _
+  = Nothing
 
