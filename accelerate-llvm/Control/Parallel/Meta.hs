@@ -14,6 +14,7 @@ module Control.Parallel.Meta
   where
 
 import Data.Monoid
+import Control.Monad
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
 import Data.Sequence                                            ( Seq )
@@ -191,7 +192,7 @@ parIO resource gang (IE inf sup) action =
                    then return ()
                    else loop
 
-      pushL (workpool me) (IE start end)
+      when (end > start) $ pushL (workpool me) (IE start end)
       loop
   where
     len                 = sup - inf
