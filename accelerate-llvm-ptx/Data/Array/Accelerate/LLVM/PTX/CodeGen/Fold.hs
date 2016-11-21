@@ -24,8 +24,7 @@ import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..) )
 
 -- accelerate-llvm-*
-import LLVM.General.AST.Type.Representation
-
+import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -42,13 +41,14 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
+import LLVM.General.AST.Type.Representation
+
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>), (<=<) )
 import Data.String                                                  ( fromString )
-import Data.Typeable
 import Data.Bits                                                    as P
 import Prelude                                                      as P
 
@@ -621,19 +621,4 @@ imapFromTo start end body = do
   gd  <- gridDim
   i0  <- A.add numType start bid
   imapFromStepTo i0 gd end body
-
-
--- Match reified shape types
---
-matchShapeType
-    :: forall sh sh'. (Shape sh, Shape sh')
-    => sh
-    -> sh'
-    -> Maybe (sh :~: sh')
-matchShapeType _ _
-  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast Refl
-
-matchShapeType _ _
-  = Nothing
 
