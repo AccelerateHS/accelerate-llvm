@@ -323,7 +323,7 @@ scanCore exe gamma aenv stream sz n m
   = scanAllOp exe gamma aenv stream n m
   --
   | otherwise
-  = scanDimOp exe gamma aenv stream sz n m
+  = scanDimOp exe gamma aenv stream sz m
 
 
 scanAllOp
@@ -370,9 +370,16 @@ scanDimOp
     -> Stream
     -> sh
     -> Int
-    -> Int
     -> LLVM PTX (Array (sh:.Int) e)
-scanDimOp = error "TODO: scanDimOp"
+scanDimOp exe gamma aenv stream sz m = do
+  let
+      kernel = fromMaybe ($internalError "scanDimOp" "kernel not found")
+             $ lookupKernel "scan" exe
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (sz :. m)
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) out
+  return out
 
 
 permuteOp

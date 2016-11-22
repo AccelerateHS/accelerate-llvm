@@ -48,7 +48,7 @@ import LLVM.General.AST.Type.Representation
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative
-import Control.Monad                                                ( (>=>) )
+import Control.Monad                                                ( (>=>), void )
 import Data.String                                                  ( fromString )
 import Data.Coerce                                                  as Safe
 import Data.Bits                                                    as P
@@ -82,7 +82,8 @@ mkScanl ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr
                               ]
   --
   | otherwise
-  = error "TODO: multidimensional scanl"
+  = (+++) <$> mkScanDim L dev aenv combine (Just seed) arr
+          <*> mkScanFill ptx aenv seed
 
 
 -- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
@@ -108,7 +109,7 @@ mkScanl1 (deviceProperties . ptxContext -> dev) aenv combine arr
                               ]
   --
   | otherwise
-  = error "TODO: multidimensional scanl1"
+  = mkScanDim L dev aenv combine Nothing arr
 
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
@@ -160,7 +161,8 @@ mkScanr ptx@(deviceProperties . ptxContext -> dev) aenv combine seed arr
                               ]
   --
   | otherwise
-  = error "TODO: multidimensional scanr"
+  = (+++) <$> mkScanDim R dev aenv combine (Just seed) arr
+          <*> mkScanFill ptx aenv seed
 
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
@@ -186,7 +188,7 @@ mkScanr1 (deviceProperties . ptxContext -> dev) aenv combine arr
                               ]
   --
   | otherwise
-  = error "TODO: multidimensional scanr1"
+  = mkScanDim R dev aenv combine Nothing arr
 
 
 -- Variant of 'scanr' where the final result is returned in a separate array.
@@ -364,10 +366,11 @@ mkScanAllP2 dir dev aenv combine =
   makeOpenAccWith config "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
-    -- block-wide aggrate as a carry-in value across iterations.
+    -- block-wide aggregate as a carry-in value across iterations.
     --
-    -- We could optimise this a bit if we can get a pointer directly to shared
-    -- memory area the last thread uses to compute its local scan.
+    -- TODO: We could optimise this a bit if we can get access to the the shared
+    -- memory area used by 'scanBlockSMem', and from there directly read the
+    -- value computed by the last thread.
     carry <- staticSharedMem 1
 
     bd    <- blockDim
@@ -497,6 +500,210 @@ mkScanAllP3 dir dev aenv combine mseed =
     return_
 
 
+-- Multidimensional scan along the innermost dimension
+--
+-- A thread block individually computes along each innermost dimension. This is
+-- a single-pass operation.
+--
+--  * We can assume that the array is non-empty; exclusive scans with empty
+--    innermost dimension will be instead filled with the seed element via
+--    'mkScanFill'.
+--
+--  * Small but non-empty innermost dimension arrays (size << thread
+--    block size) will have many threads which do no work.
+--
+mkScanDim
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Direction
+    -> DeviceProperties                             -- ^ properties of the target GPU
+    -> Gamma aenv                                   -- ^ array environment
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe (IRExp PTX aenv e)                     -- ^ seed element, if this is an exclusive scan
+    -> IRDelayed PTX aenv (Array (sh:.Int) e)       -- ^ input data
+    -> CodeGen (IROpenAcc PTX aenv (Array (sh:.Int) e))
+mkScanDim dir dev aenv combine mseed IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
+      paramEnv                  = envParam aenv
+      --
+      config                    = launchConfig dev (CUDA.incWarp dev) smem grid
+      grid _ _                  = 1
+      smem n                    = warps * (1 + per_warp) * bytes
+        where
+          ws        = CUDA.warpSize dev
+          warps     = n `div` ws
+          per_warp  = ws + ws `div` 2
+          bytes     = sizeOf (eltType (undefined :: e))
+  in
+  makeOpenAccWith config "scan" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    -- The first and last threads of the block need to communicate the
+    -- block-wide aggregate as a carry-in value across iterations.
+    --
+    -- TODO: we could optimise this a bit if we can get access to the shared
+    -- memory area used by 'scanBlockSMem', and from there directly read the
+    -- value computed by the last thread.
+    carry <- staticSharedMem 1
+
+    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    szp1  <- A.add numType sz (lift 1)
+
+    -- If the innermost dimension is smaller than the number of threads in the
+    -- block, those threads will never contribute to the output.
+    tid   <- threadIdx
+    when (A.lt scalarType tid sz) $ do
+
+      -- Thread blocks iterate over the outer dimensions, each thread block
+      -- cooperatively scanning along each outermost index.
+      bid <- blockIdx
+      gd  <- gridDim
+      s0  <- A.add numType start bid
+      imapFromStepTo s0 gd end $ \seg -> do
+
+        -- Wait for threads to catch up before starting this segment (this one
+        -- might not be necessary)
+        __syncthreads
+
+        -- Linear index bounds for this segment
+        inf <- A.mul numType seg sz
+        sup <- A.add numType inf sz
+
+        -- Index that this thread will read from. Recall that the supremum index
+        -- is exclusive.
+        i0  <- case dir of
+                 L -> A.add numType inf tid
+                 R -> do x <- A.sub numType sup tid
+                         y <- A.sub numType x (lift 1)
+                         return y
+
+        -- Index that this thread will write to. For exclusive scans the output
+        -- array is one larger than the input along each innermost dimension.
+        j0  <- case mseed of
+                 Nothing -> return i0   -- merge 'i' and 'j' indices whenever possible
+                 Just{}  -> case dir of
+                              L -> do x <- A.mul numType szp1 seg
+                                      y <- A.add numType x tid
+                                      return y
+                              R -> do x <- A.mul numType szp1 seg
+                                      y <- A.add numType x sz
+                                      z <- A.sub numType y tid
+                                      return z
+
+        -- Evaluate or read the first element
+        --
+        -- If this is an exclusive scan, the first thread evaluates the initial
+        -- element, writes this to the output array, and integrates it to its
+        -- partial result
+        x0  <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+        x1  <- case mseed of
+                 Nothing   -> return x0
+                 Just seed -> if A.eq scalarType tid (lift 0)
+                                then do
+                                  z <- seed
+                                  writeArray arrOut j0 z
+                                  case dir of
+                                    L -> app2 combine z x0
+                                    R -> app2 combine x0 z
+                                else
+                                  return x0
+
+        -- If this is an exclusive scan, every thread shifts its output index
+        -- by one to account for the initial element (which thread 0 just wrote)
+        j1  <- case mseed of
+                 Nothing -> return j0
+                 Just{}  -> case dir of
+                              L -> A.add numType j0 (lift 1)
+                              R -> A.sub numType j0 (lift 1)
+
+        -- Block-wide scan of the local values
+        v0  <- A.sub numType sup inf
+        bd  <- blockDim
+        r0  <- if A.gte scalarType v0 bd
+                 then scanBlockSMem dir dev combine Nothing   x1
+                 else scanBlockSMem dir dev combine (Just v0) x1
+
+        -- Each thread write its result of the block-wide scan to memory
+        writeArray arrOut j1 r0
+
+        -- The last thread of the block writes its result---the aggregate for
+        -- this thread block---to the carry-out value. If the last thread is not
+        -- active then we are done anyway.
+        fid <- A.sub numType bd (lift 1)
+        when (A.eq scalarType tid fid) $
+          writeArray carry (lift 0 :: IR Int32) r0
+
+        let next ix = case dir of
+                        L -> A.add numType ix bd
+                        R -> A.sub numType ix bd
+
+        -- Now, threads iterate over the remaining elements along the innermost
+        -- dimension. At each iteration the first thread incorporates the
+        -- carry-in value from the previous step.
+        --
+        -- The index n* strides along the innermost dimension from 'inf' to
+        -- 'sup'. We use this to keep track of how many elements remain for the
+        -- entire thread block, since indices i* and j* are local to each thread
+        n0 <- A.add numType inf bd
+        i1 <- next i0
+        j2 <- next j1
+
+        void $ while
+          (\(A.fst3   -> n)       -> A.lt scalarType n sup)
+          (\(A.untrip -> (n,i,j)) -> do
+
+            -- Wait for threads to catch up to ensure the carry-in value from
+            -- the last iteration has been updated
+            __syncthreads
+
+            -- Calculate how many valid elements remain. If all threads in the
+            -- block will participate this round we can avoid all bounds checks.
+            v <- A.sub numType sup n
+            _ <- if A.gte scalarType v bd
+                    -- All threads participate. No bounds checks required but
+                    -- the last thread needs to update the carry-in value.
+                    then do
+                      x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                      y <- if A.eq scalarType tid (lift 0)
+                              then do
+                                c <- readArray carry (lift 0 :: IR Int32)
+                                case dir of
+                                  L -> app2 combine c x
+                                  R -> app2 combine x c
+                              else
+                                return x
+                      z <- scanBlockSMem dir dev combine Nothing y
+                      writeArray arrOut j z
+
+                      when (A.eq scalarType tid fid) $
+                        writeArray carry (lift 0 :: IR Int32) z
+
+                      return (IR OP_Unit :: IR ())
+
+                    -- Only threads that are in bounds can participate. This is
+                    -- the last iteration of the loop.
+                    else do
+                      when (A.lt scalarType tid v) $ do
+                        x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                        y <- if A.eq scalarType tid (lift 0)
+                                then do
+                                  c <- readArray carry (lift 0 :: IR Int32)
+                                  case dir of
+                                    L -> app2 combine c x
+                                    R -> app2 combine x c
+                                else
+                                  return x
+                        z <- scanBlockSMem dir dev combine (Just v) y
+                        writeArray arrOut j z
+
+                      return (IR OP_Unit :: IR ())
+
+            A.trip <$> A.add numType n bd <*> next i <*> next j)
+          (A.trip n0 i1 j2)
+
+    return_
+
+
 -- Parallel scan, auxiliary
 --
 -- If this is an exclusive scan of an empty array, we just  fill the result with
@@ -519,6 +726,10 @@ mkScan'Fill
     -> CodeGen (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
 mkScan'Fill ptx aenv seed =
   Safe.coerce <$> (mkGenerate ptx aenv (IRFun1 (const seed)) :: CodeGen (IROpenAcc PTX aenv (Array sh e)))
+
+
+-- Core implementation (block wide scan)
+-- -------------------------------------
 
 -- Efficient block-wide (inclusive) scan using the specified operator.
 --
@@ -598,6 +809,9 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
             L -> app2 combine prefix input
             R -> app2 combine input prefix
 
+
+-- Core implementation (warp-wide scan)
+-- ------------------------------------
 
 -- Efficient warp-wide (inclusive) scan using the specified operator.
 --
