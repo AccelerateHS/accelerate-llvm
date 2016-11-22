@@ -35,12 +35,14 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import Control.Applicative
 import Control.Monad
 import Data.String                                                  ( fromString )
+import Data.Coerce                                                  as Safe
 import Prelude                                                      as P
 
 
@@ -63,11 +65,14 @@ mkScanl
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanl aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScanS L aenv combine (Just seed) arr
-          <*> mkScanP L aenv combine (Just seed) arr
+  = foldr1 (+++) <$> sequence [ mkScanS L aenv combine (Just seed) arr
+                              , mkScanP L aenv combine (Just seed) arr
+                              , mkScanFill aenv seed
+                              ]
   --
   | otherwise
-  = mkScanS L aenv combine (Just seed) arr
+  = (+++) <$> mkScanS L aenv combine (Just seed) arr
+          <*> mkScanFill aenv seed
 
 
 -- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
@@ -92,6 +97,7 @@ mkScanl1 aenv combine arr
   | otherwise
   = mkScanS L aenv combine Nothing arr
 
+
 -- Variant of 'scanl' where the final result is returned in a separate array.
 --
 -- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
@@ -109,11 +115,14 @@ mkScanl'
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanl' aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScan'S L aenv combine seed arr
-          <*> mkScan'P L aenv combine seed arr
+  = foldr1 (+++) <$> sequence [ mkScan'S L aenv combine seed arr
+                              , mkScan'P L aenv combine seed arr
+                              , mkScan'Fill aenv seed
+                              ]
   --
   | otherwise
-  = mkScan'S L aenv combine seed arr
+  = (+++) <$> mkScan'S L aenv combine seed arr
+          <*> mkScan'Fill aenv seed
 
 
 -- 'Data.List.scanr' style right-to-left exclusive scan, but with the
@@ -133,11 +142,15 @@ mkScanr
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanr aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScanS R aenv combine (Just seed) arr
-          <*> mkScanP R aenv combine (Just seed) arr
+  = foldr1 (+++) <$> sequence [ mkScanS R aenv combine (Just seed) arr
+                              , mkScanP R aenv combine (Just seed) arr
+                              , mkScanFill aenv seed
+                              ]
   --
   | otherwise
-  = mkScanS R aenv combine (Just seed) arr
+  = (+++) <$> mkScanS R aenv combine (Just seed) arr
+          <*> mkScanFill aenv seed
+
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
 -- restriction that the combination function must be associative to enable
@@ -161,6 +174,7 @@ mkScanr1 aenv combine arr
   | otherwise
   = mkScanS R aenv combine Nothing arr
 
+
 -- Variant of 'scanr' where the final result is returned in a separate array.
 --
 -- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
@@ -178,11 +192,34 @@ mkScanr'
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanr' aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScan'S R aenv combine seed arr
-          <*> mkScan'P R aenv combine seed arr
+  = foldr1 (+++) <$> sequence [ mkScan'S R aenv combine seed arr
+                              , mkScan'P R aenv combine seed arr
+                              , mkScan'Fill aenv seed
+                              ]
   --
   | otherwise
-  = mkScan'S R aenv combine seed arr
+  = (+++) <$> mkScan'S R aenv combine seed arr
+          <*> mkScan'Fill aenv seed
+
+
+-- If the innermost dimension of an exclusive scan is empty, then we just fill
+-- the result with the seed element.
+--
+mkScanFill
+    :: (Shape sh, Elt e)
+    => Gamma aenv
+    -> IRExp Native aenv e
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+mkScanFill aenv seed =
+  mkGenerate aenv (IRFun1 (const seed))
+
+mkScan'Fill
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => Gamma aenv
+    -> IRExp Native aenv e
+    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
+mkScan'Fill aenv seed =
+  Safe.coerce <$> (mkScanFill aenv seed :: CodeGen (IROpenAcc Native aenv (Array sh e)))
 
 
 -- A single thread sequentially scans along an entire innermost dimension. For

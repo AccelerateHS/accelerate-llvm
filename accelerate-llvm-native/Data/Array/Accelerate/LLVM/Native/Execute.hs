@@ -30,11 +30,11 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Analysis.Match
 
-import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
+import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.CodeGen.Base               ( matchShapeType )
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
@@ -186,10 +186,10 @@ foldOp
     -> Stream
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
-foldOp kernel gamma aenv stream sh@(sx :. _)
-  = case size sh of
-      0 -> simpleNamed "generate" kernel gamma aenv stream (listToShape (P.map (max 1) (shapeToList sx)))
-      _ -> foldCore kernel gamma aenv stream sh
+foldOp kernel gamma aenv stream sh@(sx :. _) =
+  case size sh of
+    0 -> simpleNamed "generate" kernel gamma aenv stream (listToShape (P.map (max 1) (shapeToList sx)))
+    _ -> foldCore kernel gamma aenv stream sh
 
 foldCore
     :: (Shape sh, Elt e)
@@ -295,8 +295,10 @@ scanOp
     -> Stream
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e)
-scanOp kernel gamma aenv stream (sz :. n)
-  = scanCore kernel gamma aenv stream sz n (n+1)
+scanOp kernel gamma aenv stream (sz :. n) =
+  case n of
+    0 -> simpleNamed "generate" kernel gamma aenv stream (sz :. 1)
+    _ -> scanCore kernel gamma aenv stream sz n (n+1)
 
 scan1Op
     :: (Shape sh, Elt e)
@@ -374,7 +376,24 @@ scan'Op
     -> Stream
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e, Array sh e)
-scan'Op NativeR{..} gamma aenv () sh@(sz :. n) = do
+scan'Op native gamma aenv stream sh@(sz :. n) =
+  case n of
+    0 -> do
+      out <- liftIO $ allocateArray sh
+      sum <- simpleNamed "generate" native gamma aenv stream sz
+      return (out, sum)
+    --
+    _ -> scan'Core native gamma aenv stream sh
+
+scan'Core
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM Native (Array (sh:.Int) e, Array sh e)
+scan'Core NativeR{..} gamma aenv () sh@(sz :. n) = do
   target <- gets llvmTarget
   let
       gang    = theGang target
@@ -467,8 +486,8 @@ stencil1Op
     -> Stream
     -> Array sh a
     -> LLVM Native (Array sh b)
-stencil1Op kernel gamma aenv stream arr
-  = simpleOp kernel gamma aenv stream (shape arr)
+stencil1Op kernel gamma aenv stream arr =
+  simpleOp kernel gamma aenv stream (shape arr)
 
 stencil2Op
     :: (Shape sh, Elt c)
@@ -479,8 +498,8 @@ stencil2Op
     -> Array sh a
     -> Array sh b
     -> LLVM Native (Array sh c)
-stencil2Op kernel gamma aenv stream arr brr
-  = simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op kernel gamma aenv stream arr brr =
+  simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
 
 
 -- Skeleton execution
