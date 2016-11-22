@@ -29,19 +29,18 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 
-import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
+import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsync )
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold              ( matchShapeType )
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 import Data.Array.Accelerate.LLVM.PTX.Target
-
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
@@ -285,29 +284,49 @@ foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
 
 
 scanOp
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM PTX (Vector e)
-scanOp exe gamma aenv stream (Z :. n)
-  = scanCore exe gamma aenv stream n (n+1)
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scanOp exe gamma aenv stream (sz :. n) =
+  case n of
+    0 -> simpleNamed "generate" exe gamma aenv stream (sz :. 1)
+    _ -> scanCore exe gamma aenv stream sz n (n+1)
 
 scan1Op
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM PTX (Vector e)
-scan1Op exe gamma aenv stream (Z :. n)
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scan1Op exe gamma aenv stream (sz :. n)
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv stream n n
+  $ scanCore exe gamma aenv stream sz n n
 
 scanCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int                    -- input size
+    -> Int                    -- output size
+    -> LLVM PTX (Array (sh:.Int) e)
+scanCore exe gamma aenv stream sz n m
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  = scanAllOp exe gamma aenv stream n m
+  --
+  | otherwise
+  = scanDimOp exe gamma aenv stream sz n m
+
+
+scanAllOp
     :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
@@ -316,38 +335,44 @@ scanCore
     -> Int                    -- input size
     -> Int                    -- output size
     -> LLVM PTX (Vector e)
-scanCore exe gamma aenv stream n m = do
+scanAllOp exe gamma aenv stream n m = do
   let
-      err = $internalError "scanCore" "kernel not found"
+      err = $internalError "scanAllOp" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
       k3  = fromMaybe err (lookupKernel "scanP3" exe)
-      k4  = fromMaybe err (lookupKernel "generate" exe)
       --
       s   = n `multipleOf` kernelThreadBlockSize k1
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. m)
 
-  if n == 0
-    then
-      -- If this is an exclusive scan of an empty array, just fill the result
-      -- with the seed element
-      liftIO $ executeOp ptx k4 gamma aenv stream (IE 0 m) out
+  -- Step 1: Independent thread-block-wide scans of the input. Small arrays
+  -- which can be computed by a single thread block will require no
+  -- additional work.
+  tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
+  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (out, tmp)
 
-    else do
-      -- Small arrays which can be computed by a single thread block require no
-      -- additional work.
-      tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-      liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (out, tmp)
-
-      -- Multi-block reductions need to compute the per-block prefix, then apply
-      -- those values to the partial results.
-      when (s > 1) $ do
-        liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-        liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+  -- Step 2: Multi-block reductions need to compute the per-block prefix,
+  -- then apply those values to the partial results.
+  when (s > 1) $ do
+    liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
+    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
 
   return out
+
+
+scanDimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int
+    -> Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scanDimOp = error "TODO: scanDimOp"
 
 
 permuteOp
@@ -393,8 +418,8 @@ stencil1Op
     -> Stream
     -> Array sh a
     -> LLVM PTX (Array sh b)
-stencil1Op exe gamma aenv stream arr
-  = simpleOp exe gamma aenv stream (shape arr)
+stencil1Op exe gamma aenv stream arr =
+  simpleOp exe gamma aenv stream (shape arr)
 
 stencil2Op
     :: (Shape sh, Elt c)
@@ -405,8 +430,8 @@ stencil2Op
     -> Array sh a
     -> Array sh b
     -> LLVM PTX (Array sh c)
-stencil2Op exe gamma aenv stream arr brr
-  = simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op exe gamma aenv stream arr brr =
+  simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
 
 
 -- Skeleton execution

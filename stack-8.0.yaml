@@ -11,12 +11,13 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: 71f517d2c98ef8c8562f3b93830903896db1716e
+    commit: 753ec54f24fe01f0171f130305cfcd3d71a53411
   extra-dep: true
 
 - location:
     git:    https://github.com/bscarlet/llvm-general.git
-    commit: 529f9bf117b5ffd1ccf7ebeb679a97b3b1c67938
+    commit: 529f9bf117b5ffd1ccf7ebeb679a97b3b1c67938 # 3.8
+    # commit: ec1ad5bd2112e7f64dbb43441b5e2075cf6ad8e7 # 3.9
   extra-dep: true
   subdirs:
     - 'llvm-general'

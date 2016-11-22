@@ -11,8 +11,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Analysis.Match
-  where
+module Data.Array.Accelerate.LLVM.Analysis.Match (
+
+  module Data.Array.Accelerate.Analysis.Match,
+  module Data.Array.Accelerate.LLVM.Analysis.Match,
+
+) where
 
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
