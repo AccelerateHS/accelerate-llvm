@@ -57,7 +57,7 @@ import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
 import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
-import Prelude                                                  hiding ( exp, map, scanl, scanr )
+import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 import qualified Prelude                                        as P
 import qualified Data.IntMap                                    as IM
 
@@ -89,8 +89,10 @@ instance Execute PTX where
   fold1Seg      = foldSegOp
   scanl         = scanOp
   scanl1        = scan1Op
+  scanl'        = scan'Op
   scanr         = scanOp
   scanr1        = scan1Op
+  scanr'        = scan'Op
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -190,7 +192,7 @@ foldCore
 foldCore exe gamma aenv stream sh
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldAllOp exe gamma aenv stream sh
-
+  --
   | otherwise
   = foldDimOp exe gamma aenv stream sh
 
@@ -380,6 +382,66 @@ scanDimOp exe gamma aenv stream sz m = do
   out <- allocateRemote (sz :. m)
   liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) out
   return out
+
+
+scan'Op
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'Op exe gamma aenv stream sh@(sz :. n) =
+  case n of
+    0 -> do out <- allocateRemote (sz :. 0)
+            sum <- simpleNamed "generate" exe gamma aenv stream sz
+            return (out, sum)
+    _ -> scan'Core exe gamma aenv stream sh
+
+scan'Core
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'Core exe gamma aenv stream sh
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  = scan'AllOp exe gamma aenv stream sh
+  --
+  | otherwise
+  = scan'DimOp exe gamma aenv stream sh
+
+scan'AllOp
+    :: forall aenv e. Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e, Scalar e)
+scan'AllOp _exe _gamma _aenv _stream _sh
+  = error "TODO: scan'AllOp"
+
+scan'DimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'DimOp exe gamma aenv stream sh@(sz :. _) = do
+  let kernel = fromMaybe ($internalError "scan'DimOp" "kernel not found")
+             $ lookupKernel "scan" exe
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote sh
+  sum <- allocateRemote sz
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) (out,sum)
+  return (out,sum)
 
 
 permuteOp
