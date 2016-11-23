@@ -379,7 +379,7 @@ scan'Op
 scan'Op native gamma aenv stream sh@(sz :. n) =
   case n of
     0 -> do
-      out <- liftIO $ allocateArray sh
+      out <- liftIO $ allocateArray (sz :. 0)
       sum <- simpleNamed "generate" native gamma aenv stream sz
       return (out, sum)
     --
