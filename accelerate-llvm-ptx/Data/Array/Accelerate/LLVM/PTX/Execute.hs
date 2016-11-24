@@ -353,7 +353,7 @@ scanAllOp exe gamma aenv stream n m = do
   -- which can be computed by a single thread block will require no
   -- additional work.
   tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (out, tmp)
+  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
 
   -- Step 2: Multi-block reductions need to compute the per-block prefix,
   -- then apply those values to the partial results.
@@ -422,8 +422,35 @@ scan'AllOp
     -> Stream
     -> DIM1
     -> LLVM PTX (Vector e, Scalar e)
-scan'AllOp _exe _gamma _aenv _stream _sh
-  = error "TODO: scan'AllOp"
+scan'AllOp exe gamma aenv stream (Z :. n) = do
+  let
+      err = $internalError "scan'AllOp" "kernel not found"
+      k1  = fromMaybe err (lookupKernel "scanP1" exe)
+      k2  = fromMaybe err (lookupKernel "scanP2" exe)
+      k3  = fromMaybe err (lookupKernel "scanP3" exe)
+      --
+      s   = n `multipleOf` kernelThreadBlockSize k1
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (Z :. n)
+  tmp <- allocateRemote (Z :. s)  :: LLVM PTX (Vector e)
+
+  -- Step 1: independent thread-block-wide scans. Each block stores its partial
+  -- sum to a temporary array.
+  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+
+  -- If this was a small array that was processed by a single thread block then
+  -- we are done, otherwise compute the per-block prefix and apply those values
+  -- to the partial results.
+  if s == 1
+    then case tmp of
+           Array _ ad -> return (out, Array () ad)
+    else do
+      sum <- allocateRemote Z
+      liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
+      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+      return (out, sum)
+
 
 scan'DimOp
     :: forall aenv sh e. (Shape sh, Elt e)
