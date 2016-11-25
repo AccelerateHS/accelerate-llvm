@@ -201,7 +201,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -255,7 +255,7 @@ mkFoldAllM2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -272,6 +272,7 @@ mkFoldAllM2 dev aenv combine mseed =
     --
     tid   <- threadIdx
     bd    <- blockDim
+    gd    <- gridDim
     sz    <- i32 . indexHead $ irArrayShape arrTmp
 
     imapFromTo start end $ \seg -> do
@@ -290,7 +291,7 @@ mkFoldAllM2 dev aenv combine mseed =
           writeArray arrOut seg =<<
             case mseed of
               Nothing -> return r
-              Just z  -> if A.eq scalarType bd (lift 1)
+              Just z  -> if A.eq scalarType gd (lift 1)
                            then flip (app2 combine) r =<< z   -- Note: initial element on the left
                            else return r
 
