@@ -480,5 +480,10 @@ executeOpenExp rootExp env aenv stream = travE rootExp
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
     index :: Shape sh => Array sh e -> sh -> LLVM arch e
-    index arr ix = indexRemote arr (toIndex (shape arr) ix)
+    index arr ix = linearIndex arr (toIndex (shape arr) ix)
+
+    linearIndex :: Array sh e -> Int -> LLVM arch e
+    linearIndex arr ix = do
+      block =<< checkpoint stream
+      indexRemote arr ix
 
