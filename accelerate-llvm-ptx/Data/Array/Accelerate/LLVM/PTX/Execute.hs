@@ -573,6 +573,7 @@ executeOp ptx@PTX{..} kernel gamma aenv stream r args =
 --
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
 launch Kernel{..} stream n args =
+  when (n > 0) $
   withLifetime stream $ \st ->
     Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args
