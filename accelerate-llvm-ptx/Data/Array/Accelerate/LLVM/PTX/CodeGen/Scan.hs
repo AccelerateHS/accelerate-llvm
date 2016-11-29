@@ -816,8 +816,7 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid
-      grid _ _                  = 1
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -1023,8 +1022,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
       (arrSum, paramSum)        = mutableArray ("sum" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid
-      grid _ _                  = 1
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
