@@ -265,7 +265,8 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
   in
   makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
 
-    len <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    -- Size of the input array
+    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
     -- A thread block scans a non-empty stripe of the input, storing the final
     -- block-wide aggregate into a separate array
@@ -289,7 +290,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
       tid <- threadIdx
       i0  <- case dir of
                L -> A.add numType inf tid
-               R -> do x <- A.sub numType len inf
+               R -> do x <- A.sub numType sz inf
                        y <- A.sub numType x tid
                        z <- A.sub numType y (lift 1)
                        return z
@@ -305,7 +306,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
 
       -- If this thread has input, read data and participate in thread-block scan
       let valid i = case dir of
-                      L -> A.lt  scalarType i len
+                      L -> A.lt  scalarType i sz
                       R -> A.gte scalarType i (lift 0)
 
       when (valid i0) $ do
@@ -318,11 +319,11 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
                       z <- seed
                       case dir of
                         L -> writeArray arrOut (lift 0 :: IR Int32) z >> app2 combine z x0
-                        R -> writeArray arrOut len                  z >> app2 combine x0 z
+                        R -> writeArray arrOut sz                   z >> app2 combine x0 z
                     else
                       return x0
 
-        n  <- A.sub numType len inf
+        n  <- A.sub numType sz inf
         x2 <- if A.gte scalarType n bd
                 then scanBlockSMem dir dev combine Nothing  x1
                 else scanBlockSMem dir dev combine (Just n) x1
@@ -463,7 +464,7 @@ mkScanAllP3 dir dev aenv combine mseed =
   in
   makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
 
-    len <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
+    sz  <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
 
     bid <- blockIdx
     gd  <- gridDim
@@ -491,13 +492,13 @@ mkScanAllP3 dir dev aenv combine mseed =
                    Just _  -> A.add numType x (lift 1)
 
                R -> do
-                 x <- A.sub numType len inf
+                 x <- A.sub numType sz inf
                  y <- A.sub numType x tid
                  z <- A.sub numType y (lift 1)
                  return z
 
       let valid i = case dir of
-                      L -> A.lt  scalarType i len
+                      L -> A.lt  scalarType i sz
                       R -> A.gte scalarType i (lift 0)
 
       when (valid i0) $ do
@@ -542,7 +543,8 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
   in
   makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
 
-    len <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
+    -- Size of the input array
+    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
     -- A thread block scans a non-empty stripe of the input, storing the partial
     -- result and the final block-wide aggregate
@@ -560,7 +562,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
       tid <- threadIdx
       i0  <- case dir of
                L -> A.add numType inf tid
-               R -> do x <- A.sub numType len inf
+               R -> do x <- A.sub numType sz inf
                        y <- A.sub numType x tid
                        z <- A.sub numType y (lift 1)
                        return z
@@ -573,7 +575,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
 
       -- If this thread has input it participates in the scan
       let valid i = case dir of
-                      L -> A.lt  scalarType i len
+                      L -> A.lt  scalarType i sz
                       R -> A.gte scalarType i (lift 0)
 
       when (valid i0) $ do
@@ -592,7 +594,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
                   return x0
 
         -- Block-wide scan
-        n  <- A.sub numType len inf
+        n  <- A.sub numType sz inf
         x2 <- if A.gte scalarType n bd
                 then scanBlockSMem dir dev combine Nothing  x1
                 else scanBlockSMem dir dev combine (Just n) x1
@@ -601,7 +603,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
         -- space for the initial element, so the very last thread does not store
         -- its result here.
         case dir of
-          L -> when (A.lt  scalarType j0 len)      $ writeArray arrOut j0 x2
+          L -> when (A.lt  scalarType j0 sz)       $ writeArray arrOut j0 x2
           R -> when (A.gte scalarType j0 (lift 0)) $ writeArray arrOut j0 x2
 
         -- Last active thread writes its result to the partial sums array. These
@@ -742,7 +744,7 @@ mkScan'AllP3 dir dev aenv combine =
   in
   makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
 
-    len <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
+    sz  <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
 
     bid <- blockIdx
     gd  <- gridDim
@@ -767,13 +769,13 @@ mkScan'AllP3 dir dev aenv combine =
       tid <- threadIdx
       i   <- case dir of
                L -> A.add numType inf tid
-               R -> do x <- A.sub numType len inf
+               R -> do x <- A.sub numType sz inf
                        y <- A.sub numType x tid
                        z <- A.sub numType y (lift 1)
                        return z
 
       let valid ix = case dir of
-                       L -> A.lt  scalarType ix len
+                       L -> A.lt  scalarType ix sz
                        R -> A.gte scalarType ix (lift 0)
 
       when (valid i) $ do
@@ -1040,6 +1042,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
     -- value computed by the last thread.
     carry <- staticSharedMem 1
 
+    -- Size of the input array
     sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
     -- If the innermost dimension is smaller than the number of threads in the
