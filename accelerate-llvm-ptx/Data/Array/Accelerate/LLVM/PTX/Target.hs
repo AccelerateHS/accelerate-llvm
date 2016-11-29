@@ -136,6 +136,7 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
+      isa              = ptxISAVersion m n
       sm               = printf "sm_%d%d" m n
   in
   withTargetOptions $ \options -> do
@@ -143,12 +144,29 @@ withPTXTargetMachine dev go =
         ptxTarget
         ptxTargetTriple
         sm
-        Map.empty               -- CPU features
-        options                 -- target options
-        R.Default               -- relocation model
-        CM.Default              -- code model
-        CGO.Default             -- optimisation level
+        (Map.singleton isa True)    -- CPU features
+        options                     -- target options
+        R.Default                   -- relocation model
+        CM.Default                  -- code model
+        CGO.Default                 -- optimisation level
         go
+
+-- Some libdevice functions require at least ptx40, even though devices at
+-- that compute capability also accept older ISA versions.
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+--
+ptxISAVersion :: Int -> Int -> CPUFeature
+ptxISAVersion 2 _ = CPUFeature "ptx40"
+ptxISAVersion 3 7 = CPUFeature "ptx41"
+ptxISAVersion 3 _ = CPUFeature "ptx40"
+ptxISAVersion 5 0 = CPUFeature "ptx40"
+ptxISAVersion 5 2 = CPUFeature "ptx41"
+ptxISAVersion 5 3 = CPUFeature "ptx42"
+ptxISAVersion 6 0 = CPUFeature "ptx60"
+ptxISAVersion 6 1 = CPUFeature "ptx61"
+ptxISAVersion 6 2 = CPUFeature "ptx62"
+ptxISAVersion _ _ = CPUFeature "ptx40"
 
 
 -- | The NVPTX target for this host.
