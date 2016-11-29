@@ -64,9 +64,12 @@ import qualified Foreign.NVVM                                       as NVVM
 import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
-import Text.Printf
+import Data.List                                                    ( intercalate )
+import System.Mem.Weak                                              ( addFinalizer )
+import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Char8                              as B
 import qualified Data.Map                                           as Map
+import Prelude                                                      as P
 
 
 instance Compile PTX where
@@ -98,10 +101,14 @@ compileForPTX acc aenv = do
   let
       Module ast md = llvmOfOpenAcc target acc aenv
       dev           = ptxDeviceProperties target
-
+  --
   liftIO . LLVM.withContext $ \ctx -> do
     ptx  <- compileModule dev ctx ast
     funs <- sequence [ linkFunction ptx f x | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
+    addFinalizer funs $ do Debug.traceIO Debug.dump_gc
+                              $ printf "gc: unload module: %s"
+                              $ intercalate "," (P.map kernelName funs)
+                           CUDA.unload ptx
     return $! PTXR funs ptx
 
 

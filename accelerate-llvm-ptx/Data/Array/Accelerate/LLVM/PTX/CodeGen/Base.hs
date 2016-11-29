@@ -278,9 +278,9 @@ staticSharedMem n = do
                    }
   where
     go :: TupleType s -> CodeGen (Operands s)
-    go UnitTuple         = return OP_Unit
-    go (PairTuple t1 t2) = OP_Pair <$> go t1 <*> go t2
-    go (SingleTuple t)   = do
+    go UnitTuple          = return OP_Unit
+    go (PairTuple t1 t2)  = OP_Pair <$> go t1 <*> go t2
+    go tt@(SingleTuple t) = do
       -- Declare a new global reference for the statically allocated array
       -- located in the __shared__ memory space.
       nm <- freshName
@@ -290,7 +290,7 @@ staticSharedMem n = do
         , LLVM.type'     = LLVM.ArrayType n (downcast t)
         , LLVM.linkage   = LLVM.Internal
         , LLVM.name      = downcast nm
-        , LLVM.alignment = 4
+        , LLVM.alignment = 4 `P.max` P.fromIntegral (sizeOf tt)
         }
 
       -- Return a pointer to the first element of the __shared__ memory array.

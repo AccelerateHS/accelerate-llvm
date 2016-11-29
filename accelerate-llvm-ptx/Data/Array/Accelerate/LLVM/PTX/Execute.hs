@@ -29,19 +29,18 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 
-import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
+import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsync )
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold              ( matchShapeType )
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 import Data.Array.Accelerate.LLVM.PTX.Target
-
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
@@ -58,7 +57,7 @@ import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
 import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
-import Prelude                                                  hiding ( exp, map, scanl, scanr )
+import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 import qualified Prelude                                        as P
 import qualified Data.IntMap                                    as IM
 
@@ -90,8 +89,10 @@ instance Execute PTX where
   fold1Seg      = foldSegOp
   scanl         = scanOp
   scanl1        = scan1Op
+  scanl'        = scan'Op
   scanr         = scanOp
   scanr1        = scan1Op
+  scanr'        = scan'Op
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
@@ -191,7 +192,7 @@ foldCore
 foldCore exe gamma aenv stream sh
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldAllOp exe gamma aenv stream sh
-
+  --
   | otherwise
   = foldDimOp exe gamma aenv stream sh
 
@@ -285,29 +286,49 @@ foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
 
 
 scanOp
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM PTX (Vector e)
-scanOp exe gamma aenv stream (Z :. n)
-  = scanCore exe gamma aenv stream n (n+1)
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scanOp exe gamma aenv stream (sz :. n) =
+  case n of
+    0 -> simpleNamed "generate" exe gamma aenv stream (sz :. 1)
+    _ -> scanCore exe gamma aenv stream sz n (n+1)
 
 scan1Op
-    :: Elt e
+    :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> DIM1
-    -> LLVM PTX (Vector e)
-scan1Op exe gamma aenv stream (Z :. n)
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scan1Op exe gamma aenv stream (sz :. n)
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv stream n n
+  $ scanCore exe gamma aenv stream sz n n
 
 scanCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int                    -- input size
+    -> Int                    -- output size
+    -> LLVM PTX (Array (sh:.Int) e)
+scanCore exe gamma aenv stream sz n m
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  = scanAllOp exe gamma aenv stream n m
+  --
+  | otherwise
+  = scanDimOp exe gamma aenv stream sz m
+
+
+scanAllOp
     :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
@@ -316,38 +337,138 @@ scanCore
     -> Int                    -- input size
     -> Int                    -- output size
     -> LLVM PTX (Vector e)
-scanCore exe gamma aenv stream n m = do
+scanAllOp exe gamma aenv stream n m = do
   let
-      err = $internalError "scanCore" "kernel not found"
+      err = $internalError "scanAllOp" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
       k3  = fromMaybe err (lookupKernel "scanP3" exe)
-      k4  = fromMaybe err (lookupKernel "generate" exe)
       --
       s   = n `multipleOf` kernelThreadBlockSize k1
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. m)
 
-  if n == 0
-    then
-      -- If this is an exclusive scan of an empty array, just fill the result
-      -- with the seed element
-      liftIO $ executeOp ptx k4 gamma aenv stream (IE 0 m) out
+  -- Step 1: Independent thread-block-wide scans of the input. Small arrays
+  -- which can be computed by a single thread block will require no
+  -- additional work.
+  tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
+  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
 
-    else do
-      -- Small arrays which can be computed by a single thread block require no
-      -- additional work.
-      tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-      liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (out, tmp)
-
-      -- Multi-block reductions need to compute the per-block prefix, then apply
-      -- those values to the partial results.
-      when (s > 1) $ do
-        liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-        liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+  -- Step 2: Multi-block reductions need to compute the per-block prefix,
+  -- then apply those values to the partial results.
+  when (s > 1) $ do
+    liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
+    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
 
   return out
+
+
+scanDimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> Int
+    -> LLVM PTX (Array (sh:.Int) e)
+scanDimOp exe gamma aenv stream sz m = do
+  let
+      kernel = fromMaybe ($internalError "scanDimOp" "kernel not found")
+             $ lookupKernel "scan" exe
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (sz :. m)
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) out
+  return out
+
+
+scan'Op
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'Op exe gamma aenv stream sh@(sz :. n) =
+  case n of
+    0 -> do out <- allocateRemote (sz :. 0)
+            sum <- simpleNamed "generate" exe gamma aenv stream sz
+            return (out, sum)
+    _ -> scan'Core exe gamma aenv stream sh
+
+scan'Core
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'Core exe gamma aenv stream sh
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  = scan'AllOp exe gamma aenv stream sh
+  --
+  | otherwise
+  = scan'DimOp exe gamma aenv stream sh
+
+scan'AllOp
+    :: forall aenv e. Elt e
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> DIM1
+    -> LLVM PTX (Vector e, Scalar e)
+scan'AllOp exe gamma aenv stream (Z :. n) = do
+  let
+      err = $internalError "scan'AllOp" "kernel not found"
+      k1  = fromMaybe err (lookupKernel "scanP1" exe)
+      k2  = fromMaybe err (lookupKernel "scanP2" exe)
+      k3  = fromMaybe err (lookupKernel "scanP3" exe)
+      --
+      s   = n `multipleOf` kernelThreadBlockSize k1
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote (Z :. n)
+  tmp <- allocateRemote (Z :. s)  :: LLVM PTX (Vector e)
+
+  -- Step 1: independent thread-block-wide scans. Each block stores its partial
+  -- sum to a temporary array.
+  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+
+  -- If this was a small array that was processed by a single thread block then
+  -- we are done, otherwise compute the per-block prefix and apply those values
+  -- to the partial results.
+  if s == 1
+    then case tmp of
+           Array _ ad -> return (out, Array () ad)
+    else do
+      sum <- allocateRemote Z
+      liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
+      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+      return (out, sum)
+
+
+scan'DimOp
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh :. Int
+    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
+scan'DimOp exe gamma aenv stream sh@(sz :. _) = do
+  let kernel = fromMaybe ($internalError "scan'DimOp" "kernel not found")
+             $ lookupKernel "scan" exe
+  --
+  ptx <- gets llvmTarget
+  out <- allocateRemote sh
+  sum <- allocateRemote sz
+  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) (out,sum)
+  return (out,sum)
 
 
 permuteOp
@@ -393,8 +514,8 @@ stencil1Op
     -> Stream
     -> Array sh a
     -> LLVM PTX (Array sh b)
-stencil1Op exe gamma aenv stream arr
-  = simpleOp exe gamma aenv stream (shape arr)
+stencil1Op exe gamma aenv stream arr =
+  simpleOp exe gamma aenv stream (shape arr)
 
 stencil2Op
     :: (Shape sh, Elt c)
@@ -405,8 +526,8 @@ stencil2Op
     -> Array sh a
     -> Array sh b
     -> LLVM PTX (Array sh c)
-stencil2Op exe gamma aenv stream arr brr
-  = simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op exe gamma aenv stream arr brr =
+  simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
 
 
 -- Skeleton execution
@@ -452,6 +573,7 @@ executeOp ptx@PTX{..} kernel gamma aenv stream r args =
 --
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
 launch Kernel{..} stream n args =
+  when (n > 0) $
   withLifetime stream $ \st ->
     Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args

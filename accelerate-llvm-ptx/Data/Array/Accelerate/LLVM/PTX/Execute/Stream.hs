@@ -86,10 +86,14 @@ streaming !ctx !rsv !action !after = do
 -- because the PTX state and contained CUDA context have died, so there is
 -- nothing more to do.
 --
+{-# INLINEABLE new #-}
 new :: Context -> IO Reservoir
 new _ctx = newMVar ( Seq.empty )
 
 {--
+-- | Delete all execution streams from the reservoir
+--
+{-# INLINEABLE flush #-}
 flush :: Context -> Reservoir -> IO ()
 flush !Context{..} !ref = do
   mc <- deRefWeak weakContext
@@ -97,10 +101,10 @@ flush !Context{..} !ref = do
     Nothing     -> message "delete reservoir/dead context"
     Just ctx    -> do
       message "flush reservoir"
-      withMVar ref $ \rsv ->
-        let delete st = trace ("free " ++ show st) (Stream.destroy st)
-        in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
+      old <- swapMVar ref Seq.empty
+      bracket_ (CUDA.push ctx) CUDA.pop $ Seq.mapM_ Stream.destroy old
 --}
+
 
 -- | Create a CUDA execution stream. If an inactive stream is available for use,
 -- use that, otherwise generate a fresh stream.

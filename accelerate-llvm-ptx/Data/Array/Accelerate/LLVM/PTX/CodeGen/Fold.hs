@@ -24,8 +24,7 @@ import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..) )
 
 -- accelerate-llvm-*
-import LLVM.General.AST.Type.Representation
-
+import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -42,13 +41,14 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
+import LLVM.General.AST.Type.Representation
+
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>), (<=<) )
 import Data.String                                                  ( fromString )
-import Data.Typeable
 import Data.Bits                                                    as P
 import Prelude                                                      as P
 
@@ -201,7 +201,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -255,7 +255,7 @@ mkFoldAllM2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -272,6 +272,7 @@ mkFoldAllM2 dev aenv combine mseed =
     --
     tid   <- threadIdx
     bd    <- blockDim
+    gd    <- gridDim
     sz    <- i32 . indexHead $ irArrayShape arrTmp
 
     imapFromTo start end $ \seg -> do
@@ -290,7 +291,7 @@ mkFoldAllM2 dev aenv combine mseed =
           writeArray arrOut seg =<<
             case mseed of
               Nothing -> return r
-              Just z  -> if A.eq scalarType bd (lift 1)
+              Just z  -> if A.eq scalarType gd (lift 1)
                            then flip (app2 combine) r =<< z   -- Note: initial element on the left
                            else return r
 
@@ -621,19 +622,4 @@ imapFromTo start end body = do
   gd  <- gridDim
   i0  <- A.add numType start bid
   imapFromStepTo i0 gd end body
-
-
--- Match reified shape types
---
-matchShapeType
-    :: forall sh sh'. (Shape sh, Shape sh')
-    => sh
-    -> sh'
-    -> Maybe (sh :~: sh')
-matchShapeType _ _
-  | Just Refl <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast Refl
-
-matchShapeType _ _
-  = Nothing
 

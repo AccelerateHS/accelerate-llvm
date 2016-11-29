@@ -118,53 +118,53 @@ class (Remote arch, Foreign arch) => Execute arch where
                 -> DIM1
                 -> LLVM arch (Array (sh:.Int) e)
 
-  scanl         :: Elt e
+  scanl         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e)
 
-  scanl1        :: Elt e
+  scanl1        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e)
 
-  scanl'        :: Elt e
+  scanl'        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e, Scalar e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e, Array sh e)
 
-  scanr         :: Elt e
+  scanr         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e)
 
-  scanr1        :: Elt e
+  scanr1        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e)
 
-  scanr'        :: Elt e
+  scanr'        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> DIM1
-                -> LLVM arch (Vector e, Scalar e)
+                -> sh :. Int
+                -> LLVM arch (Array (sh:.Int) e, Array sh e)
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => ExecutableR arch
@@ -480,5 +480,10 @@ executeOpenExp rootExp env aenv stream = travE rootExp
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
     index :: Shape sh => Array sh e -> sh -> LLVM arch e
-    index arr ix = indexRemote arr (toIndex (shape arr) ix)
+    index arr ix = linearIndex arr (toIndex (shape arr) ix)
+
+    linearIndex :: Array sh e -> Int -> LLVM arch e
+    linearIndex arr ix = do
+      block =<< checkpoint stream
+      indexRemote arr ix
 

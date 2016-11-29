@@ -26,7 +26,7 @@ import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table     as MT
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as RT
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
@@ -64,7 +64,7 @@ createTargetForDevice
 createTargetForDevice dev prp flags = do
   ctx    <- CT.new dev prp flags
   mt     <- MT.new ctx
-  st     <- RT.new ctx
+  st     <- ST.new ctx
   return $! PTX ctx mt st simpleIO
 
 
@@ -78,7 +78,7 @@ createTargetFromContext ctx' = do
   prp    <- CUDA.props dev
   ctx    <- CT.raw dev prp ctx'
   mt     <- MT.new ctx
-  st     <- RT.new ctx
+  st     <- ST.new ctx
   return $! PTX ctx mt st simpleIO
 
 

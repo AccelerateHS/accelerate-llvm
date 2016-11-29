@@ -131,7 +131,7 @@ newRemote
     -> (sh -> e)
     -> LLVM arch (Array sh e)
 newRemote sh f =
-  useRemote $! newArray sh f
+  useRemote $! fromFunction sh f
 
 
 -- | Upload an immutable array from the host to the remote device. This is
