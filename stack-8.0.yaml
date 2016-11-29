@@ -10,8 +10,8 @@ packages:
 # - 'accelerate-llvm-multidev'
 
 - location:
-    git:    https://github.com/tmcdonell/accelerate.git
-    commit: 753ec54f24fe01f0171f130305cfcd3d71a53411
+    git:    https://github.com/AccelerateHS/accelerate.git
+    commit: f83a4fcd672f59b834425fe67c41d6a46edbcde5
   extra-dep: true
 
 - location:
