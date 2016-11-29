@@ -31,6 +31,7 @@ import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -836,162 +837,146 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
     -- value computed by the last thread.
     carry <- staticSharedMem 1
 
-    sz    <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
-    szp1  <- A.add numType sz (lift 1)
+    -- Size of the input array
+    sz  <- A.fromIntegral integralType numType . indexHead =<< delayedExtent
 
-    -- If the innermost dimension is smaller than the number of threads in the
-    -- block, those threads will never contribute to the output.
-    tid   <- threadIdx
-    when (A.lt scalarType tid sz) $ do
+    -- Thread blocks iterate over the outer dimensions. Threads in a block
+    -- cooperatively scan along one dimension, but thread blocks do not
+    -- communicate with each other.
+    --
+    bid <- blockIdx
+    gd  <- gridDim
+    s0  <- A.add numType start bid
+    imapFromStepTo s0 gd end $ \seg -> do
 
-      -- Thread blocks iterate over the outer dimensions, each thread block
-      -- cooperatively scanning along each outermost index.
-      bid <- blockIdx
-      gd  <- gridDim
-      s0  <- A.add numType start bid
-      imapFromStepTo s0 gd end $ \seg -> do
+      -- Index this thread reads from
+      tid <- threadIdx
+      i0  <- case dir of
+               L -> do x <- A.mul numType seg sz
+                       y <- A.add numType x tid
+                       return y
 
-        -- Not necessary to wait for threads to catch up before starting this segment
-        -- __syncthreads
+               R -> do x <- A.add numType seg (lift 1)
+                       y <- A.mul numType x sz
+                       z <- A.sub numType y tid
+                       w <- A.sub numType z (lift 1)
+                       return w
 
-        -- Linear index bounds for this segment
-        inf <- A.mul numType seg sz
-        sup <- A.add numType inf sz
+      -- Index this thread writes to
+      j0  <- case mseed of
+               Nothing -> return i0
+               Just{}  -> do szp1 <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
+                             case dir of
+                               L -> do x <- A.mul numType seg szp1
+                                       y <- A.add numType x tid
+                                       return y
 
-        -- Index that this thread will read from. Recall that the supremum index
-        -- is exclusive.
-        i0  <- case dir of
-                 L -> A.add numType inf tid
-                 R -> do x <- A.sub numType sup tid
-                         y <- A.sub numType x (lift 1)
-                         return y
+                               R -> do x <- A.add numType seg (lift 1)
+                                       y <- A.mul numType x szp1
+                                       z <- A.sub numType y tid
+                                       w <- A.sub numType z (lift 1)
+                                       return w
 
-        -- Index that this thread will write to. For exclusive scans the output
-        -- array is one larger than the input along each innermost dimension.
-        j0  <- case mseed of
-                 Nothing -> return i0   -- merge 'i' and 'j' indices whenever possible
-                 Just{}  -> case dir of
-                              L -> do x <- A.mul numType szp1 seg
-                                      y <- A.add numType x tid
-                                      return y
-                              R -> do x <- A.mul numType szp1 seg
-                                      y <- A.add numType x sz
-                                      z <- A.sub numType y tid
-                                      return z
+      -- Stride indices by block dimension
+      bd <- blockDim
+      let next ix = case dir of
+                      L -> A.add numType ix bd
+                      R -> A.sub numType ix bd
 
-        -- Evaluate or read the first element
-        --
-        -- If this is an exclusive scan, the first thread evaluates the initial
-        -- element, writes this to the output array, and integrates it to its
-        -- partial result
-        x0  <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
-        x1  <- case mseed of
-                 Nothing   -> return x0
-                 Just seed -> if A.eq scalarType tid (lift 0)
-                                then do
-                                  z <- seed
-                                  writeArray arrOut j0 z
-                                  case dir of
-                                    L -> app2 combine z x0
-                                    R -> app2 combine x0 z
-                                else
-                                  return x0
+      -- Initialise this scan segment
+      --
+      -- If this is an exclusive scan then the first thread just evaluates the
+      -- seed element and stores this value into the carry-in slot. All threads
+      -- shift their write-to index (j) by one, to make space for this element.
+      --
+      -- If this is an inclusive scan then do a block-wide scan. The last thread
+      -- in the block writes the carry-in value.
+      --
+      r <-
+        case mseed of
+          Just seed -> do
+            when (A.eq scalarType tid (lift 0)) $ do
+              z <- seed
+              writeArray arrOut j0 z
+              writeArray carry (lift 0 :: IR Int32) z
+            j1 <- case dir of
+                   L -> A.add numType j0 (lift 1)
+                   R -> A.sub numType j0 (lift 1)
+            return $ A.trip sz i0 j1
 
-        -- If this is an exclusive scan, every thread shifts its output index
-        -- by one to account for the initial element (which thread 0 just wrote)
-        j1  <- case mseed of
-                 Nothing -> return j0
-                 Just{}  -> case dir of
-                              L -> A.add numType j0 (lift 1)
-                              R -> A.sub numType j0 (lift 1)
+          Nothing -> do
+            when (A.lt scalarType tid sz) $ do
+              x0 <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+              r0 <- if A.gte scalarType sz bd
+                      then scanBlockSMem dir dev combine Nothing   x0
+                      else scanBlockSMem dir dev combine (Just sz) x0
+              writeArray arrOut j0 r0
 
-        -- Index n* keeps track of how many elements remain for the entire
-        -- thread block, since indices i* and j* are local to each thread
-        n0  <- A.sub numType sup inf
+              ll <- A.sub numType bd (lift 1)
+              when (A.eq scalarType tid ll) $
+                writeArray carry (lift 0 :: IR Int32) r0
 
-        -- Block-wide scan of the local values
-        --
-        -- This scan separate from the loop below is required in particular for
-        -- inclusive scans, where the first chunk has no carry-in value. For
-        -- exclusive scans we could avoid this by just storing the seed element
-        -- to the carry-in slot.
-        bd  <- blockDim
-        r0  <- if A.gte scalarType n0 bd
-                 then scanBlockSMem dir dev combine Nothing   x1
-                 else scanBlockSMem dir dev combine (Just n0) x1
+            n1 <- A.sub numType sz bd
+            i1 <- next i0
+            j1 <- next j0
+            return $ A.trip n1 i1 j1
 
-        -- Each thread write its result of the block-wide scan to memory
-        writeArray arrOut j1 r0
+      -- Iterate over the remaining elements in this segment
+      void $ while
+        (\(A.fst3   -> n)       -> A.gt scalarType n (lift 0))
+        (\(A.untrip -> (n,i,j)) -> do
 
-        -- The last thread of the block writes its result---the aggregate for
-        -- this thread block---to the carry-out value. If the last thread is not
-        -- active then we are done anyway.
-        fid <- A.sub numType bd (lift 1)
-        when (A.eq scalarType tid fid) $
-          writeArray carry (lift 0 :: IR Int32) r0
+          -- Wait for the carry-in value from the previous iteration to be updated
+          __syncthreads
 
-        let next ix = case dir of
-                        L -> A.add numType ix bd
-                        R -> A.sub numType ix bd
+          -- Compute and store the next element of the scan
+          --
+          -- NOTE: As with 'foldSeg' we require all threads to participate in
+          -- every iteration of the loop otherwise they will die prematurely.
+          -- Out-of-bounds threads return 'undef' at this point, which is really
+          -- unfortunate ):
+          --
+          x <- if A.lt scalarType tid n
+                 then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                 else let
+                          go :: TupleType a -> Operands a
+                          go UnitTuple       = OP_Unit
+                          go (PairTuple a b) = OP_Pair (go a) (go b)
+                          go (SingleTuple t) = ir' t (undef t)
+                      in
+                      return . IR $ go (eltType (undefined::e))
 
-        -- Now, threads iterate over the remaining elements along the innermost
-        -- dimension. At each iteration the first thread incorporates the
-        -- carry-in value from the previous step.
-        n1 <- A.sub numType n0 bd
-        i1 <- next i0
-        j2 <- next j1
+          -- Thread zero incorporates the carry-in element
+          y <- if A.eq scalarType tid (lift 0)
+                 then do
+                   c <- readArray carry (lift 0 :: IR Int32)
+                   case dir of
+                     L -> app2 combine c x
+                     R -> app2 combine x c
+                  else
+                    return x
 
-        void $ while
-          (\(A.fst3   -> n)       -> A.gt scalarType n (lift 0))
-          (\(A.untrip -> (n,i,j)) -> do
+          -- Perform the scan and write the result to memory
+          z <- if A.gte scalarType n bd
+                 then scanBlockSMem dir dev combine Nothing  y
+                 else scanBlockSMem dir dev combine (Just n) y
 
-            -- Wait for threads to catch up to ensure the carry-in value from
-            -- the last iteration has been updated
-            __syncthreads
+          when (A.lt scalarType tid n) $ do
+            writeArray arrOut j z
 
-            -- Calculate how many valid elements remain. If all threads in the
-            -- block will participate this round we can avoid all bounds checks.
-            _ <- if A.gte scalarType n bd
-                    -- All threads participate. No bounds checks required but
-                    -- the last thread needs to update the carry-in value.
-                    then do
-                      x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-                      y <- if A.eq scalarType tid (lift 0)
-                              then do
-                                c <- readArray carry (lift 0 :: IR Int32)
-                                case dir of
-                                  L -> app2 combine c x
-                                  R -> app2 combine x c
-                              else
-                                return x
-                      z <- scanBlockSMem dir dev combine Nothing y
-                      writeArray arrOut j z
+            -- The last thread of the block writes its result as the carry-out
+            -- value. If this thread is not active then we are on the last
+            -- iteration of the loop and it will not be needed.
+            w <- A.sub numType bd (lift 1)
+            when (A.eq scalarType tid w) $
+              writeArray carry (lift 0 :: IR Int32) z
 
-                      when (A.eq scalarType tid fid) $
-                        writeArray carry (lift 0 :: IR Int32) z
-
-                      return (IR OP_Unit :: IR ())
-
-                    -- Only threads that are in bounds can participate. This is
-                    -- the last iteration of the loop.
-                    else do
-                      when (A.lt scalarType tid n) $ do
-                        x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
-                        y <- if A.eq scalarType tid (lift 0)
-                                then do
-                                  c <- readArray carry (lift 0 :: IR Int32)
-                                  case dir of
-                                    L -> app2 combine c x
-                                    R -> app2 combine x c
-                                else
-                                  return x
-                        z <- scanBlockSMem dir dev combine (Just n) y
-                        writeArray arrOut j z
-
-                      return (IR OP_Unit :: IR ())
-
-            A.trip <$> A.sub numType n bd <*> next i <*> next j)
-          (A.trip n1 i1 j2)
+          -- Update indices for the next iteration
+          n' <- A.sub numType n bd
+          i' <- next i
+          j' <- next j
+          return $ A.trip n' i' j')
+        r
 
     return_
 
