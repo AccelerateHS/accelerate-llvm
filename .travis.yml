@@ -5,15 +5,33 @@
 # Caches the 'stack' build directory to speed subsequent compilations.
 #
 language: generic
-dist: trusty
-sudo: required
+dist: precise
 
 cache:
   directories:
     - $HOME/.stack
     - $HOME/llvm
-    - .stack-work/downloaded
     - .stack-work/install
+
+addons:
+  apt:
+    sources: &apt_sources
+      - hvr-ghc
+      - ubuntu-toolchain-r-test
+      - llvm-toolchain-precise
+      - llvm-toolchain-precise-3.5
+      # - llvm-toolchain-precise-3.6
+      # - llvm-toolchain-precise-3.7
+      - llvm-toolchain-precise-3.8
+      # - sourceline: 'deb http://apt.llvm.org/precise/ llvm-toolchain-precise-3.9 main'
+      #   key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+
+    packages: &apt_packages
+      - nvidia-cuda-toolkit
+      - g++-4.8
+      - libgmp-dev
+      - happy-1.19.5
+      - alex-3.1.7
 
 matrix:
   include:
@@ -21,48 +39,32 @@ matrix:
       compiler: "GHC 7.8"
       addons:
         apt:
-          sources:
-            - hvr-ghc
-            - ubuntu-toolchain-r-test
+          sources: *apt_sources
           packages:
-            - nvidia-cuda-toolkit
-            - g++-4.8
-            - libgmp-dev
+            - *apt_packages
             - cabal-install-1.18
-            - happy-1.19.5
-            - alex-3.1.7
+            - llvm-3.5-dev
+            - libedit-dev
 
     - env: GHC=7.10.3 CABAL=1.22 LLVM=3.5.2
       compiler: "GHC 7.10"
       addons:
         apt:
-          sources:
-            - hvr-ghc
-            - ubuntu-toolchain-r-test
+          sources: *apt_sources
           packages:
-            - nvidia-cuda-toolkit
-            - g++-4.8
-            - libgmp-dev
+            - *apt_packages
             - cabal-install-1.22
-            - happy-1.19.5
-            - alex-3.1.7
+            - llvm-3.5-dev
+            - libedit-dev
 
     - env: GHC=8.0.1 CABAL=1.24 LLVM=3.8.1
       compiler: "GHC 8.0"
       addons:
         apt:
-          sources:
-            - hvr-ghc
-            - ubuntu-toolchain-r-test
-            - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-3.8 main'
-              key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+          sources: *apt_sources
           packages:
-            - nvidia-cuda-toolkit
-            - g++-4.8
-            - libgmp-dev
+            - *apt_packages
             - cabal-install-1.24
-            - happy-1.19.5
-            - alex-3.1.7
             - llvm-3.8-dev
 
     # - env: GHC=head CABAL=head LLVM=3.9.0
@@ -80,10 +82,10 @@ before_install:
       case ${GHC} in
         7.8.*) export UPGRADE_CABAL=1 ;;
       esac
-  - |
-      case ${LLVM} in
-        3.5.*) source .travis/install-llvm-trusty.sh ;;
-      esac
+  # - |
+  #     case ${LLVM} in
+  #       3.5.*) source .travis/install-llvm-trusty.sh ;;
+  #     esac
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
 
