@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 ) where
 
 -- llvm-general
-import LLVM.General.Context                                         ( Context )
 import LLVM.General.AST                                             hiding ( Module )
 import qualified LLVM.General.AST                                   as AST
 import qualified LLVM.General.AST.Name                              as LLVM
@@ -48,6 +47,7 @@ import Data.Array.Accelerate.LLVM.Util
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
 import Data.Array.Accelerate.LLVM.PTX.Compile.Link
+import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -63,6 +63,7 @@ import qualified Foreign.NVVM                                       as NVVM
 -- standard library
 import Control.Monad.Except
 import Control.Monad.State
+import Control.Exception
 import Data.ByteString                                              ( ByteString )
 import Data.List                                                    ( intercalate )
 import System.Mem.Weak                                              ( addFinalizer )
@@ -108,7 +109,7 @@ compileForPTX acc aenv = do
     addFinalizer funs $ do Debug.traceIO Debug.dump_gc
                               $ printf "gc: unload module: %s"
                               $ intercalate "," (P.map kernelName funs)
-                           CUDA.unload ptx
+                           bracket_ (push (ptxContext target)) pop $ CUDA.unload ptx
     return $! PTXR funs ptx
 
 
@@ -120,7 +121,7 @@ compileForPTX acc aenv = do
 --    * If we are just using the llvm ptx backend, we still need to run the
 --    standard optimisations.
 --
-compileModule :: CUDA.DeviceProperties -> Context -> AST.Module -> IO CUDA.Module
+compileModule :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO CUDA.Module
 compileModule dev ctx ast =
   let name      = moduleName ast in
 #ifdef ACCELERATE_USE_NVVM
