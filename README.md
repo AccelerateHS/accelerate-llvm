@@ -63,7 +63,7 @@ rather than LLVM's inbuilt NVPTX backend (so, you will not need to install LLVM
 with the NVPTX target). The libNVVM library is distributed as part of the NVIDIA
 CUDA toolkit.
 
-Using `stack`, either edit the `stack.yaml` file, install via:
+Using `stack`, either edit the `stack.yaml` or install using the options:
 
 ```sh
 $ stack install accelerate-llvm-ptx --flag accelerate-llvm-ptx:nvvm
