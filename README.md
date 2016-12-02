@@ -18,9 +18,9 @@ Dependencies
 Haskell dependencies are available from Hackage. There are several external
 dependencies that you will need to install as well:
 
- * [libFFI](http://sourceware.org/libffi/)
  * [LLVM](http://llvm.org)
- * [CUDA](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend)
+ * [libFFI](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
+ * [CUDA](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
 
 
 Installation
