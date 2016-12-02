@@ -519,7 +519,7 @@ executeOp
     -> IO ()
 executeOp ppt native@Native{..} f gamma aenv r args =
   runExecutable fillP ppt r $ \start end _tid ->
-  monitorProcTime                  $
+  monitorProcTime           $
     f =<< marshal native () (start, end, args, (gamma, aenv))
 
 
