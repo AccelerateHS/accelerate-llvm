@@ -96,7 +96,8 @@ depend on the version of the CUDA toolkit you have installed.
 | **CUDA-7.5** |          |     ⭕    |     ⭕    |     ❌    |          |
 | **CUDA-8.0** |          |          |     ⭕    |     ⭕    |     ❌    |
 
-Note that `accelerate-llvm` itself currently requires at least LLVM-3.5.
+Note that `accelerate-llvm` itself currently requires at least LLVM-3.5. There
+are currently no releases of `llvm-general` planned for LLVM-3.6 or LLVM-3.7.
 
 Using `stack`, either edit the `stack.yaml` and add the following section:
 
