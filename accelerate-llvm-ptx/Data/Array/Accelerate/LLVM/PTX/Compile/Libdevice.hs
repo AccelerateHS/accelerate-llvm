@@ -116,7 +116,11 @@ nvvmReflectPass_mdl =
 #else
       , G.functionAttributes  = [NoUnwind, ReadNone, AlwaysInline]
 #endif
+#if MIN_VERSION_llvm_general(3,9,0)
+      , basicBlocks           = []
+#else
       , basicBlocks           = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
+#endif
       }]
     }
 
