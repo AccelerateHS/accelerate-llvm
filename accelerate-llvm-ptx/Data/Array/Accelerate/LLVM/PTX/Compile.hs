@@ -33,6 +33,7 @@ import qualified LLVM.General.PassManager                           as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )
+import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -61,12 +62,12 @@ import qualified Foreign.NVVM                                       as NVVM
 #endif
 
 -- standard library
+import Control.Concurrent
+import Control.Exception
 import Control.Monad.Except
 import Control.Monad.State
-import Control.Exception
 import Data.ByteString                                              ( ByteString )
 import Data.List                                                    ( intercalate )
-import System.Mem.Weak                                              ( addFinalizer )
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Char8                              as B
 import qualified Data.Map                                           as Map
@@ -74,8 +75,8 @@ import Prelude                                                      as P
 
 
 instance Compile PTX where
-  data ExecutableR PTX = PTXR { ptxKernel :: [Kernel]
-                              , ptxModule :: {-# UNPACK #-} !CUDA.Module
+  data ExecutableR PTX = PTXR { ptxKernel :: ![Kernel]
+                              , ptxModule :: {-# UNPACK #-} !(Lifetime CUDA.Module)
                               }
   compileForTarget     = compileForPTX
 
@@ -106,11 +107,15 @@ compileForPTX acc aenv = do
   liftIO . LLVM.withContext $ \ctx -> do
     ptx  <- compileModule dev ctx ast
     funs <- sequence [ linkFunction ptx f x | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
-    addFinalizer funs $ do Debug.traceIO Debug.dump_gc
-                              $ printf "gc: unload module: %s"
-                              $ intercalate "," (P.map kernelName funs)
-                           bracket_ (push (ptxContext target)) pop $ CUDA.unload ptx
-    return $! PTXR funs ptx
+    ptx' <- newLifetime ptx
+    addFinalizer ptx' $ do
+      Debug.traceIO Debug.dump_gc
+        $ printf "gc: unload module: %s"
+        $ intercalate "," (P.map kernelName funs)
+      runInBoundThread
+        $ bracket_ (push (ptxContext target)) pop
+        $ CUDA.unload ptx
+    return $! PTXR funs ptx'
 
 
 -- | Compile the LLVM module to produce a CUDA module.
