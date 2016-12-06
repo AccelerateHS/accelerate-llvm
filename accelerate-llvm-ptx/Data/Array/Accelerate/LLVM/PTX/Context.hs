@@ -71,6 +71,12 @@ raw dev prp ctx = do
 
   -- The kernels don't use much shared memory, so for devices that support it
   -- prefer using those memory banks as an L1 cache.
+  --
+  -- TLM: Is this a good idea? For example, external libraries such as cuBLAS
+  -- rely heavily on shared memory and thus this could adversely affect
+  -- performance. Perhaps we should use 'setCacheConfigFun' for individual
+  -- functions which might benefit from this.
+  --
   when (CUDA.computeCapability prp >= CUDA.Compute 2 0)
        (CUDA.setCache CUDA.PreferL1)
 
