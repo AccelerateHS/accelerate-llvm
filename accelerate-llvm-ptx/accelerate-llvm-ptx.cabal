@@ -68,6 +68,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Execute
     Data.Array.Accelerate.LLVM.PTX.Execute.Async
     Data.Array.Accelerate.LLVM.PTX.Execute.Stream
+    Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir
 
     Data.Array.Accelerate.LLVM.PTX.CodeGen
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Base

@@ -458,9 +458,8 @@ withDevicePtr !ad !f = do
 --
 {-# INLINE blocking #-}
 blocking :: (Stream -> LLVM PTX a) -> LLVM PTX a
-blocking !f = do
-  PTX{..} <- gets llvmTarget
-  streaming ptxContext ptxStreamReservoir f $ \e r -> do
+blocking !f =
+  streaming f $ \e r -> do
     liftIO $ block e
     return r
 

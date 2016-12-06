@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( Async )
 import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
 
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( Event )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
@@ -44,14 +43,10 @@ instance A.Async PTX where
   type EventR  PTX = Event
 
   {-# INLINEABLE fork #-}
-  fork = do
-    PTX{..} <- gets llvmTarget
-    liftIO  $! Stream.create ptxContext ptxStreamReservoir
+  fork = Stream.create
 
   {-# INLINEABLE join #-}
-  join stream = do
-    PTX{..} <- gets llvmTarget
-    liftIO  $! Stream.destroy ptxContext ptxStreamReservoir stream
+  join = Stream.destroy
 
   {-# INLINEABLE checkpoint #-}
   checkpoint stream =

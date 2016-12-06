@@ -11,22 +11,28 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Event (
 
-  Event, Stream,
+  Event,
   create, destroy, query, waypoint, after, block,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Lifetime
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
-import qualified Foreign.CUDA.Driver.Event                      as Event
-import qualified Foreign.CUDA.Driver.Stream                     as Stream
+import Foreign.CUDA.Driver.Error
+import qualified Foreign.CUDA.Driver.Event                          as Event
+import qualified Foreign.CUDA.Driver.Stream                         as Stream
+
+import Control.Exception
 
 
+-- | Events can be used for efficient device-side synchronisation between
+-- execution streams and between the host.
+--
 type Event  = Lifetime Event.Event
-type Stream = Lifetime Stream.Stream
+type Stream = Lifetime Stream.Stream  -- local re-definition to avoid circular dependency; do not re-export
 
 
 -- | Create a new event. It will not be automatically garbage collected, and is
@@ -94,7 +100,7 @@ query event = withLifetime event Event.query
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-  Debug.when Debug.verbose $ Debug.traceIO Debug.dump_exec ("event: " ++ msg)
+  Debug.traceIO Debug.dump_sched ("event: " ++ msg)
   next
 
 {-# INLINE message #-}

@@ -38,7 +38,7 @@ import Data.Array.Accelerate.LLVM.Util
 import Control.Parallel.Meta                                        ( Executable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Reservoir )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA

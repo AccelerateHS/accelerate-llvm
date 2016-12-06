@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Remote (
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Array.Data
@@ -122,10 +122,9 @@ withRemote !ad !f = do
 --
 {-# INLINE blocking #-}
 blocking :: (Stream -> IO a) -> LLVM PTX a
-blocking !fun = do
-  PTX{..} <- gets llvmTarget
-  liftIO   $ streaming ptxContext ptxStreamReservoir fun $ \e r -> do
-    block e
+blocking !fun =
+  streaming (liftIO . fun) $ \e r -> do
+    liftIO $ block e
     return r
 
 {-# INLINE sizeOfPtr #-}
