@@ -73,7 +73,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar                         ( IROpenAcc(..) )
 
 -- llvm-general-pure
 import qualified LLVM.General.AST                                       as LLVM
