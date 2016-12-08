@@ -27,6 +27,7 @@ module Control.Parallel.Meta.Resource.SMP (
 ) where
 
 -- accelerate
+import Data.Range.Range
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 
@@ -35,8 +36,6 @@ import qualified Data.Array.Accelerate.Debug            as Debug
 -- standard library
 import Data.Concurrent.Deque.Class
 import Data.IORef
-import Data.Monoid
-import Prelude
 import System.Random.MWC
 import Text.Printf
 import qualified Data.Vector                            as V
@@ -48,10 +47,9 @@ import qualified Data.Vector                            as V
 --
 mkResource
     :: Int              -- ^ number of steal attempts per 'WorkSearch'
-    -> Gang             -- ^ the workers that will steal amongst each other
     -> Resource
-mkResource retries gang =
-  Resource mempty (mkWorkSearch retries gang)
+mkResource retries =
+  Resource (mkWorkSearch retries)
 
 
 -- | Given a set of workers and a number of steal attempts per worker, return a
@@ -67,38 +65,40 @@ mkResource retries gang =
 -- between number of times to traverse each level and number of times to
 -- traverse the entire resource stack.
 --
-mkWorkSearch :: Int -> Gang -> WorkSearch
-mkWorkSearch retries gang =
-  let search !me =
-        let myId        = workerId me
-            random      = uniformR (0, V.length gang - 1) (rngState me)
+mkWorkSearch :: Int -> WorkSearch
+mkWorkSearch retries = WorkSearch search
+  where
+    search :: Int -> Workers -> IO (Maybe Range)
+    search !tid !workers =
+      let
+          me          = V.unsafeIndex workers tid
+          myId        = workerId me
+          random      = uniformR (0, V.length workers - 1) (rngState me)
 
-            loop 0      = do
-              message myId "work search failed"
-              modifyIORef' (consecutiveFailures me) (+1)
-              return Nothing
+          loop 0      = do
+            message myId "work search failed"
+            modifyIORef' (consecutiveFailures me) (+1)
+            return Nothing
 
-            loop n      = do
-              target <- V.unsafeIndex gang `fmap` random
-              if workerId target == myId
-                 then loop (n-1)
-                 else do
-                   mwork <- tryPopR (workpool target)
-                   case mwork of
-                     Nothing    -> loop (n-1)
-                     _          -> do event myId (printf "steal from %d" (workerId target))
-                                      writeIORef (consecutiveFailures me) 0
-                                      return mwork
-        in
-        loop retries
+          loop n      = do
+            target <- V.unsafeIndex workers `fmap` random
+            if workerId target == myId
+               then loop (n-1)
+               else do
+                 mwork <- tryPopR (workpool target)
+                 case mwork of
+                   Nothing    -> loop (n-1)
+                   _          -> do event myId (printf "steal from %d" (workerId target))
+                                    writeIORef (consecutiveFailures me) 0
+                                    return mwork
+      in
+      loop retries
 --          self <- tryPopL (workpool me)
 --          case self of
 --            Nothing -> loop retries
 --            _       -> do message myId "steal from self"
 --                          writeIORef (consecutiveFailures me) 0
 --                          return self
-  in
-  WorkSearch search
 
 
 -- Debugging

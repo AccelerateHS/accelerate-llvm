@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Resource.Backoff
@@ -27,17 +28,17 @@ module Control.Parallel.Meta.Resource.Backoff (
 
 import Control.Concurrent
 import Data.IORef
-import Data.Monoid
-import Prelude
 import Text.Printf
 
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
-import qualified Data.Array.Accelerate.Debug            as Debug
+import Data.Range.Range                                         as R
+import qualified Data.Vector                                    as V
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 
 mkResource :: Resource
-mkResource = Resource mempty defaultWorkSearch
+mkResource = Resource defaultWorkSearch
 
 defaultWorkSearch :: WorkSearch
 defaultWorkSearch = mkWorkSearch 100 10000
@@ -57,10 +58,12 @@ defaultWorkSearch = mkWorkSearch 100 10000
 -- point it will always sleep for the maximum time (10ms)
 --
 mkWorkSearch :: Int -> Int -> WorkSearch
-mkWorkSearch _        0       = WorkSearch $ \_ -> return Nothing
+mkWorkSearch _        0       = WorkSearch $ \_ _ -> return Nothing
 mkWorkSearch shortest longest = WorkSearch backoff
   where
-    backoff Worker{..} = do
+    backoff :: Int -> Workers -> IO (Maybe Range)
+    backoff tid workers = do
+      let Worker{..} = V.unsafeIndex workers tid
       failed   <- readIORef consecutiveFailures
       let sleep = min longest (2 ^ failed)
       if sleep >= shortest

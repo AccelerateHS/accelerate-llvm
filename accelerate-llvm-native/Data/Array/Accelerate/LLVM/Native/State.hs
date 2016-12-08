@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.State (
   createTarget, defaultTarget,
 
   Strategy,
-  sequentialIO, balancedParIO, unbalancedParIO,
+  balancedParIO, unbalancedParIO,
 
 ) where
 
@@ -37,7 +37,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
-import qualified Data.Vector                                    as V
 
 import GHC.Conc
 
@@ -49,18 +48,16 @@ evalNative = evalLLVM
 
 
 -- | Create a Native execution target by spawning a worker thread on each of the
--- given capabilities, using the given strategy to load balance the workers.
---
--- Note that it is *not* safe to use the same target concurrently from different
--- threads; instead, create separate targets for each thread.
+-- given capabilities, and using the given strategy to load balance the workers
+-- when executing parallel operations.
 --
 createTarget
-    :: [Int]
-    -> Strategy
+    :: [Int]              -- ^ CPU IDs to launch worker threads on
+    -> Strategy           -- ^ Strategy to balance parallel workloads
     -> IO Native
-createTarget caps strategy = do
+createTarget caps parallelIO = do
   gang   <- forkGangOn caps
-  return $! Native gang (strategy gang)
+  return $! Native (length caps) (sequentialIO gang) (parallelIO gang)
 
 
 -- | The strategy for balancing work amongst the available worker threads.
@@ -68,12 +65,12 @@ createTarget caps strategy = do
 type Strategy = Gang -> Executable
 
 
--- | Execute an operation sequentially with a single thread
+-- | Execute an operation sequentially on a single thread
 --
 sequentialIO :: Strategy
 sequentialIO gang =
   Executable $ \_ range fill ->
-    timed $ seqIO Single.mkResource (V.take 1 gang) range fill
+    timed $ runSeqIO gang range fill
 
 
 -- | Execute a computation without load balancing. Each thread computes an
@@ -91,13 +88,11 @@ unbalancedParIO gang =
 -- be chosen when invoking the continuation in order to balance scheduler
 -- overhead with fine-grained function calls.
 --
-balancedParIO :: Strategy
-balancedParIO gang =
+balancedParIO :: Int -> Strategy
+balancedParIO retries gang =
   Executable $ \ppt range fill ->
-    let retries  = gangSize gang
-        resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
-    in
-    timed $ runParIO resource gang range fill
+    let resource = LBS.mkResource ppt (SMP.mkResource retries <> Backoff.mkResource)
+    in  timed $ runParIO resource gang range fill
 
 
 -- Top-level mutable state
@@ -126,7 +121,7 @@ defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
   case numCapabilities of
     1 -> createTarget [0]        sequentialIO
-    n -> createTarget [0 .. n-1] balancedParIO
+    n -> createTarget [0 .. n-1] (balancedParIO n)
 
 
 -- Debugging

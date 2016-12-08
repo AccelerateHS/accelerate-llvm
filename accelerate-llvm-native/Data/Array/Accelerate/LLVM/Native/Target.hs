@@ -29,7 +29,6 @@ import Data.Array.Accelerate.Error                              ( internalError 
 
 import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
 import Control.Parallel.Meta                                    ( Executable )
-import Control.Parallel.Meta.Worker                             ( Gang )
 
 -- standard library
 import Control.Monad.Except
@@ -39,7 +38,8 @@ import System.IO.Unsafe
 -- | Native machine code JIT execution target
 --
 data Native = Native {
-    theGang     :: {-# UNPACK #-} !Gang
+    gangSize    :: {-# UNPACK #-} !Int
+  , fillS       :: {-# UNPACK #-} !Executable
   , fillP       :: {-# UNPACK #-} !Executable
   }
 

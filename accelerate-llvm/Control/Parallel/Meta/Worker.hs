@@ -15,8 +15,8 @@
 
 module Control.Parallel.Meta.Worker (
 
-  Gang, Worker(..), Req(..),
-  gangSize, forkGang, forkGangOn, gangIO, exhausted,
+  Gang, Workers, Worker(..), Req(..),
+  gangIO, forkGang, forkGangOn, workerIO, exhausted,
 
 ) where
 
@@ -52,7 +52,8 @@ import Data.Concurrent.Deque.Reference.DequeInstance            ()
 -- lookup of the worker structure, which will be done frequently during the work
 -- search.
 --
-type Gang = Vector Worker
+type Gang     = MVar Workers
+type Workers  = Vector Worker
 
 
 -- | The 'Worker' is the per-worker-thread state.
@@ -110,12 +111,6 @@ freshId :: IO Int
 freshId = atomicModifyIORef uniqueSupply (\n -> let !n' = n+1 in (n', n))
 
 
--- | O(1). Yield the number of threads in the 'Gang'.
---
-gangSize :: Gang -> Int
-gangSize = V.length
-
-
 -- | Create a set of workers. This is a somewhat expensive function, so it is
 -- expected that it is called only occasionally (e.g. once per program
 -- execution).
@@ -130,18 +125,19 @@ forkGang n = forkGangOn [0..n-1]
 --
 forkGangOn :: [Int] -> IO Gang
 forkGangOn caps = do
-  V.forM (V.indexed (V.fromList caps)) $ \(i, cap) -> do
-    worker <- Worker <$> freshId                -- identifier
-                     <*> newEmptyMVar           -- work request
-                     <*> newEmptyMVar           -- work complete
-                     <*> newQ                   -- work stealing deque
-                     <*> newIORef 0             -- consecutive steal failure count
-                     <*> createSystemRandom     -- random generator for stealing
-    --
-    message (printf "fork %d on capability %d" (workerId worker) cap)
-    void $ mkWeakMVar (requestVar worker) (finaliseWorker worker)
-    void $ forkOn cap $ gangWorker i worker
-    return worker
+  ws <- V.forM (V.indexed (V.fromList caps)) $ \(i, cap) -> do
+          worker <- Worker <$> freshId                -- identifier
+                           <*> newEmptyMVar           -- work request
+                           <*> newEmptyMVar           -- work complete
+                           <*> newQ                   -- work stealing deque
+                           <*> newIORef 0             -- consecutive steal failure count
+                           <*> createSystemRandom     -- random generator for stealing
+          --
+          message (printf "fork %d on capability %d" (workerId worker) cap)
+          void $ mkWeakMVar (requestVar worker) (finaliseWorker worker)
+          void $ forkOn cap $ gangWorker i worker
+          return worker
+  newMVar ws
 
 
 -- | The main worker loop for a thread in the gang.
@@ -164,19 +160,24 @@ gangWorker threadId st@Worker{..} = do
         gangWorker threadId st  -- Wait for more requests
 
 
--- | Issue work requests to the gang and wait until they complete
+-- | Gain control of the gang and use it to do some work
 --
-gangIO :: Gang -> (Int -> IO ()) -> IO ()
-gangIO gang action = mask $ \restore -> do
+gangIO :: Gang -> (Workers -> IO ()) -> IO ()
+gangIO = withMVar
+
+-- | Issue work requests to the threads and wait until they complete
+--
+workerIO :: Workers -> (Int -> IO ()) -> IO ()
+workerIO workers action = mask $ \restore -> do
   main  <- myThreadId
 
   -- Send requests to the threads
-  V.forM_ gang $ \Worker{..} -> do
+  V.forM_ workers $ \Worker{..} -> do
     writeIORef consecutiveFailures 0
     putMVar requestVar $ ReqDo (reflectExceptionsTo main . restore . action)
 
   -- Wait for all requests to complete
-  V.forM_ gang $ \Worker{..} -> takeMVar resultVar
+  V.forM_ workers $ \Worker{..} -> takeMVar resultVar
 
 reflectExceptionsTo :: ThreadId -> IO () -> IO ()
 reflectExceptionsTo tid action =
@@ -212,11 +213,11 @@ finaliseWorker Worker{..} = do
   takeMVar resultVar
 
 
--- | Check whether the work queues of the gang are all empty
+-- | Check whether the work queues of all workers in a gang are empty
 --
-exhausted :: Gang -> IO Bool
-exhausted gang =
-  V.and <$> V.mapM (\Worker{..} -> nullQ workpool) gang
+exhausted :: Workers -> IO Bool
+exhausted workers =
+  V.and <$> V.mapM (\Worker{..} -> nullQ workpool) workers
 
 
 -- Debugging

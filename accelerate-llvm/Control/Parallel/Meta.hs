@@ -10,13 +10,20 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Control.Parallel.Meta
-  where
+module Control.Parallel.Meta (
 
-import Data.Monoid
+  WorkSearch(..),
+  Resource(..),
+  Executable(..),
+  Action,
+  runSeqIO, runParIO,
+
+) where
+
 import Control.Monad
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
+import Data.Monoid
 import Data.Sequence                                            ( Seq )
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
@@ -29,7 +36,7 @@ import GHC.Base                                                 ( quotInt, remIn
 -- threads, or initialise hardware such as GPUs.
 --
 data Startup = Startup {
-  runStartup :: Gang -> IO () }
+  _runStartup :: Gang -> IO () }
 
 instance Monoid Startup where
   mempty                            = Startup $ \_ -> return ()
@@ -42,15 +49,15 @@ instance Monoid Startup where
 -- program.
 --
 data WorkSearch = WorkSearch {
-  runWorkSearch :: Worker -> IO (Maybe Range) }
+  runWorkSearch :: Int -> Workers -> IO (Maybe Range) }
 
 instance Monoid WorkSearch where
-  mempty                                  = WorkSearch $ \_ -> return Nothing
+  mempty                                  = WorkSearch $ \_ _ -> return Nothing
   WorkSearch ws1 `mappend` WorkSearch ws2 =
-    WorkSearch $ \st -> do
-        mwork <- ws1 st
+    WorkSearch $ \tid st -> do
+        mwork <- ws1 tid st
         case mwork of
-          Nothing -> ws2 st
+          Nothing -> ws2 tid st
           _       -> return mwork
 
 
@@ -60,13 +67,13 @@ instance Monoid WorkSearch where
 -- resource @resource1 <> resource2@ will never request work from @resource2@.
 --
 data Resource = Resource {
-    startup     :: Startup
-  , workSearch  :: WorkSearch
+    -- startup     :: Startup
+    workSearch  :: WorkSearch
   }
 
 instance Monoid Resource where
-  mempty                                        = Resource mempty mempty
-  mappend (Resource st1 ws1) (Resource st2 ws2) = Resource (st1 <> st2) (ws1 <> ws2)
+  mempty                                = Resource mempty
+  mappend (Resource ws1) (Resource ws2) = Resource (ws1 <> ws2)
 
 
 -- | An action to execute. The first parameters are the start and end indices of
@@ -100,12 +107,42 @@ data Executable = Executable {
 -- thread actually handled.
 --
 data Finalise = Finalise {
-    runFinalise :: Seq Range -> IO ()
+    _runFinalise :: Seq Range -> IO ()
   }
 
 instance Monoid Finalise where
   mempty                            = Finalise $ \_ -> return ()
   Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
+
+
+
+-- | Run a sequential operation
+--
+-- We just have the first thread of the gang execute the operation, but we could
+-- also make the threads compete, which might be useful on a loaded system.
+--
+runSeqIO
+    :: Gang
+    -> Range
+    -> Action
+    -> IO ()
+runSeqIO _    Empty    _      = return ()
+runSeqIO gang (IE u v) action =
+  gangIO   gang    $ \workers ->
+  workerIO workers $ \thread  ->
+    when (thread == 0) $ action u v thread
+    -- let
+    --     target  = V.unsafeIndex workers 0
+    --     loop 0  = return ()
+    --     loop n  = do
+    --       mwork <- tryPopR (workpool target)
+    --       case mwork of
+    --         Nothing       -> loop (n-1)
+    --         Just Empty    -> return ()
+    --         Just (IE u v) -> action u v thread
+    -- --
+    -- when (thread == 0) $ pushL (workpool target) range
+    -- loop 3
 
 
 -- | Run a parallel work-stealing operation.
@@ -128,23 +165,19 @@ instance Monoid Finalise where
 --
 -- An alternative to every thread initialising with an even chunk size is to put
 -- the entire range onto the first worker and then have the scheduler handle the
--- decomposition. However, since we are playing fast-and-loose with the exit
--- condition, this is a little racy.
+-- decomposition. However, this method should be better for locality,
+-- particularly when the workloads are balanced and little stealing occurs.
 --
--- TLM NOTE:
+-- TLM: Should threads check whether the work queues of all threads are empty
+--      before deciding to exit? If the PPT is too large then threads might not
+--      react quickly enough to splitting once their deque is emptied. Maybe the
+--      first thread to return Nothing can probe the queues to see if they are
+--      all empty. If True, write into a shared MVar to signal to the others
+--      that it is time to exit. But, that still assumes that the PPT is not so
+--      large that the queues are always empty.
 --
--- Should threads check whether the work queues of all threads are empty before
--- deciding to exit? If the PPT is too large then threads might not react
--- quickly enough to splitting once their deque is emptied. Maybe the first
--- thread to return Nothing can probe the queues to see if they are all empty.
--- If True, write into a shared MVar to signal to the others that it is time to
--- exit. But, that still assumes that the PPT is not so large that the queues
--- are always empty.
---
--- TLM TODO:
---
--- Splitting work should probably be biased to cache-size chunks, rather
--- than trying to split exactly evenly.
+-- TLM: The initial work distribution should probably be aligned to cache
+--      boundaries, rather than attempting to split exactly evenly.
 --
 runParIO
     :: Resource
@@ -152,58 +185,37 @@ runParIO
     -> Range
     -> Action
     -> IO ()
-runParIO resource gang range action
-  | gangSize gang == 1  = seqIO resource gang range action
-  | otherwise           = parIO resource gang range action
+runParIO _        _    Empty        _      = return ()
+runParIO resource gang (IE inf sup) action =
+  gangIO   gang    $ \workers ->
+  workerIO workers $ \tid     -> do
+    let
+        len       = sup - inf
+        threads   = V.length workers
+        chunk     = len `quotInt` threads
+        leftover  = len `remInt`  threads
 
-seqIO
-    :: Resource
-    -> Gang
-    -> Range
-    -> Action
-    -> IO ()
-seqIO _ _    Empty    _      = return ()
-seqIO _ gang (IE u v) action = gangIO gang $ action u v
+        start     = splitIx tid
+        end       = splitIx (tid + 1)
+        me        = V.unsafeIndex workers tid
 
-parIO
-    :: Resource
-    -> Gang
-    -> Range
-    -> Action
-    -> IO ()
-parIO _        _    Empty        _      = return ()
-parIO resource gang (IE inf sup) action =
-  gangIO gang $ \thread -> do
-      let start = splitIx thread
-          end   = splitIx (thread + 1)
-          me    = V.unsafeIndex gang thread
+        splitIx n | n < leftover = inf + n * (chunk + 1)
+        splitIx n                = inf + n * chunk + leftover
 
-          loop  = do
-            work <- runWorkSearch (workSearch resource) me
-            case work of
-              -- Got a work unit. Execute it then search for more.
-              Just (IE u v) -> action u v thread >> loop
+        loop  = do
+          work <- runWorkSearch (workSearch resource) tid workers
+          case work of
+            -- Got a work unit. Execute it then search for more.
+            Just (IE u v) -> action u v tid >> loop
 
-              -- If the work search failed (which is random), to be extra safe
-              -- make sure all the work queues are exhausted before exiting.
-              _             -> do
-                done <- exhausted gang
-                if done
-                   then return ()
-                   else loop
+            -- If the work search failed (which is random), to be extra safe
+            -- make sure all the work queues are exhausted before exiting.
+            _             -> do
+              done <- exhausted workers
+              if done
+                 then return ()
+                 else loop
 
-      when (end > start) $ pushL (workpool me) (IE start end)
-      loop
-  where
-    len                 = sup - inf
-    workers             = gangSize gang
-    chunkLen            = len `quotInt` workers
-    chunkLeftover       = len `remInt`  workers
-
-    splitIx thread
-      | thread < chunkLeftover
-      = inf + thread * (chunkLen + 1)
-
-      | otherwise
-      = inf + thread * chunkLen + chunkLeftover
+    when (end > start) $ pushL (workpool me) (IE start end)
+    loop
 

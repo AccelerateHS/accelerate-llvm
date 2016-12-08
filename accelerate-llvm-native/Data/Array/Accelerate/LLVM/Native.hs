@@ -52,8 +52,6 @@ import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
-import Control.Parallel.Meta.Worker
-
 -- standard library
 import Control.Monad.Trans
 import System.IO.Unsafe
@@ -186,7 +184,7 @@ streamWith target f arrs = map go arrs
 --
 config :: Native -> Phase
 config target = phases
-  { convertOffsetOfSegment = gangSize (theGang target) > 1
+  { convertOffsetOfSegment = gangSize target > 1
   }
 
 

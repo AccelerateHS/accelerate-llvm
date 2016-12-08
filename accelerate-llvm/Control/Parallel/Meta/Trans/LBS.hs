@@ -25,11 +25,13 @@ module Control.Parallel.Meta.Trans.LBS (
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
+import Data.Range.Range                                         ( Range )
 import qualified Data.Range.Range                               as R
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 import Control.Monad
 import Text.Printf
+import qualified Data.Vector                                    as V
 
 
 -- | Transform the 'WorkSearch' function of the given 'Resource' to include a
@@ -39,8 +41,8 @@ mkResource
     :: Int              -- ^ profitable parallelism threshold
     -> Resource         -- ^ the resource to modify
     -> Resource
-mkResource ppt (Resource st ws)
-  = Resource st (mkWorkSearch ppt ws)
+mkResource ppt (Resource ws)
+  = Resource (mkWorkSearch ppt ws)
 
 
 -- | This transforms the 'WorkSearch' function to add a lazy binary splitting
@@ -60,15 +62,18 @@ mkWorkSearch
     :: Int              -- ^ profitable parallelism threshold
     -> WorkSearch       -- ^ the basic work search method to modify
     -> WorkSearch
-mkWorkSearch ppt steal =
-  let search !me@Worker{..} = do
+mkWorkSearch ppt steal = WorkSearch search
+  where
+    search :: Int -> Workers -> IO (Maybe Range)
+    search tid workers = do
+        let Worker{..} = V.unsafeIndex workers tid
 
         -- Look for some work to do. If there is work on the local queue, take
         -- that first before trying to steal from the neighbours.
         --
         self <- tryPopL workpool
         work <- case self of
-                  Nothing -> runWorkSearch steal me
+                  Nothing -> runWorkSearch steal tid workers
                   Just _  -> return self
 
         -- Once we have some work, take the first ppt elements (which we will
@@ -112,8 +117,6 @@ mkWorkSearch ppt steal =
             return (Just this)
 
           _ -> message workerId "work search failed" >> return Nothing
-  in
-  WorkSearch search
 
 
 -- Debugging
