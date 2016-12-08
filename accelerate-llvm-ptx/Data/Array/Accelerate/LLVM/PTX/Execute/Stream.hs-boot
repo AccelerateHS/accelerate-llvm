@@ -18,13 +18,12 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Stream (
 import Data.Array.Accelerate.Lifetime                               ( Lifetime )
 import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 
-import qualified Foreign.CUDA.Driver.Event                          as Event
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
 
 type Stream = Lifetime Stream.Stream
-type Event  = Lifetime Event.Event
 
 streaming
   :: (Stream -> LLVM PTX a)

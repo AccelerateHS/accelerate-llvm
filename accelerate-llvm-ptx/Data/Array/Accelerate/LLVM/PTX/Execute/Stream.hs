@@ -66,10 +66,11 @@ streaming !action !after = do
   PTX{..} <- gets llvmTarget
   stream  <- create
   first   <- action stream
-  end     <- liftIO $ Event.waypoint stream
+  end     <- Event.waypoint stream
   final   <- after end first
-  destroy stream
-  liftIO $ Event.destroy end
+  liftIO $ do
+    destroy stream
+    Event.destroy end
   return final
 
 
@@ -120,18 +121,18 @@ create = do
 create' :: LLVM PTX Stream.Stream
 create' = do
   PTX{..} <- gets llvmTarget
-  ms      <- attempt "malloc/reservoir" (liftIO $ RSV.malloc ptxStreamReservoir)
+  ms      <- attempt "create/reservoir" (liftIO $ RSV.malloc ptxStreamReservoir)
              `orElse`
-             attempt "malloc/new"       (liftIO . catchOOM $ Stream.create [])
+             attempt "create/new"       (liftIO . catchOOM $ Stream.create [])
              `orElse` do
                Remote.reclaim ptxMemoryTable
                liftIO $ do
-                 message "malloc/new-failed (purging)"
+                 message "create/new: failed (purging)"
                  catchOOM $ Stream.create []
   case ms of
     Just s  -> return s
     Nothing -> liftIO $ do
-      message "malloc/new-failed (non-recoverable)"
+      message "create/new: failed (non-recoverable)"
       throwIO (ExitCode OutOfMemory)
 
   where
@@ -161,8 +162,8 @@ create' = do
 -- pending operations in the stream have completed.
 --
 {-# INLINEABLE destroy #-}
-destroy :: Stream -> LLVM PTX ()
-destroy = liftIO . finalize
+destroy :: Stream -> IO ()
+destroy = finalize
 
 
 -- Debug

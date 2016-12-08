@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Remote (
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
 import Data.Array.Accelerate.Lifetime

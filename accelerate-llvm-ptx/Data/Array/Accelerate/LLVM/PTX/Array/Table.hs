@@ -16,13 +16,15 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Table (
 
 ) where
 
-import Data.Array.Accelerate.LLVM.PTX.Context                           ( Context, push, pop )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event                     ( Event )
-import qualified Data.Array.Accelerate.Array.Remote                     as Remote
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
+import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, push, pop )
+import qualified Data.Array.Accelerate.Array.Remote                 as Remote
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 
-import qualified Foreign.CUDA.Ptr                                       as CUDA
-import qualified Foreign.CUDA.Driver                                    as CUDA
+import qualified Foreign.CUDA.Ptr                                   as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
+import qualified Foreign.CUDA.Driver.Event                          as Event
 
 import Control.Exception
 import Text.Printf

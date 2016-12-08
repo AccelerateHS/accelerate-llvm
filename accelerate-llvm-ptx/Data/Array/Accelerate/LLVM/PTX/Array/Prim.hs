@@ -470,7 +470,7 @@ blocking !f =
 nonblocking :: Stream -> LLVM PTX a -> LLVM PTX (Maybe Event, a)
 nonblocking !stream !f = do
   r <- f
-  e <- liftIO $ waypoint stream
+  e <- waypoint stream
   return (Just e, r)
 
 

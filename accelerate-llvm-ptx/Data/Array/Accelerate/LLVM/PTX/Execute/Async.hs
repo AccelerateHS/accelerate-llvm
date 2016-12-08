@@ -43,14 +43,16 @@ instance A.Async PTX where
   type EventR  PTX = Event
 
   {-# INLINEABLE fork #-}
-  fork = Stream.create
+  fork =
+    Stream.create
 
   {-# INLINEABLE join #-}
-  join = Stream.destroy
+  join stream =
+    liftIO $! Stream.destroy stream
 
   {-# INLINEABLE checkpoint #-}
   checkpoint stream =
-    liftIO $! Event.waypoint stream
+    Event.waypoint stream
 
   {-# INLINEABLE after #-}
   after stream event =
