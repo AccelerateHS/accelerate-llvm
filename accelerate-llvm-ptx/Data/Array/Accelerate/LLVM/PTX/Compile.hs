@@ -62,8 +62,6 @@ import qualified Foreign.NVVM                                       as NVVM
 #endif
 
 -- standard library
-import Control.Concurrent
-import Control.Exception
 import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
@@ -112,9 +110,7 @@ compileForPTX acc aenv = do
       Debug.traceIO Debug.dump_gc
         $ printf "gc: unload module: %s"
         $ intercalate "," (P.map kernelName funs)
-      runInBoundThread
-        $ bracket_ (push (ptxContext target)) pop
-        $ CUDA.unload ptx
+      withContext (ptxContext target) (CUDA.unload ptx)
     return $! PTXR funs ptx'
 
 

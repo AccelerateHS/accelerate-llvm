@@ -34,7 +34,7 @@ import Control.Parallel.Meta                                    ( Executable(..)
 
 -- standard library
 import Control.Concurrent                                       ( runInBoundThread )
-import Control.Exception                                        ( bracket_, catch )
+import Control.Exception                                        ( catch )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -45,13 +45,9 @@ import qualified Foreign.CUDA.Driver.Context                    as Context
 --
 evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
-  runInBoundThread (bracket_ setup teardown action)
+  runInBoundThread (CT.withContext (ptxContext ptx) (evalLLVM ptx acc))
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
-  where
-    setup       = CT.push (ptxContext ptx)
-    teardown    = CT.pop
-    action      = evalLLVM ptx acc
 
 
 -- | Create a new PTX execution target for the given device

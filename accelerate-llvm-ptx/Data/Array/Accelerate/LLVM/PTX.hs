@@ -230,12 +230,9 @@ registerPinnedAllocator = registerPinnedAllocatorWith defaultTarget
 registerPinnedAllocatorWith :: PTX -> IO ()
 registerPinnedAllocatorWith target =
   AD.registerForeignPtrAllocator $ \bytes ->
-    bracket_ setup teardown (CUDA.mallocHostForeignPtr [] bytes)
+    CT.withContext (ptxContext target) (CUDA.mallocHostForeignPtr [] bytes)
     `catch`
     \e -> $internalError "registerPinnedAlocator" (show (e :: CUDAException))
-    where
-      setup    = CT.push (ptxContext target)
-      teardown = CT.pop
 
 
 -- Debugging

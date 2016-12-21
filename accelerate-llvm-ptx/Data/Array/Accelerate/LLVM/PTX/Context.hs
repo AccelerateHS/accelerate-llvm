@@ -1,7 +1,4 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE UnboxedTuples   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Context
 -- Copyright   : [2014..2015] Trevor L. McDonell
@@ -16,24 +13,21 @@
 module Data.Array.Accelerate.LLVM.PTX.Context (
 
   Context(..),
-  new, raw, destroy, push, pop,
+  new, raw, withContext,
 
 ) where
 
+import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
-import qualified Foreign.CUDA.Driver.Context                    as CUDA
 import qualified Foreign.CUDA.Driver.Device                     as CUDA
 
+import Control.Exception
 import Control.Monad
 import Text.PrettyPrint
-
-import GHC.Exts                                                 ( Ptr(..), mkWeak# )
-import GHC.Base                                                 ( IO(..) )
-import GHC.Weak                                                 ( Weak(..) )
 
 
 -- | An execution context, which is tied to a specific device and CUDA execution
@@ -41,8 +35,7 @@ import GHC.Weak                                                 ( Weak(..) )
 --
 data Context = Context {
     deviceProperties    :: {-# UNPACK #-} !CUDA.DeviceProperties        -- information on hardware resources
-  , deviceContext       :: {-# UNPACK #-} !CUDA.Context                 -- device execution context
-  , weakContext         :: {-# UNPACK #-} !(Weak CUDA.Context)          -- weak pointer to previous
+  , deviceContext       :: {-# UNPACK #-} !(Lifetime CUDA.Context)      -- device execution context
   }
 
 instance Eq Context where
@@ -55,8 +48,10 @@ new :: CUDA.Device
     -> CUDA.DeviceProperties
     -> [CUDA.ContextFlag]
     -> IO Context
-new dev prp flags =
-  raw dev prp =<< CUDA.create dev flags
+new dev prp flags = do
+  ctx <- raw dev prp =<< CUDA.create dev flags
+  _   <- CUDA.pop
+  return ctx
 
 -- | Wrap a raw CUDA execution context
 --
@@ -65,8 +60,9 @@ raw :: CUDA.Device
     -> CUDA.Context
     -> IO Context
 raw dev prp ctx = do
-  weak  <- mkWeakContext ctx $ do
-    Debug.traceIO Debug.dump_gc ("gc: finalise context " ++ show (CUDA.useContext ctx))
+  lft <- newLifetime ctx
+  addFinalizer lft $ do
+    message $ "finalise context " ++ showContext ctx
     CUDA.destroy ctx
 
   -- The kernels don't use much shared memory, so for devices that support it
@@ -83,58 +79,29 @@ raw dev prp ctx = do
   -- Display information about the selected device
   Debug.traceIO Debug.verbose (deviceInfo dev prp)
 
-  _     <- CUDA.pop
-  return $! Context prp ctx weak
+  return $! Context prp lft
 
 
--- | Destroy the specified context. This will fail if the context is more than
--- single attachment.
+-- | Push the context onto the CPUs thread stack of current contexts and execute
+-- some operation.
 --
-{-# INLINE destroy #-}
-destroy :: Context -> IO ()
-destroy Context{..} = do
-  Debug.traceIO Debug.dump_gc $
-    "gc: destroy context: " ++ show (CUDA.useContext deviceContext)
-  CUDA.destroy deviceContext
+{-# INLINE withContext #-}
+withContext :: Context -> IO a -> IO a
+withContext Context{..} action =
+  withLifetime deviceContext $ \ctx ->
+    bracket_ (push ctx) pop action
 
-
--- | Push the given context onto the CPU's thread stack of current contexts. The
--- context must be floating (via 'pop'), i.e. not attached to any thread.
---
 {-# INLINE push #-}
-push :: Context -> IO ()
-push Context{..} = do
-  Debug.traceIO Debug.dump_gc $
-    "gc: push context: " ++ show (CUDA.useContext deviceContext)
-  CUDA.push deviceContext
+push :: CUDA.Context -> IO ()
+push ctx = do
+  message $ "push context: " ++ showContext ctx
+  CUDA.push ctx
 
-
--- | Pop the current context.
---
 {-# INLINE pop #-}
 pop :: IO ()
 pop = do
   ctx <- CUDA.pop
-  Debug.traceIO Debug.dump_gc $
-    "gc: pop context: " ++ show (CUDA.useContext ctx)
-
-
--- | Make a weak pointer to a CUDA context. We need to be careful to put the
--- finaliser on the underlying pointer, rather than the box around it as
--- 'mkWeak' will do, because unpacking the context will cause the finaliser to
--- fire prematurely.
---
-mkWeakContext :: CUDA.Context -> IO () -> IO (Weak CUDA.Context)
-mkWeakContext c@(CUDA.Context (Ptr c#)) = go
-  where
-    {-# INLINE go #-}
-#if __GLASGOW_HASKELL__ >= 800
-    go (IO f)  =  -- GHC-8.x
-#else
-    go f       =  -- GHC-7.x
-#endif
-      IO $ \s -> case mkWeak# c# c f s of
-                   (# s', w #) -> (# s', Weak w #)
+  message $ "pop context: "  ++ showContext ctx
 
 
 -- Debugging
@@ -162,4 +129,19 @@ deviceInfo dev prp = render $ reset <>
     mem         = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral $ CUDA.totalGlobalMem prp   :: Double) "B"
     at          = char '@'
     reset       = zeroWidthText "\r"
+
+
+{-# INLINE trace #-}
+trace :: String -> IO a -> IO a
+trace msg next = do
+  Debug.traceIO Debug.dump_gc ("gc: " ++ msg)
+  next
+
+{-# INLINE message #-}
+message :: String -> IO ()
+message s = s `trace` return ()
+
+{-# INLINE showContext #-}
+showContext :: CUDA.Context -> String
+showContext (CUDA.Context c) = show c
 
