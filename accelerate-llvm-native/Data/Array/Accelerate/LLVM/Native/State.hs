@@ -84,13 +84,16 @@ unbalancedParIO gang =
 
 -- | Execute a computation where threads use work stealing (based on lazy
 -- splitting of work stealing queues and exponential backoff) in order to
--- automatically balance the workload amongst themselves. A suitable PPT should
--- be chosen when invoking the continuation in order to balance scheduler
--- overhead with fine-grained function calls.
+-- automatically balance the workload amongst themselves.
 --
-balancedParIO :: Int -> Strategy
+balancedParIO
+    :: Int                -- ^ number of steal attempts before backing off
+    -> Strategy
 balancedParIO retries gang =
   Executable $ \ppt range fill ->
+    -- TLM: A suitable PPT should be chosen when invoking the continuation in
+    --      order to balance scheduler overhead with fine-grained function calls
+    --
     let resource = LBS.mkResource ppt (SMP.mkResource retries <> Backoff.mkResource)
     in  timed $ runParIO resource gang range fill
 
