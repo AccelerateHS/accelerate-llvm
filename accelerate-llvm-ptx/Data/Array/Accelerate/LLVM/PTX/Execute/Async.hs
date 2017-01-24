@@ -31,6 +31,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as Stream
 
 -- standard library
 import Control.Monad.State
+import Data.Functor                                             ( (<$>) )
 import GHC.Float                                                ( float2Double )
 
 
