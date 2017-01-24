@@ -45,9 +45,9 @@ import Data.Array.Accelerate.LLVM.State
 -- standard library
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid                                              hiding ( Last )
-import Data.Traversable                                         ( sequence )
+import Data.Traversable                                         ( mapM, sequenceA )
 import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp, unzip, sequence )
+import Prelude                                                  hiding ( exp, unzip, sequence, mapM )
 
 
 class Foreign arch => Compile arch where
@@ -163,7 +163,7 @@ compileOpenAcc = traverseAcc
         Subarray i s arr        -> node =<< liftA3 Subarray             <$> travE i <*> travE s <*> pure (pure arr)
 
         -- Sequences
-        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequence (mapM travE u) <*> fmap sequence (mapM travE i) <*> fmap pure (travSeq s)
+        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequenceA (mapM travE u) <*> fmap sequenceA (mapM travE i) <*> fmap pure (travSeq s)
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a

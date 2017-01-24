@@ -50,11 +50,12 @@ import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Execute.Schedule
 
 -- library
-import Control.Monad
+import Control.Monad                                            ( join )
 import Control.Monad.Trans                                      ( liftIO )
 import Control.Applicative                                      hiding ( Const )
+import Data.Traversable                                         ( sequenceA, mapM )
 import Data.Typeable                                            ( eqT )
-import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
+import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1, mapM )
 
 
 class (Remote arch, Foreign arch) => Execute arch where
@@ -532,7 +533,7 @@ executeSeq mi _ma i s aenv stream =
       Producer (ProduceAccum l f a) (Consumer (Last a' d)) ->
         join $ go i
           <$> fmap schedule (executeExp (initialIndex (Const mi)) aenv stream)
-          <*> sequence (executeExp <$> l <*> pure aenv <*> pure stream)
+          <*> sequenceA (executeExp <$> l <*> pure aenv <*> pure stream)
           <*> pure (executeOpenAfun2 f aenv)
           <*> async (executeOpenAcc a aenv)
           <*> executeOpenAcc d (aenv `Apush` undefined) stream
