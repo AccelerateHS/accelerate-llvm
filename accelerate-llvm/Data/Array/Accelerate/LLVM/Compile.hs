@@ -44,7 +44,7 @@ import Data.Array.Accelerate.LLVM.State
 
 -- standard library
 import Data.IntMap                                              ( IntMap )
-import Data.Monoid
+import Data.Monoid                                              hiding ( Last )
 import Control.Applicative                                      hiding ( Const )
 import Prelude                                                  hiding ( exp, unzip )
 
@@ -159,6 +159,10 @@ compileOpenAcc = traverseAcc
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
         Use arrs                -> useRemote (toArr arrs::arrs) >> node (pure (Use arrs))
+        Subarray i s arr        -> node =<< liftA3 Subarray             <$> travE i <*> travE s <*> pure (pure arr)
+
+        -- Sequences
+        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequence (mapM travE u) <*> fmap sequence (mapM travE i) <*> fmap pure (travSeq s)
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
@@ -271,6 +275,28 @@ compileOpenAcc = traverseAcc
         -- sadness
         noKernel  = $internalError "compile" "no kernel module for this node"
 
+    travSeq :: forall index aenv arrs. PreOpenSeq index DelayedOpenAcc aenv arrs
+            -> LLVM arch (PreOpenSeq index (ExecOpenAcc arch) aenv arrs)
+    travSeq (Producer p s) = Producer <$> travP p <*> travSeq s
+      where
+        travP :: Producer index DelayedOpenAcc aenv a
+              -> LLVM arch (Producer index (ExecOpenAcc arch) aenv a)
+        travP (Pull src)           = pure (Pull src)
+        travP (ProduceAccum l f a) = ProduceAccum <$> fmap (fmap snd) (mapM travE l) <*> compileOpenAfun f <*> traverseAcc a
+        travP _                    = $internalError "travSeq" "Sequence computation at wrong stage"
+    travSeq (Consumer c)   = Consumer <$> travC c
+      where
+        travC :: Consumer index DelayedOpenAcc aenv a
+              -> LLVM arch (Consumer index (ExecOpenAcc arch) aenv a)
+        travC (Last a d) = Last <$> traverseAcc a <*> traverseAcc d
+        travC (Stuple t) = Stuple <$> travStup t
+        travC _          = $internalError "travSeq" "Sequence computation at wrong stage"
+
+        travStup :: Atuple (PreOpenSeq index DelayedOpenAcc aenv) t
+                 -> LLVM arch (Atuple (PreOpenSeq index (ExecOpenAcc arch) aenv) t)
+        travStup NilAtup = pure NilAtup
+        travStup (SnocAtup t a) = SnocAtup <$> travStup t <*> travSeq a
+    travSeq _ = $internalError "travSeq" "Sequence computation at wrong stage"
 
     -- Traverse a scalar expression
     --
@@ -289,10 +315,12 @@ compileOpenAcc = traverseAcc
         IndexCons t h           -> liftA2 IndexCons             <$> travE t <*> travE h
         IndexHead h             -> liftA  IndexHead             <$> travE h
         IndexTail t             -> liftA  IndexTail             <$> travE t
-        IndexSlice slix x s     -> liftA2 (IndexSlice slix)     <$> travE x <*> travE s
+        IndexSlice slix x s     -> liftA  (IndexSlice slix x)   <$> travE s
         IndexFull slix x s      -> liftA2 (IndexFull slix)      <$> travE x <*> travE s
         ToIndex s i             -> liftA2 ToIndex               <$> travE s <*> travE i
         FromIndex s i           -> liftA2 FromIndex             <$> travE s <*> travE i
+        IndexTrans sh           -> liftA  IndexTrans            <$> travE sh
+        ToSlice slix s n        -> liftA2 (ToSlice slix)        <$> travE s <*> travE n
         Tuple t                 -> liftA  Tuple                 <$> travT t
         Prj ix e                -> liftA  (Prj ix)              <$> travE e
         Cond p t e              -> liftA3 Cond                  <$> travE p <*> travE t <*> travE e

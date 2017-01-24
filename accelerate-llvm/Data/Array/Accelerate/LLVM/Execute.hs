@@ -1,9 +1,11 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute
@@ -34,6 +36,7 @@ import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import qualified Data.Array.Accelerate.Array.Sugar              as S
 import qualified Data.Array.Accelerate.Array.Representation     as R
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Compile
@@ -44,10 +47,13 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 
 import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( join )
 import Data.Array.Accelerate.LLVM.Execute.Environment
+import Data.Array.Accelerate.LLVM.Execute.Schedule
 
 -- library
 import Control.Monad
+import Control.Monad.Trans                                      ( liftIO )
 import Control.Applicative                                      hiding ( Const )
+import Data.Typeable                                            ( eqT )
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
 
 
@@ -224,7 +230,7 @@ executeAfun1
     -> LLVM arch b
 executeAfun1 afun arrs = do
   AsyncR _ a <- async (useRemoteAsync arrs)
-  executeOpenAfun1 afun Aempty a
+  get =<< async (executeOpenAfun1 afun Aempty a)
 
 
 -- Execute an open array function of one argument
@@ -235,9 +241,25 @@ executeOpenAfun1
     => ExecOpenAfun arch aenv (a -> b)
     -> AvalR arch aenv
     -> AsyncR arch a
+    -> StreamR arch
     -> LLVM arch b
-executeOpenAfun1 (Alam (Abody f)) aenv a = get =<< async (executeOpenAcc f (aenv `Apush` a))
+executeOpenAfun1 (Alam (Abody f)) aenv a = executeOpenAcc f (aenv `Apush` a)
 executeOpenAfun1 _                _    _ = error "boop!"
+
+
+-- Execute an open array function of two arguments
+--
+{-# INLINEABLE executeOpenAfun2 #-}
+executeOpenAfun2
+    :: Execute arch
+    => ExecOpenAfun arch aenv (a -> b -> c)
+    -> AvalR arch aenv
+    -> AsyncR arch a
+    -> AsyncR arch b
+    -> StreamR arch
+    -> LLVM arch c
+executeOpenAfun2 (Alam (Alam (Abody f))) aenv a b = executeOpenAcc f (aenv `Apush` a `Apush` b)
+executeOpenAfun2 _                       _    _ _ = error "boop!"
 
 
 -- Execute an open array computation
@@ -257,6 +279,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     -- Array introduction
     Use arr                     -> return (toArr arr)
     Unit x                      -> newRemote Z . const =<< travE x
+    Subarray ix sh arr          -> join $ newRemoteSubarray <$> travE ix <*> travE sh <*> pure arr
 
     -- Environment manipulation
     Avar ix                     -> do let AsyncR event arr = aprj ix aenv
@@ -265,11 +288,17 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Alet bnd body               -> do bnd'  <- async (executeOpenAcc bnd aenv)
                                       body' <- executeOpenAcc body (aenv `Apush` bnd') stream
                                       return body'
-    Apply f a                   -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
+    Apply f a                   -> flip (executeOpenAfun1 f aenv) stream =<< async (executeOpenAcc a aenv)
     Atuple tup                  -> toAtuple <$> travT tup
     Aprj ix tup                 -> evalPrj ix . fromAtuple <$> travA tup
     Acond p t e                 -> acond t e =<< travE p
     Awhile p f a                -> awhile p f =<< travA a
+
+    -- Sequence computation
+    Collect l u i s             -> do l' <- travE l
+                                      u' <- mapM travE u
+                                      i' <- mapM travE i
+                                      executeSeq l' u' i' s aenv stream
 
     -- Foreign function
     Aforeign asm _ a            -> foreignA asm =<< travA a
@@ -350,9 +379,9 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
            -> LLVM arch a
     awhile p f a = do
       e   <- checkpoint stream
-      r   <- executeOpenAfun1 p aenv (AsyncR e a)
+      r   <- get =<< async (executeOpenAfun1 p aenv (AsyncR e a))
       ok  <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
+      if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a) stream
             else return a
 
     -- Foreign functions
@@ -418,10 +447,12 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       IndexCons sh sz           -> (:.) <$> travE sh <*> travE sz
       IndexHead sh              -> (\(_  :. ix) -> ix) <$> travE sh
       IndexTail sh              -> (\(ix :.  _) -> ix) <$> travE sh
-      IndexSlice ix slix sh     -> indexSlice ix <$> travE slix <*> travE sh
+      IndexSlice ix slix sh     -> indexSlice ix slix <$> travE sh
       IndexFull ix slix sl      -> indexFull  ix <$> travE slix <*> travE sl
       ToIndex sh ix             -> toIndex   <$> travE sh  <*> travE ix
       FromIndex sh ix           -> fromIndex <$> travE sh  <*> travE ix
+      IndexTrans sh             -> transpose <$> travE sh
+      ToSlice _ sh n            -> toSlice <$> travE sh <*> travE n
       Intersect sh1 sh2         -> intersect <$> travE sh1 <*> travE sh2
       Union sh1 sh2             -> union <$> travE sh1 <*> travE sh2
       ShapeSize sh              -> size  <$> travE sh
@@ -457,15 +488,15 @@ executeOpenExp rootExp env aenv stream = travE rootExp
 
     indexSlice :: (Elt slix, Elt sh, Elt sl)
                => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-               -> slix
+               -> proxy slix
                -> sh
                -> sl
-    indexSlice ix slix sh = toElt $ restrict ix (fromElt slix) (fromElt sh)
+    indexSlice ix _ sh = toElt $ restrict ix (fromElt sh)
       where
-        restrict :: SliceIndex slix sl co sh -> slix -> sh -> sl
-        restrict SliceNil              ()        ()       = ()
-        restrict (SliceAll   sliceIdx) (slx, ()) (sl, sz) = (restrict sliceIdx slx sl, sz)
-        restrict (SliceFixed sliceIdx) (slx,  _) (sl,  _) = restrict sliceIdx slx sl
+        restrict :: SliceIndex slix sl co sh -> sh -> sl
+        restrict SliceNil              ()       = ()
+        restrict (SliceAll   sliceIdx) (sl, sz) = (restrict sliceIdx sl, sz)
+        restrict (SliceFixed sliceIdx) (sl,  _) = restrict sliceIdx sl
 
     indexFull :: (Elt slix, Elt sh, Elt sl)
               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
@@ -487,3 +518,52 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       block =<< checkpoint stream
       indexRemote arr ix
 
+executeSeq
+  :: forall arch index aenv arrs. (Execute arch, SeqIndex index)
+  => Int
+  -> Maybe Int
+  -> Maybe Int
+  -> PreOpenSeq index (ExecOpenAcc arch) aenv arrs
+  -> AvalR arch aenv
+  -> StreamR arch
+  -> LLVM arch arrs
+executeSeq mi _ma i s aenv stream =
+    case s of
+      Producer (ProduceAccum l f a) (Consumer (Last a' d)) ->
+        join $ go i
+          <$> fmap schedule (executeExp (initialIndex (Const mi)) aenv stream)
+          <*> sequence (executeExp <$> l <*> pure aenv <*> pure stream)
+          <*> pure (executeOpenAfun2 f aenv)
+          <*> async (executeOpenAcc a aenv)
+          <*> executeOpenAcc d (aenv `Apush` undefined) stream
+          <*> pure (\aenv' -> executeOpenAcc a' aenv' stream)
+      _ -> $internalError "evalSeq" "Sequence computation does not appear to be delayed"
+  where
+    go :: Maybe Int
+       -> Schedule index
+       -> Maybe Int
+       -> (AsyncR arch (Scalar index) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
+       -> AsyncR arch b
+       -> arrs
+       -> (AvalR arch (aenv, a) -> LLVM arch arrs)
+       -> LLVM arch arrs
+    go (Just 0) _ _ _ _ a _ = return a
+    go i Schedule{..} l f s a unwrap = do
+      index'   <- async (\_ -> newRemote Z (const index))
+
+      if maybe True (contains' index) l
+           then do
+             liftIO $ Debug.traceIO Debug.dump_exec ("Computing sequence chunk " ++ show index)
+             (time, (a', s')) <- timed (f index' s)
+             event <- checkpoint stream
+             a'' <- unwrap (Apush aenv (AsyncR event a'))
+             go (subtract 1 <$> i) (next time) l f (AsyncR event s') a'' unwrap
+           else return a
+
+    schedule :: SeqIndex index => index -> Schedule index
+    schedule | Just Refl <- eqT :: Maybe (index :~: Int)
+             = sequential
+             | Just Refl <- eqT :: Maybe (index :~: (Int,Int))
+             = doubleSizeChunked
+             | otherwise
+             = $internalError "executeSeq" "Unknown sequence index type"

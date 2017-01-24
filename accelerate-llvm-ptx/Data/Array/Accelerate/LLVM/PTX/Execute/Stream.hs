@@ -66,7 +66,7 @@ streaming !action !after = do
   PTX{..} <- gets llvmTarget
   stream  <- create
   first   <- action stream
-  end     <- Event.waypoint stream
+  end     <- Event.waypoint False stream
   final   <- after end first
   liftIO $ do
     destroy stream

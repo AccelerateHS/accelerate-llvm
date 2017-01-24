@@ -65,6 +65,18 @@ instance Remote PTX where
       Nothing -> Prim.pokeArrayR         from to ad
       Just st -> Prim.pokeArrayAsyncR st from to ad
 
+  {-# INLINEABLE duplicateToRemoteR #-}
+  duplicateToRemoteR !from !to !mst !src !dst = do
+    case mst of
+      Nothing -> Prim.pokeSubarrayR      from to src dst
+      Just st -> Prim.pokeSubarrayAsyncR st from to src dst
+
+  {-# INLINEABLE duplicateToRemote2DR #-}
+  duplicateToRemote2DR !from !to !pitch !mst !src !dst = do
+    case mst of
+      Nothing -> Prim.pokeSubarray2DR      from to pitch src dst
+      Just st -> Prim.pokeSubarray2DAsyncR st from to pitch src dst
+
   {-# INLINEABLE copyToHostR #-}
   copyToHostR !from !to !mst !ad = do
     case mst of

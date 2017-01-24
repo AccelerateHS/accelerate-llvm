@@ -65,6 +65,13 @@ class Async arch where
   --
   block       :: EventR arch -> LLVM arch ()
 
+  -- | Execute the given operation asynchronously in a new execution stream and
+  -- time how long it takes.
+  --
+  timed       :: Async arch
+              => (StreamR arch -> LLVM arch a)
+              -> LLVM arch (Double,a)
+
 
 -- | Wait for an asynchronous operation to complete, then return it.
 --

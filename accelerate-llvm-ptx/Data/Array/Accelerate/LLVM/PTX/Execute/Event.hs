@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Execute.Event (
 
   Event,
-  create, destroy, query, waypoint, after, block,
+  create, destroy, query, waypoint, after, block, elapsedTime,
 
 ) where
 
@@ -43,21 +43,22 @@ type Event = Lifetime Event.Event
 
 
 -- | Create a new event. It will not be automatically garbage collected, and is
--- not suitable for timing purposes.
+-- not suitable for timing purposes. The argument should be true if the event
+-- will be used for timing purposes.
 --
 {-# INLINEABLE create #-}
-create :: LLVM PTX Event
-create = do
-  e     <- create'
+create :: Bool -> LLVM PTX Event
+create timing = do
+  e     <- create' timing
   event <- liftIO $ newLifetime e
   liftIO $ addFinalizer event $ do message $ "destroy " ++ showEvent e
                                    Event.destroy e
   return event
 
-create' :: LLVM PTX Event.Event
-create' = do
+create' :: Bool -> LLVM PTX Event.Event
+create' timing = do
   PTX{..} <- gets llvmTarget
-  me      <- attempt "create/new" (liftIO . catchOOM $ Event.create [Event.DisableTiming])
+  me      <- attempt "create/new" (liftIO . catchOOM $ Event.create (if timing then [] else [Event.DisableTiming]))
              `orElse` do
                Remote.reclaim ptxMemoryTable
                liftIO $ do
@@ -99,12 +100,13 @@ destroy :: Event -> IO ()
 destroy = finalize
 
 -- | Create a new event marker that will be filled once execution in the
--- specified stream has completed all previously submitted work.
+-- specified stream has completed all previously submitted work. The first
+-- argument should be true if the event will be used for timing purposes.
 --
 {-# INLINEABLE waypoint #-}
-waypoint :: Stream -> LLVM PTX Event
-waypoint stream = do
-  event <- create
+waypoint :: Bool -> Stream -> LLVM PTX Event
+waypoint timing stream = do
+  event <- create timing
   liftIO $
     withLifetime stream  $ \s -> do
       withLifetime event $ \e -> do
@@ -138,6 +140,12 @@ block event =
 query :: Event -> IO Bool
 query event = withLifetime event Event.query
 
+-- | Get the time elapsed between two (completed) events
+--
+{-# INLINEABLE elapsedTime #-}
+elapsedTime :: Event -> Event -> IO Float
+elapsedTime start end = withLifetime start $ \s ->
+  withLifetime end $ \e -> Event.elapsedTime s e
 
 -- Debug
 -- -----

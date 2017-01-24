@@ -1,7 +1,9 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -19,10 +21,11 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 
   Remote(..),
   newRemote,
-  useRemote,    useRemoteAsync,
-  copyToRemote, copyToRemoteAsync,
-  copyToHost,   copyToHostAsync,
-  copyToPeer,   copyToPeerAsync,
+  newRemoteSubarray,   newRemoteSubarrayAsync,
+  useRemote,           useRemoteAsync,
+  copyToRemote,        copyToRemoteAsync,
+  copyToHost,          copyToHostAsync,
+  copyToPeer,          copyToPeerAsync,
 
   runIndexArray,
   runArrays,
@@ -83,6 +86,37 @@ class Async arch => Remote arch where
       -> ArrayData e              -- ^ array payload
       -> LLVM arch ()
   copyToRemoteR _ _ _ _ = return ()
+
+  -- | Upload a section of an array from the host to a separate remote array.
+  -- Only the elements between the given indices (inclusive left, exclusive
+  -- right) are transferred.
+  --
+  {-# INLINEABLE duplicateToRemoteR #-}
+  duplicateToRemoteR
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
+      => Int                      -- ^ index of first element to copy
+      -> Int
+      -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
+      -> ArrayData e              -- ^ source
+      -> ArrayData e              -- ^ destination
+      -> LLVM arch ()
+  duplicateToRemoteR _ _ _ _ _ = return ()
+
+  -- | Upload a 2D section of an array from the host to a separate remote array.
+  -- Only the elements between the given indices (inclusive top-left, exclusive
+  -- bottom-right) are transferred.
+  --
+  {-# INLINEABLE duplicateToRemote2DR #-}
+  duplicateToRemote2DR
+      :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
+      => (Int,Int)                -- ^ index of top-left corner
+      -> (Int,Int)                -- ^ index of bottomr-right corner
+      -> Int                      -- ^ the pitch (width) of the source array
+      -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
+      -> ArrayData e              -- ^ source
+      -> ArrayData e              -- ^ destination
+      -> LLVM arch ()
+  duplicateToRemote2DR _ _ _ _ _ _ = return ()
 
   -- | Copy a section of an array from the remote device back to the host. The
   -- elements between the given indices (inclusive left, exclusive right) are
@@ -201,6 +235,61 @@ copyToRemoteAsync arrs stream = do
   --
   event  <- checkpoint stream
   return $! AsyncR event arrs'
+
+
+-- | Create a new remote vector from a section of an existing vector,
+-- asynchronously
+--
+{-# INLINEABLE newRemoteSubarray #-}
+newRemoteSubarray :: (Remote arch, Shape sh, Elt e, sh :<= DIM2)
+                  => sh           -- ^ starting index
+                  -> sh           -- ^ extent
+                  -> Array sh e   -- ^ source
+                  -> LLVM arch (Array sh e)
+newRemoteSubarray start n src = do
+  AsyncR _ a <- async (newRemoteSubarrayAsync start n src)
+  get a
+
+
+-- | Create a new remote vector from a section of an existing vector,
+-- asynchronously
+--
+{-# INLINEABLE newRemoteSubarrayAsync #-}
+newRemoteSubarrayAsync :: forall arch sh e. (Remote arch, Shape sh, Elt e, sh :<= DIM2)
+                       => sh           -- ^ starting index
+                       -> sh           -- ^ number of elements
+                       -> Array sh e   -- ^ source
+                       -> StreamR arch
+                       -> LLVM arch (AsyncR arch (Array sh e))
+newRemoteSubarrayAsync start sh src stream = do
+  dst <- allocateRemote sh
+  runArray2 src dst $ \sr de -> do
+    s <- fork
+    transfer s sr de
+    after stream =<< checkpoint s
+    join s
+  --
+  event  <- checkpoint stream
+  return $! AsyncR event dst
+  where
+    transfer :: (Typeable e', Typeable a, ArrayElt e', Storable a, ArrayPtrs e' ~ Ptr a)
+             => StreamR arch
+             -> ArrayData e'
+             -> ArrayData e'
+             -> LLVM arch ()
+    transfer s sr de =
+      case (maximumRank :: sh :<=: DIM2) of
+        RankZ                     -> duplicateToRemoteR 0 1 (Just s) sr de
+        RankSnoc RankZ            -> do
+          let Z:.i = start
+              Z:.n = sh
+          duplicateToRemoteR i n (Just s) sr de
+        RankSnoc (RankSnoc RankZ) -> do
+          let Z:.y:.x          = start
+              Z:.height:.width = sh
+              Z:._:.pitch      = shape src
+          duplicateToRemote2DR (y,x) (height,width) pitch (Just s) sr de
+        _                         -> error "absurd"
 
 
 -- | Copy an array from the remote device to the host. This is synchronous with
@@ -380,3 +469,48 @@ runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata
     runR ArrayEltRcschar           ad                = worker ad
     runR ArrayEltRcuchar           ad                = worker ad
 
+
+-- | Generalised function to traverse two ArrayData structures with one
+-- additional argument
+--
+{-# INLINE runArray2 #-}
+runArray2
+    :: forall m sh sh' e. Monad m
+    => Array sh e
+    -> Array sh' e
+    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> ArrayData e' -> m ())
+    -> m ()
+runArray2 (Array _ adata1) (Array _ adata2) worker = runR arrayElt adata1 adata2
+  where
+    runR :: ArrayEltR e' -> ArrayData e' -> ArrayData e' -> m ()
+    runR ArrayEltRunit             AD_Unit           AD_Unit = return ()
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) (AD_Pair ad2' ad1')
+      = runR aeR2 ad2 ad2' >> runR aeR1 ad1 ad1' >> return ()
+    --
+    runR ArrayEltRint              ad                ad' = worker ad ad'
+    runR ArrayEltRint8             ad                ad' = worker ad ad'
+    runR ArrayEltRint16            ad                ad' = worker ad ad'
+    runR ArrayEltRint32            ad                ad' = worker ad ad'
+    runR ArrayEltRint64            ad                ad' = worker ad ad'
+    runR ArrayEltRword             ad                ad' = worker ad ad'
+    runR ArrayEltRword8            ad                ad' = worker ad ad'
+    runR ArrayEltRword16           ad                ad' = worker ad ad'
+    runR ArrayEltRword32           ad                ad' = worker ad ad'
+    runR ArrayEltRword64           ad                ad' = worker ad ad'
+    runR ArrayEltRfloat            ad                ad' = worker ad ad'
+    runR ArrayEltRdouble           ad                ad' = worker ad ad'
+    runR ArrayEltRbool             ad                ad' = worker ad ad'
+    runR ArrayEltRchar             ad                ad' = worker ad ad'
+    runR ArrayEltRcshort           ad                ad' = worker ad ad'
+    runR ArrayEltRcushort          ad                ad' = worker ad ad'
+    runR ArrayEltRcint             ad                ad' = worker ad ad'
+    runR ArrayEltRcuint            ad                ad' = worker ad ad'
+    runR ArrayEltRclong            ad                ad' = worker ad ad'
+    runR ArrayEltRculong           ad                ad' = worker ad ad'
+    runR ArrayEltRcllong           ad                ad' = worker ad ad'
+    runR ArrayEltRcullong          ad                ad' = worker ad ad'
+    runR ArrayEltRcfloat           ad                ad' = worker ad ad'
+    runR ArrayEltRcdouble          ad                ad' = worker ad ad'
+    runR ArrayEltRcchar            ad                ad' = worker ad ad'
+    runR ArrayEltRcschar           ad                ad' = worker ad ad'
+    runR ArrayEltRcuchar           ad                ad' = worker ad ad'

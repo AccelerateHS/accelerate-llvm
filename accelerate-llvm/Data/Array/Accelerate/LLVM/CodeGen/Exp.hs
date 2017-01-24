@@ -25,7 +25,7 @@ import Prelude                                                      hiding ( exp
 
 import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign, toTuple, shape, intersect, union )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign, toTuple, shape, intersect, union, toSlice )
 import Data.Array.Accelerate.Array.Representation                   ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
@@ -105,11 +105,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
         IndexHead ix                -> indexHead <$> cvtE ix
         IndexTail ix                -> indexTail <$> cvtE ix
+        IndexTrans ix               -> indexTrans <$> cvtE ix
+        ToSlice slice sh n          -> join $ toSlice slice <$> cvtE sh <*> cvtE n
         Prj ix tup                  -> prjT ix <$> cvtE tup
         Tuple tup                   -> cvtT tup
         Foreign asm _ x             -> foreignE asm =<< cvtE x
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
-        IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
+        IndexSlice slice slix sh    -> indexSlice slice slix <$> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
         ToIndex sh ix               -> join $ intOfIndex <$> cvtE sh <*> cvtE ix
         FromIndex sh ix             -> join $ indexOfInt <$> cvtE sh <*> cvtE ix
@@ -129,18 +131,18 @@ llvmOfOpenExp arch top env aenv = cvtE top
                in  IR (constant (eltType any) (fromElt any))
 
     indexSlice :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
-               -> IR slix
+               -> proxy slix
                -> IR sh
                -> IR sl
-    indexSlice slice (IR slix) (IR sh) = IR $ restrict slice slix sh
+    indexSlice slice _ (IR sh) = IR $ restrict slice sh
       where
-        restrict :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
-        restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
-        restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
-          let sl' = restrict sliceIdx slx sl
+        restrict :: SliceIndex slix sl co sh -> Operands sh -> Operands sl
+        restrict SliceNil              OP_Unit          = OP_Unit
+        restrict (SliceAll sliceIdx)   (OP_Pair sl sz)  =
+          let sl' = restrict sliceIdx sl
           in  OP_Pair sl' sz
-        restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
-          restrict sliceIdx slx sl
+        restrict (SliceFixed sliceIdx) (OP_Pair sl _sz) =
+          restrict sliceIdx sl
 
     indexFull :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
               -> IR slix
@@ -212,6 +214,47 @@ llvmOfOpenExp arch top env aenv = cvtE top
           = return $ ir t i
         go _ _
           = $internalError "shapeSize" "expected shape with Int components"
+
+    indexTrans :: forall sh. Shape sh => IR sh -> IR sh
+    indexTrans (IR extent) = IR $ go (eltType (undefined::sh)) extent
+      where
+        go :: TupleType t -> Operands t -> Operands t
+        go UnitTuple OP_Unit
+          = OP_Unit
+        go (PairTuple tsh (SingleTuple t)) (OP_Pair sh sz)
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
+          = snoc tsh (go tsh sh) sz
+        go _ _
+          = $internalError "indexTrans" "expected shape with Int components"
+
+        snoc :: TupleType t -> Operands t -> Operands Int -> Operands (t,Int)
+        snoc UnitTuple OP_Unit i = OP_Pair OP_Unit i
+        snoc (PairTuple tsh (SingleTuple t)) (OP_Pair sh sz) i
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
+          = OP_Pair (snoc tsh sh i) sz
+        snoc _ _ _
+          = $internalError "indexTrans" "expected shape with Int components"
+
+    toSlice :: Slice slix
+            => SliceIndex (EltRepr slix) sl co (EltRepr (FullShape slix))
+            -> IR (FullShape slix)
+            -> IR Int
+            -> CodeGen (IR slix)
+    toSlice slice (IR extend) (IR offs) = IR <$> go slice extend offs
+      where
+        go :: forall slix sl co sh. SliceIndex slix sl co sh
+           -> Operands sh
+           -> Operands Int
+           -> CodeGen (Operands slix)
+        go SliceNil _ _ = return OP_Unit
+        go (SliceAll slix) (OP_Pair sh _) i = flip OP_Pair OP_Unit <$> go slix sh i
+        go (SliceFixed slix) (OP_Pair sh n) i
+          = do
+              IR (OP_Pair (OP_Pair OP_Unit i') n')
+                <- A.divMod (integralType :: IntegralType Int) (IR i) (IR n)
+              slix' <- go slix sh i'
+              return (OP_Pair slix' n')
+
 
     intersect :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
     intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2

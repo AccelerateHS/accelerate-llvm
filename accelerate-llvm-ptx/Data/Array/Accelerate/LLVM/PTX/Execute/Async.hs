@@ -31,6 +31,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as Stream
 
 -- standard library
 import Control.Monad.State
+import GHC.Float                                                ( float2Double )
 
 
 -- Asynchronous arrays in the CUDA backend are tagged with an Event that will be
@@ -52,7 +53,7 @@ instance A.Async PTX where
 
   {-# INLINEABLE checkpoint #-}
   checkpoint stream =
-    Event.waypoint stream
+    Event.waypoint False stream
 
   {-# INLINEABLE after #-}
   after stream event =
@@ -62,3 +63,13 @@ instance A.Async PTX where
   block event =
     liftIO $! Event.block event
 
+  {-# INLINEABLE timed #-}
+  timed f = do
+    s     <- fork
+    start <- Event.waypoint True s
+    r     <- f s
+    end   <- Event.waypoint True s
+    block start
+    block end
+    time  <- liftIO $! float2Double <$> Event.elapsedTime start end
+    return (time,r)

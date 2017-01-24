@@ -25,6 +25,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
   indexArray,
   peekArray, peekArrayR, peekArrayAsync, peekArrayAsyncR,
   pokeArray, pokeArrayR, pokeArrayAsync, pokeArrayAsyncR,
+  pokeSubarrayR, pokeSubarrayAsyncR, pokeSubarray2DR, pokeSubarray2DAsyncR,
   copyArray, copyArrayR, copyArrayAsync, copyArrayAsyncR,
   copyArrayPeer, copyArrayPeerR, copyArrayPeerAsync, copyArrayPeerAsyncR,
   withDevicePtr,
@@ -162,6 +163,80 @@ pokeArrayAsyncR !stream !from !to !ad = do
     nonblocking stream $
       transfer "pokeArray" bytes (Just st) $
         CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
+  liftIO (touchLifetime stream)
+
+-- | Copy a linear section of data from the host side of one array to the device
+-- side of another.
+--
+{-# INLINEABLE pokeSubarrayR #-}
+pokeSubarrayR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
+    => Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+pokeSubarrayR !from !to !src !dst =
+  blocking $ \st -> pokeSubarrayAsyncR st from to src dst
+
+{-# INLINEABLE pokeSubarrayAsyncR #-}
+pokeSubarrayAsyncR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
+    => Stream
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+pokeSubarrayAsyncR !stream !from !to !src !dst = do
+  let !n        = to - from
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
+      !src'     = CUDA.HostPtr (ptrsOfArrayData src)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr dst $ \dst' ->
+    nonblocking stream $
+      transfer "pokeSubarray" bytes (Just st) $
+        CUDA.pokeArrayAsync n (src' `CUDA.plusHostPtr` offset) dst' (Just st)
+  liftIO (touchLifetime stream)
+
+
+-- | Copy a 2D section of data from a host-side array to a separate device side
+-- array.
+--
+{-# INLINEABLE pokeSubarray2DR #-}
+pokeSubarray2DR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
+    => (Int,Int)
+    -> (Int,Int)
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+pokeSubarray2DR !from !to !pitch !src !dst =
+  blocking $ \st -> pokeSubarray2DAsyncR st from to pitch src dst
+
+{-# INLINEABLE pokeSubarray2DAsyncR #-}
+pokeSubarray2DAsyncR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
+    => Stream
+    -> (Int,Int)
+    -> (Int,Int)
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+pokeSubarray2DAsyncR !stream (!y0,!x0) (!y1,!x1) !pitch !src !dst = do
+  let (!height,!width) = (y1-y0, x1-x0)
+      !bytes    = height * width * sizeOf (undefined :: a)
+      !src'     = CUDA.HostPtr (ptrsOfArrayData src)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr dst $ \dst' ->
+    nonblocking stream $
+      transfer "pokeSubarray2D" bytes (Just st) $
+        CUDA.pokeArray2DAsync width height src' pitch x0 y0 dst' width 0 0 (Just st)
   liftIO (touchLifetime stream)
 
 
@@ -470,7 +545,7 @@ blocking !f =
 nonblocking :: Stream -> LLVM PTX a -> LLVM PTX (Maybe Event, a)
 nonblocking !stream !f = do
   r <- f
-  e <- waypoint stream
+  e <- waypoint False stream
   return (Just e, r)
 
 

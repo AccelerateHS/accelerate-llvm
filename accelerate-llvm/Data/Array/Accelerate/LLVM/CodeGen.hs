@@ -91,8 +91,10 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     Aprj{}                  -> unexpectedError
     Use{}                   -> unexpectedError
     Unit{}                  -> unexpectedError
+    Subarray{}              -> unexpectedError
     Aforeign{}              -> unexpectedError
     Reshape{}               -> unexpectedError
+    Collect{}               -> unexpectedError
 
     Replicate{}             -> fusionError
     Slice{}                 -> fusionError
