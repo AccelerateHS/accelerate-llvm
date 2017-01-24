@@ -45,8 +45,9 @@ import Data.Array.Accelerate.LLVM.State
 -- standard library
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid                                              hiding ( Last )
+import Data.Traversable                                         ( sequence )
 import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp, unzip )
+import Prelude                                                  hiding ( exp, unzip, sequence )
 
 
 class Foreign arch => Compile arch where
