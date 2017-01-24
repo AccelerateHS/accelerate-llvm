@@ -68,8 +68,7 @@ class Async arch where
   -- | Execute the given operation asynchronously in a new execution stream and
   -- time how long it takes.
   --
-  timed       :: Async arch
-              => (StreamR arch -> LLVM arch a)
+  timed       :: (StreamR arch -> LLVM arch a)
               -> LLVM arch (Double,a)
 
 
