@@ -283,12 +283,12 @@ newRemoteSubarrayAsync start sh src stream = do
         RankSnoc RankZ            -> do
           let Z:.i = start
               Z:.n = sh
-          duplicateToRemoteR i n (Just s) sr de
+          duplicateToRemoteR i (i + n) (Just s) sr de
         RankSnoc (RankSnoc RankZ) -> do
           let Z:.y:.x          = start
               Z:.height:.width = sh
               Z:._:.pitch      = shape src
-          duplicateToRemote2DR (y,x) (height,width) pitch (Just s) sr de
+          duplicateToRemote2DR (y,x) (y + height, x + width) pitch (Just s) sr de
         _                         -> error "absurd"
 
 
