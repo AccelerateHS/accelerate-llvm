@@ -140,6 +140,11 @@ nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
 -- libdevice
 -- ---------
 
+-- Compatible version of libdevice for a given compute capability should be
+-- listed here:
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+--
 class Libdevice a where
   libdevice :: Compute -> a
 
@@ -149,7 +154,8 @@ instance Libdevice AST.Module where
       (2,_)             -> libdevice_20_mdl   -- 2.0, 2.1
       (3,x) | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
             | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-      (5,_)             -> libdevice_50_mdl   -- 5.0
+      (5,_)             -> libdevice_50_mdl   -- 5.x
+      (6,_)             -> libdevice_50_mdl   -- 6.x
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
 instance Libdevice (String, ByteString) where
@@ -158,7 +164,8 @@ instance Libdevice (String, ByteString) where
       (2,_)             -> libdevice_20_bc    -- 2.0, 2.1
       (3,x) | x < 5     -> libdevice_30_bc    -- 3.0, 3.2
             | otherwise -> libdevice_35_bc    -- 3.5, 3.7
-      (5,_)             -> libdevice_50_bc    -- 5.0
+      (5,_)             -> libdevice_50_bc    -- 5.x
+      (6,_)             -> libdevice_50_bc    -- 6.x
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
 
