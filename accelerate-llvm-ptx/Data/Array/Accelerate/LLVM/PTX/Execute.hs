@@ -344,7 +344,8 @@ scanAllOp exe gamma aenv stream n m = do
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
       k3  = fromMaybe err (lookupKernel "scanP3" exe)
       --
-      s   = n `multipleOf` kernelThreadBlockSize k1
+      c   = kernelThreadBlockSize k1
+      s   = n `multipleOf` c
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. m)
@@ -359,7 +360,7 @@ scanAllOp exe gamma aenv stream n m = do
   -- then apply those values to the partial results.
   when (s > 1) $ do
     liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
 
   return out
 
@@ -429,7 +430,8 @@ scan'AllOp exe gamma aenv stream (Z :. n) = do
       k2  = fromMaybe err (lookupKernel "scanP2" exe)
       k3  = fromMaybe err (lookupKernel "scanP3" exe)
       --
-      s   = n `multipleOf` kernelThreadBlockSize k1
+      c   = kernelThreadBlockSize k1
+      s   = n `multipleOf` c
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (Z :. n)
@@ -448,7 +450,7 @@ scan'AllOp exe gamma aenv stream (Z :. n) = do
     else do
       sum <- allocateRemote Z
       liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
-      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out)
+      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
       return (out, sum)
 
 

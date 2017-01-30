@@ -25,7 +25,7 @@ packages:
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
-- 'cuda-0.7.5.1'
+- 'cuda-0.7.5.2'
 - 'libffi-0.1'
 - 'nvvm-0.7.5.1'
 - 'unique-0'

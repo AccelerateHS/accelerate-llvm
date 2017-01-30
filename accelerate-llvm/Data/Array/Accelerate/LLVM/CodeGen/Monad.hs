@@ -32,6 +32,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   -- instructions
   instr, instr', do_, return_, retval_, br, cbr, phi, phi',
+  instr_,
 
   -- metadata
   addMetadata,
@@ -260,21 +261,22 @@ instr ins = ir (typeOf ins) <$> instr' ins
 instr' :: Instruction a -> CodeGen (Operand a)
 instr' ins = do
   name <- freshName
-  state $ \s ->
-    case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "instr" "empty block chain"
-      bs Seq.:> b -> ( LocalReference (typeOf ins) name
-                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (name := ins) } } )
-
+  instr_ $ downcast (name := ins)
+  return $ LocalReference (typeOf ins) name
 
 -- | Execute an unnamed instruction
 --
 do_ :: Instruction () -> CodeGen ()
-do_ ins =
+do_ ins = instr_ $ downcast (Do ins)
+
+-- | Add raw assembly instructions to the execution stream
+--
+instr_ :: LLVM.Named LLVM.Instruction -> CodeGen ()
+instr_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "do_" "empty block chain"
-      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (Do ins) } }
+      Seq.EmptyR  -> $internalError "instr_" "empty block chain"
+      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> ins } }
 
 
 -- | Return void from a basic block

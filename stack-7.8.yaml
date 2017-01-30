@@ -31,7 +31,7 @@ extra-deps:
 - 'transformers-compat-0.4.0.4'
 
 # accelerate-llvm-ptx
-- 'cuda-0.7.5.1'
+- 'cuda-0.7.5.2'
 - 'nvvm-0.7.5.1'
 
 # update utils/cabal_macros.h whenever these versions are changed

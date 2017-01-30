@@ -380,7 +380,7 @@ mkScanAllP2 dir dev aenv combine =
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
     --
-    -- TODO: We could optimise this a bit if we can get access to the the shared
+    -- TODO: We could optimise this a bit if we can get access to the shared
     -- memory area used by 'scanBlockSMem', and from there directly read the
     -- value computed by the last thread.
     carry <- staticSharedMem 1
@@ -452,62 +452,76 @@ mkScanAllP3 dir dev aenv combine mseed =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      -- Threads don't actually require these resources, but it ensures that we
-      -- get the same thread block configuration as phases 1 and 2, which is
-      -- what we actually require.
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
-      smem n                    = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+      stride                    = local           scalarType ("ix.stride" :: Name Int32)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int32)
+      --
+      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
 
     sz  <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
+    tid <- threadIdx
 
-    bid <- blockIdx
-    gd  <- gridDim
-    c0  <- A.add numType start bid
-    imapFromStepTo c0 gd end $ \chunk -> do
+    -- Threads that will never contribute can just exit immediately. The size of
+    -- each chunk is set by the block dimension of the step 1 kernel, which may
+    -- be different from the block size of this kernel.
+    when (A.lt scalarType tid stride) $ do
 
-      -- What is the index of this chunk's carry-in value?
-      cix   <- case dir of
-                 L -> return chunk
-                 R -> A.sub numType end chunk
+      -- Iterate over the segments computed in phase 1. Note that we have one
+      -- fewer chunk to process because the first has no carry-in.
+      bid <- blockIdx
+      gd  <- gridDim
+      c0  <- A.add numType start bid
+      imapFromStepTo c0 gd end $ \chunk -> do
 
-      carry <- readArray arrTmp cix
+        -- Determine the start and end indicies of this chunk to which we will
+        -- carry-in the value. Returned for left-to-right traversal.
+        (inf,sup) <- case dir of
+                       L -> do
+                         a <- A.add numType chunk (lift 1)
+                         b <- A.mul numType stride a
+                         case mseed of
+                           Just{}  -> do
+                             c <- A.add numType b (lift 1)
+                             d <- A.add numType c stride
+                             e <- A.min scalarType d sz
+                             return (c,e)
+                           Nothing -> do
+                             c <- A.add numType b stride
+                             d <- A.min scalarType c sz
+                             return (b,d)
+                       R -> do
+                         a <- A.sub numType end chunk
+                         b <- A.mul numType stride a
+                         c <- A.sub numType sz b
+                         case mseed of
+                           Just{}  -> do
+                             d <- A.sub numType c (lift 1)
+                             e <- A.sub numType d stride
+                             f <- A.max scalarType e (lift 0)
+                             return (f,d)
+                           Nothing -> do
+                             d <- A.sub numType c stride
+                             e <- A.max scalarType d (lift 0)
+                             return (e,c)
 
-      -- Add the carry-in to the successor chunk
-      bd  <- blockDim
-      a   <- A.add numType chunk (lift 1)
-      inf <- A.mul numType a bd
+        -- Read the carry-in value
+        carry     <- case dir of
+                       L -> readArray arrTmp chunk
+                       R -> do
+                         a <- A.add numType chunk (lift 1)
+                         b <- readArray arrTmp a
+                         return b
 
-      tid <- threadIdx
-      i0  <- case dir of
-               L -> do
-                 x <- A.add numType inf tid
-                 case mseed of
-                   Nothing -> return x
-                   Just _  -> A.add numType x (lift 1)
-
-               R -> do
-                 x <- A.sub numType sz inf
-                 y <- A.sub numType x tid
-                 z <- A.sub numType y (lift 1)
-                 return z
-
-      let valid i = case dir of
-                      L -> A.lt  scalarType i sz
-                      R -> A.gte scalarType i (lift 0)
-
-      when (valid i0) $ do
-        v <- readArray arrOut i0
-        u <- case dir of
-               L -> app2 combine carry v
-               R -> app2 combine v carry
-        writeArray arrOut i0 u
+        -- Apply the carry-in value to each element in the chunk
+        bd        <- blockDim
+        i0        <- A.add numType inf tid
+        imapFromStepTo i0 bd sup $ \i -> do
+          v <- readArray arrOut i
+          u <- case dir of
+                 L -> app2 combine carry v
+                 R -> app2 combine v carry
+          writeArray arrOut i u
 
     return_
 
@@ -732,59 +746,56 @@ mkScan'AllP3 dir dev aenv combine =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      -- Threads don't actually require these resources, but it ensures that we
-      -- get the same thread block configuration as phases 1 and 2, which is
-      -- what we actually require.
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
-      smem n                    = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+      stride                    = local           scalarType ("ix.stride" :: Name Int32)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int32)
+      --
+      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
 
     sz  <- A.fromIntegral integralType numType (indexHead (irArrayShape arrOut))
+    tid <- threadIdx
 
-    bid <- blockIdx
-    gd  <- gridDim
-    c0  <- A.add numType start bid
-    imapFromStepTo c0 gd end $ \chunk -> do
+    when (A.lt scalarType tid stride) $ do
 
-      -- What is the carry-in value for this chunk?
-      c   <- case dir of
-               L -> readArray arrTmp chunk
-               R -> do x <- A.sub numType end chunk
-                       readArray arrTmp x
+      bid <- blockIdx
+      gd  <- gridDim
+      c0  <- A.add numType start bid
+      imapFromStepTo c0 gd end $ \chunk -> do
 
-      -- Add this carry-in value to all output elements of the next segment.
-      -- The first segment does not require any updates, and is one element
-      -- larger due to the initial element.
-      bd  <- blockDim
-      inf <- do x <- A.add numType chunk (lift 1)
-                y <- A.mul numType bd x
-                z <- A.add numType y (lift 1)
-                return z
+        (inf,sup) <- case dir of
+                       L -> do
+                         a <- A.add numType chunk (lift 1)
+                         b <- A.mul numType stride a
+                         c <- A.add numType b (lift 1)
+                         d <- A.add numType c stride
+                         e <- A.min scalarType d sz
+                         return (c,e)
+                       R -> do
+                         a <- A.sub numType end chunk
+                         b <- A.mul numType stride a
+                         c <- A.sub numType sz b
+                         d <- A.sub numType c (lift 1)
+                         e <- A.sub numType d stride
+                         f <- A.max scalarType e (lift 0)
+                         return (f,d)
 
-      tid <- threadIdx
-      i   <- case dir of
-               L -> A.add numType inf tid
-               R -> do x <- A.sub numType sz inf
-                       y <- A.sub numType x tid
-                       z <- A.sub numType y (lift 1)
-                       return z
+        carry     <- case dir of
+                       L -> readArray arrTmp chunk
+                       R -> do
+                         a <- A.add numType chunk (lift 1)
+                         b <- readArray arrTmp a
+                         return b
 
-      let valid ix = case dir of
-                       L -> A.lt  scalarType ix sz
-                       R -> A.gte scalarType ix (lift 0)
-
-      when (valid i) $ do
-        x <- readArray arrOut i
-        y <- case dir of
-               L -> app2 combine c x
-               R -> app2 combine x c
-        writeArray arrOut i y
+        -- Apply the carry-in value to each element in the chunk
+        bd        <- blockDim
+        i0        <- A.add numType inf tid
+        imapFromStepTo i0 bd sup $ \i -> do
+          v <- readArray arrOut i
+          u <- case dir of
+                 L -> app2 combine carry v
+                 R -> app2 combine v carry
+          writeArray arrOut i u
 
     return_
 

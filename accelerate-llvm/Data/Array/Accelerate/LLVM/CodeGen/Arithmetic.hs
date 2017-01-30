@@ -24,6 +24,7 @@ import Control.Applicative
 import Control.Monad
 import Data.Bits                                                ( finiteBitSize )
 import Data.String
+import Text.Printf
 import Foreign.Storable                                         ( sizeOf )
 import qualified Prelude                                        as P
 import qualified Data.Ord                                       as Ord
@@ -253,6 +254,39 @@ rotateR t x i = do
   i' <- negate numType i
   r  <- rotateL t x i'
   return r
+
+popCount :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+popCount i x
+  | IntegralDict <- integralDict i
+  = do let ctpop = Label $ printf "llvm.ctpop.i%d" (finiteBitSize (undefined::a))
+           p     = ScalarPrimType (NumScalarType (IntegralNumType i))
+           t     = PrimType p
+       --
+       c <- call (Lam p (op i x) (Body t ctpop)) [NoUnwind, ReadNone]
+       r <- fromIntegral i numType c
+       return r
+
+countLeadingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+countLeadingZeros i x
+  | IntegralDict <- integralDict i
+  = do let clz = Label $ printf "llvm.ctlz.i%d" (finiteBitSize (undefined::a))
+           p   = ScalarPrimType (NumScalarType (IntegralNumType i))
+           t   = PrimType p
+       --
+       c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
+       r <- fromIntegral i numType c
+       return r
+
+countTrailingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+countTrailingZeros i x
+  | IntegralDict <- integralDict i
+  = do let clz = Label $ printf "llvm.cttz.i%d" (finiteBitSize (undefined::a))
+           p   = ScalarPrimType (NumScalarType (IntegralNumType i))
+           t   = PrimType p
+       --
+       c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
+       r <- fromIntegral i numType c
+       return r
 
 
 -- Operators from Fractional and Floating

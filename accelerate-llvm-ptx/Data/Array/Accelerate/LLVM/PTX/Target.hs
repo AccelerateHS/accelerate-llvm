@@ -163,9 +163,7 @@ ptxISAVersion 3 _ = CPUFeature "ptx40"
 ptxISAVersion 5 0 = CPUFeature "ptx40"
 ptxISAVersion 5 2 = CPUFeature "ptx41"
 ptxISAVersion 5 3 = CPUFeature "ptx42"
-ptxISAVersion 6 0 = CPUFeature "ptx60"
-ptxISAVersion 6 1 = CPUFeature "ptx61"
-ptxISAVersion 6 2 = CPUFeature "ptx62"
+ptxISAVersion 6 _ = CPUFeature "ptx50"
 ptxISAVersion _ _ = CPUFeature "ptx40"
 
 
