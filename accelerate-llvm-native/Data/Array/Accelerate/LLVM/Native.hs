@@ -179,6 +179,7 @@ streamWith target f arrs = map go arrs
 config :: Native -> Phase
 config target = phases
   { convertOffsetOfSegment = gangSize target > 1
+  , convertSubarrayToIndex = True
   }
 
 
