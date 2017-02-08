@@ -20,7 +20,7 @@
 module Data.Array.Accelerate.LLVM.Compile (
 
   Compile(..),
-  compileAcc, compileAfun,
+  compileAcc, compileAfun, compileSeq,
 
   ExecOpenAcc(..), ExecOpenAfun,
   ExecAcc, ExecAfun,
@@ -115,6 +115,13 @@ compileAfun
     -> LLVM arch (ExecAfun arch f)
 compileAfun = compileOpenAfun
 
+{-# INLINEABLE compileSeq #-}
+compileSeq
+    :: (Compile arch, Remote arch)
+    => DelayedSeq a
+    -> LLVM arch (StreamSeq (Int,Int) (ExecOpenAcc arch) a)
+compileSeq (StreamSeq binds s) = StreamSeq <$> compileExtend binds <*> compileOpenSeq s
+
 
 {-# INLINEABLE compileOpenAfun #-}
 compileOpenAfun
@@ -163,7 +170,7 @@ compileOpenAcc = traverseAcc
         Subarray i s arr        -> node =<< liftA3 Subarray             <$> travE i <*> travE s <*> pure (pure arr)
 
         -- Sequences
-        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequenceA (mapM travE u) <*> fmap sequenceA (mapM travE i) <*> fmap pure (travSeq s)
+        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequenceA (mapM travE u) <*> fmap sequenceA (mapM travE i) <*> fmap pure (compileOpenSeq s)
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
@@ -200,6 +207,10 @@ compileOpenAcc = traverseAcc
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
+
+        travE :: DelayedOpenExp env aenv e
+              -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+        travE = compileOpenExp
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e) -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
@@ -276,107 +287,126 @@ compileOpenAcc = traverseAcc
         -- sadness
         noKernel  = $internalError "compile" "no kernel module for this node"
 
-    travSeq :: forall index aenv arrs. PreOpenSeq index DelayedOpenAcc aenv arrs
-            -> LLVM arch (PreOpenSeq index (ExecOpenAcc arch) aenv arrs)
-    travSeq (Producer p s) = Producer <$> travP p <*> travSeq s
-      where
-        travP :: Producer index DelayedOpenAcc aenv a
-              -> LLVM arch (Producer index (ExecOpenAcc arch) aenv a)
-        travP (Pull src)           = pure (Pull src)
-        travP (ProduceAccum l f a) = ProduceAccum <$> fmap (fmap snd) (mapM travE l) <*> compileOpenAfun f <*> traverseAcc a
-        travP _                    = $internalError "travSeq" "Sequence computation at wrong stage"
-    travSeq (Consumer c)   = Consumer <$> travC c
-      where
-        travC :: Consumer index DelayedOpenAcc aenv a
-              -> LLVM arch (Consumer index (ExecOpenAcc arch) aenv a)
-        travC (Last a d) = Last <$> traverseAcc a <*> traverseAcc d
-        travC (Stuple t) = Stuple <$> travStup t
-        travC _          = $internalError "travSeq" "Sequence computation at wrong stage"
+compileOpenSeq :: forall arch index aenv arrs. (Compile arch, Remote arch)
+               => PreOpenSeq index DelayedOpenAcc aenv arrs
+               -> LLVM arch (PreOpenSeq index (ExecOpenAcc arch) aenv arrs)
+compileOpenSeq (Producer p s) = Producer <$> travP p <*> compileOpenSeq s
+  where
+    travP :: Producer index DelayedOpenAcc aenv a
+          -> LLVM arch (Producer index (ExecOpenAcc arch) aenv a)
+    travP (Pull src)           = pure (Pull src)
+    travP (ProduceAccum l f a) = ProduceAccum <$> fmap (fmap snd) (mapM travE l) <*> compileOpenAfun f <*> compileOpenAcc a
+    travP _                    = $internalError "compileOpenSeq" "Sequence computation at wrong stage"
 
-        travStup :: Atuple (PreOpenSeq index DelayedOpenAcc aenv) t
-                 -> LLVM arch (Atuple (PreOpenSeq index (ExecOpenAcc arch) aenv) t)
-        travStup NilAtup = pure NilAtup
-        travStup (SnocAtup t a) = SnocAtup <$> travStup t <*> travSeq a
-    travSeq _ = $internalError "travSeq" "Sequence computation at wrong stage"
-
-    -- Traverse a scalar expression
-    --
     travE :: DelayedOpenExp env aenv e
-          -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
-    travE exp =
-      case exp of
-        Var ix                  -> return $ pure (Var ix)
-        Const c                 -> return $ pure (Const c)
-        PrimConst c             -> return $ pure (PrimConst c)
-        IndexAny                -> return $ pure IndexAny
-        IndexNil                -> return $ pure IndexNil
-        Foreign ff f x          -> foreignE ff f x
-        --
-        Let a b                 -> liftA2 Let                   <$> travE a <*> travE b
-        IndexCons t h           -> liftA2 IndexCons             <$> travE t <*> travE h
-        IndexHead h             -> liftA  IndexHead             <$> travE h
-        IndexTail t             -> liftA  IndexTail             <$> travE t
-        IndexSlice slix x s     -> liftA  (IndexSlice slix x)   <$> travE s
-        IndexFull slix x s      -> liftA2 (IndexFull slix)      <$> travE x <*> travE s
-        ToIndex s i             -> liftA2 ToIndex               <$> travE s <*> travE i
-        FromIndex s i           -> liftA2 FromIndex             <$> travE s <*> travE i
-        IndexTrans sh           -> liftA  IndexTrans            <$> travE sh
-        ToSlice slix s n        -> liftA2 (ToSlice slix)        <$> travE s <*> travE n
-        Tuple t                 -> liftA  Tuple                 <$> travT t
-        Prj ix e                -> liftA  (Prj ix)              <$> travE e
-        Cond p t e              -> liftA3 Cond                  <$> travE p <*> travE t <*> travE e
-        While p f x             -> liftA3 While                 <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> liftA  (PrimApp f)           <$> travE e
-        Index a e               -> liftA2 Index                 <$> travA a <*> travE e
-        LinearIndex a e         -> liftA2 LinearIndex           <$> travA a <*> travE e
-        Shape a                 -> liftA  Shape                 <$> travA a
-        ShapeSize e             -> liftA  ShapeSize             <$> travE e
-        Intersect x y           -> liftA2 Intersect             <$> travE x <*> travE y
-        Union x y               -> liftA2 Union                 <$> travE x <*> travE y
+           -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+    travE = compileOpenExp
 
+compileOpenSeq (Consumer c)   = Consumer <$> travC c
+  where
+    travC :: Consumer index DelayedOpenAcc aenv a
+          -> LLVM arch (Consumer index (ExecOpenAcc arch) aenv a)
+    travC (Last a d) = Last <$> compileOpenAcc a <*> compileOpenAcc d
+    travC (Stuple t) = Stuple <$> travStup t
+    travC _          = $internalError "compileOpenSeq" "Sequence computation at wrong stage"
+
+    travStup :: Atuple (PreOpenSeq index DelayedOpenAcc aenv) t
+              -> LLVM arch (Atuple (PreOpenSeq index (ExecOpenAcc arch) aenv) t)
+    travStup NilAtup = pure NilAtup
+    travStup (SnocAtup t a) = SnocAtup <$> travStup t <*> compileOpenSeq a
+compileOpenSeq (Reify ty a) = Reify ty <$> compileOpenAcc a
+compileOpenSeq _ = $internalError "compileOpenSeq" "Sequence computation at wrong stage"
+
+-- Traverse a scalar expression
+--
+compileOpenExp :: forall arch env aenv e. (Compile arch, Remote arch)
+               => DelayedOpenExp env aenv e
+               -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+compileOpenExp exp =
+  case exp of
+    Var ix                  -> return $ pure (Var ix)
+    Const c                 -> return $ pure (Const c)
+    PrimConst c             -> return $ pure (PrimConst c)
+    IndexAny                -> return $ pure IndexAny
+    IndexNil                -> return $ pure IndexNil
+    Foreign ff f x          -> foreignE ff f x
+    --
+    Let a b                 -> liftA2 Let                   <$> travE a <*> travE b
+    IndexCons t h           -> liftA2 IndexCons             <$> travE t <*> travE h
+    IndexHead h             -> liftA  IndexHead             <$> travE h
+    IndexTail t             -> liftA  IndexTail             <$> travE t
+    IndexSlice slix x s     -> liftA  (IndexSlice slix x)   <$> travE s
+    IndexFull slix x s      -> liftA2 (IndexFull slix)      <$> travE x <*> travE s
+    ToIndex s i             -> liftA2 ToIndex               <$> travE s <*> travE i
+    FromIndex s i           -> liftA2 FromIndex             <$> travE s <*> travE i
+    IndexTrans sh           -> liftA  IndexTrans            <$> travE sh
+    ToSlice slix s n        -> liftA2 (ToSlice slix)        <$> travE s <*> travE n
+    Tuple t                 -> liftA  Tuple                 <$> travT t
+    Prj ix e                -> liftA  (Prj ix)              <$> travE e
+    Cond p t e              -> liftA3 Cond                  <$> travE p <*> travE t <*> travE e
+    While p f x             -> liftA3 While                 <$> travF p <*> travF f <*> travE x
+    PrimApp f e             -> liftA  (PrimApp f)           <$> travE e
+    Index a e               -> liftA2 Index                 <$> travA a <*> travE e
+    LinearIndex a e         -> liftA2 LinearIndex           <$> travA a <*> travE e
+    Shape a                 -> liftA  Shape                 <$> travA a
+    ShapeSize e             -> liftA  ShapeSize             <$> travE e
+    Intersect x y           -> liftA2 Intersect             <$> travE x <*> travE y
+    Union x y               -> liftA2 Union                 <$> travE x <*> travE y
+
+  where
+    travE :: forall aenv env e. DelayedOpenExp env aenv e
+           -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+    travE = compileOpenExp
+
+    travA :: forall sh e. (Shape sh, Elt e)
+          => DelayedOpenAcc aenv (Array sh e)
+          -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
+    travA a = do
+      a'    <- compileOpenAcc a
+      return $ (bind a', a')
+
+    travT :: Tuple (DelayedOpenExp env aenv) t
+          -> LLVM arch (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
+    travT NilTup        = return (pure NilTup)
+    travT (SnocTup t e) = liftA2 SnocTup <$> travT t <*> travE e
+
+    travF :: forall aenv env t. DelayedOpenFun env aenv t
+          -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
+    travF (Body b)  = liftA Body <$> travE b
+    travF (Lam  f)  = liftA Lam  <$> travF f
+
+    bind :: forall sh e. (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
+    bind (ExecAcc _ _ (Avar ix)) = freevar ix
+    bind _                       = $internalError "bind" "expected array variable"
+
+    foreignE :: (Elt a, Elt b, A.Foreign asm)
+              => asm           (a -> b)
+              -> DelayedFun () (a -> b)
+              -> DelayedOpenExp env aenv a
+              -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
+    foreignE asm f x =
+      case foreignExp (undefined :: arch) asm of
+        Just{}                      -> liftA2 (Foreign asm) <$> travF' f <*> travE x
+        Nothing | Lam (Body b) <- f -> liftA2 Let           <$> travE  x <*> travE (weaken absurd (weakenE zero b))
+        _                           -> error "the slow regard of silent things"
       where
-        travA :: (Shape sh, Elt e)
-              => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
-        travA a = do
-          a'    <- traverseAcc a
-          return $ (bind a', a')
+        absurd :: Idx () t -> Idx aenv t
+        absurd = absurd
 
-        travT :: Tuple (DelayedOpenExp env aenv) t
-              -> LLVM arch (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
-        travT NilTup        = return (pure NilTup)
-        travT (SnocTup t e) = liftA2 SnocTup <$> travT t <*> travE e
+        zero :: Idx ((), a) t -> Idx (env,a) t
+        zero ZeroIdx = ZeroIdx
+        zero notzero = zero notzero
 
-        travF :: DelayedOpenFun env aenv t
-              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
-        travF (Body b)  = liftA Body <$> travE b
-        travF (Lam  f)  = liftA Lam  <$> travF f
+        travF' :: DelayedFun () (a -> b)
+                -> LLVM arch (IntMap (Idx' aenv), PreFun (ExecOpenAcc arch) () (a -> b))
+        travF' = fmap (pure . snd) . travF
 
-        bind :: (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
-        bind (ExecAcc _ _ (Avar ix)) = freevar ix
-        bind _                       = $internalError "bind" "expected array variable"
-
-        foreignE :: (Elt a, Elt b, A.Foreign asm)
-                 => asm           (a -> b)
-                 -> DelayedFun () (a -> b)
-                 -> DelayedOpenExp env aenv a
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
-        foreignE asm f x =
-          case foreignExp (undefined :: arch) asm of
-            Just{}                      -> liftA2 (Foreign asm) <$> travF' f <*> travE x
-            Nothing | Lam (Body b) <- f -> liftA2 Let           <$> travE  x <*> travE (weaken absurd (weakenE zero b))
-            _                           -> error "the slow regard of silent things"
-          where
-            absurd :: Idx () t -> Idx aenv t
-            absurd = absurd
-
-            zero :: Idx ((), a) t -> Idx (env,a) t
-            zero ZeroIdx = ZeroIdx
-            zero notzero = zero notzero
-
-            travF' :: DelayedFun () (a -> b)
-                   -> LLVM arch (IntMap (Idx' aenv), PreFun (ExecOpenAcc arch) () (a -> b))
-            travF' = fmap (pure . snd) . travF
+compileExtend
+    :: (Remote arch, Compile arch)
+    => Extend DelayedOpenAcc aenv aenv'
+    -> LLVM arch (Extend (ExecOpenAcc arch) aenv aenv')
+compileExtend (PushEnv env a) = PushEnv <$> compileExtend env <*> compileOpenAcc a
+compileExtend BaseEnv         = return BaseEnv
 
 
 -- Compilation

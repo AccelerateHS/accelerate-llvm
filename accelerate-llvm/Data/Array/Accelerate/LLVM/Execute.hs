@@ -21,17 +21,19 @@
 module Data.Array.Accelerate.LLVM.Execute (
 
   Execute(..), Gamma,
-  executeAcc, executeAfun1,
+  executeAcc, executeAfun1, executeSeq
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
+import Data.Array.Accelerate.Array.Lifted                       ( LiftedType(..), LiftedTupleType(..), Segments )
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
-import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
+import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign, Segments )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import qualified Data.Array.Accelerate.Array.Sugar              as S
@@ -55,6 +57,7 @@ import Control.Monad.Trans                                      ( liftIO )
 import Control.Applicative                                      hiding ( Const )
 import Data.Traversable                                         ( sequenceA, mapM )
 import Data.Typeable                                            ( eqT )
+import System.IO.Unsafe                                         ( unsafePerformIO )
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1, mapM )
 
 
@@ -299,7 +302,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Collect l u i s             -> do l' <- travE l
                                       u' <- mapM travE u
                                       i' <- mapM travE i
-                                      executeSeq l' u' i' s aenv stream
+                                      executeOpenSeq l' u' i' s aenv stream
 
     -- Foreign function
     Aforeign asm _ a            -> foreignA asm =<< travA a
@@ -520,6 +523,14 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       indexRemote arr ix
 
 executeSeq
+  :: Execute arch
+  => StreamSeq (Int,Int) (ExecOpenAcc arch) arrs
+  -> LLVM arch arrs
+executeSeq (StreamSeq binds s) = do
+  aenv <- executeExtend binds Aempty
+  get =<< async (executeOpenSeq 1 Nothing Nothing s aenv)
+
+executeOpenSeq
   :: forall arch index aenv arrs. (Execute arch, SeqIndex index)
   => Int
   -> Maybe Int
@@ -528,26 +539,34 @@ executeSeq
   -> AvalR arch aenv
   -> StreamR arch
   -> LLVM arch arrs
-executeSeq mi _ma i s aenv stream =
+executeOpenSeq mi _ma i s aenv stream =
     case s of
-      Producer (ProduceAccum l f a) (Consumer (Last a' d)) ->
+      Producer (ProduceAccum l f a) (Consumer (Last a' d)) -> (last <$>) $
         join $ go i
           <$> fmap schedule (executeExp (initialIndex (Const mi)) aenv stream)
           <*> sequenceA (executeExp <$> l <*> pure aenv <*> pure stream)
           <*> pure (executeOpenAfun2 f aenv)
           <*> async (executeOpenAcc a aenv)
-          <*> executeOpenAcc d (aenv `Apush` undefined) stream
+          <*> (sequence [executeOpenAcc d (aenv `Apush` undefined) stream])
+          <*> pure (\aenv' -> executeOpenAcc a' aenv' stream)
+      Producer (ProduceAccum l f a) (Reify ty a') -> (concatMap (divide ty) <$>) $
+        join $ go i
+          <$> fmap schedule (executeExp (initialIndex (Const mi)) aenv stream)
+          <*> sequenceA (executeExp <$> l <*> pure aenv <*> pure stream)
+          <*> pure (executeOpenAfun2 f aenv)
+          <*> async (executeOpenAcc a aenv)
+          <*> pure []
           <*> pure (\aenv' -> executeOpenAcc a' aenv' stream)
       _ -> $internalError "evalSeq" "Sequence computation does not appear to be delayed"
   where
-    go :: Maybe Int
+    go :: forall arrs a b. Maybe Int
        -> Schedule index
        -> Maybe Int
        -> (AsyncR arch (Scalar index) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
        -> AsyncR arch b
-       -> arrs
+       -> [arrs]
        -> (AvalR arch (aenv, a) -> LLVM arch arrs)
-       -> LLVM arch arrs
+       -> LLVM arch [arrs]
     go (Just 0) _ _ _ _ a _ = return a
     go i Schedule{..} l f s a unwrap = do
       index'   <- async (\_ -> newRemote Z (const index))
@@ -558,7 +577,8 @@ executeSeq mi _ma i s aenv stream =
              (time, (a', s')) <- timed (f index' s)
              event <- checkpoint stream
              a'' <- unwrap (Apush aenv (AsyncR event a'))
-             go (subtract 1 <$> i) (next time) l f (AsyncR event s') a'' unwrap
+             rest <- unsafeInterleaveLLVM (go (subtract 1 <$> i) (next time) l f (AsyncR event s') [] unwrap)
+             return (a'' : rest)
            else return a
 
     schedule :: SeqIndex index => index -> Schedule index
@@ -567,4 +587,47 @@ executeSeq mi _ma i s aenv stream =
              | Just Refl <- eqT :: Maybe (index :~: (Int,Int))
              = doubleSizeChunked
              | otherwise
-             = $internalError "executeSeq" "Unknown sequence index type"
+             = $internalError "executeOpenSeq" "Unknown sequence index type"
+
+    divide :: LiftedType a a' -> a' -> [a]
+    divide UnitT       _ = [()]
+    divide LiftedUnitT a = replicate (a ! Z) ()
+    divide AvoidedT    a = [a]
+    divide RegularT    a = regular a
+    divide IrregularT  a = irregular a
+    divide (TupleT t)  a = fmap toAtuple (divideT t (fromAtuple a))
+      where
+        divideT :: LiftedTupleType t t' -> t' -> [t]
+        divideT NilLtup          ()    = [()]
+        divideT (SnocLtup lt ty) (t,a) = zip (divideT lt t) (divide ty a)
+
+    regular :: forall sh e. Shape sh => Array (sh:.Int) e -> [Array sh e]
+    regular arr@(Array _ adata) = [Array (fromElt sh') (copy (i * size sh') (size sh')) | i <- [0..n-1]]
+      where
+        sh  = shapeToList (shape arr)
+        n   = last sh
+        --
+        sh' :: sh
+        sh' = listToShape (init sh)
+        --
+        copy start n = unsafePerformIO (unsafeCopyArrayData adata start n)
+
+    irregular :: forall sh e. Shape sh => (Segments sh, Vector e) -> [Array sh e]
+    irregular (segs, (Array _ adata))
+      = [Array (fromElt (shs ! (Z:.i))) (copy (offs ! (Z:.i)) (size (shs ! (Z:.i)))) | i <- [0..n-1]]
+      where
+        (_, offs, shs) = segs
+        n              = size (shape shs)
+        --
+        copy start n = unsafePerformIO (unsafeCopyArrayData adata start n)
+
+
+executeExtend :: Execute arch
+              => Extend (ExecOpenAcc arch) aenv aenv'
+              -> AvalR arch aenv
+              -> LLVM arch (AvalR arch aenv')
+executeExtend (PushEnv env a) aenv = do
+  aenv' <- executeExtend env aenv
+  a'    <- async (executeOpenAcc a aenv')
+  return (Apush aenv' a')
+executeExtend BaseEnv aenv = return aenv

@@ -18,9 +18,10 @@ module Data.Array.Accelerate.LLVM.State
 -- library
 import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
-import Control.Monad.State                              ( StateT, MonadState, evalStateT )
+import Control.Monad.State                              ( StateT, MonadState, evalStateT, gets )
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
-import Control.Monad.Trans                              ( MonadIO )
+import Control.Monad.Trans                              ( MonadIO, liftIO)
+import System.IO.Unsafe                                 ( unsafeInterleaveIO )
 import Prelude
 
 
@@ -44,6 +45,13 @@ llvmTarget = id
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
   evalStateT (runLLVM acc) target
+
+-- | Unsafely interleave. Equivalent to unsafeInterleaveIO
+--
+unsafeInterleaveLLVM :: LLVM t a -> LLVM t a
+unsafeInterleaveLLVM a = do
+  t <- gets llvmTarget
+  liftIO (unsafeInterleaveIO (evalLLVM t a))
 
 
 -- | Make sure the GC knows that we want to keep this thing alive forever.

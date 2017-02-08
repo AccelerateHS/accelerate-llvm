@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.Native (
   run, runWith,
   run1, run1With,
   stream, streamWith,
+  streamOut, streamOutWith,
 
   -- * Asynchronous execution
   Async,
@@ -44,11 +45,11 @@ module Data.Array.Accelerate.LLVM.Native (
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
-import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.Smart                                  ( Acc, Seq )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
-import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1 )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun, compileSeq )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1, executeSeq )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
@@ -170,6 +171,16 @@ streamWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> [a] -> [b]
 streamWith target f arrs = map go arrs
   where
     !go = run1With target f
+
+streamOut :: Arrays a => Seq [a] -> [a]
+streamOut = streamOutWith defaultTarget
+
+streamOutWith :: Arrays a => Native -> Seq [a] -> [a]
+streamOutWith target s =
+  let
+    s'  = convertSeqWith (config target) s
+    s'' = unsafePerformIO $ phase "compile" elapsedS (evalNative target (compileSeq s')) >>= dumpStats
+  in unsafePerformIO $ phase "execute" elapsedP (evalNative target (executeSeq s''))
 
 
 -- How the Accelerate program should be evaluated.
