@@ -575,6 +575,7 @@ executeOpenSeq mi _ma i s aenv stream =
            then do
              liftIO $ Debug.traceIO Debug.dump_exec ("Computing sequence chunk " ++ show index)
              (time, (a', s')) <- timed (f index' s)
+             liftIO $ Debug.traceIO Debug.dump_exec ("Chunk took " ++ show time ++ " to compute")
              event <- checkpoint stream
              a'' <- unwrap (Apush aenv (AsyncR event a'))
              rest <- unsafeInterleaveLLVM (go (subtract 1 <$> i) (next time) l f (AsyncR event s') [] unwrap)
