@@ -25,7 +25,7 @@ import qualified Data.Array.Accelerate.LLVM.Execute.Async           as A
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Control.Monad.Trans
-import System.CPUTime
+import Data.Time.Clock
 
 type Async a = A.AsyncR  Native a
 type Stream  = A.StreamR Native
@@ -54,7 +54,7 @@ instance A.Async Native where
 
   {-# INLINE timed #-}
   timed f = do
-    start <- fromIntegral <$> liftIO getCPUTime
+    start <- liftIO getCurrentTime
     a <- f ()
-    end   <- fromIntegral <$> liftIO getCPUTime
-    return (end - start, a)
+    end   <- liftIO getCurrentTime
+    return (realToFrac (diffUTCTime end start), a)
