@@ -27,6 +27,7 @@ module Data.Array.Accelerate.LLVM.PTX (
   run, runWith,
   run1, run1With,
   stream, streamWith,
+  streamOut, streamOutWith,
 
   -- * Asynchronous execution
   Async,
@@ -48,7 +49,7 @@ import Data.Array.Accelerate.Array.Sugar                          ( Arrays )
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Debug                                as Debug
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Smart                                ( Acc )
+import Data.Array.Accelerate.Smart                                ( Acc, Seq )
 import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.PTX.Compile
@@ -197,6 +198,17 @@ streamWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> [a] -> [b]
 streamWith target f arrs = map go arrs
   where
     !go = run1With target f
+
+
+streamOut :: Arrays a => Seq [a] -> [a]
+streamOut = streamOutWith defaultTarget
+
+streamOutWith :: Arrays a => PTX -> Seq [a] -> [a]
+streamOutWith target s =
+  let
+    s'  = convertSeqWith config s
+    s'' = unsafePerformIO $ phase "compile" (evalPTX target (compileSeq s')) >>= dumpStats
+  in unsafePerformIO $ phase "execute" (evalPTX target (executeSeq s''))
 
 
 -- How the Accelerate program should be evaluated.
