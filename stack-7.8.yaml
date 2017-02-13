@@ -12,8 +12,18 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 03fe5ed61eba4f4f750786134035ce858fbc4ef7
+    commit: 24fb4dd0802df4d6834ae3e731fe469494e485e9
   extra-dep: true
+
+- location:
+    git:    https://github.com/tmcdonell/llvm-general.git
+    commit: 8971e275fe56dfd0090ac777e38e6dd641a0306a # 3.5
+    # commit: f80beba704a6b168326d442197b43e71a1ab730d # 3.8
+    # commit: 69863022efd2691e8198da0c24b7e49b8d5ebd4c # 3.9
+  extra-dep: true
+  subdirs:
+    - 'llvm-general'
+    - 'llvm-general-pure'
 
 extra-deps:
 # accelerate
@@ -35,8 +45,8 @@ extra-deps:
 - 'nvvm-0.7.5.1'
 
 # update utils/cabal_macros.h whenever these versions are changed
-- 'llvm-general-3.5.1.2'
-- 'llvm-general-pure-3.5.1.0'
+# - 'llvm-general-3.5.1.2'
+# - 'llvm-general-pure-3.5.1.0'
 
 
 # Override default flag values for local packages and extra-deps
