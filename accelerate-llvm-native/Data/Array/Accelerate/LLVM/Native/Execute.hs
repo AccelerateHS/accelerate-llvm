@@ -493,15 +493,15 @@ executeOp
     :: Marshalable args
     => Int
     -> Executable
-    -> ([Arg] -> IO ())
+    -> (String, [Arg] -> IO ())
     -> Gamma aenv
     -> Aval aenv
     -> Range
     -> args
     -> IO ()
-executeOp ppt exe f gamma aenv r args =
-  runExecutable exe ppt r $ \start end _tid ->
-  monitorProcTime         $
+executeOp ppt exe (name, f) gamma aenv r args =
+  runExecutable exe name ppt r $ \start end _tid ->
+  monitorProcTime              $
     f =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
 
 

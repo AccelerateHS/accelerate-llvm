@@ -95,7 +95,8 @@ type Action = Int -> Int -> Int -> IO ()
 --
 data Executable = Executable {
     runExecutable
-        :: Int          -- Profitable parallelism threshold (PPT)
+        :: String       -- Function name
+        -> Int          -- Profitable parallelism threshold (PPT)
         -> Range        -- The range to execute over
         -> Action       -- The main function to execute
         -> IO ()

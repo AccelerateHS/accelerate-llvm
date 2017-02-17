@@ -564,8 +564,8 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp ptx@PTX{..} kernel gamma aenv stream r args =
-  runExecutable fillP defaultPPT r $ \start end _ -> do
+executeOp ptx@PTX{..} kernel@Kernel{..} gamma aenv stream r args =
+  runExecutable fillP kernelName defaultPPT r $ \start end _ -> do
     argv <- marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
     launch kernel stream (end-start) argv
 

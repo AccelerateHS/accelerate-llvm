@@ -63,12 +63,12 @@ instance Show FunctionTable where
 execute
     :: Module
     -> String
-    -> (([Arg] -> IO ()) -> IO a)
+    -> ((String, [Arg] -> IO ()) -> IO a)
     -> IO a
 execute mdl@(Module ft) name k =
   withLifetime ft $ \FunctionTable{..} ->
     case lookup name functionTable of
-      Just f  -> k $ \argv -> callFFI f retVoid argv
+      Just f  -> k (name, \argv -> callFFI f retVoid argv)
       Nothing -> $internalError "execute" (printf "function '%s' not found in module: %s\n" name (show mdl))
 
 
@@ -78,13 +78,13 @@ execute mdl@(Module ft) name k =
 {-# INLINEABLE executeMain #-}
 executeMain
     :: Module
-    -> (([Arg] -> IO ()) -> IO a)
+    -> ((String, [Arg] -> IO ()) -> IO a)
     -> IO a
 executeMain (Module ft) k =
   withLifetime ft $ \FunctionTable{..} ->
     case functionTable of
-      []      -> $internalError "executeMain" "no functions defined in module"
-      (_,f):_ -> k $ \argv -> callFFI f retVoid argv
+      []         -> $internalError "executeMain" "no functions defined in module"
+      (name,f):_ -> k (name, \argv -> callFFI f retVoid argv)
 
 
 -- | Display the global (external) symbol table for this module.
