@@ -611,7 +611,7 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
       (ext', aenv) <- evalSources n ext
       let (stop,b,a')  = f n a
           ext''        = PushEnv ext' (Pull (Function f a'))
-      b' <- async (const (return b))
+      b' <- useRemoteAsync b stream
       let aenv'        = if not stop then Apush <$> aenv <*> pure b' else Nothing
       return (ext'', aenv')
     evalSources _ BaseEnv
