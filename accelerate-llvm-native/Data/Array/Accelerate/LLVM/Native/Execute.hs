@@ -216,8 +216,8 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((sz + ncpu - 1) `div` ncpu)
-      steps   = (sz + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((sz + ncpu - 1) `quot` ncpu)
+      steps   = (sz + stride - 1) `quot` stride
   --
   if ncpu == 1 || sz <= defaultLargePPT
     then liftIO $ do
@@ -264,7 +264,7 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
-foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
+foldSegOp NativeR{..} gamma aenv () (sh :. sz) (Z :. ss) = do
   Native{..} <- gets llvmTarget
   let
       ncpu               = gangSize
@@ -272,7 +272,9 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
              | otherwise = "foldSegP"
       n      | ncpu == 1 = ss
              | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
-      ppt = defaultSmallPPT `min` ((n + ncpu - 1) `div` ncpu)
+      ppt_cpu = (n + ncpu - 1) `quot` ncpu                                -- distribute evenly over available CPUs
+      ppt_seg = defaultLargePPT `max` (defaultSmallPPT * (sz `quot` ss))  -- don't split too much if lots of small (on avg.) segments
+      ppt     = ppt_seg `min` ppt_cpu
   --
   liftIO $ do
     out <- allocateArray (sh :. n)
@@ -320,8 +322,8 @@ scanCore NativeR{..} gamma aenv () sz n m = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
-      steps   = (n + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `quot` ncpu)
+      steps   = (n + stride - 1) `quot` stride
       steps'  = steps - 1
   --
   if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
@@ -387,8 +389,8 @@ scan'Core NativeR{..} gamma aenv () sh@(sz :. n) = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
-      steps   = (n + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `quot` ncpu)
+      steps   = (n + stride - 1) `quot` stride
       steps'  = steps - 1
   --
   if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
