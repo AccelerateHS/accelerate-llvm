@@ -12,7 +12,7 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: af30c43b19bfed059cabe7cce20824d4bdb1bcb8
+    commit: a3943321a598a4af2674fdd7e94e7ce01388f523
   extra-dep: true
 
 extra-deps:

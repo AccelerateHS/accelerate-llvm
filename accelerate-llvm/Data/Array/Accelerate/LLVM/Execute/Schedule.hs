@@ -15,6 +15,9 @@ module Data.Array.Accelerate.LLVM.Execute.Schedule (
 
 ) where
 
+import Data.Array.Accelerate.Debug
+import System.IO.Unsafe                              ( unsafePerformIO )
+
 -- How to schedule the next chunk of the sequence.
 --
 data Schedule index = Schedule
@@ -45,6 +48,8 @@ doubleSizeChunked (s,n) = Schedule (s,n) (f s initLog initLog Nothing)
                   (f start' logn' logn'' (Just t'))
 
     step :: Int -> Int -> Maybe Double -> Double -> Int
+    step _    _     _        _  | Just n <- fixedChunkSize
+                                = floor (logBase 2 (fromIntegral n) :: Double)
     step _    logn' Nothing  _  = logn' + 1
     step logn logn' (Just t) t'
       | logn == logn'
@@ -97,3 +102,6 @@ doubleSizeChunked (s,n) = Schedule (s,n) (f s initLog initLog Nothing)
     epsilon = 0.05
 
     timingError = error "Impossible time measurements"
+
+fixedChunkSize :: Maybe Int
+fixedChunkSize = unsafePerformIO $ queryFlag seq_chunk_size
