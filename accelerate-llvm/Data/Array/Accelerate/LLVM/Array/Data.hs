@@ -60,6 +60,12 @@ class Async arch => Remote arch where
   allocateRemote :: (Shape sh, Elt e) => sh -> LLVM arch (Array sh e)
   allocateRemote sh = liftIO $ allocateArray sh
 
+  -- | Use arrays created remotely in a local context.
+  --
+  {-# INLINEABLE useLocal #-}
+  useLocal :: Arrays a => a -> LLVM arch a
+  useLocal a = return a
+
   -- | Use the given immutable array on the remote device. Since the source
   -- array is immutable, the allocator can evict and re-upload the data as
   -- necessary without copy-back.

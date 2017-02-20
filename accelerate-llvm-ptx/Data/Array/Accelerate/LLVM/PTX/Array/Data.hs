@@ -53,6 +53,9 @@ instance Remote PTX where
     arr <- liftIO $ allocateArray sh
     runArray arr (\ad -> Prim.mallocArray (size sh) ad >> return ad)
 
+  {-# INLINEABLE useLocal #-}
+  useLocal !arrs = copyToHostLazy arrs
+
   {-# INLINEABLE useRemoteR #-}
   useRemoteR !n !mst !ad = do
     case mst of

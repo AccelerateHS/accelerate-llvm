@@ -71,6 +71,11 @@ class Async arch where
   timed       :: (StreamR arch -> LLVM arch a)
               -> LLVM arch (Double,a)
 
+  -- | Interleave a computation in order to do lazy IO.
+  --
+  unsafeInterleave :: LLVM arch a
+                   -> LLVM arch a
+
 
 -- | Wait for an asynchronous operation to complete, then return it.
 --

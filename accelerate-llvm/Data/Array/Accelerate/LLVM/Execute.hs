@@ -568,16 +568,17 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
             <*> pure (Just aenv')
         _ -> $internalError "executeOpenSeq" "Sequence computation does not appear to be delayed"
       where
-        go :: forall arrs a b. Maybe Int
-          -> Schedule index
-          -> Maybe Int
-          -> (AvalR arch aenv' -> AsyncR arch (Scalar index) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
-          -> AsyncR arch b
-          -> [arrs]
-          -> (AvalR arch (aenv', a) -> LLVM arch arrs)
-          -> Extend (Producer index (ExecOpenAcc arch)) aenv aenv'
-          -> Maybe (AvalR arch aenv')
-          -> LLVM arch [arrs]
+        go :: forall arrs a b. Arrays arrs
+           => Maybe Int
+           -> Schedule index
+           -> Maybe Int
+           -> (AvalR arch aenv' -> AsyncR arch (Scalar index) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
+           -> AsyncR arch b
+           -> [arrs]
+           -> (AvalR arch (aenv', a) -> LLVM arch arrs)
+           -> Extend (Producer index (ExecOpenAcc arch)) aenv aenv'
+           -> Maybe (AvalR arch aenv')
+           -> LLVM arch [arrs]
         go (Just 0) _ _ _ _ a _ _ _ = return a
         go _ _ _ _ _ a _ _ Nothing = return a
         go i sched l f s a unwrap ext (Just aenv') = do
@@ -592,8 +593,9 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
                 a'' <- unwrap (Apush aenv' (AsyncR event a'))
                 let sched' = next sched time
                 (ext', maenv) <- evalSources (indexSize (index sched')) ext
-                rest <- unsafeInterleaveLLVM (go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv)
-                return (a'' : rest)
+                rest <- unsafeInterleave (go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv)
+                a''' <- useLocal a''
+                return (a''' : rest)
               else return a
 
     schedule :: SeqIndex index => index -> Schedule index

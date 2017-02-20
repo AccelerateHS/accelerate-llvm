@@ -14,6 +14,7 @@ module Data.Array.Accelerate.LLVM.Native.State (
 
   evalNative,
   createTarget, defaultTarget,
+  unsafeInterleaveNative,
 
   Strategy,
   balancedParIO, unbalancedParIO,
@@ -34,6 +35,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- library
+import Control.Monad.State                                      ( liftIO, gets )
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
@@ -45,6 +47,14 @@ import GHC.Conc
 --
 evalNative :: Native -> LLVM Native a -> IO a
 evalNative = evalLLVM
+
+
+-- | Interleave a computation in the native backend.
+--
+unsafeInterleaveNative :: LLVM Native a -> LLVM Native a
+unsafeInterleaveNative a = do
+  target <- gets llvmTarget
+  liftIO (unsafeInterleaveIO (evalNative target a))
 
 
 -- | Create a Native execution target by spawning a worker thread on each of the

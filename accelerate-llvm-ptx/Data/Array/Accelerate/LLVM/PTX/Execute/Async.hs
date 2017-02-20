@@ -23,6 +23,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( Async )
 import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
 
+import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( Event )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
@@ -74,3 +75,6 @@ instance A.Async PTX where
     block end
     time  <- liftIO $! float2Double <$> Event.elapsedTime start end
     return (time,r)
+
+  {-# INLINEABLE unsafeInterleave #-}
+  unsafeInterleave = unsafeInterleavePTX

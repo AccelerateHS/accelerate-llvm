@@ -46,14 +46,6 @@ evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
   evalStateT (runLLVM acc) target
 
--- | Unsafely interleave. Equivalent to unsafeInterleaveIO
---
-unsafeInterleaveLLVM :: LLVM t a -> LLVM t a
-unsafeInterleaveLLVM a = do
-  t <- gets llvmTarget
-  liftIO (unsafeInterleaveIO (evalLLVM t a))
-
-
 -- | Make sure the GC knows that we want to keep this thing alive forever.
 --
 -- We may want to introduce some way to actually shut this down if, for example,

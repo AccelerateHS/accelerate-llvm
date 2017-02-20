@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 import Data.Array.Accelerate.LLVM.Execute.Async                     hiding ( Async )
 import qualified Data.Array.Accelerate.LLVM.Execute.Async           as A
 
+import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Control.Monad.Trans
@@ -58,3 +59,6 @@ instance A.Async Native where
     a <- f ()
     end   <- liftIO getCurrentTime
     return (realToFrac (diffUTCTime end start), a)
+
+  {-# INLINE unsafeInterleave #-}
+  unsafeInterleave = unsafeInterleaveNative
