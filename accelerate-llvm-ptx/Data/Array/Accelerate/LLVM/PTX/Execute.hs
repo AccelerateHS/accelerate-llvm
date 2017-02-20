@@ -59,7 +59,6 @@ import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 import qualified Prelude                                        as P
-import qualified Data.IntMap                                    as IM
 
 
 -- Array expression evaluation
@@ -275,12 +274,12 @@ foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
       m       = size sh * n
       err     = $internalError "foldSeg" "kernel not found"
       foldseg = fromMaybe err $ lookupKernel "foldSeg" exe
-      qinit   = fromMaybe err $ lookupKernel "qinit"   exe
+      -- qinit   = fromMaybe err $ lookupKernel "qinit"   exe
   --
   out <- allocateRemote (sh :. n)
   ptx <- gets llvmTarget
   liftIO $ do
-    executeOp ptx qinit   IM.empty aenv stream (IE 0 m) ()
+    -- executeOp ptx qinit   IM.empty aenv stream (IE 0 m) ()
     executeOp ptx foldseg gamma    aenv stream (IE 0 m) out
   return out
 
