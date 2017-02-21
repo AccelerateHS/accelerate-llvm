@@ -249,10 +249,11 @@ foldDimOp
     -> LLVM Native (Array sh e)
 foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
   Native{..} <- gets llvmTarget
+  let ppt = defaultSmallPPT `max` (defaultLargePPT `quot` (max 1 sz))
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultSmallPPT fillP f gamma aenv (IE 0 (size sh)) (sz, out)
+      executeOp ppt fillP f gamma aenv (IE 0 (size sh)) (sz, out)
     return out
 
 foldSegOp
@@ -272,10 +273,8 @@ foldSegOp NativeR{..} gamma aenv () (sh :. sz) (Z :. ss) = do
              | otherwise = "foldSegP"
       n      | ncpu == 1 = ss
              | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
-      ppt_cpu = (n + ncpu - 1) `quot` ncpu                                -- distribute evenly over available CPUs
-      ppt_seg = defaultLargePPT `max` (defaultSmallPPT * (sz `quot` ss))  -- don't split too much if lots of small (on avg.) segments
-      ppt     = ppt_seg `min` ppt_cpu
-  --
+      ppt                = n        -- for 1D distribute evenly over threads; otherwise
+  --                                -- compute all segments on an innermost dimension
   liftIO $ do
     out <- allocateArray (sh :. n)
     execute executableR kernel $ \f ->

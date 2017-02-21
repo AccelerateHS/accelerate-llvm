@@ -27,8 +27,8 @@ module Data.Array.Accelerate.LLVM.Native.Execute.LBS
 -- turnaround and also low scheduler overhead.
 --
 defaultLargePPT :: Int
-defaultLargePPT = 2048
+defaultLargePPT = 4096
 
 defaultSmallPPT :: Int
-defaultSmallPPT = 32
+defaultSmallPPT = 64
 
