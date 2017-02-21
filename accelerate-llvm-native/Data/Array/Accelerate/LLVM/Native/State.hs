@@ -79,8 +79,8 @@ type Strategy = Gang -> Executable
 --
 sequentialIO :: Strategy
 sequentialIO gang =
-  Executable $ \_ range fill ->
-    timed $ runSeqIO gang range fill
+  Executable $ \name _ppt range fill ->
+    timed name $ runSeqIO gang range fill
 
 
 -- | Execute a computation without load balancing. Each thread computes an
@@ -88,8 +88,8 @@ sequentialIO gang =
 --
 unbalancedParIO :: Strategy
 unbalancedParIO gang =
-  Executable $ \_ range fill ->
-    timed $ runParIO Single.mkResource gang range fill
+  Executable $ \name _ppt range fill ->
+    timed name $ runParIO Single.mkResource gang range fill
 
 
 -- | Execute a computation where threads use work stealing (based on lazy
@@ -100,12 +100,12 @@ balancedParIO
     :: Int                -- ^ number of steal attempts before backing off
     -> Strategy
 balancedParIO retries gang =
-  Executable $ \ppt range fill ->
+  Executable $ \name ppt range fill ->
     -- TLM: A suitable PPT should be chosen when invoking the continuation in
     --      order to balance scheduler overhead with fine-grained function calls
     --
     let resource = LBS.mkResource ppt (SMP.mkResource retries <> Backoff.mkResource)
-    in  timed $ runParIO resource gang range fill
+    in  timed name $ runParIO resource gang range fill
 
 
 -- Top-level mutable state
@@ -141,10 +141,10 @@ defaultTarget = unsafePerformIO $ do
 -- ---------
 
 {-# INLINE timed #-}
-timed :: IO a -> IO a
-timed f = Debug.timed Debug.dump_exec elapsed f
+timed :: String -> IO a -> IO a
+timed name f = Debug.timed Debug.dump_exec (elapsed name) f
 
 {-# INLINE elapsed #-}
-elapsed :: Double -> Double -> String
-elapsed x y = "exec: " ++ Debug.elapsedP x y
+elapsed :: String -> Double -> Double -> String
+elapsed name x y = printf "exec: %s %s" name (Debug.elapsedP x y)
 

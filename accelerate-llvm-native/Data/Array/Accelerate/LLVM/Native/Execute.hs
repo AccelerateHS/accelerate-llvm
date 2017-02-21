@@ -216,8 +216,8 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((sz + ncpu - 1) `div` ncpu)
-      steps   = (sz + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((sz + ncpu - 1) `quot` ncpu)
+      steps   = (sz + stride - 1) `quot` stride
   --
   if ncpu == 1 || sz <= defaultLargePPT
     then liftIO $ do
@@ -249,10 +249,11 @@ foldDimOp
     -> LLVM Native (Array sh e)
 foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
   Native{..} <- gets llvmTarget
+  let ppt = defaultSmallPPT `max` (defaultLargePPT `quot` (max 1 sz))
   liftIO $ do
     out <- allocateArray sh
     executeMain executableR $ \f ->
-      executeOp defaultSmallPPT fillP f gamma aenv (IE 0 (size sh)) (sz, out)
+      executeOp ppt fillP f gamma aenv (IE 0 (size sh)) (sz, out)
     return out
 
 foldSegOp
@@ -264,7 +265,7 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
-foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
+foldSegOp NativeR{..} gamma aenv () (sh :. sz) (Z :. ss) = do
   Native{..} <- gets llvmTarget
   let
       ncpu               = gangSize
@@ -272,8 +273,8 @@ foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
              | otherwise = "foldSegP"
       n      | ncpu == 1 = ss
              | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
-      ppt = defaultSmallPPT `min` ((n + ncpu - 1) `div` ncpu)
-  --
+      ppt                = n        -- for 1D distribute evenly over threads; otherwise
+  --                                -- compute all segments on an innermost dimension
   liftIO $ do
     out <- allocateArray (sh :. n)
     execute executableR kernel $ \f ->
@@ -320,8 +321,8 @@ scanCore NativeR{..} gamma aenv () sz n m = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
-      steps   = (n + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `quot` ncpu)
+      steps   = (n + stride - 1) `quot` stride
       steps'  = steps - 1
   --
   if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
@@ -387,8 +388,8 @@ scan'Core NativeR{..} gamma aenv () sh@(sz :. n) = do
   Native{..} <- gets llvmTarget
   let
       ncpu    = gangSize
-      stride  = defaultLargePPT `min` ((n + ncpu - 1) `div` ncpu)
-      steps   = (n + stride - 1) `div` stride
+      stride  = defaultLargePPT `min` ((n + ncpu - 1) `quot` ncpu)
+      steps   = (n + stride - 1) `quot` stride
       steps'  = steps - 1
   --
   if ncpu == 1 || rank sz > 0 || n <= 2 * defaultLargePPT
@@ -493,15 +494,15 @@ executeOp
     :: Marshalable args
     => Int
     -> Executable
-    -> ([Arg] -> IO ())
+    -> (String, [Arg] -> IO ())
     -> Gamma aenv
     -> Aval aenv
     -> Range
     -> args
     -> IO ()
-executeOp ppt exe f gamma aenv r args =
-  runExecutable exe ppt r $ \start end _tid ->
-  monitorProcTime         $
+executeOp ppt exe (name, f) gamma aenv r args =
+  runExecutable exe name ppt r $ \start end _tid ->
+  monitorProcTime              $
     f =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
 
 

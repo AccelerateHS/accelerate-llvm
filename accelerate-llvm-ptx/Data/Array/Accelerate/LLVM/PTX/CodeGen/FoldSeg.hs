@@ -38,8 +38,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem )
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, imapFromTo )
+-- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -65,8 +65,9 @@ mkFoldSeg
     -> IRDelayed PTX aenv (Segments i)
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFoldSeg (deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
-  (+++) <$> mkQueueInit dev
-        <*> mkFoldSegP dev aenv combine (Just seed) arr seg
+  mkFoldSegP dev aenv combine (Just seed) arr seg
+  -- (+++) <$> mkQueueInit dev
+  --       <*> mkFoldSegP dev aenv combine (Just seed) arr seg
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
 -- segments are non-empty.
@@ -80,8 +81,9 @@ mkFold1Seg
     -> IRDelayed PTX aenv (Segments i)
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFold1Seg (deviceProperties . ptxContext -> dev) aenv combine arr seg =
-  (+++) <$> mkQueueInit dev
-        <*> mkFoldSegP dev aenv combine Nothing arr seg
+  mkFoldSegP dev aenv combine Nothing arr seg
+  -- (+++) <$> mkQueueInit dev
+  --       <*> mkFoldSegP dev aenv combine Nothing arr seg
 
 
 -- This implementation assumes that the segments array represents the offset
@@ -102,7 +104,7 @@ mkFoldSegP
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFoldSegP dev aenv combine mseed arr seg =
   let
-      (_start, end, paramGang)  = gangParam
+      (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
       --
@@ -119,7 +121,7 @@ mkFoldSegP dev aenv combine mseed arr seg =
     -- We use a dynamically scheduled work queue in order to evenly distribute
     -- the uneven workload, due to the variable length of each segment, over the
     -- available thread blocks.
-    queue <- globalWorkQueue
+    -- queue <- globalWorkQueue
 
     -- All threads in the block need to know what the start and end indices of
     -- this segment are in order to participate in the reduction. We use
@@ -143,8 +145,9 @@ mkFoldSegP dev aenv combine mseed arr seg =
                 A.sub numType n (lift 1)
 
     -- Each thread block cooperatively reduces a segment.
-    s0    <- dequeue queue (lift 1)
-    for s0 (\s -> A.lt scalarType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
+    -- s0    <- dequeue queue (lift 1)
+    -- for s0 (\s -> A.lt scalarType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
+    imapFromTo start end $ \s -> do
 
       -- The first two threads of the block determine the indices of the
       -- segments array that we will reduce between and distribute those values

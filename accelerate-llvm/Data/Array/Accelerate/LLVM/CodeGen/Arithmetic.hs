@@ -123,8 +123,19 @@ rem = binop Rem
 quotRem :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
 quotRem t x y = do
   q <- quot t x y
-  z <- mul (IntegralNumType t) y q
-  r <- sub (IntegralNumType t) x z
+  r <- rem  t x y
+  -- TLM: On x86 we can compute quotRem with a single [i]divq instruction. This
+  -- is not evident from the generated LLVM IR, which will still list both
+  -- div/rem operations. Note that this may not be true for other instruction
+  -- sets, for example the NVPTX assembly contains both operations. It might be
+  -- worthwhile to allow backends to specialise Exp code generation in the same
+  -- way the other phases of compilation are handled.
+  --
+  -- The following can be used to compute the remainder, and _may_ be better for
+  -- architectures without a combined quotRem instruction.
+  --
+  -- z <- mul (IntegralNumType t) y q
+  -- r <- sub (IntegralNumType t) x z
   return $ pair q r
 
 idiv :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
