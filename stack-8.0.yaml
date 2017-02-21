@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-7.8
+resolver: lts-8.0
 
 packages:
 - 'accelerate-llvm'
@@ -11,13 +11,14 @@ packages:
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: a3943321a598a4af2674fdd7e94e7ce01388f523
+    commit: 1d61c07a2ee5dacfc09d122af68918a654f9233d
   extra-dep: true
 
 - location:
-    git:    https://github.com/bscarlet/llvm-general.git
-    commit: 529f9bf117b5ffd1ccf7ebeb679a97b3b1c67938 # 3.8
-    # commit: ec1ad5bd2112e7f64dbb43441b5e2075cf6ad8e7 # 3.9
+    git:    https://github.com/tmcdonell/llvm-general.git
+    # commit: 8971e275fe56dfd0090ac777e38e6dd641a0306a # 3.5
+    # commit: f80beba704a6b168326d442197b43e71a1ab730d # 3.8
+    commit: 69863022efd2691e8198da0c24b7e49b8d5ebd4c # 3.9
   extra-dep: true
   subdirs:
     - 'llvm-general'
