@@ -540,6 +540,12 @@ executeOpenSeq
   -> LLVM arch arrs
 executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
   where
+    sequence' []     = return []
+    sequence' (x:xs) = do
+      x'  <- x
+      xs' <- unsafeInterleave (sequence' xs)
+      return (x':xs')
+
     executeSeq' :: forall aenv'. Extend (Producer index (ExecOpenAcc arch)) aenv aenv' -> PreOpenSeq index (ExecOpenAcc arch) aenv' arrs -> LLVM arch arrs
     executeSeq' prods s = do
       index             <- executeExp (initialIndex (Const mi)) Aempty stream
@@ -552,7 +558,7 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
             <*> sequenceA (executeExp <$> l <*> pure aenv' <*> pure stream)
             <*> pure (executeOpenAfun2 f)
             <*> async (executeOpenAcc a aenv')
-            <*> (sequence [executeOpenAcc d (aenv' `Apush` undefined) stream])
+            <*> (sequence' [executeOpenAcc d (aenv' `Apush` error "@robeverest what the fuck is this?") stream])
             <*> pure (\aenv' -> executeOpenAcc a' aenv' stream)
             <*> pure ext
             <*> pure (Just aenv')
