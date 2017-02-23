@@ -585,24 +585,26 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
            -> Extend (Producer index (ExecOpenAcc arch)) aenv aenv'
            -> Maybe (AvalR arch aenv')
            -> LLVM arch [arrs]
-        go (Just 0) _ _ _ _ a _ _ _ = return a
-        go _ _ _ _ _ a _ _ Nothing = return a
-        go i sched l f s a unwrap ext (Just aenv') = do
-          index'   <- async (\_ -> newRemote Z (const (index sched)))
-
+        go (Just 0) _     _ _ _ a _      _   _            = return a
+        go _        _     _ _ _ a _      _   Nothing      = return a
+        go i        sched l f s a unwrap ext (Just aenv') = do
+          index' <- async (\_ -> newRemote Z (const (index sched)))
           if maybe True (contains' (index sched)) l
               then do
-                liftIO $ Debug.traceIO Debug.dump_exec ("Computing sequence chunk " ++ show (index sched))
-                (time, (a', s')) <- timed (f aenv' index' s)
-                liftIO $ Debug.traceIO Debug.dump_exec ("Chunk took " ++ show time ++ " to compute")
-                event <- checkpoint stream
-                a'' <- unwrap (Apush aenv' (AsyncR event a'))
-                let sched' = next sched time
-                (ext', maenv) <- evalSources (indexSize (index sched')) ext
-                rest <- unsafeInterleave (go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv)
-                a''' <- useLocal a''
+                liftIO $ Debug.traceIO Debug.dump_sched ("sched/chunk: " ++ show (index sched))
+                (t, (a', s')) <- timed (f aenv' index' s)
+                event         <- checkpoint stream
+                liftIO $ Debug.traceIO Debug.dump_sched ("sched/chunk timing factor: " ++ show t)
+                --
+                a''           <- unwrap (Apush aenv' (AsyncR event a'))
+                a'''          <- useLocal a''
+                rest          <- unsafeInterleave $ do
+                  let sched' = next sched t
+                  (ext', maenv) <- evalSources (indexSize (index sched')) ext
+                  go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv
                 return (a''' : rest)
-              else return a
+              else
+                return a
 
     schedule :: SeqIndex index => index -> Schedule index
     schedule | Just Refl <- eqT :: Maybe (index :~: Int)
@@ -637,3 +639,4 @@ executeExtend (PushEnv env a) aenv = do
   a'    <- async (executeOpenAcc a aenv')
   return (Apush aenv' a')
 executeExtend BaseEnv aenv = return aenv
+
