@@ -269,18 +269,22 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM PTX (Array (sh :. Int) e)
-foldSegOp exe gamma aenv stream (sh :. _) (Z :. ss) = do
+foldSegOp exe gamma aenv stream (sh :. sz) (Z :. ss) = do
   let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
       m       = size sh * n
-      err     = $internalError "foldSeg" "kernel not found"
-      foldseg = fromMaybe err $ lookupKernel "foldSeg" exe
-      -- qinit   = fromMaybe err $ lookupKernel "qinit"   exe
+      foldseg = if (sz`quot`ss) < (2 * kernelThreadBlockSize foldseg_cta)
+                  then foldseg_warp
+                  else foldseg_cta
+      --
+      err           = $internalError "foldSeg" "kernel not found"
+      foldseg_cta   = fromMaybe err $ lookupKernel "foldSeg_block" exe
+      foldseg_warp  = fromMaybe err $ lookupKernel "foldSeg_warp"  exe
+      -- qinit         = fromMaybe err $ lookupKernel "qinit"         exe
   --
   out <- allocateRemote (sh :. n)
   ptx <- gets llvmTarget
   liftIO $ do
-    -- executeOp ptx qinit   IM.empty aenv stream (IE 0 m) ()
-    executeOp ptx foldseg gamma    aenv stream (IE 0 m) out
+    executeOp ptx foldseg gamma aenv stream (IE 0 m) out
   return out
 
 
