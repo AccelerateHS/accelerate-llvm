@@ -63,11 +63,11 @@ doubleSizeChunked (s,n) = Schedule (s,n) (f s initLog initLog Nothing)
           -- last one. This implies that the average size of the elements has
           -- increased. Assuming that this is likely to be true for the next
           -- chunk as well, increase the number of elements in the chunk.
-          GT -> trace dump_sched "decreasing chunk size (1)" (logn' + 1)
+          GT -> trace dump_sched "decreasing chunk size (1)" (logn' - 1)
           -- The current chunk took significantly less time to process than the
           -- last one. Similar to above, the size of the elements has likely
           -- decreased, so we should process more elements next time.
-          LT -> trace dump_sched "increasing chunk size (1)" (logn' - 1)
+          LT -> trace dump_sched "increasing chunk size (1)" (logn' + 1)
       | logn' > logn
       = case compare' t' (2*t) of
           -- We got no parallel speedup, keep on processing this many elements.
