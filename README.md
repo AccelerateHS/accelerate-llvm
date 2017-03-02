@@ -98,7 +98,11 @@ depend on the version of the CUDA toolkit you have installed.
 
 Where ⭕ = Works, and ❌ = Does not work.
 
-Note that `accelerate-llvm` itself currently requires at least LLVM-3.5. There
+Note that the above restrictions on CUDA and LLVM version exist _only_ if you
+want to use the NVVM component. Otherwise, you should be free to use any
+combination of CUDA and LLVM.
+
+Also note that `accelerate-llvm` itself currently requires at least LLVM-3.5. There
 are currently no releases of `llvm-general` planned for LLVM-3.6 or LLVM-3.7.
 
 Using `stack`, either edit the `stack.yaml` and add the following section:
