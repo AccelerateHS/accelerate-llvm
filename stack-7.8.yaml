@@ -12,14 +12,14 @@ packages:
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 24fb4dd0802df4d6834ae3e731fe469494e485e9
+    commit: b6c1621ce2993b76b858ee2af4aa46b81fe95202
   extra-dep: true
 
 - location:
     git:    https://github.com/tmcdonell/llvm-general.git
     commit: 8971e275fe56dfd0090ac777e38e6dd641a0306a # 3.5
-    # commit: f80beba704a6b168326d442197b43e71a1ab730d # 3.8
-    # commit: 69863022efd2691e8198da0c24b7e49b8d5ebd4c # 3.9
+    # commit: 3f0b8003664e0a5f9ed94434919167fbf95025ec # 3.8
+    # commit: 3e59ab289b1636a9304aca3d11c7bec268441669 # 3.9
   extra-dep: true
   subdirs:
     - 'llvm-general'
