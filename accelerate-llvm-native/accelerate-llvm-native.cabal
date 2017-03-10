@@ -57,11 +57,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.State
     Data.Array.Accelerate.LLVM.Native.Target
 
-    Data.Array.Accelerate.LLVM.Native.Compile
-    Data.Array.Accelerate.LLVM.Native.Compile.Module
-    Data.Array.Accelerate.LLVM.Native.Compile.Link
-    Data.Array.Accelerate.LLVM.Native.Compile.Optimise
-
     Data.Array.Accelerate.LLVM.Native.CodeGen
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
     Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
@@ -72,25 +67,33 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Compile.Module
+    Data.Array.Accelerate.LLVM.Native.Compile.Link
+    Data.Array.Accelerate.LLVM.Native.Compile.Optimise
+
+    Data.Array.Accelerate.LLVM.Native.Link
+    Data.Array.Accelerate.LLVM.Native.Link.Object
+
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
   build-depends:
-          base                          >= 4.7 && < 4.10
-        , accelerate                    == 1.0.*
-        , accelerate-llvm               == 1.0.*
-        , containers                    >= 0.5 && < 0.6
-        , directory                     >= 1.0
-        , dlist                         >= 0.6
-        , fclabels                      >= 2.0
-        , libffi                        >= 0.1
-        , llvm-general                  >= 3.5
-        , llvm-general-pure             >= 3.5
-        , mtl                           >= 2.2.1
-        , time                          >= 1.4
-        , vector                        >= 0.10
+          base                  >= 4.7 && < 4.10
+        , accelerate            == 1.0.*
+        , accelerate-llvm       == 1.0.*
+        , containers            >= 0.5 && < 0.6
+        , directory             >= 1.0
+        , dlist                 >= 0.6
+        , fclabels              >= 2.0
+        , libffi                >= 0.1
+        , llvm-general          >= 3.5
+        , llvm-general-pure     >= 3.5
+        , mtl                   >= 2.2.1
+        , time                  >= 1.4
+        , vector                >= 0.10
 
   default-language:
     Haskell2010
@@ -112,6 +115,24 @@ Library
   if flag(internal-checks)
     cpp-options:                -DACCELERATE_INTERNAL_CHECKS
 
+  if os(darwin)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.MachO
+
+    build-depends:
+          bytestring            >= 0.10
+        , cereal                >= 0.4
+
+    build-tools:
+          c2hs                  >= 0.25
+
+  if os(linux)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.ELF
+
+  if os(windows)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.COFF
 
 source-repository head
   type:                 git
