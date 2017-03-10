@@ -29,8 +29,9 @@ Flag nvvm
 Flag debug
   Default:              False
   Description:
-    Enable tracing message flags. For the list of available options, see the
-    'accelerate' package.
+    Enable debug tracing message flags. Note that 'debug' must be enabled in the
+    base 'accelerate' package as well. See the 'accelerate' package for usage
+    and available options.
 
 Flag bounds-checks
   Default:              True
