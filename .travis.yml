@@ -19,11 +19,14 @@ addons:
       - hvr-ghc
       - ubuntu-toolchain-r-test
       - llvm-toolchain-precise
-      - llvm-toolchain-precise-3.5
+      # - llvm-toolchain-precise-3.5
       # - llvm-toolchain-precise-3.6
       # - llvm-toolchain-precise-3.7
-      - llvm-toolchain-precise-3.8
-      - llvm-toolchain-precise-3.9
+      # - llvm-toolchain-precise-3.8
+      # - llvm-toolchain-precise-3.9
+      # - llvm-toolchain-precise-4.0  # not white-listed yet
+      - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main'
+        key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
 
     packages: &apt_packages
       - nvidia-cuda-toolkit
@@ -31,10 +34,11 @@ addons:
       - libgmp-dev
       - happy-1.19.5
       - alex-3.1.7
+      - llvm-4.0-dev
 
 matrix:
   include:
-    - env: GHC=7.8.4 CABAL=1.18 LLVM=3.5.2
+    - env: GHC=7.8.4 CABAL=1.18 LLVM=4.0.0
       compiler: "GHC 7.8"
       addons:
         apt:
@@ -42,10 +46,8 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.18
-            - llvm-3.5-dev
-            - libedit-dev
 
-    - env: GHC=7.10.3 CABAL=1.22 LLVM=3.5.2
+    - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0
       compiler: "GHC 7.10"
       addons:
         apt:
@@ -53,10 +55,8 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.22
-            - llvm-3.5-dev
-            - libedit-dev
 
-    - env: GHC=8.0.2 CABAL=1.24 LLVM=3.9.1
+    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0
       compiler: "GHC 8.0"
       addons:
         apt:
@@ -64,7 +64,6 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.24
-            - llvm-3.9-dev
 
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
