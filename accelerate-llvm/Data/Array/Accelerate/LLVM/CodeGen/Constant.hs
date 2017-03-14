@@ -24,9 +24,9 @@ import Data.Array.Accelerate.AST                                ( PrimConst(..) 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 
 -- | Primitive constant values

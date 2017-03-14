@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Constant
+-- Module      : LLVM.AST.Type.Constant
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -10,11 +10,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Constant
+module LLVM.AST.Type.Constant
   where
 
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Representation
 
 
 -- | Although constant expressions and instructions have many similarities,

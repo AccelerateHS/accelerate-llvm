@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -60,12 +59,12 @@ import Data.Array.Accelerate.Array.Sugar                                ( Elt, e
 import qualified Data.Array.Accelerate.Debug                            as Debug
 
 -- accelerate-llvm
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Metadata
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
-import LLVM.General.AST.Type.Terminator
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Metadata
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
+import LLVM.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
@@ -76,9 +75,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar                         ( IROpenAcc(..) )
 
--- llvm-general-pure
-import qualified LLVM.General.AST                                       as LLVM
-import qualified LLVM.General.AST.Global                                as LLVM
+-- llvm-hs
+import qualified LLVM.AST                                               as LLVM
+import qualified LLVM.AST.Global                                        as LLVM
 
 
 -- Code generation
@@ -138,9 +137,7 @@ runLLVM  ll =
   Module { moduleMetadata = md
          , unModule       = LLVM.Module
                           { LLVM.moduleName           = name
-#if MIN_VERSION_llvm_general(3,9,0)
                           , LLVM.moduleSourceFileName = []
-#endif
                           , LLVM.moduleDataLayout     = targetDataLayout (undefined::arch)
                           , LLVM.moduleTargetTriple   = targetTriple (undefined::arch)
                           , LLVM.moduleDefinitions    = definitions

@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction.RMW
+-- Module      : LLVM.AST.Type.Instruction.RMW
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -9,7 +9,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction.RMW
+module LLVM.AST.Type.Instruction.RMW
   where
 
 -- | Operations for the 'AtomicRMW' instruction.

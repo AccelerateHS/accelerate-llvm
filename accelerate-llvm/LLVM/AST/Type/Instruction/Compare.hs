@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction.Compare
+-- Module      : LLVM.AST.Type.Instruction.Compare
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -9,7 +9,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction.Compare
+module LLVM.AST.Type.Instruction.Compare
   where
 
 -- | Ordering predicate for comparison instructions
