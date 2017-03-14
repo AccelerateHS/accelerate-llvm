@@ -50,8 +50,11 @@ flags:
   accelerate-llvm-ptx:
     debug: true
     nvvm: false
+  llvm-hs-pure:
+    semigroups: true
   llvm-hs:
     shared-llvm: true
+    semigroups: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []
