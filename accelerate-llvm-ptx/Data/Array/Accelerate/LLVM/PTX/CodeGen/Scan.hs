@@ -44,7 +44,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Representation
 
 import qualified Foreign.CUDA.Analysis                              as CUDA
 

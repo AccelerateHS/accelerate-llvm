@@ -23,7 +23,7 @@ import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Shape(rank), (:.), Elt(..) )
 
 -- accelerate-llvm-*
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array

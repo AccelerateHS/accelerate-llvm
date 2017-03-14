@@ -43,13 +43,13 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Atomic
-import LLVM.General.AST.Type.Instruction.RMW                        as RMW
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.RMW                                as RMW
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Foreign.CUDA.Analysis
 
