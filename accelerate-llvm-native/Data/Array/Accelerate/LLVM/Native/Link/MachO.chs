@@ -16,7 +16,9 @@ module Data.Array.Accelerate.LLVM.Native.Link.MachO (
 
 ) where
 
+import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.Native.Link.Object
+import qualified Data.Array.Accelerate.Debug              as Debug
 
 import Control.Applicative
 import Control.Monad
@@ -48,7 +50,7 @@ import Prelude                                            as P
 -- executable sections are aligned appropriately, as specified in the object
 -- file, and are ready to be executed on the target architecture.
 --
-loadObject :: ByteString -> IO [ObjectCode]
+loadObject :: ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
     Left err       -> error ("loadObject: " ++ err)
@@ -58,8 +60,22 @@ loadObject obj =
 -- Execute the load segment commands and return executable code in the target
 -- memory space.
 --
-loadSegments :: ByteString -> [Symbol] -> [LoadSegment] -> IO [ObjectCode]
-loadSegments obj = ld 1
+loadSegments :: ByteString -> [Symbol] -> [LoadSegment] -> IO (FunctionTable, ObjectCode)
+loadSegments obj sym0 ld0 = do
+  r <- ld 1 sym0 ld0
+  let (funs, segs)  = unzip r
+      nm            = FunctionTable (concat funs)
+  --
+  vm <- newLifetime segs
+  addFinalizer vm $ do
+    Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
+    forM_ segs $ \(Segment vmsize fp_vm) -> do
+      withForeignPtr fp_vm $ \p_vm -> do
+        -- These pages were allocated on the GC heap; unset the executable bit
+        -- and mark them as read/write so that they can be reused
+        mprotect p_vm vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
+  --
+  return (nm, vm)
   where
     pagesize      = 4096    -- getpagesize()
     (seg, off, _) = B.toForeignPtr obj
@@ -91,7 +107,7 @@ loadSegments obj = ld 1
                        ]
       --
       ocs <- ld (section+1) other lss
-      return $ ObjectCode (FunctionTable fs) vm : ocs
+      return $ (fs, Segment seg_vmsize vm) : ocs
 
 
 -- Parse the Mach-O object file and return the set of section load commands, as

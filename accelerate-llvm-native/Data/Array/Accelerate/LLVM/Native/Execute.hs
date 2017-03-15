@@ -36,6 +36,7 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Compile
+import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
@@ -48,14 +49,16 @@ import Control.Parallel.Meta                                        ( Executable
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
-import Data.Word                                                    ( Word8 )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
+import Data.List                                                    ( find )
+import Data.Word                                                    ( Word8 )
+import Data.Maybe                                                   ( fromMaybe )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Prelude                                            as P
 
 import Foreign.C
-import Foreign.LibFFI                                               ( Arg )
+import Foreign.LibFFI
 import Foreign.Ptr
 
 #if !MIN_VERSION_llvm_general(3,3,0)
@@ -115,11 +118,14 @@ simpleOp
     -> sh
     -> LLVM Native (Array sh e)
 simpleOp NativeR{..} gamma aenv () sh = do
+  let fun = case functionTable nativeExecutable of
+              f:_ -> f
+              _   -> $internalError "simpleOp" "no functions found"
+  --
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeMain executableR $ \f ->
-      executeOp defaultLargePPT fillP f gamma aenv (IE 0 (size sh)) out
+    executeOp defaultLargePPT fillP fun gamma aenv (IE 0 (size sh)) out
     return out
 
 simpleNamed
@@ -131,12 +137,14 @@ simpleNamed
     -> Stream
     -> sh
     -> LLVM Native (Array sh e)
-simpleNamed fun NativeR{..} gamma aenv () sh = do
+simpleNamed name NativeR{..} gamma aenv () sh = do
+  let fun = fromMaybe ($internalError "simpleNamed" ("not found: " ++ show name))
+          $ lookupFunction name nativeExecutable
+
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    execute executableR fun $ \f ->
-      executeOp defaultLargePPT fillP f gamma aenv (IE 0 (size sh)) out
+    executeOp defaultLargePPT fillP fun gamma aenv (IE 0 (size sh)) out
     return out
 
 
@@ -223,20 +231,15 @@ foldAllOp NativeR{..} gamma aenv () (Z :. sz) = do
     then liftIO $ do
       -- Sequential reduction
       out <- allocateArray Z
-      execute executableR "foldAllS" $ \f ->
-        executeOp 1 fillS f gamma aenv (IE 0 sz) out
+      executeOp 1 fillS (nativeExecutable !# "foldAllS") gamma aenv (IE 0 sz) out
       return out
 
     else liftIO $ do
       -- Parallel reduction
       out <- allocateArray Z
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
-      --
-      execute  executableR "foldAllP1" $ \f1 -> do
-       execute executableR "foldAllP2" $ \f2 -> do
-        executeOp 1 fillP f1 gamma aenv (IE 0 steps) (sz, stride, tmp)
-        executeOp 1 fillS f2 gamma aenv (IE 0 steps) (tmp, out)
-      --
+      executeOp 1 fillP (nativeExecutable !# "foldAllP1") gamma aenv (IE 0 steps) (sz, stride, tmp)
+      executeOp 1 fillS (nativeExecutable !# "foldAllP2") gamma aenv (IE 0 steps) (tmp, out)
       return out
 
 foldDimOp
@@ -252,8 +255,7 @@ foldDimOp NativeR{..} gamma aenv () (sh :. sz) = do
   let ppt = defaultSmallPPT `max` (defaultLargePPT `quot` (max 1 sz))
   liftIO $ do
     out <- allocateArray sh
-    executeMain executableR $ \f ->
-      executeOp ppt fillP f gamma aenv (IE 0 (size sh)) (sz, out)
+    executeOp ppt fillP (nativeExecutable !# "fold") gamma aenv (IE 0 (size sh)) (sz, out)
     return out
 
 foldSegOp
@@ -265,7 +267,7 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
-foldSegOp NativeR{..} gamma aenv () (sh :. sz) (Z :. ss) = do
+foldSegOp NativeR{..} gamma aenv () (sh :. _sz) (Z :. ss) = do
   Native{..} <- gets llvmTarget
   let
       ncpu               = gangSize
@@ -277,8 +279,7 @@ foldSegOp NativeR{..} gamma aenv () (sh :. sz) (Z :. ss) = do
   --                                -- compute all segments on an innermost dimension
   liftIO $ do
     out <- allocateArray (sh :. n)
-    execute executableR kernel $ \f ->
-      executeOp ppt fillP f gamma aenv (IE 0 (size (sh :. n))) out
+    executeOp ppt fillP (nativeExecutable !# kernel) gamma aenv (IE 0 (size (sh :. n))) out
     return out
 
 
@@ -340,22 +341,16 @@ scanCore NativeR{..} gamma aenv () sz n m = do
       --     the extra cores can offset the increased bandwidth requirements.
       --
       out <- allocateArray (sz :. m)
-      execute executableR "scanS" $ \f ->
-        executeOp 1 fillP f gamma aenv (IE 0 (size sz)) out
+      executeOp 1 fillP (nativeExecutable !# "scanS") gamma aenv (IE 0 (size sz)) out
       return out
 
     else liftIO $ do
       -- parallel one-dimensional scan
       out <- allocateArray (sz :. m)
       tmp <- allocateArray (Z  :. steps) :: IO (Vector e)
-      --
-      execute   executableR "scanP1" $ \f1 -> do
-       execute  executableR "scanP2" $ \f2 -> do
-        execute executableR "scanP3" $ \f3 -> do
-          executeOp 1 fillP f1 gamma aenv (IE 0 steps) (stride, steps', out, tmp)
-          executeOp 1 fillS f2 gamma aenv (IE 0 steps) tmp
-          executeOp 1 fillP f3 gamma aenv (IE 0 steps') (stride, out, tmp)
-      --
+      executeOp 1 fillP (nativeExecutable !# "scanP1") gamma aenv (IE 0 steps) (stride, steps', out, tmp)
+      executeOp 1 fillS (nativeExecutable !# "scanP2") gamma aenv (IE 0 steps) tmp
+      executeOp 1 fillP (nativeExecutable !# "scanP3") gamma aenv (IE 0 steps') (stride, out, tmp)
       return out
 
 
@@ -396,22 +391,16 @@ scan'Core NativeR{..} gamma aenv () sh@(sz :. n) = do
     then liftIO $ do
       out <- allocateArray sh
       sum <- allocateArray sz
-      execute executableR "scanS" $ \f ->
-        executeOp 1 fillP f gamma aenv (IE 0 (size sz)) (out,sum)
+      executeOp 1 fillP (nativeExecutable !# "scanS") gamma aenv (IE 0 (size sz)) (out,sum)
       return (out,sum)
 
     else liftIO $ do
       tmp <- allocateArray (Z :. steps) :: IO (Vector e)
       out <- allocateArray sh
       sum <- allocateArray sz
-
-      execute   executableR "scanP1" $ \f1 -> do
-       execute  executableR "scanP2" $ \f2 -> do
-        execute executableR "scanP3" $ \f3 -> do
-          executeOp 1 fillP f1 gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
-          executeOp 1 fillS f2 gamma aenv (IE 0 steps)  (sum, tmp)
-          executeOp 1 fillP f3 gamma aenv (IE 0 steps') (stride, out, tmp)
-
+      executeOp 1 fillP (nativeExecutable !# "scanP1") gamma aenv (IE 0 steps)  (stride, steps', out, tmp)
+      executeOp 1 fillS (nativeExecutable !# "scanP2") gamma aenv (IE 0 steps)  (sum, tmp)
+      executeOp 1 fillP (nativeExecutable !# "scanP3") gamma aenv (IE 0 steps') (stride, out, tmp)
       return (out,sum)
 
 
@@ -441,22 +430,16 @@ permuteOp NativeR{..} gamma aenv () inplace shIn dfs = do
   if ncpu == 1 || n <= defaultLargePPT
     then liftIO $ do
       -- sequential permutation
-      execute executableR "permuteS" $ \f ->
-        executeOp 1 fillS f gamma aenv (IE 0 n) out
+      executeOp 1 fillS (nativeExecutable !# "permuteS") gamma aenv (IE 0 n) out
 
     else liftIO $ do
       -- parallel permutation
-      symbols <- nm executableR
-      if "permuteP_rmw" `elem` symbols
-        then do
-          execute executableR "permuteP_rmw" $ \f ->
-            executeOp defaultLargePPT fillP f gamma aenv (IE 0 n) out
-
-        else do
+      case lookupFunction "permuteP_rmw" nativeExecutable of
+        Just f  -> executeOp defaultLargePPT fillP f gamma aenv (IE 0 n) out
+        Nothing -> do
           barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
           memset (ptrsOfArrayData adb) 0 m
-          execute executableR "permuteP_mutex" $ \f ->
-            executeOp defaultLargePPT fillP f gamma aenv (IE 0 n) (out, barrier)
+          executeOp defaultLargePPT fillP (nativeExecutable !# "permuteP_mutex") gamma aenv (IE 0 n) (out, barrier)
 
   return out
 
@@ -488,13 +471,22 @@ stencil2Op kernel gamma aenv stream arr brr =
 -- Skeleton execution
 -- ------------------
 
+(!#) :: FunctionTable -> String -> Function
+(!#) exe name
+  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ name))
+  $ lookupFunction name exe
+
+lookupFunction :: String -> FunctionTable -> Maybe Function
+lookupFunction name exe =
+  find (\(n,_) -> n == name) (functionTable exe)
+
 -- Execute the given function distributed over the available threads.
 --
 executeOp
     :: Marshalable args
     => Int
     -> Executable
-    -> (String, [Arg] -> IO ())
+    -> Function
     -> Gamma aenv
     -> Aval aenv
     -> Range
@@ -503,7 +495,7 @@ executeOp
 executeOp ppt exe (name, f) gamma aenv r args =
   runExecutable exe name ppt r $ \start end _tid ->
   monitorProcTime              $
-    f =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
+    callFFI f retVoid =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
 
 
 -- Standard C functions

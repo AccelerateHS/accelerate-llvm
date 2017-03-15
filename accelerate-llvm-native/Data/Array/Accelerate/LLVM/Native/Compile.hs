@@ -16,7 +16,7 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  module Data.Array.Accelerate.LLVM.Native.Compile.Module,
+  -- module Data.Array.Accelerate.LLVM.Native.Compile.Module,
   ExecutableR(..),
 
 ) where
@@ -26,7 +26,6 @@ import LLVM.General.AST                                         hiding ( Module 
 import LLVM.General.Module                                      as LLVM hiding ( Module )
 import LLVM.General.Context
 import LLVM.General.Target
-import LLVM.General.ExecutionEngine
 
 -- accelerate
 import Data.Array.Accelerate.Error                              ( internalError )
@@ -38,12 +37,10 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                ( unModule )
 
-import Data.Array.Accelerate.LLVM.Native.Compile.Link
-import Data.Array.Accelerate.LLVM.Native.Compile.Module
-import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
-
 import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
+import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                ( )
+import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
@@ -61,7 +58,9 @@ import System.IO
 
 
 instance Compile Native where
-  data ExecutableR Native = NativeR { executableR :: Module }
+  data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !FunctionTable
+                                    , nativeObjectCode :: {-# UNPACK #-} !ObjectCode
+                                    }
   compileForTarget        = compileForNativeTarget
 
 instance Intrinsic Native
@@ -79,10 +78,12 @@ compileForNativeTarget acc aenv = do
       triple     = fromMaybe "" (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 
-  -- Lower the generated LLVM to an executable function(s)
+      runExcept  = either ($internalError "compileForNativeTarget") return <=< runExceptT
+
+  -- Lower the generated LLVM to executable functions in the target address
+  -- space.
   --
-  mdl <- liftIO .
-    compileModule                         $ \k       ->
+  liftIO .
     withContext                           $ \ctx     ->
     runExcept $ withModuleFromAST ctx ast $ \mdl     ->
     runExcept $ withNativeTargetMachine   $ \machine ->
@@ -93,20 +94,9 @@ compileForNativeTarget acc aenv = do
           Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
           Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
-        withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
-          withModuleInEngine mcjit mdl       $ \exe   -> do
-            k =<< getGlobalFunctions ast exe
-
-  return $ NativeR mdl
-
-  where
-    runExcept   = either ($internalError "compileForNativeTarget") return <=< runExceptT
-
-    opt         = Just 3        -- optimisation level
-    model       = Nothing       -- code model?
-    ptrelim     = Nothing       -- True to disable frame pointer elimination
-    fast        = Just True     -- True to enable fast instruction selection
-
+        obj     <- runExcept (moduleObject machine mdl)
+        (nm,vm) <- loadObject obj
+        return  $! NativeR nm vm
 
 
 -- Shims to support llvm-general-3.2.*
@@ -130,20 +120,5 @@ moduleTargetAssembly machine mdl = ErrorT $ do
   case ok of
     Left e   -> return (Left e)
     Right () -> Right `fmap` hGetContents h
-
--- Bracket creation and destruction of a JIT compiler
---
-type MCJIT = JIT
-
-withMCJIT
-    :: Context
-    -> Maybe Word
-    -> model
-    -> fpe
-    -> fis
-    -> (MCJIT -> IO a)
-    -> IO a
-withMCJIT ctx opt _ _ _ action =
-  withJIT ctx (fromMaybe 0 opt) action
 #endif
 

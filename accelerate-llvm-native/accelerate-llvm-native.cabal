@@ -68,8 +68,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
     Data.Array.Accelerate.LLVM.Native.Compile
-    Data.Array.Accelerate.LLVM.Native.Compile.Module
-    Data.Array.Accelerate.LLVM.Native.Compile.Link
     Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
     Data.Array.Accelerate.LLVM.Native.Link

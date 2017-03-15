@@ -11,18 +11,29 @@
 module Data.Array.Accelerate.LLVM.Native.Link.Object
   where
 
+import Data.List
 import Data.Word
-import Foreign.Ptr
 import Foreign.ForeignPtr
+import Foreign.Ptr
+
+import Data.Array.Accelerate.Lifetime
 
 
--- | Object code consisting of a list of named function pointers to executable
--- code, a memory region in the target address space containing the actual
--- instructions.
+-- | The function table is a list of function names together with a pointer in
+-- the target address space containing the corresponding executable code.
 --
-data ObjectCode     = ObjectCode {-# UNPACK #-} !FunctionTable
-                                 {-# UNPACK #-} !(ForeignPtr Word8)
-
 data FunctionTable  = FunctionTable { functionTable :: [Function] }
 type Function       = (String, FunPtr ())
+
+instance Show FunctionTable where
+  showsPrec _ f
+    = showString "<<"
+    . showString (intercalate "," [ n | (n,_) <- functionTable f ])
+    . showString ">>"
+
+-- | Object code consists of memory in the target address space.
+--
+type ObjectCode     = Lifetime [Segment]
+data Segment        = Segment {-# UNPACK #-} !Int                 -- size in bytes
+                              {-# UNPACK #-} !(ForeignPtr Word8)  -- memory in target address space
 
