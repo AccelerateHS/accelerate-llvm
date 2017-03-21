@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE RecordWildCards          #-}
@@ -34,7 +35,7 @@ import Data.Word
 import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.ForeignPtr.Unsafe
-import Foreign.Marshal.Utils
+import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.Ptr                                            ( Ptr(..), FunPtr(..) )
@@ -57,7 +58,26 @@ import Prelude                                            as P
 #include <mach-o/reloc.h>
 #include <mach/machine.h>
 #include <sys/mman.h>
+#ifdef x86_64_HOST_ARCH
+#include <mach-o/x86_64/reloc.h>
+#endif
+#ifdef powerpc_HOST_ARCH
+#include <mach-o/ppc/reloc.h>
+#endif
 
+#ifdef i386_HOST_ARCH
+{# enum reloc_type_generic as RelocationType { } deriving (Eq, Show) #}
+#endif
+#ifdef x86_64_HOST_ARCH
+{# enum reloc_type_x86_64  as RelocationType { } deriving (Eq, Show) #}
+#endif
+#ifdef powerpc_HOST_ARCH
+{# enum reloc_type_ppc     as RelocationType { } deriving (Eq, Show) #}
+#endif
+
+
+-- Dynamic object loading
+-- ----------------------
 
 -- Load a Mach-O object file and return pointers to the executable functions
 -- defined within. The executable sections are aligned appropriately, as
@@ -80,8 +100,9 @@ loadSegments obj symtab lcs = do
   --
   segs  <- V.mapM (loadSegment obj symtab) lcs
 
-  -- Resolve the symbols defined in the sections of this object into function
-  -- pointers
+  -- Resolve the external symbols defined in the sections of this object into
+  -- function pointers
+  --
   let local Symbol{..}    = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
@@ -89,12 +110,13 @@ loadSegments obj symtab lcs = do
             addr          = castPtrToFunPtr (unsafeForeignPtrToPtr fp `plusPtr` fromIntegral sym_value)
         in
         (name, addr)
-
+      --
       funtab              = FunctionTable $ V.toList $ V.map resolve (V.filter local symtab)
       objectcode          = V.toList segs
 
-  -- The executable pages were allocated on the GC heap; unset the executable
-  -- bit and mark them as read/write so that they can be reused.
+  -- The executable pages were allocated on the GC heap. When the pages are
+  -- finalised, unset the executable bit and mark them as read/write so that
+  -- they can be reused.
   --
   objectcode' <- newLifetime objectcode
   addFinalizer objectcode' $ do
@@ -105,26 +127,60 @@ loadSegments obj symtab lcs = do
 
   return (funtab, objectcode')
 
+
+-- Load a segment and all its sections into memory.
+--
+-- Extra jump islands are added directly after the segment. On x86_64
+-- PC-relative jumps and accesses to the global offset table (GOT) are limited
+-- to 32-bit (+-2GB). If we need to go outside of this range then we must do so
+-- via the jump islands.
+--
 loadSegment :: ByteString -> Vector Symbol -> LoadSegment -> IO Segment
 loadSegment obj symtab seg@LoadSegment{..} = do
-  let pagesize              = fromIntegral c_getpagesize
+  let
+      pagesize    = fromIntegral c_getpagesize
+      seg_vmsize' = (seg_vmsize + 15) .&. (complement 15) -- round up to multiple of 16
+      segsize     = seg_vmsize' + (V.length symtab * 16)  -- jump entries are 16 bytes each (x86_64)
   --
-  seg_fp  <- mallocPlainForeignPtrAlignedBytes seg_vmsize pagesize
+  seg_fp  <- mallocPlainForeignPtrAlignedBytes segsize pagesize
   _       <- withForeignPtr seg_fp $ \seg_p  -> do
+              -- Just in case, clear out the segment data (corresponds to NOP)
+              fillBytes seg_p 0 segsize
+
+              -- Jump tables are placed directly after the segment data
+              let jump_p = seg_p `plusPtr` seg_vmsize'
+              V.imapM_ (makeJumpIsland jump_p) symtab
+
               -- Process each of the sections of this segment
-              V.mapM_ (loadSection obj symtab seg seg_p) seg_sections
+              V.mapM_ (loadSection obj symtab seg seg_p jump_p) seg_sections
 
               -- Mark the page as executable and read-only
-              -- Should we instead use maxprot and initprot?
-              mprotect seg_p seg_vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
+              mprotect seg_p segsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
   --
-  return (Segment seg_vmsize seg_fp)
+  return (Segment segsize seg_fp)
+
+
+-- Add the jump-table entries directly to each external undefined symbol.
+--
+makeJumpIsland :: Ptr Word8 -> Int -> Symbol -> IO ()
+makeJumpIsland jump_p symbolnum Symbol{..} = do
+#ifdef x86_64_HOST_ARCH
+  when (sym_extern && sym_segment == 0) $ do
+    let
+        target  = jump_p `plusPtr` (symbolnum * 16) :: Ptr Word64
+        instr   = target `plusPtr` 8                :: Ptr Word8
+    --
+    poke target sym_value
+    pokeArray instr [ 0xFF, 0x25, 0xF2, 0xFF, 0xFF, 0xFF ]  -- jmp *-14(%rip)
+#endif
+  return ()
+
 
 -- Load a section at the correct offset into the given segment, and apply
 -- relocations.
 --
-loadSection :: ByteString -> Vector Symbol -> LoadSegment -> Ptr Word8 -> LoadSection -> IO ()
-loadSection obj symtab seg seg_p sec@LoadSection{..} = do
+loadSection :: ByteString -> Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> IO ()
+loadSection obj symtab seg seg_p jump_p sec@LoadSection{..} = do
   let (obj_fp, obj_offset, _) = B.toForeignPtr obj
   --
   withForeignPtr obj_fp $ \obj_p -> do
@@ -133,47 +189,83 @@ loadSection obj symtab seg seg_p sec@LoadSection{..} = do
         dst = seg_p `plusPtr` sec_addr
     --
     copyBytes dst src sec_size
-    V.mapM_ (processRelocation symtab seg seg_p sec) sec_relocs
+    V.mapM_ (processRelocation symtab seg seg_p jump_p sec) sec_relocs
+
 
 -- Process both local and external relocations. The former are probably not
--- necessary since we load all sections into the same memory segment.
+-- necessary since we load all sections into the same memory segment at the
+-- correct offsets.
 --
-processRelocation :: Vector Symbol -> LoadSegment -> Ptr Word8 -> LoadSection -> RelocationInfo -> IO ()
-processRelocation symtab LoadSegment{..} seg_p sec RelocationInfo{..} = do
-  let
-      pc                = seg_p `plusPtr` (sec_addr sec + ri_address)
-      val_pcrel         = val - castPtrToWord64 pc
-      val | ri_extern   = sym_value (symtab V.! ri_symbolnum)
-          | otherwise   = castPtrToWord64 (seg_p `plusPtr` sec_addr (seg_sections V.! ri_symbolnum))
+processRelocation :: Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> RelocationInfo -> IO ()
+#ifdef x86_64_HOST_ARCH
+processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
+  -- Relocation through global offset table
   --
-  when ri_extern $
-    case ri_length of
-      1 -> poke (castPtr pc :: Ptr Word8)  . fromIntegral $ if ri_pcrel then val_pcrel else val
-      2 -> poke (castPtr pc :: Ptr Word16) . fromIntegral $ if ri_pcrel then val_pcrel else val
-      4 -> poke (castPtr pc :: Ptr Word32) . fromIntegral $ if ri_pcrel then val_pcrel else val
-      _ -> $internalError "processRelocation" "unhandled relocation size"
+  | ri_type == X86_64_RELOC_GOT ||
+    ri_type == X86_64_RELOC_GOT_LOAD
+  = $internalError "processRelocation" "Global offset table relocations not handled yet"
 
-
--- Parse the Mach-O object file and return the set of section load commands, as
--- well as the symbols defined within the sections of this object.
---
--- Actually _executing_ the load commands, which entails copying the pointed-to
--- segments into an appropriate VM image in the target address space, happens
--- separately.
---
-parseObject :: ByteString -> Either String (Vector Symbol, Vector LoadSegment)
-parseObject obj = do
-  ((p, ncmd, _), rest)  <- runGetState readHeader obj 0
-  cmds                  <- catMaybes <$> runGet (replicateM ncmd (readLoadCommand p obj)) rest
-  let
-      lc = [ x | LC_Segment     x <- cmds ]
-      st = [ x | LC_SymbolTable x <- cmds ]
+  -- External symbols, both those defined in the sections of this object, and
+  -- undefined externals. For the latter, the symbol might be outside of the
+  -- range of 32-bit pc-relative addressing, in which case we need to go via the
+  -- jump tables.
   --
-  return (V.concat st, V.fromListN ncmd lc)
+  | ri_extern
+  = let value     = sym_value (symtab V.! ri_symbolnum)
+        value_rel = value - pc' - 2 ^ ri_length -- also subtract size of instruction from PC
+    in
+    case ri_pcrel of
+      False -> relocate value
+      True  -> if (fromIntegral (fromIntegral value_rel::Word32) :: Word64) == value_rel
+                 then relocate value_rel
+                 else let value'     = castPtrToWord64 (jump_p `plusPtr` (ri_symbolnum * 16 + 8))
+                          value'_rel = value' - pc' - 2 ^ ri_length
+                      in
+                      relocate value'_rel
+
+  -- Internal relocation (to constant sections, for example). Since the sections
+  -- are loaded at the appropriate offsets, this should actually be unnecessary.
+  --
+  | otherwise
+  = let value     = castPtrToWord64 (seg_p `plusPtr` sec_addr (seg_sections V.! (ri_symbolnum-1)))
+        value_rel = value - pc' - 2 ^ ri_length
+    in
+    case ri_pcrel of
+      False -> relocate value
+      True  -> relocate value_rel
+
+  where
+    pc :: Ptr Word8
+    pc  = seg_p `plusPtr` (sec_addr sec + ri_address)
+    pc' = castPtrToWord64 pc
+
+    -- Include the addend value already encoded in the instruction
+    addend :: (Integral a, Storable a) => Ptr a -> Word64 -> IO a
+    addend p x
+      | not ri_extern = return (fromIntegral x)
+      | otherwise     = do
+          base <- peek p
+          case ri_type of
+            X86_64_RELOC_SUBTRACTOR -> return $ fromIntegral (fromIntegral base - x)
+            _                       -> return $ fromIntegral (fromIntegral base + x)
+
+    -- Write the new relocated address
+    relocate :: Word64 -> IO ()
+    relocate x =
+      case ri_length of
+        0 -> let p' = castPtr pc :: Ptr Word8  in poke p' =<< addend p' x
+        1 -> let p' = castPtr pc :: Ptr Word16 in poke p' =<< addend p' x
+        2 -> let p' = castPtr pc :: Ptr Word32 in poke p' =<< addend p' x
+        _ -> $internalError "processRelocation" "unhandled relocation size"
+
+#else
+precessRelocation =
+  $internalError "processRelocation" "not defined for non-x86_64 architectures yet"
+#endif
 
 
--- Data types
--- ----------
+-- Object file parser
+-- ------------------
 
 -- Parsing depends on whether the Mach-O file is 64-bit and whether it should be
 -- read as big- or little-endian.
@@ -188,8 +280,9 @@ data Peek = Peek
 -- Load commands directly follow the Mach-O header.
 --
 data LoadCommand
-    = LC_Segment      !LoadSegment
-    | LC_SymbolTable  !(Vector Symbol)
+    = LC_Segment            !LoadSegment
+    | LC_SymbolTable        !(Vector Symbol)
+    | LC_DynamicSymbolTable !()
 
 -- Indicates that a part of this file is to be mapped into the task's
 -- address space. The size of the segment in memory, vmsize, must be equal
@@ -209,6 +302,7 @@ data LoadSegment = LoadSegment
     , seg_filesize  :: !Int                     -- size (bytes) of the segment in the file
     , seg_sections  :: !(Vector LoadSection)    -- the sections of this segment
     }
+    deriving Show
 
 data LoadSection = LoadSection
     { sec_secname   :: !ByteString
@@ -219,6 +313,7 @@ data LoadSection = LoadSection
     , sec_align     :: !Int
     , sec_relocs    :: !(Vector RelocationInfo)
     }
+    deriving Show
 
 data RelocationInfo = RelocationInfo
     { ri_address    :: !Int                     -- offset from start of the section
@@ -226,7 +321,9 @@ data RelocationInfo = RelocationInfo
     , ri_pcrel      :: !Bool                    -- item containing the address to be relocated uses PC-relative addressing
     , ri_extern     :: !Bool
     , ri_length     :: !Int                     -- length of address (bytes) to be relocated
+    , ri_type       :: !RelocationType          -- type of relocation
     }
+    deriving Show
 
 -- A symbol defined in the sections of this object
 --
@@ -236,10 +333,26 @@ data Symbol = Symbol
     , sym_segment   :: !Word8
     , sym_value     :: !Word64
     }
+    deriving Show
 
 
--- Object file parser
--- ------------------
+-- Parse the Mach-O object file and return the set of section load commands, as
+-- well as the symbols defined within the sections of this object.
+--
+-- Actually _executing_ the load commands, which entails copying the pointed-to
+-- segments into an appropriate VM image in the target address space, happens
+-- separately.
+--
+parseObject :: ByteString -> Either String (Vector Symbol, Vector LoadSegment)
+parseObject obj = do
+  ((p, ncmd, _), rest)  <- runGetState readHeader obj 0
+  cmds                  <- catMaybes <$> runGet (replicateM ncmd (readLoadCommand p obj)) rest
+  let
+      lc = [ x | LC_Segment     x <- cmds ]
+      st = [ x | LC_SymbolTable x <- cmds ]
+  --
+  return (V.concat st, V.fromListN ncmd lc)
+
 
 -- The Mach-O file consists of a header block, a number of load commands,
 -- followed by the segment data.
@@ -265,7 +378,20 @@ readHeader = do
                    {#const MH_MAGIC_64#} -> return $ Peek True  getWord16le getWord32le getWord64le
                    {#const MH_CIGAM_64#} -> return $ Peek True  getWord16be getWord32be getWord64be
                    m                     -> fail (printf "unknown magic: %x" m)
-  skip ({#sizeof cpu_type_t#} + {#sizeof cpu_subtype_t#})
+  cpu_type    <- getWord32
+  -- c2HS has trouble with the CPU_TYPE_* macros due to the type cast
+#ifdef i386_HOST_ARCH
+  when (cpu_type /= 0x0000007) $ fail "expected i386 object file"
+#endif
+#ifdef x86_64_HOST_ARCH
+  when (cpu_type /= 0x1000007) $ fail "expected x86_64 object file"
+#endif
+#ifdef powerpc_HOST_ARCH
+  case is64Bit of
+    False -> when (cpu_type /= 0x0000012) $ fail "expected PPC object file"
+    True  -> when (cpu_type /= 0x1000012) $ fail "expected PPC64 object file"
+#endif
+  skip {#sizeof cpu_subtype_t#}
   filetype    <- getWord32
   case filetype of
     {#const MH_OBJECT#} -> return ()
@@ -294,12 +420,13 @@ readLoadCommand p@Peek{..} obj = do
   cmd     <- getWord32
   cmdsize <- fromIntegral <$> getWord32
   --
-  let required = 0 /= cmd .&. {#const LC_REQ_DYLD#}
+  let required = toBool $ cmd .&. {#const LC_REQ_DYLD#}
   --
   case cmd .&. (complement {#const LC_REQ_DYLD#}) of
-    {#const LC_SEGMENT#}    -> Just . LC_Segment     <$> readLoadSegment p obj
-    {#const LC_SEGMENT_64#} -> Just . LC_Segment     <$> readLoadSegment p obj
-    {#const LC_SYMTAB#}     -> Just . LC_SymbolTable <$> readLoadSymbolTable p obj
+    {#const LC_SEGMENT#}    -> Just . LC_Segment            <$> readLoadSegment p obj
+    {#const LC_SEGMENT_64#} -> Just . LC_Segment            <$> readLoadSegment p obj
+    {#const LC_SYMTAB#}     -> Just . LC_SymbolTable        <$> readLoadSymbolTable p obj
+    {#const LC_DYSYMTAB#}   -> Just . LC_DynamicSymbolTable <$> readDynamicSymbolTable p obj
     {#const LC_LOAD_DYLIB#} -> fail "unhandled LC_LOAD_DYLIB"
     this                    -> do if required
                                     then fail    (printf "unknown load command required for execution: 0x%x" this)
@@ -323,12 +450,21 @@ readLoadSegment32 p@Peek{..} obj = do
   vmsize    <- fromIntegral <$> getWord32
   fileoff   <- fromIntegral <$> getWord32
   filesize  <- fromIntegral <$> getWord32
-  skip (2 * {#sizeof vm_prot_t#})
+  skip (2 * {#sizeof vm_prot_t#}) -- maxprot, initprot
   nsect     <- fromIntegral <$> getWord32
-  skip 4 -- flags
+  skip 4    -- flags
+  --
   message (printf "LC_SEGMENT:            Mem: 0x%09x-0x09%x" vmaddr (vmaddr + vmsize))
   secs      <- V.replicateM nsect (readLoadSection32 p obj)
-  return $ LoadSegment name vmaddr vmsize fileoff filesize secs
+  --
+  return LoadSegment
+          { seg_name     = name
+          , seg_vmaddr   = vmaddr
+          , seg_vmsize   = vmsize
+          , seg_fileoff  = fileoff
+          , seg_filesize = filesize
+          , seg_sections = secs
+          }
 
 readLoadSegment64 :: Peek -> ByteString -> Get LoadSegment
 readLoadSegment64 p@Peek{..} obj = do
@@ -339,10 +475,19 @@ readLoadSegment64 p@Peek{..} obj = do
   filesize  <- fromIntegral <$> getWord64
   skip (2 * {#sizeof vm_prot_t#}) -- maxprot, initprot
   nsect     <- fromIntegral <$> getWord32
-  skip 4 -- flags
+  skip 4    -- flags
+  --
   message (printf "LC_SEGMENT_64:         Mem: 0x%09x-0x%09x" vmaddr (vmaddr + vmsize))
   secs      <- V.replicateM nsect (readLoadSection64 p obj)
-  return $ LoadSegment name vmaddr vmsize fileoff filesize secs
+  --
+  return LoadSegment
+          { seg_name     = name
+          , seg_vmaddr   = vmaddr
+          , seg_vmsize   = vmsize
+          , seg_fileoff  = fileoff
+          , seg_filesize = filesize
+          , seg_sections = secs
+          }
 
 readLoadSection32 :: Peek -> ByteString -> Get LoadSection
 readLoadSection32 p@Peek{..} obj = do
@@ -354,10 +499,20 @@ readLoadSection32 p@Peek{..} obj = do
   align     <- fromIntegral <$> getWord32
   reloff    <- fromIntegral <$> getWord32
   nreloc    <- fromIntegral <$> getWord32
-  skip 12 -- flags, reserved1, reserved2
+  skip 12   -- flags, reserved1, reserved2
+  --
   message (printf "  Mem: 0x%09x-0x%09x         %s.%s" addr (addr+size) (B8.unpack segname) (B8.unpack secname))
   relocs    <- either fail return $ runGet (V.replicateM nreloc (loadRelocation p)) (B.drop reloff obj)
-  return $ LoadSection secname segname addr size offset align relocs
+  --
+  return LoadSection
+          { sec_secname = secname
+          , sec_segname = segname
+          , sec_addr    = addr
+          , sec_size    = size
+          , sec_offset  = offset
+          , sec_align   = align
+          , sec_relocs  = relocs
+          }
 
 readLoadSection64 :: Peek -> ByteString -> Get LoadSection
 readLoadSection64 p@Peek{..} obj = do
@@ -369,10 +524,19 @@ readLoadSection64 p@Peek{..} obj = do
   align     <- fromIntegral <$> getWord32
   reloff    <- fromIntegral <$> getWord32
   nreloc    <- fromIntegral <$> getWord32
-  skip 16 -- flags, reserved1, reserved2, reserved3
+  skip 16   -- flags, reserved1, reserved2, reserved3
   message (printf "  Mem: 0x%09x-0x%09x         %s.%s" addr (addr+size) (B8.unpack segname) (B8.unpack secname))
   relocs    <- either fail return $ runGet (V.replicateM nreloc (loadRelocation p)) (B.drop reloff obj)
-  return $ LoadSection secname segname addr size offset align relocs
+  --
+  return LoadSection
+          { sec_secname = secname
+          , sec_segname = segname
+          , sec_addr    = addr
+          , sec_size    = size
+          , sec_offset  = offset
+          , sec_align   = align
+          , sec_relocs  = relocs
+          }
 
 loadRelocation :: Peek -> Get RelocationInfo
 loadRelocation Peek{..} = do
@@ -381,11 +545,22 @@ loadRelocation Peek{..} = do
   let symbol  = val .&. 0xFFFFFF
       pcrel   = testBit val 24
       extern  = testBit val 27
-      len     = 2 ^ ((val `shiftR` 28) .&. 0x3)
+      len     = (val `shiftR` 25) .&. 0x3
+      rtype   = (val `shiftR` 28) .&. 0xF
+      rtype'  = toEnum (fromIntegral rtype)
   --
-  when (addr .&. {#const R_SCATTERED#} /= 0) $ fail "unhandled scatted relocation info"
-  message (printf "    Reloc: 0x%02x to %s %d" addr (if extern then "symbol" else "section") symbol)
-  return $ RelocationInfo addr (fromIntegral symbol) pcrel extern len
+  when (toBool $ addr .&. {#const R_SCATTERED#}) $ fail "unhandled scatted relocation info"
+  message (printf "    Reloc: 0x%04x to %s %d: length=%d, pcrel=%s, type=%s" addr (if extern then "symbol" else "section") symbol len (show pcrel) (show rtype'))
+  --
+  return RelocationInfo
+          { ri_address   = addr
+          , ri_symbolnum = fromIntegral symbol
+          , ri_pcrel     = pcrel
+          , ri_extern    = extern
+          , ri_length    = fromIntegral len
+          , ri_type      = rtype'
+          }
+
 
 readLoadSymbolTable :: Peek -> ByteString -> Get (Vector Symbol)
 readLoadSymbolTable p@Peek{..} obj = do
@@ -402,12 +577,54 @@ readLoadSymbolTable p@Peek{..} obj = do
   --
   either fail return $ runGet (V.replicateM nsyms (loadSymbol p strtab)) symbols
 
+
+readDynamicSymbolTable :: Peek -> ByteString -> Get ()
+readDynamicSymbolTable Peek{..} _obj = do
+#ifdef ACCELERATE_DEBUG
+  ilocalsym     <- getWord32
+  nlocalsym     <- getWord32
+  iextdefsym    <- getWord32
+  nextdefsym    <- getWord32
+  iundefsym     <- getWord32
+  nundefsym     <- getWord32
+  skip 4        -- tocoff
+  ntoc          <- getWord32
+  skip 4        -- modtaboff
+  nmodtab       <- getWord32
+  skip 12       -- extrefsymoff, nextrefsyms, indirectsymoff,
+  nindirectsyms <- getWord32
+  skip 16       -- extreloff, nextrel, locreloff, nlocrel,
+  message (printf "LC_DYSYMTAB:")
+  --
+  if nlocalsym > 0
+    then message (printf "  %d local symbols at index %d" nlocalsym ilocalsym)
+    else message (printf "  No local symbols")
+  if nextdefsym > 0
+    then message (printf "  %d external symbols at index %d" nextdefsym iextdefsym)
+    else message (printf "  No external symbols")
+  if nundefsym > 0
+    then message (printf "  %d undefined symbols at index %d" nundefsym iundefsym)
+    else message (printf "  No undefined symbols")
+  if ntoc > 0
+    then message (printf "  %d table of contents entries" ntoc)
+    else message (printf "  No table of contents")
+  if nmodtab > 0
+    then message (printf "  %d module table entries" nmodtab)
+    else message (printf "  No module table")
+  if nindirectsyms > 0
+    then message (printf "  %d indirect symbols" nindirectsyms)
+    else message (printf "  No indirect symbols")
+#else
+  skip ({#sizeof dysymtab_command#} - 8)
+#endif
+  return ()
+
 loadSymbol :: Peek -> ByteString -> Get Symbol
 loadSymbol Peek{..} strtab = do
   n_strx  <- fromIntegral <$> getWord32
   n_flag  <- getWord8
   n_sect  <- getWord8
-  skip 2 -- n_desc
+  skip 2  -- n_desc
   n_value <- case is64Bit of
                True  -> fromIntegral <$> getWord64
                False -> fromIntegral <$> getWord32
@@ -432,20 +649,27 @@ loadSymbol Peek{..} strtab = do
     {#const N_UNDF#} -> do
         funptr <- resolveSymbol name
         message (printf "    %s: external symbol found at %s" (B8.unpack name) (show funptr))
-        return $ Symbol name (n_ext /= 0) n_sect (castPtrToWord64 (castFunPtrToPtr funptr))
+        return Symbol
+                { sym_name    = name
+                , sym_extern  = toBool n_ext
+                , sym_segment = n_sect
+                , sym_value   = castPtrToWord64 (castFunPtrToPtr funptr)
+                }
+
     {#const N_SECT#} -> do
         message (printf "    %s: local symbol in section %d at 0x%02x" (B8.unpack name) n_sect n_value)
-        return $ Symbol name (n_ext /= 0) n_sect n_value
+        return Symbol
+                { sym_name    = name
+                , sym_extern  = toBool n_ext
+                , sym_segment = n_sect
+                , sym_value   = n_value
+                }
+
     {#const N_ABS#}  -> fail "unhandled absolute symbol"
     {#const N_PBUD#} -> fail "unhandled prebound (dylib) symbol"
     {#const N_INDR#} -> fail "unhandled indirect symbol"
     _                -> fail "unknown symbol type"
 
-
--- Get the address of a pointer as a Word64
---
-castPtrToWord64 :: Ptr a -> Word64
-castPtrToWord64 (Ptr addr#) = W64# (int2Word# (addr2Int# addr#))
 
 -- Return the address binding the named symbol
 --
@@ -460,6 +684,19 @@ resolveSymbol name
           return (fail $ printf "failed to resolve symbol %s: %s" (B8.unpack name) err)
         else do
           return (return addr)
+
+
+-- Utilities
+-- ---------
+
+-- Get the address of a pointer as a Word64
+--
+castPtrToWord64 :: Ptr a -> Word64
+castPtrToWord64 (Ptr addr#) = W64# (int2Word# (addr2Int# addr#))
+
+
+-- C-bits
+-- ------
 
 -- Control the protection of pages
 --
