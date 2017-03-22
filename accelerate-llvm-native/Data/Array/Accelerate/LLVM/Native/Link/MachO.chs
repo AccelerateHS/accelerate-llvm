@@ -274,9 +274,8 @@ data Peek = Peek
 -- Load commands directly follow the Mach-O header.
 --
 data LoadCommand
-    = LC_Segment            !LoadSegment
-    | LC_SymbolTable        !(Vector Symbol)
-    | LC_DynamicSymbolTable !()
+    = LC_Segment     {-# UNPACK #-} !LoadSegment
+    | LC_SymbolTable {-# UNPACK #-} !(Vector Symbol)
 
 -- Indicates that a part of this file is to be mapped into the task's
 -- address space. The size of the segment in memory, vmsize, must be equal
@@ -289,43 +288,43 @@ data LoadCommand
 -- contains all the sections.
 --
 data LoadSegment = LoadSegment
-    { seg_name      :: !ByteString
-    , seg_vmaddr    :: !Int                     -- starting virtual memory address of the segment
-    , seg_vmsize    :: !Int                     -- size (bytes) of virtual memory occupied by the segment
-    , seg_fileoff   :: !Int                     -- offset in the file for the data mapped at 'seg_vmaddr'
-    , seg_filesize  :: !Int                     -- size (bytes) of the segment in the file
-    , seg_sections  :: !(Vector LoadSection)    -- the sections of this segment
+    { seg_name      :: {-# UNPACK #-} !ByteString
+    , seg_vmaddr    :: {-# UNPACK #-} !Int                      -- starting virtual memory address of the segment
+    , seg_vmsize    :: {-# UNPACK #-} !Int                      -- size (bytes) of virtual memory occupied by the segment
+    , seg_fileoff   :: {-# UNPACK #-} !Int                      -- offset in the file for the data mapped at 'seg_vmaddr'
+    , seg_filesize  :: {-# UNPACK #-} !Int                      -- size (bytes) of the segment in the file
+    , seg_sections  :: {-# UNPACK #-} !(Vector LoadSection)     -- the sections of this segment
     }
     deriving Show
 
 data LoadSection = LoadSection
-    { sec_secname   :: !ByteString
-    , sec_segname   :: !ByteString
-    , sec_addr      :: !Int                     -- virtual memory address of this section
-    , sec_size      :: !Int                     -- size in bytes
-    , sec_offset    :: !Int                     -- offset of this section in the file
-    , sec_align     :: !Int
-    , sec_relocs    :: !(Vector RelocationInfo)
+    { sec_secname   :: {-# UNPACK #-} !ByteString
+    , sec_segname   :: {-# UNPACK #-} !ByteString
+    , sec_addr      :: {-# UNPACK #-} !Int                      -- virtual memory address of this section
+    , sec_size      :: {-# UNPACK #-} !Int                      -- size in bytes
+    , sec_offset    :: {-# UNPACK #-} !Int                      -- offset of this section in the file
+    , sec_align     :: {-# UNPACK #-} !Int
+    , sec_relocs    :: {-# UNPACK #-} !(Vector RelocationInfo)
     }
     deriving Show
 
 data RelocationInfo = RelocationInfo
-    { ri_address    :: !Int                     -- offset from start of the section
-    , ri_symbolnum  :: !Int                     -- index into the symbol table (when ri_extern=True) else section number (??)
-    , ri_pcrel      :: !Bool                    -- item containing the address to be relocated uses PC-relative addressing
+    { ri_address    :: {-# UNPACK #-} !Int                      -- offset from start of the section
+    , ri_symbolnum  :: {-# UNPACK #-} !Int                      -- index into the symbol table (when ri_extern=True) else section number (??)
+    , ri_length     :: {-# UNPACK #-} !Int                      -- length of address (bytes) to be relocated
+    , ri_pcrel      :: !Bool                                    -- item containing the address to be relocated uses PC-relative addressing
     , ri_extern     :: !Bool
-    , ri_length     :: !Int                     -- length of address (bytes) to be relocated
-    , ri_type       :: !RelocationType          -- type of relocation
+    , ri_type       :: !RelocationType                          -- type of relocation
     }
     deriving Show
 
 -- A symbol defined in the sections of this object
 --
 data Symbol = Symbol
-    { sym_name      :: !ByteString
+    { sym_name      :: {-# UNPACK #-} !ByteString
+    , sym_value     :: {-# UNPACK #-} !Word64
+    , sym_segment   :: {-# UNPACK #-} !Word8
     , sym_extern    :: !Bool
-    , sym_segment   :: !Word8
-    , sym_value     :: !Word64
     }
     deriving Show
 
@@ -417,10 +416,10 @@ readLoadCommand p@Peek{..} obj = do
   let required = toBool $ cmd .&. {#const LC_REQ_DYLD#}
   --
   case cmd .&. (complement {#const LC_REQ_DYLD#}) of
-    {#const LC_SEGMENT#}    -> Just . LC_Segment            <$> readLoadSegment p obj
-    {#const LC_SEGMENT_64#} -> Just . LC_Segment            <$> readLoadSegment p obj
-    {#const LC_SYMTAB#}     -> Just . LC_SymbolTable        <$> readLoadSymbolTable p obj
-    {#const LC_DYSYMTAB#}   -> Just . LC_DynamicSymbolTable <$> readDynamicSymbolTable p obj
+    {#const LC_SEGMENT#}    -> Just . LC_Segment     <$> readLoadSegment p obj
+    {#const LC_SEGMENT_64#} -> Just . LC_Segment     <$> readLoadSegment p obj
+    {#const LC_SYMTAB#}     -> Just . LC_SymbolTable <$> readLoadSymbolTable p obj
+    {#const LC_DYSYMTAB#}   -> const Nothing         <$> readDynamicSymbolTable p obj
     {#const LC_LOAD_DYLIB#} -> fail "unhandled LC_LOAD_DYLIB"
     this                    -> do if required
                                     then fail    (printf "unknown load command required for execution: 0x%x" this)
