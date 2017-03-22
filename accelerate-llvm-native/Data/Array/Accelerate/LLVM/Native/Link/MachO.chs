@@ -588,7 +588,7 @@ readDynamicSymbolTable Peek{..} _obj = do
   skip 12       -- extrefsymoff, nextrefsyms, indirectsymoff,
   nindirectsyms <- getWord32
   skip 16       -- extreloff, nextrel, locreloff, nlocrel,
-  message (printf "LC_DYSYMTAB:")
+  message "LC_DYSYMTAB:"
   --
   if nlocalsym > 0
     then message (printf "  %d local symbols at index %d" nlocalsym ilocalsym)
