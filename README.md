@@ -76,11 +76,11 @@ is also based on LLVM, and typically lags LLVM by several releases, you must
 install `accelerate-llvm` with a "compatible" version of LLVM, which will
 depend on the version of the CUDA toolkit you have installed.
 
-|              | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 |
-|:------------:|:--------:|:--------:|:--------:|:--------:|:--------:|
-| **CUDA-7.0** |     ⭕    |     ❌    |          |          |          |
-| **CUDA-7.5** |          |     ⭕    |     ⭕    |     ❌    |          |
-| **CUDA-8.0** |          |          |     ⭕    |     ⭕    |     ❌    |
+|              | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 | LLVM-4.0 |
+|:------------:|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|
+| **CUDA-7.0** |     ⭕    |     ❌    |          |          |          |          |
+| **CUDA-7.5** |          |     ⭕    |     ⭕    |     ❌    |          |          |
+| **CUDA-8.0** |          |          |     ⭕    |     ⭕    |     ❌    |     ❌    |
 
 Where ⭕ = Works, and ❌ = Does not work.
 
