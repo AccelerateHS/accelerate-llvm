@@ -83,20 +83,20 @@ Library
     Data.Array.Accelerate.LLVM.Util
 
     -- LLVM code generation
-    LLVM.General.AST.Type.AddrSpace
-    LLVM.General.AST.Type.Constant
-    LLVM.General.AST.Type.Flags
-    LLVM.General.AST.Type.Global
-    LLVM.General.AST.Type.Instruction
-    LLVM.General.AST.Type.Instruction.Atomic
-    LLVM.General.AST.Type.Instruction.Compare
-    LLVM.General.AST.Type.Instruction.RMW
-    LLVM.General.AST.Type.Instruction.Volatile
-    LLVM.General.AST.Type.Metadata
-    LLVM.General.AST.Type.Name
-    LLVM.General.AST.Type.Operand
-    LLVM.General.AST.Type.Representation
-    LLVM.General.AST.Type.Terminator
+    LLVM.AST.Type.AddrSpace
+    LLVM.AST.Type.Constant
+    LLVM.AST.Type.Flags
+    LLVM.AST.Type.Global
+    LLVM.AST.Type.Instruction
+    LLVM.AST.Type.Instruction.Atomic
+    LLVM.AST.Type.Instruction.Compare
+    LLVM.AST.Type.Instruction.RMW
+    LLVM.AST.Type.Instruction.Volatile
+    LLVM.AST.Type.Metadata
+    LLVM.AST.Type.Name
+    LLVM.AST.Type.Operand
+    LLVM.AST.Type.Representation
+    LLVM.AST.Type.Terminator
 
     -- Scheduler
     Control.Parallel.Meta
@@ -116,8 +116,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , fclabels                      >= 2.0
-        , llvm-general                  >= 3.5
-        , llvm-general-pure             >= 3.5
+        , llvm-hs                       >= 3.9
+        , llvm-hs-pure                  >= 3.9
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , unordered-containers          >= 0.2

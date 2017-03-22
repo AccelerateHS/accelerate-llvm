@@ -22,11 +22,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.Native.Target                         ( Native )
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
-import LLVM.General.AST.Type.Name
-import qualified LLVM.General.AST.Global                                as LLVM
-import qualified LLVM.General.AST.Type                                  as LLVM
+import LLVM.AST.Type.Name
+import qualified LLVM.AST.Global                                    as LLVM
+import qualified LLVM.AST.Type                                      as LLVM
 
 
 -- | Generate function parameters that will specify the first and last (linear)

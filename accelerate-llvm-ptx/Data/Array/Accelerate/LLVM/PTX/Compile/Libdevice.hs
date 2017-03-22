@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -22,28 +21,22 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 
 ) where
 
--- llvm-general
-import LLVM.General.Context
-import LLVM.General.Module                                      as LLVM
-
-import LLVM.General.AST                                         as AST ( Module(..), Definition(..) )
-import LLVM.General.AST.Instruction                             as AST ( Named(..) )
-import LLVM.General.AST.Attribute
-import LLVM.General.AST.Global                                  as G
-import qualified LLVM.General.AST.Name                          as AST
+-- llvm-hs
+import LLVM.Context
+import LLVM.Module                                                  as LLVM
+import LLVM.AST                                                     as AST ( Module(..), Definition(..) )
+import LLVM.AST.Attribute
+import LLVM.AST.Global                                              as G
+import qualified LLVM.AST.Name                                      as AST
 
 -- accelerate
-import LLVM.General.AST.Type.Name                               ( Label(..) )
-import LLVM.General.AST.Type.Terminator                         ( Terminator(..) )
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Name                                           ( Label(..) )
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
-
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
@@ -51,17 +44,17 @@ import Foreign.CUDA.Analysis
 
 -- standard library
 import Control.Monad.Except
-import Data.ByteString                                          ( ByteString )
-import Data.HashMap.Strict                                      ( HashMap )
+import Data.ByteString                                              ( ByteString )
+import Data.HashMap.Strict                                          ( HashMap )
 import Data.List
 import Data.Maybe
 import System.Directory
 import System.FilePath
 import System.IO.Unsafe
 import Text.Printf
-import qualified Data.ByteString                                as B
-import qualified Data.ByteString.Char8                          as B8
-import qualified Data.HashMap.Strict                            as HashMap
+import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.HashMap.Strict                                as HashMap
 
 
 -- NVVM Reflect
@@ -102,25 +95,15 @@ nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
   AST.Module
     { moduleName            = "nvvm-reflect"
-#if MIN_VERSION_llvm_general(3,9,0)
     , moduleSourceFileName  = []
-#endif
     , moduleDataLayout      = targetDataLayout (undefined::PTX)
     , moduleTargetTriple    = targetTriple (undefined::PTX)
     , moduleDefinitions     = [GlobalDefinition $ functionDefaults
       { name                  = AST.Name "__nvvm_reflect"
       , returnType            = downcast (integralType :: IntegralType Int32)
       , parameters            = ( [ptrParameter scalarType (UnName 0 :: Name (Ptr Int8))], False )
-#if MIN_VERSION_llvm_general(3,5,0)
       , G.functionAttributes  = map Right [NoUnwind, ReadNone, AlwaysInline]
-#else
-      , G.functionAttributes  = [NoUnwind, ReadNone, AlwaysInline]
-#endif
-#if MIN_VERSION_llvm_general(3,9,0)
       , basicBlocks           = []
-#else
-      , basicBlocks           = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
-#endif
       }]
     }
 
@@ -132,9 +115,6 @@ nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
   where
     name     = "__nvvm_reflect"
     runError = either ($internalError "nvvmReflectPass") return <=< runExceptT
-#if !MIN_VERSION_llvm_general(3,3,0)
-    moduleLLVMAssembly = moduleString
-#endif
 
 
 -- libdevice
@@ -221,12 +201,6 @@ libdeviceModule arch = do
   withContext $ \ctx ->
     either ($internalError "libdeviceModule") id `fmap`
     runExceptT (withModuleFromBitcode ctx bc moduleAST)
-
-
-#if !MIN_VERSION_llvm_general(3,3,0)
-withModuleFromBitcode :: Context -> (String,ByteString) -> (LLVM.Module -> IO a) -> ErrorT String IO a
-withModuleFromBitcode _ _ _ = error "withModuleFromBitcode: requires llvm-general >= 3.3"
-#endif
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name

@@ -14,11 +14,11 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Ptr
   where
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
 

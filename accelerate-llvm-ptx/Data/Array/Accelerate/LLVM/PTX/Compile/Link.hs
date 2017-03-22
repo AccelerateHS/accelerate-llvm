@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -21,31 +20,31 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Link (
 
 ) where
 
--- llvm-general
-import LLVM.General.Context
-import qualified LLVM.General.Module                            as LLVM
+-- llvm-hs
+import LLVM.Context
+import qualified LLVM.Module                                        as LLVM
 
-import LLVM.General.AST                                         as AST
-import LLVM.General.AST.Global                                  as G
-import LLVM.General.AST.Linkage
+import LLVM.AST                                                     as AST
+import LLVM.AST.Global                                              as G
+import LLVM.AST.Linkage
 
 -- accelerate
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
 import Foreign.CUDA.Analysis
 
 -- standard library
 import Control.Monad.Except
-import Data.ByteString                                          ( ByteString )
-import Data.HashSet                                             ( HashSet )
+import Data.ByteString                                              ( ByteString )
+import Data.HashSet                                                 ( HashSet )
 import Data.List
 import Data.Maybe
 import Text.Printf
-import qualified Data.HashSet                                   as Set
+import qualified Data.HashSet                                       as Set
 
 
 -- | Lower an LLVM AST to C++ objects and link it against the libdevice module,
@@ -109,12 +108,7 @@ linkModules
     :: LLVM.Module            -- module into which to link (destination: contains all symbols)
     -> LLVM.Module            -- module to copy into the other (this is destroyed in the process)
     -> ExceptT String IO ()
-linkModules =
-#if MIN_VERSION_llvm_general(3,9,0)
-    LLVM.linkModules
-#else
-    LLVM.linkModules False
-#endif
+linkModules = LLVM.linkModules
 
 
 -- | Lower an LLVM AST to C++ objects and prepare it for linking against

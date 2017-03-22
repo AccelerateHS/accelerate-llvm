@@ -13,8 +13,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Module
   where
 
--- llvm-general
-import qualified LLVM.General.AST                         as LLVM
+-- llvm-hs
+import qualified LLVM.AST                                 as LLVM
 
 -- standard library
 import Data.Map                                           ( Map )

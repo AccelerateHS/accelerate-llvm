@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP             #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -16,45 +15,37 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  -- module Data.Array.Accelerate.LLVM.Native.Compile.Module,
   ExecutableR(..),
 
 ) where
 
 -- llvm-general
-import LLVM.General.AST                                         hiding ( Module )
-import LLVM.General.Module                                      as LLVM hiding ( Module )
-import LLVM.General.Context
-import LLVM.General.Target
+import LLVM.AST                                                     hiding ( Module )
+import LLVM.Module                                                  as LLVM hiding ( Module )
+import LLVM.Context
+import LLVM.Target
 
 -- accelerate
-import Data.Array.Accelerate.Error                              ( internalError )
-import Data.Array.Accelerate.Trafo                              ( DelayedOpenAcc )
+import Data.Array.Accelerate.Error                                  ( internalError )
+import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                ( unModule )
+import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( unModule )
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                ( )
 import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
-import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- standard library
-import Control.Monad.Except                                     ( runExceptT )
+import Control.Monad.Except                                         ( runExceptT )
 import Control.Monad.State
 import Data.Maybe
-
-#if !MIN_VERSION_llvm_general(3,3,0)
-import LLVM.General.Context
-import Data.Word
-import System.Directory
-import System.IO
-#endif
 
 
 instance Compile Native where
@@ -97,28 +88,4 @@ compileForNativeTarget acc aenv = do
         obj     <- runExcept (moduleObject machine mdl)
         (nm,vm) <- loadObject obj
         return  $! NativeR nm vm
-
-
--- Shims to support llvm-general-3.2.*
--- -----------------------------------
-
-#if !MIN_VERSION_llvm_general(3,3,0)
--- Generate LLVM assembly from a module
-moduleLLVMAssembly :: LLVM.Module -> IO String
-moduleLLVMAssembly = moduleString
-
--- Generate target specific assembly instructions
---
--- TODO: should really clean up the temporary file, but the contents are read
---       lazily, so...
---
-moduleTargetAssembly :: TargetMachine -> LLVM.Module -> ErrorT String IO String
-moduleTargetAssembly machine mdl = ErrorT $ do
-  tmp    <- getTemporaryDirectory
-  (fp,h) <- openTempFile tmp "accelerate-llvm.asm"
-  ok     <- runExceptT $ LLVM.writeAssemblyToFile machine fp mdl
-  case ok of
-    Left e   -> return (Left e)
-    Right () -> Right `fmap` hGetContents h
-#endif
 

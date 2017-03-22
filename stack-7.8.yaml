@@ -7,7 +7,6 @@ packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
-# - 'accelerate-llvm-multidev'
 
 # extra-deps:
 - location:
@@ -15,39 +14,21 @@ packages:
     commit: a9677400b9a3e6c55b27e586286281a10c9f3b16
   extra-dep: true
 
-- location:
-    git:    https://github.com/tmcdonell/llvm-general.git
-    commit: 8971e275fe56dfd0090ac777e38e6dd641a0306a # 3.5
-    # commit: 3f0b8003664e0a5f9ed94434919167fbf95025ec # 3.8
-    # commit: 3e59ab289b1636a9304aca3d11c7bec268441669 # 3.9
-  extra-dep: true
-  subdirs:
-    - 'llvm-general'
-    - 'llvm-general-pure'
-
 extra-deps:
-# accelerate
-- 'unique-0'
-- 'base-orphans-0.4.4'
-
-# accelerate-llvm
 - 'atomic-primops-0.8.0.2'
+- 'base-orphans-0.4.4'
+- 'Cabal-1.24.2.0'
 - 'chaselev-deque-0.5.0.5'
-
-# accelerate-llvm-native
+- 'cuda-0.7.5.2'
 - 'libffi-0.1'
+- 'llvm-hs-4.0.0.0'
+- 'llvm-hs-pure-4.0.0.0'
 - 'mtl-2.2.1'
+- 'nvvm-0.7.5.1'
+- 'semigroups-0.18.1'
 - 'transformers-0.4.3.0'
 - 'transformers-compat-0.4.0.4'
-
-# accelerate-llvm-ptx
-- 'cuda-0.7.5.2'
-- 'nvvm-0.7.5.1'
-
-# update utils/cabal_macros.h whenever these versions are changed
-# - 'llvm-general-3.5.1.2'
-# - 'llvm-general-pure-3.5.1.0'
-
+- 'unique-0'
 
 # Override default flag values for local packages and extra-deps
 flags:
@@ -65,8 +46,11 @@ flags:
   accelerate-llvm-ptx:
     debug: true
     nvvm: false
-  llvm-general:
+  llvm-hs-pure:
+    semigroups: true
+  llvm-hs:
     shared-llvm: true
+    semigroups: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []

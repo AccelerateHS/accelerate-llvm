@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.AddrSpace
+-- Module      : LLVM.AST.Type.AddrSpace
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -11,14 +11,14 @@
 -- Pointers exist in a particular address space
 --
 
-module LLVM.General.AST.Type.AddrSpace (
+module LLVM.AST.Type.AddrSpace (
 
   AddrSpace(..),
   defaultAddrSpace,
 
 ) where
 
-import LLVM.General.AST.AddrSpace
+import LLVM.AST.AddrSpace
 
 
 -- | The default address space is number zero. The semantics of non-zero address

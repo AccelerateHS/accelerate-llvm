@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -31,14 +30,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
 ) where
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
@@ -49,13 +48,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import qualified LLVM.General.AST.Global                                as LLVM
+import qualified LLVM.AST.Global                                    as LLVM
 
-import qualified Data.IntMap                                            as IM
-
-#if !MIN_VERSION_llvm_general_pure(3,4,0)
-#error "llvm-3.4 or later is required"
-#endif
+import qualified Data.IntMap                                        as IM
 
 
 -- References
@@ -171,11 +166,7 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (IR t)
 call f attrs = do
   let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
       attrs'    = map Right attrs
-#elif MIN_VERSION_llvm_general_pure(3,4,0)
-      attrs'    = attrs
-#endif
   --
   declare decl
   instr (Call f attrs')

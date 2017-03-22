@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GADTs                    #-}
@@ -60,12 +59,6 @@ import qualified Prelude                                            as P
 import Foreign.C
 import Foreign.LibFFI
 import Foreign.Ptr
-
-#if !MIN_VERSION_llvm_general(3,3,0)
-import Data.Word
-import Data.Maybe
-import qualified LLVM.General.Context                               as LLVM
-#endif
 
 
 -- Array expression evaluation
@@ -267,7 +260,7 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
-foldSegOp NativeR{..} gamma aenv () (sh :. _sz) (Z :. ss) = do
+foldSegOp NativeR{..} gamma aenv () (sh :. _) (Z :. ss) = do
   Native{..} <- gets llvmTarget
   let
       ncpu               = gangSize
