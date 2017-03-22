@@ -15,11 +15,11 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Optimise (
 
 ) where
 
--- llvm-general
-import LLVM.General.AST.DataLayout
-import LLVM.General.Module
-import LLVM.General.PassManager
-import LLVM.General.Target
+-- llvm-hs
+import LLVM.AST.DataLayout
+import LLVM.Module
+import LLVM.PassManager
+import LLVM.Target
 
 -- accelerate
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug

@@ -22,14 +22,14 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 
 ) where
 
--- llvm-general
-import LLVM.General.AST                                             hiding ( Module )
-import qualified LLVM.General.AST                                   as AST
-import qualified LLVM.General.AST.Name                              as LLVM
-import qualified LLVM.General.Analysis                              as LLVM
-import qualified LLVM.General.Context                               as LLVM
-import qualified LLVM.General.Module                                as LLVM
-import qualified LLVM.General.PassManager                           as LLVM
+-- llvm-hs
+import LLVM.AST                                                     hiding ( Module )
+import qualified LLVM.AST                                           as AST
+import qualified LLVM.AST.Name                                      as LLVM
+import qualified LLVM.Analysis                                      as LLVM
+import qualified LLVM.Context                                       as LLVM
+import qualified LLVM.Module                                        as LLVM
+import qualified LLVM.PassManager                                   as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )

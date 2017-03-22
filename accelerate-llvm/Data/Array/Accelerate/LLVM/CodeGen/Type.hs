@@ -17,11 +17,11 @@ module Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.Array.Sugar
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 
 -- | Does the concrete type represent signed or unsigned values?

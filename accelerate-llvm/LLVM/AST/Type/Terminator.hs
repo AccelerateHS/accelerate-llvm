@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Terminator
+-- Module      : LLVM.AST.Type.Terminator
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -10,12 +10,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Terminator
+module LLVM.AST.Type.Terminator
   where
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
 
 
 -- | <http://llvm.org/docs/LangRef.html#terminators>

@@ -1,11 +1,10 @@
-{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeOperators  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction
+-- Module      : LLVM.AST.Type.Instruction
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -14,18 +13,18 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction
+module LLVM.AST.Type.Instruction
   where
 
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
-import LLVM.General.AST.Type.Instruction.Atomic
-import LLVM.General.AST.Type.Instruction.Compare
-import LLVM.General.AST.Type.Instruction.RMW
-import LLVM.General.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.Compare
+import LLVM.AST.Type.Instruction.RMW
+import LLVM.AST.Type.Instruction.Volatile
 
 import Data.Array.Accelerate.Product                      ( ProdRepr, TupleIdx )
 
@@ -295,11 +294,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#call-instruction>
   --
   Call          :: GlobalFunction args t
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
                 -> [Either GroupID FunctionAttribute]
-#elif MIN_VERSION_llvm_general_pure(3,4,0)
-                -> [FunctionAttribute]
-#endif
                 -> Instruction t
 
   -- <http://llvm.org/docs/LangRef.html#select-instruction>

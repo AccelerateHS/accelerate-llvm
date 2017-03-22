@@ -37,12 +37,12 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Atomic
-import LLVM.General.AST.Type.Instruction.RMW                        as RMW
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.RMW                                as RMW
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Representation
 
 import Control.Applicative
 import Control.Monad                                                ( void )

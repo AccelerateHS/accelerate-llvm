@@ -18,25 +18,23 @@ Dependencies
 Haskell dependencies are available from Hackage. There are several external
 dependencies that you will need to install as well:
 
- * [LLVM](http://llvm.org)
- * [libFFI](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
- * [CUDA](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
+ * [`LLVM`](http://llvm.org)
+ * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
+ * [`CUDA`](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
 
 
 Installation
 ------------
 
 You will need to install a couple of foreign libraries: libffi as well as LLVM
-__with shared library support__. If you want to use the GPU targeting
+__with__ the `libLLVM` shared library . If you want to use the GPU targeting
 `accelerate-llvm-ptx` backend, make sure you install (or build) LLVM with the
 'nvptx' target.
 
 Example using [Homebrew](http://brew.sh) on Mac OS X:
 
 ```sh
-$ brew update
-$ brew install libffi
-$ brew install homebrew/versions/llvm35 --all-targets
+$ brew install llvm-hs/homebrew-llvm/llvm-4.0
 ```
 
 For Debian/Ubuntu based Linux distributions, the LLVM.org website provides
@@ -45,7 +43,7 @@ instructions for adding the correct package database for your OS version, and
 then:
 
 ```sh
-$ apt-get install libedit-dev llvm-3.5-dev
+$ apt-get install llvm-4.0-dev
 ```
 
 Then, installation using
@@ -53,27 +51,15 @@ Then, installation using
 to point it to the appropriate configuration file, for example:
 
 ```sh
-$ ln -s stack-7.10.yaml stack.yaml
+$ ln -s stack-8.0.yaml stack.yaml
 $ stack setup
 $ stack install
 ```
 
-If installing via `cabal`, note that you will need to tell the `llvm-general`
-package to use the shared library version of LLVM ([#84][llvm-general-issue84],
-[#85][llvm-general-issue85]) before attempting to install `accelerate-llvm`.
-
-```sh
-$ cabal install llvm-general -fshared-llvm
-$ cabal install accelerate-llvm
-```
 
 Note that the version of
-[`llvm-general`](https://hackage.haskell.org/package/llvm-general) used must
-match the installed version of LLVM. The currently released version of
-`llvm-general` is for LLVM-3.5, but releases for
-[3.8](https://github.com/bscarlet/llvm-general/tree/llvm-3.8) and
-[3.9](https://github.com/bscarlet/llvm-general/tree/llvm-3.9) should be
-available soon.
+[`llvm-hs`](https://hackage.haskell.org/package/llvm-hs) used must match the
+installed version of LLVM, which is currently 4.0.
 
 
 ### libNVVM
@@ -84,7 +70,7 @@ libNVVM is a closed-source library distributed as part of the NVIDIA CUDA
 toolkit, and is what the `nvcc` compiler itself uses internally when compiling
 CUDA C code.
 
-Using libNVVM may improve GPU performance as it includes several optimisations
+Using libNVVM _may_ improve GPU performance as it includes several optimisations
 not present in NVPTX. One difficult with using it however is that since libNVVM
 is also based on LLVM, and typically lags LLVM by several releases, you must
 install `accelerate-llvm` with a "compatible" version of LLVM, which will
@@ -102,8 +88,7 @@ Note that the above restrictions on CUDA and LLVM version exist _only_ if you
 want to use the NVVM component. Otherwise, you should be free to use any
 combination of CUDA and LLVM.
 
-Also note that `accelerate-llvm` itself currently requires at least LLVM-3.5. There
-are currently no releases of `llvm-general` planned for LLVM-3.6 or LLVM-3.7.
+Also note that `accelerate-llvm` itself currently requires at least LLVM-3.5.
 
 Using `stack`, either edit the `stack.yaml` and add the following section:
 
@@ -124,7 +109,4 @@ If installing via `cabal`:
 ```sh
 $ cabal install accelerate-llvm-ptx -fnvvm
 ```
-
- [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
- [llvm-general-issue85]:        https://github.com/bscarlet/llvm-general/issues/85
 

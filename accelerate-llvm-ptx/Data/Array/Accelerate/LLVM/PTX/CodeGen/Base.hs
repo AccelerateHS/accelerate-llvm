@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -46,26 +45,26 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 ) where
 
 -- llvm
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Metadata
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
-import qualified LLVM.General.AST.Global                                as LLVM
-import qualified LLVM.General.AST.Linkage                               as LLVM
-import qualified LLVM.General.AST.Name                                  as LLVM
-import qualified LLVM.General.AST.Type                                  as LLVM
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Metadata
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
+import qualified LLVM.AST.Global                                    as LLVM
+import qualified LLVM.AST.Linkage                                   as LLVM
+import qualified LLVM.AST.Name                                      as LLVM
+import qualified LLVM.AST.Type                                      as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                                ( Elt, Vector, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Elt, Vector, eltType )
 import Data.Array.Accelerate.Error
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                    as A
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
@@ -82,9 +81,9 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- standard library
 import Control.Applicative
-import Control.Monad                                                    ( void )
+import Control.Monad                                                ( void )
 import Text.Printf
-import Prelude                                                          as P
+import Prelude                                                      as P
 
 
 -- Thread identifiers
@@ -105,7 +104,6 @@ threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
-#if MIN_VERSION_llvm_general(3,9,0)
 laneId :: CodeGen (IR Int32)
 laneId      = specialPTXReg "llvm.nvvm.read.ptx.sreg.laneid"
 
@@ -115,17 +113,7 @@ laneMask_lt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.le"
 laneMask_gt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.gt"
 laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
-#else
-laneId :: CodeGen (IR Int32)
-laneId      = specialPTXReg "llvm.ptx.read.laneid"
 
-laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
-laneMask_eq = specialPTXReg "llvm.ptx.read.lanemask.eq"
-laneMask_lt = specialPTXReg "llvm.ptx.read.lanemask.lt"
-laneMask_le = specialPTXReg "llvm.ptx.read.lanemask.le"
-laneMask_gt = specialPTXReg "llvm.ptx.read.lanemask.gt"
-laneMask_ge = specialPTXReg "llvm.ptx.read.lanemask.ge"
-#endif
 
 -- | NOTE: The special register %warpid as volatile value and is not guaranteed
 --         to be constant over the lifetime of a thread or thread block.

@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -21,14 +20,14 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 ) where
 
 -- llvm-general
-import LLVM.General.Target                                      hiding ( Target )
-import LLVM.General.AST.DataLayout                              ( DataLayout )
+import LLVM.Target                                                  hiding ( Target )
+import LLVM.AST.DataLayout                                          ( DataLayout )
 
 -- accelerate
-import Data.Array.Accelerate.Error                              ( internalError )
+import Data.Array.Accelerate.Error                                  ( internalError )
 
-import Data.Array.Accelerate.LLVM.Target                        ( Target(..) )
-import Control.Parallel.Meta                                    ( Executable )
+import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
+import Control.Parallel.Meta                                        ( Executable )
 
 -- standard library
 import Control.Monad.Except
@@ -53,13 +52,8 @@ instance Target Native where
 {-# NOINLINE nativeTargetTriple #-}
 nativeTargetTriple :: String
 nativeTargetTriple = unsafePerformIO $
-#if MIN_VERSION_llvm_general(3,3,0)
     -- A target triple suitable for loading code into the current process
     getProcessTargetTriple
-#else
-    -- The default target triple LLVM has been configured to produce code for
-    getDefaultTargetTriple
-#endif
 
 -- | A description of the various data layout properties that may be used during
 -- optimisation.
@@ -78,9 +72,5 @@ nativeDataLayout
 withNativeTargetMachine
     :: (TargetMachine -> IO a)
     -> ExceptT String IO a
-#if !MIN_VERSION_llvm_general(3,4,6)
-withNativeTargetMachine = withDefaultTargetMachine
-#else
 withNativeTargetMachine = withHostTargetMachine
-#endif
 

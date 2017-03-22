@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Intrinsic (
 ) where
 
 -- accelerate-llvm
-import LLVM.General.AST.Type.Name
+import LLVM.AST.Type.Name
 
 -- libraries
 import Data.HashMap.Strict                                      ( HashMap )

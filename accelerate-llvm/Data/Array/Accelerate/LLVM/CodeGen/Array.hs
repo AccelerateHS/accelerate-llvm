@@ -23,11 +23,11 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 import Control.Applicative
 import Prelude                                                          hiding ( read )
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Array.Sugar
 

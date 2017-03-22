@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -22,42 +21,42 @@ module Data.Array.Accelerate.LLVM.CodeGen.Downcast (
 
 ) where
 
-import Prelude                                                  hiding ( Ordering(..), const )
+import Prelude                                                      hiding ( Ordering(..), const )
 import Data.Bits
 import Foreign.C.Types
 
-import Data.Array.Accelerate.AST                                ( tupleIdxToInt )
+import Data.Array.Accelerate.AST                                    ( tupleIdxToInt )
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Flags
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Atomic
-import LLVM.General.AST.Type.Instruction.Compare
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Metadata
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
-import LLVM.General.AST.Type.Terminator
-import qualified LLVM.General.AST.Type.Instruction.RMW          as RMW
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Flags
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.Compare
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Metadata
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
+import LLVM.AST.Type.Terminator
+import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
 
-import qualified LLVM.General.AST.Attribute                     as L
-import qualified LLVM.General.AST.CallingConvention             as L
-import qualified LLVM.General.AST.Constant                      as LC
-import qualified LLVM.General.AST.Float                         as L
-import qualified LLVM.General.AST.FloatingPointPredicate        as FP
-import qualified LLVM.General.AST.Global                        as L
-import qualified LLVM.General.AST.Instruction                   as L
-import qualified LLVM.General.AST.IntegerPredicate              as IP
-import qualified LLVM.General.AST.Name                          as L
-import qualified LLVM.General.AST.Operand                       as L
-import qualified LLVM.General.AST.RMWOperation                  as LA
-import qualified LLVM.General.AST.Type                          as L
+import qualified LLVM.AST.Attribute                                 as L
+import qualified LLVM.AST.CallingConvention                         as L
+import qualified LLVM.AST.Constant                                  as LC
+import qualified LLVM.AST.Float                                     as L
+import qualified LLVM.AST.FloatingPointPredicate                    as FP
+import qualified LLVM.AST.Global                                    as L
+import qualified LLVM.AST.Instruction                               as L
+import qualified LLVM.AST.IntegerPredicate                          as IP
+import qualified LLVM.AST.Name                                      as L
+import qualified LLVM.AST.Operand                                   as L
+import qualified LLVM.AST.RMWOperation                              as LA
+import qualified LLVM.AST.Type                                      as L
 
 
 -- | Convert a value from our representation of the LLVM AST which uses
@@ -122,13 +121,8 @@ instance Downcast (Name a) L.Name where
 -- LLVM.General.AST.Type.Instruction
 -- ---------------------------------
 
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
 tailcall :: Maybe L.TailCallKind
 tailcall = Nothing
-#elif MIN_VERSION_llvm_general_pure(3,4,0)
-tailcall :: Bool
-tailcall = False
-#endif
 
 -- Instructions
 
@@ -226,15 +220,9 @@ instance Downcast Volatility Bool where
   downcast Volatile    = True
   downcast NonVolatile = False
 
-#if MIN_VERSION_llvm_general_pure(3,5,0)
 instance Downcast Synchronisation L.SynchronizationScope where
   downcast SingleThread = L.SingleThread
   downcast CrossThread  = L.CrossThread
-#elif MIN_VERSION_llvm_general_pure(3,4,0)
-instance Downcast Atomicity L.Atomicity where
-  downcast (SingleThread, mo) = L.Atomicity False (downcast mo)
-  downcast (CrossThread,  mo) = L.Atomicity True  (downcast mo)
-#endif
 
 instance Downcast MemoryOrdering L.MemoryOrdering where
   downcast Unordered              = L.Unordered
@@ -312,20 +300,12 @@ instance Downcast (Operand a) L.Operand where
 -- ------------------------------
 
 instance Downcast Metadata L.Operand where
-#if MIN_VERSION_llvm_general_pure(3,8,0)
-  downcast                           = L.MetadataOperand . downcast
-#else
-  downcast (MetadataStringOperand s) = L.MetadataStringOperand s
-  downcast (MetadataNodeOperand n)   = L.MetadataNodeOperand (downcast n)
-  downcast (MetadataOperand o)       = downcast o
-#endif
+  downcast = L.MetadataOperand . downcast
 
-#if MIN_VERSION_llvm_general_pure(3,8,0)
 instance Downcast Metadata L.Metadata where
   downcast (MetadataStringOperand s) = L.MDString s
   downcast (MetadataNodeOperand n)   = L.MDNode (downcast n)
   downcast (MetadataOperand o)       = L.MDValue (downcast o)
-#endif
 
 instance Downcast MetadataNode L.MetadataNode where
   downcast (MetadataNode n)          = L.MetadataNode (downcast n)
@@ -402,10 +382,9 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast AlwaysInline = L.AlwaysInline
   downcast NoDuplicate  = L.NoDuplicate
 
-#if MIN_VERSION_llvm_general_pure(3,5,0)
 instance Downcast GroupID L.GroupID where
   downcast (GroupID n) = L.GroupID n
-#endif
+
 
 -- LLVM.General.AST.Type.Representation
 -- ------------------------------------
