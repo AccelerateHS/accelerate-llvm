@@ -224,15 +224,11 @@ processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
                       relocate value'_rel
 
   -- Internal relocation (to constant sections, for example). Since the sections
-  -- are loaded at the appropriate offsets, this should actually be unnecessary.
+  -- are loaded at the appropriate offsets in a single contiguous segment, this
+  -- is unnecessary.
   --
   | otherwise
-  = let value     = castPtrToWord64 (seg_p `plusPtr` sec_addr (seg_sections V.! (ri_symbolnum-1)))
-        value_rel = value - pc' - 2 ^ ri_length
-    in
-    case ri_pcrel of
-      False -> relocate value
-      True  -> relocate value_rel
+  = return ()
 
   where
     pc :: Ptr Word8
@@ -241,13 +237,11 @@ processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
 
     -- Include the addend value already encoded in the instruction
     addend :: (Integral a, Storable a) => Ptr a -> Word64 -> IO a
-    addend p x
-      | not ri_extern = return (fromIntegral x)
-      | otherwise     = do
-          base <- peek p
-          case ri_type of
-            X86_64_RELOC_SUBTRACTOR -> return $ fromIntegral (fromIntegral base - x)
-            _                       -> return $ fromIntegral (fromIntegral base + x)
+    addend p x = do
+      base <- peek p
+      case ri_type of
+        X86_64_RELOC_SUBTRACTOR -> return $ fromIntegral (fromIntegral base - x)
+        _                       -> return $ fromIntegral (fromIntegral base + x)
 
     -- Write the new relocated address
     relocate :: Word64 -> IO ()
