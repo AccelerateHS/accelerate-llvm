@@ -17,6 +17,7 @@ packages:
 extra-deps:
 - 'atomic-primops-0.8.0.2'
 - 'base-orphans-0.4.4'
+- 'Cabal-1.24.2.0'
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.2'
 - 'libffi-0.1'
