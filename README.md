@@ -6,14 +6,14 @@ An LLVM backend for the Accelerate Array Language
 This package compiles Accelerate code to LLVM IR, and executes that code on
 multicore CPUs as well as NVIDIA GPUs. This avoids the need to go through `nvcc`
 or `clang`. For details on Accelerate, refer to the [main repository][GitHub].
-Please also file bug reports and feature requests with the [issue
-tracker][Issues] of the main repository.
+
+We love all kinds of contributions, so feel free to open issues for missing
+features as well as report (or fix!) bugs on the [issue tracker][Issues].
 
   [GitHub]:  https://github.com/AccelerateHS/accelerate
   [Issues]:  https://github.com/AccelerateHS/accelerate/issues
 
 
- * [Contributing](#contributing)
  * [Dependencies](#dependencies)
  * [Installing LLVM](#installing-llvm)
    * [Homebrew](#homebrew)
@@ -23,18 +23,11 @@ tracker][Issues] of the main repository.
    * [libNVVM](#libNVVM)
 
 
-Contributing
-------------
-
-We love all kinds of contributions, so feel free to open issues for missing
-features as well as report (or fix!) bugs on the issue tracker.
-
-
 Dependencies
 ------------
 
-Haskell dependencies are available from Hackage. There are several external
-dependencies that you will need to install as well:
+Haskell dependencies are available from Hackage, but there are several external
+library dependencies that you will need to install as well:
 
  * [`LLVM`](http://llvm.org)
  * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
