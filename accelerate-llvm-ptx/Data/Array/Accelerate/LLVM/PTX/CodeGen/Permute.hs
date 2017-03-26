@@ -194,8 +194,10 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                         where
                           n       = FloatingNumType t
                           s'      = NumScalarType n
-                          primAdd = compute >= compute60
-                                 || bytes == 4
+                          primAdd = bytes == 4
+                                 -- Disabling due to missing support from llvm-4.0.
+                                 -- <https://github.com/AccelerateHS/accelerate/issues/363>
+                                 -- || compute >= compute60
 
                       rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
                       rmw_nonnum TypeChar{} ptr val = do
