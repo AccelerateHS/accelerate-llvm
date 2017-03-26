@@ -133,7 +133,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
       bytes                     = sizeOf (eltType (undefined :: e))
       compute                   = computeCapability dev
       compute32                 = Compute 3 2
-      compute60                 = Compute 6 0
+      -- compute60                 = Compute 6 0
   in
   makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
 
@@ -197,7 +197,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                           primAdd = bytes == 4
                                  -- Disabling due to missing support from llvm-4.0.
                                  -- <https://github.com/AccelerateHS/accelerate/issues/363>
-                                 -- || compute >= compute60
+                                 -- compute >= compute60
 
                       rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
                       rmw_nonnum TypeChar{} ptr val = do

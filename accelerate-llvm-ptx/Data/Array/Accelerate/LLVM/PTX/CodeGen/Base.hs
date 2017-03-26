@@ -217,8 +217,9 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 -- additional support for atomic add on floating point types, which can be
 -- accessed through the following intrinsics.
 --
--- Double precision is only supported on Compute 6.0 devices and later.
--- LLVM-4.0 currently lacks support for this intrinsic however.
+-- Double precision is only supported on Compute 6.0 devices and later. LLVM-4.0
+-- currently lacks support for this intrinsic, however it may be possible to use
+-- inline assembly.
 --
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
