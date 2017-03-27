@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
 import Prelude                                                      hiding ( exp, any )
+import qualified Data.IntMap                                        as IM
 
 import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
@@ -107,7 +108,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexTail ix                -> indexTail <$> cvtE ix
         Prj ix tup                  -> prjT ix <$> cvtE tup
         Tuple tup                   -> cvtT tup
-        Foreign asm _ x             -> foreignE asm =<< cvtE x
+        Foreign asm f x             -> foreignE asm f =<< cvtE x
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
@@ -258,13 +259,15 @@ llvmOfOpenExp arch top env aenv = cvtE top
       L.while (app1 p) (app1 f) =<< x
 
     foreignE :: (Elt a, Elt b, Foreign arch, A.Foreign asm)
-             => asm (a -> b)
+             => asm           (a -> b)
+             -> DelayedFun () (a -> b)
              -> IR a
-             -> CodeGen (IR b)
-    foreignE asm x =
+             -> IRExp arch () b
+    foreignE asm no x =
       case foreignExp arch asm of
-        Just f  -> app1 f x
-        Nothing -> $internalError "foreignE" "failed to recover foreign expression the second time"
+        Just f                       -> app1 f x
+        Nothing | Lam (Body b) <- no -> llvmOfOpenExp arch b (Empty `Push` x) IM.empty
+        _                            -> error "when a grid's misaligned with another behind / that's a moiré..."
 
     primFun :: Elt r
             => PrimFun (a -> r)

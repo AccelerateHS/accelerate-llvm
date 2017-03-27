@@ -266,7 +266,7 @@ compileOpenAcc = traverseAcc
             where
               absurd :: Idx () t -> Idx aenv t
               absurd = absurd
-              err    = $internalError "compile" "failed to recover foreign function the second time"
+              err    = $internalError "compile" "attempt to use fallback in foreign function"
 
         -- sadness
         noKernel  = $internalError "compile" "no kernel module for this node"
@@ -334,20 +334,17 @@ compileOpenAcc = traverseAcc
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
         foreignE asm f x =
           case foreignExp (undefined :: arch) asm of
-            Just{}                      -> liftA2 (Foreign asm) <$> travF' f <*> travE x
-            Nothing | Lam (Body b) <- f -> liftA2 Let           <$> travE  x <*> travE (weaken absurd (weakenE zero b))
+            Just{}                      -> liftA (Foreign asm err) <$> travE x
+            Nothing | Lam (Body b) <- f -> liftA2 Let              <$> travE x <*> travE (weaken absurd (weakenE zero b))
             _                           -> error "the slow regard of silent things"
           where
             absurd :: Idx () t -> Idx aenv t
             absurd = absurd
+            err    = $internalError "foreignE" "attempt to use fallback in foreign expression"
 
             zero :: Idx ((), a) t -> Idx (env,a) t
             zero ZeroIdx = ZeroIdx
             zero notzero = zero notzero
-
-            travF' :: DelayedFun () (a -> b)
-                   -> LLVM arch (IntMap (Idx' aenv), PreFun (ExecOpenAcc arch) () (a -> b))
-            travF' = fmap (pure . snd) . travF
 
 
 -- Compilation

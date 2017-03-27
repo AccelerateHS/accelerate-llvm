@@ -217,6 +217,12 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 -- additional support for atomic add on floating point types, which can be
 -- accessed through the following intrinsics.
 --
+-- Double precision is only supported on Compute 6.0 devices and later. LLVM-4.0
+-- currently lacks support for this intrinsic, however it may be possible to use
+-- inline assembly.
+--
+-- <https://github.com/AccelerateHS/accelerate/issues/363>
+--
 atomicAdd_f :: FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen ()
 atomicAdd_f t addr val =
   let
@@ -235,9 +241,10 @@ atomicAdd_f t addr val =
             -> (ta, tv, as)
           _ -> $internalError "atomicAdd" "unexpected operand type"
 
-      fun = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
+      t_ret = PrimType (ScalarPrimType t_val)
+      fun   = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
   in
-  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body VoidType fun))) [NoUnwind]
+  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret fun))) [NoUnwind]
 
 
 -- Shared memory
