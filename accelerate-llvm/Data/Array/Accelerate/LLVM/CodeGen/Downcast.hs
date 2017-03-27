@@ -381,6 +381,7 @@ instance Downcast FunctionAttribute L.FunctionAttribute where
   downcast ReadNone     = L.ReadNone
   downcast AlwaysInline = L.AlwaysInline
   downcast NoDuplicate  = L.NoDuplicate
+  downcast Convergent   = L.Convergent
 
 instance Downcast GroupID L.GroupID where
   downcast (GroupID n) = L.GroupID n
