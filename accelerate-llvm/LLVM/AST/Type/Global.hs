@@ -35,6 +35,7 @@ data FunctionAttribute
   | ReadNone
   | AlwaysInline
   | NoDuplicate
+  | Convergent
 
 -- | Attribute groups are groups of attributes that are referenced by
 -- objects within the IR. To use an attribute group, an object must
