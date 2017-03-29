@@ -20,9 +20,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
 ) where
 
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar

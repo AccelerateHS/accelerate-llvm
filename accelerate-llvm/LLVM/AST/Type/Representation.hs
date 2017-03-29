@@ -2,7 +2,7 @@
 {-# LANGUAGE GADTs             #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Representation
+-- Module      : LLVM.AST.Type.Representation
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -11,9 +11,9 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Representation (
+module LLVM.AST.Type.Representation (
 
-  module LLVM.General.AST.Type.Representation,
+  module LLVM.AST.Type.Representation,
   module Data.Array.Accelerate.Type,
   Ptr,
   AddrSpace(..),
@@ -23,7 +23,7 @@ module LLVM.General.AST.Type.Representation (
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Product
 
-import LLVM.General.AST.Type.AddrSpace
+import LLVM.AST.Type.AddrSpace
 
 import Foreign.Ptr
 import Text.Printf

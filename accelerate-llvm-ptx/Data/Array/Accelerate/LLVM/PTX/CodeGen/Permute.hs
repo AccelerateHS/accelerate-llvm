@@ -43,13 +43,13 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Atomic
-import LLVM.General.AST.Type.Instruction.RMW                        as RMW
-import LLVM.General.AST.Type.Instruction.Volatile
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.RMW                                as RMW
+import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Foreign.CUDA.Analysis
 
@@ -133,7 +133,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
       bytes                     = sizeOf (eltType (undefined :: e))
       compute                   = computeCapability dev
       compute32                 = Compute 3 2
-      compute60                 = Compute 6 0
+      -- compute60                 = Compute 6 0
   in
   makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
 
@@ -194,8 +194,10 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                         where
                           n       = FloatingNumType t
                           s'      = NumScalarType n
-                          primAdd = compute >= compute60
-                                 || bytes == 4
+                          primAdd = bytes == 4
+                                 -- Disabling due to missing support from llvm-4.0.
+                                 -- <https://github.com/AccelerateHS/accelerate/issues/363>
+                                 -- compute >= compute60
 
                       rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
                       rmw_nonnum TypeChar{} ptr val = do

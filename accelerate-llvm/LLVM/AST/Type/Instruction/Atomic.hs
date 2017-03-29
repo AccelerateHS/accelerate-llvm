@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction.Atomic
+-- Module      : LLVM.AST.Type.Instruction.Atomic
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -9,7 +9,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction.Atomic
+module LLVM.AST.Type.Instruction.Atomic
   where
 
 -- | Atomic instructions take ordering parameters that determine which other

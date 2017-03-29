@@ -22,8 +22,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 
 ) where
 
-import LLVM.General.AST.Type.AddrSpace
-import LLVM.General.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction.Volatile
 
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar

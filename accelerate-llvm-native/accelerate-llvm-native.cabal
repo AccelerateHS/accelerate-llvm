@@ -25,10 +25,9 @@ category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 Flag debug
   Default:              True
   Description:
-    Enable tracing message flags. These are read from the command-line
-    arguments, which is convenient but may cause problems interacting with the
-    user program, so is not enabled by default. The available options:
-    .
+    Enable debug tracing message flags. Note that 'debug' must be enabled in the
+    base 'accelerate' package as well. See the 'accelerate' package for usage
+    and available options.
 
 Flag bounds-checks
   Default:              True
@@ -87,8 +86,8 @@ Library
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
         , libffi                        >= 0.1
-        , llvm-general                  >= 3.5
-        , llvm-general-pure             >= 3.5
+        , llvm-hs                       >= 3.9
+        , llvm-hs-pure                  >= 3.9
         , mtl                           >= 2.2.1
         , time                          >= 1.4
         , vector                        >= 0.10

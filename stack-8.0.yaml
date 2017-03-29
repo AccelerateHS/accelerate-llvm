@@ -7,27 +7,18 @@ packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
-# - 'accelerate-llvm-multidev'
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: df6646a2e0f596dd5b98b0bff20fc0a7deb869be
+    commit: 1c324650c9f6e8d146078c31692fa5e31fa382bd
   extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/llvm-general.git
-    # commit: 8971e275fe56dfd0090ac777e38e6dd641a0306a # 3.5
-    # commit: f80beba704a6b168326d442197b43e71a1ab730d # 3.8
-    commit: 69863022efd2691e8198da0c24b7e49b8d5ebd4c # 3.9
-  extra-dep: true
-  subdirs:
-    - 'llvm-general'
-    - 'llvm-general-pure'
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.2'
 - 'libffi-0.1'
+- 'llvm-hs-4.0.0.0'
+- 'llvm-hs-pure-4.0.0.0'
 - 'nvvm-0.7.5.1'
 - 'unique-0'
 
@@ -47,7 +38,7 @@ flags:
   accelerate-llvm-ptx:
     debug: true
     nvvm: false
-  llvm-general:
+  llvm-hs:
     shared-llvm: true
 
 # Extra package databases containing global packages

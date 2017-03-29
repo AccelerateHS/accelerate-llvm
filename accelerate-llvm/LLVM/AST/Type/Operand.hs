@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Operand
+-- Module      : LLVM.AST.Type.Operand
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -10,15 +10,15 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Operand (
+module LLVM.AST.Type.Operand (
 
   Operand(..),
 
 ) where
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Representation
 
 
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'

@@ -17,8 +17,8 @@
 module Data.Array.Accelerate.LLVM.Target
   where
 
--- llvm-general
-import LLVM.General.AST.DataLayout                              ( DataLayout )
+-- llvm-hs
+import LLVM.AST.DataLayout                                ( DataLayout )
 
 
 -- | Describes some target specific information needed for code generation

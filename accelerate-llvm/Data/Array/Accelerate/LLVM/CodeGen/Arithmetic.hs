@@ -34,13 +34,13 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
 -- accelerate-llvm
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Global
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Instruction.Compare
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Compare
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant

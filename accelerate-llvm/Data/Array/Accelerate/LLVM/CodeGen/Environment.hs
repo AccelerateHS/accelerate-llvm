@@ -24,7 +24,7 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
-import LLVM.General.AST.Type.Name
+import LLVM.AST.Type.Name
 
 
 -- Scalar environment

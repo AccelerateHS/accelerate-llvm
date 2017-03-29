@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeOperators        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Global
+-- Module      : LLVM.AST.Type.Global
 -- Copyright   : [2015] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -13,12 +13,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Global
+module LLVM.AST.Type.Global
   where
 
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 
 -- | Parameters for functions

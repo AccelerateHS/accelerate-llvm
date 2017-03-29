@@ -7,24 +7,22 @@ packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
-# - 'accelerate-llvm-multidev'
 
 # extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: df6646a2e0f596dd5b98b0bff20fc0a7deb869be
+    commit: 1c324650c9f6e8d146078c31692fa5e31fa382bd
   extra-dep: true
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.2'
 - 'libffi-0.1'
+- 'llvm-hs-4.0.0.0'
+- 'llvm-hs-pure-4.0.0.0'
 - 'nvvm-0.7.5.1'
 - 'unique-0'
 
-# update utils/cabal_macros.h whenever these versions are changed
-- 'llvm-general-3.5.1.2'
-- 'llvm-general-pure-3.5.1.0'
 
 # Override default flag values for local packages and extra-deps
 flags:
@@ -42,8 +40,11 @@ flags:
   accelerate-llvm-ptx:
     debug: true
     nvvm: false
-  llvm-general:
+  llvm-hs-pure:
+    semigroups: true
+  llvm-hs:
     shared-llvm: true
+    semigroups: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []

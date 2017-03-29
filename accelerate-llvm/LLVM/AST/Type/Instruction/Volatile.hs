@@ -1,6 +1,6 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction.Volatile
+-- Module      : LLVM.AST.Type.Instruction.Volatile
 -- Copyright   : [2016] Trevor L. McDonell
 -- License     : BSD3
 --
@@ -9,7 +9,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction.Volatile
+module LLVM.AST.Type.Instruction.Volatile
   where
 
 -- | Loads and stores may be marked as 'volatile'. The LLVM optimiser will not

@@ -21,13 +21,13 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 ) where
 
 -- llvm-general
-import LLVM.General.AST.AddrSpace
-import LLVM.General.AST.DataLayout
-import LLVM.General.Target                                          hiding ( Target )
-import qualified LLVM.General.Target                                as LLVM
-import qualified LLVM.General.Relocation                            as R
-import qualified LLVM.General.CodeModel                             as CM
-import qualified LLVM.General.CodeGenOpt                            as CGO
+import LLVM.AST.AddrSpace
+import LLVM.AST.DataLayout
+import LLVM.Target                                                  hiding ( Target )
+import qualified LLVM.Target                                        as LLVM
+import qualified LLVM.Relocation                                    as R
+import qualified LLVM.CodeModel                                     as CM
+import qualified LLVM.CodeGenOpt                                    as CGO
 
 -- accelerate
 import Data.Array.Accelerate.Error
@@ -97,13 +97,9 @@ ptxDeviceProperties = deviceProperties . ptxContext
 --
 ptxDataLayout :: DataLayout
 ptxDataLayout = DataLayout
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
   { endianness          = LittleEndian
   , mangling            = Nothing
   , aggregateLayout     = AlignmentInfo 0 (Just 64)
-#else
-  { endianness          = Just LittleEndian
-#endif
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
       [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize (Just wordSize))) ]
