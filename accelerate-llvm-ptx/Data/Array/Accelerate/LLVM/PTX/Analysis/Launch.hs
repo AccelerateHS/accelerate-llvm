@@ -1,8 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
--- Copyright   : [2008..2014] Manuel M T Chakravarty, Gabriele Keller
---               [2009..2016] Trevor L. McDonell
+-- Copyright   : [2008..2017] Manuel M T Chakravarty, Gabriele Keller
+--               [2009..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>

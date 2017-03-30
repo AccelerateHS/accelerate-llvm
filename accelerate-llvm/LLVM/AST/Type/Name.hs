@@ -3,7 +3,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Name
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>

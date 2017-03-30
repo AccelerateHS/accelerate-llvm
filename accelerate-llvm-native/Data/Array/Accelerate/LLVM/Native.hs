@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
