@@ -90,7 +90,6 @@ Library
         , llvm-hs-pure                  >= 3.9
         , mtl                           >= 2.2.1
         , time                          >= 1.4
-        , vector                        >= 0.10
 
   default-language:
     Haskell2010
@@ -115,6 +114,11 @@ Library
 
 source-repository head
   type:                 git
-  location:
+  location:             https://github.com/AccelerateHS/accelerate-llvm.git
+
+source-repository this
+  type:                 git
+  tag:                  1.0.0.0
+  location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell
