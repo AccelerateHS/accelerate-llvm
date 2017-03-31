@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Async
--- Copyright   : [2014..2016] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -35,8 +35,11 @@ instance A.Async Native where
   type StreamR Native = ()
   type EventR  Native = ()
 
-  {-# INLINE spawn #-}
-  spawn = return ()
+  {-# INLINE fork #-}
+  fork = return ()
+
+  {-# INLINE join #-}
+  join () = return ()
 
   {-# INLINE checkpoint #-}
   checkpoint () = return ()

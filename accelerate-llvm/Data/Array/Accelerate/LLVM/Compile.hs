@@ -5,9 +5,10 @@
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2016] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,7 +22,7 @@ module Data.Array.Accelerate.LLVM.Compile (
   Compile(..),
   compileAcc, compileAfun,
 
-  ExecOpenAcc(..),
+  ExecOpenAcc(..), ExecOpenAfun,
   ExecAcc, ExecAfun,
   ExecExp, ExecOpenExp,
   ExecFun, ExecOpenFun
@@ -30,22 +31,25 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
+import qualified Data.Array.Accelerate.Array.Sugar              as A
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
 import Data.IntMap                                              ( IntMap )
 import Data.Monoid
 import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp )
+import Prelude                                                  hiding ( exp, unzip )
 
 
-class Compile arch where
+class Foreign arch => Compile arch where
   data ExecutableR arch
 
   -- | Compile an accelerate computation into some backend-specific executable format
@@ -69,12 +73,18 @@ data ExecOpenAcc arch aenv a where
            => PreExp (ExecOpenAcc arch) aenv sh
            -> ExecOpenAcc arch aenv (Array sh e)
 
+  UnzipAcc :: (Elt t, Elt e)
+           => TupleIdx (TupleRepr t) e
+           -> Idx aenv (Array sh t)
+           -> ExecOpenAcc arch aenv (Array sh e)
+
 
 -- An annotated AST suitable for execution
 --
 type ExecAcc arch a     = ExecOpenAcc arch () a
 type ExecAfun arch a    = PreAfun (ExecOpenAcc arch) a
 
+type ExecOpenAfun arch  = PreOpenAfun (ExecOpenAcc arch)
 type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
 type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
 
@@ -144,7 +154,7 @@ compileOpenAcc = traverseAcc
         Aprj ix tup             -> node =<< liftA (Aprj ix)     <$> travA    tup
 
         -- Foreign
-        Aforeign ff afun a      -> node =<< foreignA ff afun a
+        Aforeign ff afun a      -> foreignA ff afun a
 
         -- Array injection
         Unit e                  -> node =<< liftA  Unit         <$> travE e
@@ -158,7 +168,9 @@ compileOpenAcc = traverseAcc
 
         -- Producers
         Generate e f            -> exec =<< liftA2 Generate             <$> travE e <*> travF f
-        Map f a                 -> exec =<< liftA2 Map                  <$> travF f <*> travA a
+        Map f a
+          | Just b <- unzip f a -> return b
+          | otherwise           -> exec =<< liftA2 Map                  <$> travF f <*> travA a
         ZipWith f a b           -> exec =<< liftA3 ZipWith              <$> travF f <*> travA a <*> travA b
         Transform e p f a       -> exec =<< liftA4 Transform            <$> travE e <*> travF p <*> travF f <*> travA a
 
@@ -219,17 +231,45 @@ compileOpenAcc = traverseAcc
              -> LLVM arch (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
         wrap = return . liftA (ExecAcc noKernel mempty)
 
-        noKernel :: ExecutableR arch
-        noKernel =  $internalError "compile" "no kernel module for this node"
+        -- Unzips of manifest array data can be done in constant time without
+        -- executing any array programs. We split them out here into a separate
+        -- case of 'ExecAcc' so that the execution phase does not have to
+        -- continually perform the below check (in particular; 'run1').
+        unzip :: PreFun DelayedOpenAcc aenv (a -> b)
+              -> DelayedOpenAcc aenv (Array sh a)
+              -> Maybe (ExecOpenAcc arch aenv (Array sh b))
+        unzip f a
+          | Lam (Body (Prj tix (Var ZeroIdx)))  <- f
+          , Delayed sh index _                  <- a
+          , Shape u                             <- sh
+          , Manifest (Avar ix)                  <- u
+          , Lam (Body (Index v (Var ZeroIdx)))  <- index
+          , Just Refl                           <- match u v
+          = Just (UnzipAcc tix ix)
+        unzip _ _
+          = Nothing
 
-        -- If there is a foreign call for the LLVM backend, don't bother
-        -- compiling the pure version
-        foreignA :: (Arrays a, Arrays b, Foreign f)
-                 => f a b
+        -- Is there a foreign version available for this backend? If so, we
+        -- leave that node in the AST and strip out the remaining terms.
+        -- Subsequent phases, if they encounter a foreign node, can assume that
+        -- it is for them. Otherwise, drop this term and continue walking down
+        -- the list of alternate implementations.
+        foreignA :: (Arrays a, Arrays b, A.Foreign asm)
+                 => asm         (a -> b)
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv b)
-        foreignA = error "todo: compile/foreign array computations"
+                 -> LLVM arch (ExecOpenAcc arch aenv b)
+        foreignA asm f a =
+          case foreignAcc (undefined :: arch) asm of
+            Just{}  -> node =<< liftA (Aforeign asm err) <$> travA a
+            Nothing -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
+            where
+              absurd :: Idx () t -> Idx aenv t
+              absurd = absurd
+              err    = $internalError "compile" "attempt to use fallback in foreign function"
+
+        -- sadness
+        noKernel  = $internalError "compile" "no kernel module for this node"
 
 
     -- Traverse a scalar expression
@@ -287,12 +327,24 @@ compileOpenAcc = traverseAcc
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = $internalError "bind" "expected array variable"
 
-        foreignE :: (Elt a, Elt b, Foreign f)
-                 => f a b
+        foreignE :: (Elt a, Elt b, A.Foreign asm)
+                 => asm           (a -> b)
                  -> DelayedFun () (a -> b)
                  -> DelayedOpenExp env aenv a
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
-        foreignE = error "todo: compile/foreign expressions"
+        foreignE asm f x =
+          case foreignExp (undefined :: arch) asm of
+            Just{}                      -> liftA (Foreign asm err) <$> travE x
+            Nothing | Lam (Body b) <- f -> liftA2 Let              <$> travE x <*> travE (weaken absurd (weakenE zero b))
+            _                           -> error "the slow regard of silent things"
+          where
+            absurd :: Idx () t -> Idx aenv t
+            absurd = absurd
+            err    = $internalError "foreignE" "attempt to use fallback in foreign expression"
+
+            zero :: Idx ((), a) t -> Idx (env,a) t
+            zero ZeroIdx = ZeroIdx
+            zero notzero = zero notzero
 
 
 -- Compilation

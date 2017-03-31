@@ -4,7 +4,7 @@
 {-# LANGUAGE TupleSections   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Link
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -16,11 +16,10 @@
 module Data.Array.Accelerate.LLVM.Native.Compile.Link
   where
 
--- llvm-general
-import LLVM.General.AST
-import LLVM.General.AST.Global
-
-import LLVM.General.ExecutionEngine
+-- llvm-hs
+import LLVM.AST
+import LLVM.AST.Global
+import LLVM.ExecutionEngine
 
 -- accelerate
 import Data.Array.Accelerate.Error

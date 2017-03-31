@@ -1,11 +1,11 @@
-{-# LANGUAGE CPP            #-}
 {-# LANGUAGE DataKinds      #-}
 {-# LANGUAGE GADTs          #-}
 {-# LANGUAGE RankNTypes     #-}
 {-# LANGUAGE TypeOperators  #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Instruction
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Instruction
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -13,24 +13,23 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Instruction
+module LLVM.AST.Type.Instruction
   where
 
-import LLVM.General.AST.Type.Bits
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Global
+import LLVM.AST.Type.Global
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Type
+import LLVM.AST.Type.Instruction.Atomic
+import LLVM.AST.Type.Instruction.Compare
+import LLVM.AST.Type.Instruction.RMW
+import LLVM.AST.Type.Instruction.Volatile
 
-import Foreign.Ptr
+import Data.Array.Accelerate.Product                      ( ProdRepr, TupleIdx )
 
+import Prelude                                            hiding ( Ordering )
 
--- | Predicate for comparison instruction
---
-data Predicate = EQ | NE | LT | LE | GT | GE
-
-data Volatile = Volatile | NonVolatile
 
 -- | Non-terminating instructions
 --
@@ -116,7 +115,6 @@ data Instruction a where
 
   -- Bitwise Binary Operations
   -- <http://llvm.org/docs/LangRef.html#bitwise-binary-operations>
-
   -- <http://llvm.org/docs/LangRef.html#and-instruction>
   --
   BAnd          :: IntegralType a
@@ -157,7 +155,11 @@ data Instruction a where
 
   -- Aggregate Operations
   -- <http://llvm.org/docs/LangRef.html#aggregate-operations>
-  -- ExtractValue
+  ExtractValue  :: ScalarType t
+                -> TupleIdx (ProdRepr tup) t
+                -> Operand tup
+                -> Instruction t
+
   -- InsertValue
 
   -- Memory Access and Addressing Operations
@@ -167,38 +169,59 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#load-instruction>
   --
   Load          :: ScalarType a
-                -> Volatile
+                -> Volatility
                 -> Operand (Ptr a)
                 -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#store-instruction>
   --
-  Store         :: Volatile
+  Store         :: Volatility
                 -> Operand (Ptr a)
                 -> Operand a
                 -> Instruction ()
 
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr :: Operand a            -- Operand (Ptr a), Name a ??
-                -> [Operand Int]
+  GetElementPtr :: Operand (Ptr a)
+                -> [Operand i]
                 -> Instruction (Ptr a)
 
-  -- Fence
-  -- CmpXchg
-  -- AtomicRMW
+  -- <http://llvm.org/docs/LangRef.html#i-fence>
+  --
+  Fence         :: Atomicity
+                -> Instruction ()
+
+  -- <http://llvm.org/docs/LangRef.html#cmpxchg-instruction>
+  --
+  CmpXchg       :: IntegralType a
+                -> Volatility
+                -> Operand (Ptr a)
+                -> Operand a              -- expected value
+                -> Operand a              -- replacement value
+                -> Atomicity              -- on success
+                -> MemoryOrdering         -- on failure (see docs for restrictions)
+                -> Instruction (a, Bool)
+
+  -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
+  --
+  AtomicRMW     :: IntegralType a
+                -> Volatility
+                -> RMWOperation
+                -> Operand (Ptr a)
+                -> Operand a
+                -> Atomicity
+                -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#trunc-to-instruction>
   --
-  Trunc         :: BoundedType a        -- req: (BitSize a > BitSize b)      -- TLM: expelling this constraint may be tricky
+  Trunc         :: BoundedType a        -- precondition: BitSize a > BitSize b
                 -> BoundedType b
                 -> Operand a
                 -> Instruction b
 
   -- <http://llvm.org/docs/LangRef.html#fptrunc-to-instruction>
   --
-  FTrunc        :: (BitSize a > BitSize b)
-                => FloatingType a
+  FTrunc        :: FloatingType a       -- precondition: BitSize a > BitSize b
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
@@ -206,15 +229,14 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#zext-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#sext-to-instruction>
   --
-  Ext           :: BoundedType a        -- Req: (BitSize a < BitSize b)
+  Ext           :: BoundedType a        -- precondition: BitSize a < BitSize b
                 -> BoundedType b
                 -> Operand a
                 -> Instruction b
 
   -- <http://llvm.org/docs/LangRef.html#fpext-to-instruction>
   --
-  FExt          :: (BitSize a < BitSize b)
-                => FloatingType a
+  FExt          :: FloatingType a       -- precondition: BitSize a < BitSize b
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
@@ -230,16 +252,20 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#uitofp-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#sitofp-to-instruction>
   --
-  IntToFP       :: IntegralType a
+  IntToFP       :: Either (IntegralType a) (NonNumType a)
                 -> FloatingType b
                 -> Operand a
                 -> Instruction b
 
   -- <http://llvm.org/docs/LangRef.html#bitcast-to-instruction>
   --
-  BitCast       :: ScalarType b         -- precondition: (BitSizeEq a b ~ True)
+  BitCast       :: ScalarType b         -- precondition: BitSize a == BitSize b
                 -> Operand a
                 -> Instruction b
+
+  PtrCast       :: PrimType (Ptr b)     -- precondition: same address space
+                -> Operand (Ptr a)
+                -> Instruction (Ptr b)
 
   -- PtrToInt
   -- IntToPtr
@@ -251,26 +277,24 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#icmp-instruction>
   -- <http://llvm.org/docs/LangRef.html#fcmp-instruction>
   --
+  -- We treat non-scalar types as signed/unsigned integer values.
+  --
   Cmp           :: ScalarType a
-                -> Predicate
+                -> Ordering
                 -> Operand a
                 -> Operand a
                 -> Instruction Bool
 
   -- <http://llvm.org/docs/LangRef.html#phi-instruction>
   --
-  Phi           :: ScalarType a
+  Phi           :: PrimType a
                 -> [(Operand a, Label)]
                 -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#call-instruction>
   --
   Call          :: GlobalFunction args t
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
                 -> [Either GroupID FunctionAttribute]
-#elif MIN_VERSION_llvm_general_pure(3,4,0)
-                -> [FunctionAttribute]
-#endif
                 -> Instruction t
 
   -- <http://llvm.org/docs/LangRef.html#select-instruction>

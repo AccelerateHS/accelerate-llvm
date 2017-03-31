@@ -2,9 +2,10 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Skeleton
--- Copyright   : [2015..2016] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -29,6 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
@@ -99,58 +101,58 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Segments i)
                 -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanl         :: Elt e
+  scanl         :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanl'        :: Elt e
+  scanl'        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
 
-  scanl1        :: Elt e
+  scanl1        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanr         :: Elt e
-                => arch
-                -> Gamma          aenv
-                -> IRFun2    arch aenv (e -> e -> e)
-                -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
-
-  scanr'        :: Elt e
+  scanr         :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
                 -> IRExp     arch aenv e
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e, Scalar e))
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
-  scanr1        :: Elt e
+  scanr'        :: (Shape sh, Elt e)
                 => arch
                 -> Gamma          aenv
                 -> IRFun2    arch aenv (e -> e -> e)
-                -> IRDelayed arch aenv (Vector e)
-                -> CodeGen (IROpenAcc arch aenv (Vector e))
+                -> IRExp     arch aenv e
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
+
+  scanr1        :: (Shape sh, Elt e)
+                => arch
+                -> Gamma          aenv
+                -> IRFun2    arch aenv (e -> e -> e)
+                -> IRDelayed arch aenv (Array (sh:.Int) e)
+                -> CodeGen (IROpenAcc arch aenv (Array (sh:.Int) e))
 
   permute       :: (Shape sh, Shape sh', Elt e)
                 => arch
-                -> Gamma          aenv
-                -> IRFun2    arch aenv (e -> e -> e)
-                -> IRFun1    arch aenv (sh -> sh')
-                -> IRDelayed arch aenv (Array sh e)
+                -> Gamma             aenv
+                -> IRPermuteFun arch aenv (e -> e -> e)
+                -> IRFun1       arch aenv (sh -> sh')
+                -> IRDelayed    arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
   backpermute   :: (Shape sh, Shape sh', Elt e)
@@ -160,7 +162,7 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
-  stencil       :: (Elt a, Elt b, Stencil sh a stencil)
+  stencil       :: (Stencil sh a stencil, Elt b)
                 => arch
                 -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
@@ -168,7 +170,7 @@ class Skeleton arch where
                 -> IRManifest arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
-  stencil2      :: (Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
+  stencil2      :: (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
                 => arch
                 -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
@@ -215,7 +217,7 @@ defaultBackpermute arch aenv p a
 
 {-# INLINEABLE defaultTransform #-}
 defaultTransform
-    :: (Skeleton arch, Shape sh, Shape sh', Elt a, Elt b)
+    :: (Skeleton arch, Shape sh', Elt b)
     => arch
     -> Gamma          aenv
     -> IRFun1    arch aenv (sh' -> sh)
@@ -230,7 +232,7 @@ defaultTransform arch aenv p f IRDelayed{..}
 
 {-# INLINEABLE defaultStencil1 #-}
 defaultStencil1
-    :: (Skeleton arch, Shape sh, Elt a, Elt b, Stencil sh a stencil)
+    :: (Skeleton arch, Stencil sh a stencil, Elt b)
     => arch
     -> Gamma aenv
     -> IRFun1 arch aenv (stencil -> b)
@@ -244,7 +246,7 @@ defaultStencil1 arch aenv f boundary (IRManifest v)
 
 {-# INLINEABLE defaultStencil2 #-}
 defaultStencil2
-    :: (Skeleton arch, Shape sh, Elt a, Elt b, Elt c, Stencil sh a stencil1, Stencil sh b stencil2)
+    :: (Skeleton arch, Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
     => arch
     -> Gamma aenv
     -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)

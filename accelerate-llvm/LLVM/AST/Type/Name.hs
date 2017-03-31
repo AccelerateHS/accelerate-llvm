@@ -1,8 +1,9 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RoleAnnotations    #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Name
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Name
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -10,7 +11,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Name
+module LLVM.AST.Type.Name
   where
 
 import Data.Data
@@ -40,7 +41,7 @@ import Prelude
 -- 'UnName's passed into C++ cannot be preserved in the C++ objects. If the C++
 -- IR is printed as assembly or translated into a Haskell AST, unnamed nodes
 -- will be renumbered sequentially. Thus unnamed node numbers should be thought
--- of as having any scope limited to the 'LLVM.General.AST.Module' in which they
+-- of as having any scope limited to the 'LLVM.AST.Module' in which they
 -- are used.
 --
 type role Name representational

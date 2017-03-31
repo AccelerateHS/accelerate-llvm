@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,13 +21,13 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 ) where
 
 -- llvm-general
-import LLVM.General.AST.AddrSpace
-import LLVM.General.AST.DataLayout
-import LLVM.General.Target                                          hiding ( Target )
-import qualified LLVM.General.Target                                as LLVM
-import qualified LLVM.General.Relocation                            as R
-import qualified LLVM.General.CodeModel                             as CM
-import qualified LLVM.General.CodeGenOpt                            as CGO
+import LLVM.AST.AddrSpace
+import LLVM.AST.DataLayout
+import LLVM.Target                                                  hiding ( Target )
+import qualified LLVM.Target                                        as LLVM
+import qualified LLVM.Relocation                                    as R
+import qualified LLVM.CodeModel                                     as CM
+import qualified LLVM.CodeGenOpt                                    as CGO
 
 -- accelerate
 import Data.Array.Accelerate.Error
@@ -38,7 +38,7 @@ import Data.Array.Accelerate.LLVM.Util
 import Control.Parallel.Meta                                        ( Executable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Reservoir )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
@@ -69,7 +69,11 @@ data PTX = PTX {
 
 instance Target PTX where
   targetTriple _     = Just ptxTargetTriple
+#if ACCELERATE_USE_NVVM
+  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
+#else
   targetDataLayout _ = Just ptxDataLayout
+#endif
 
 
 -- | Extract the properties of the device the current PTX execution state is
@@ -93,13 +97,9 @@ ptxDeviceProperties = deviceProperties . ptxContext
 --
 ptxDataLayout :: DataLayout
 ptxDataLayout = DataLayout
-#if   MIN_VERSION_llvm_general_pure(3,5,0)
   { endianness          = LittleEndian
   , mangling            = Nothing
   , aggregateLayout     = AlignmentInfo 0 (Just 64)
-#else
-  { endianness          = Just LittleEndian
-#endif
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
       [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize (Just wordSize))) ]
@@ -132,6 +132,7 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
+      isa              = ptxISAVersion m n
       sm               = printf "sm_%d%d" m n
   in
   withTargetOptions $ \options -> do
@@ -139,12 +140,27 @@ withPTXTargetMachine dev go =
         ptxTarget
         ptxTargetTriple
         sm
-        Map.empty               -- CPU features
-        options                 -- target options
-        R.Default               -- relocation model
-        CM.Default              -- code model
-        CGO.Default             -- optimisation level
+        (Map.singleton isa True)    -- CPU features
+        options                     -- target options
+        R.Default                   -- relocation model
+        CM.Default                  -- code model
+        CGO.Default                 -- optimisation level
         go
+
+-- Some libdevice functions require at least ptx40, even though devices at
+-- that compute capability also accept older ISA versions.
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+--
+ptxISAVersion :: Int -> Int -> CPUFeature
+ptxISAVersion 2 _ = CPUFeature "ptx40"
+ptxISAVersion 3 7 = CPUFeature "ptx41"
+ptxISAVersion 3 _ = CPUFeature "ptx40"
+ptxISAVersion 5 0 = CPUFeature "ptx40"
+ptxISAVersion 5 2 = CPUFeature "ptx41"
+ptxISAVersion 5 3 = CPUFeature "ptx42"
+ptxISAVersion 6 _ = CPUFeature "ptx50"
+ptxISAVersion _ _ = CPUFeature "ptx40"
 
 
 -- | The NVPTX target for this host.

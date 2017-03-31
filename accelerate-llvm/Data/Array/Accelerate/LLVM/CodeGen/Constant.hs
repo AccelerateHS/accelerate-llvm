@@ -1,7 +1,9 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Constant
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -13,6 +15,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
   primConst,
   constant, scalar, num, integral, floating, nonnum,
+  undef,
 
 ) where
 
@@ -21,8 +24,9 @@ import Data.Array.Accelerate.AST                                ( PrimConst(..) 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
-import LLVM.General.AST.Type.Constant
-import LLVM.General.AST.Type.Operand
+import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 
 -- | Primitive constant values
@@ -65,4 +69,13 @@ floating t = num (FloatingNumType t)
 
 nonnum :: NonNumType a -> a -> Operand a
 nonnum t = scalar (NonNumScalarType t)
+
+
+-- | The string 'undef' can be used anywhere a constant is expected, and
+-- indicates that the program is well defined no matter what value is used.
+--
+-- <http://llvm.org/docs/LangRef.html#undefined-values>
+--
+undef :: ScalarType a -> Operand a
+undef t = ConstantOperand (UndefConstant (PrimType (ScalarPrimType t)))
 

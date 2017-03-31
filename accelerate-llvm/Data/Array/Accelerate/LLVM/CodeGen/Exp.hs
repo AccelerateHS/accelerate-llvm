@@ -5,9 +5,10 @@
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Exp
--- Copyright   : [2015..2016] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -25,12 +26,13 @@ import qualified Data.IntMap                                        as IM
 
 import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                            hiding ( toTuple, shape, intersect, union )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign, toTuple, shape, intersect, union )
 import Data.Array.Accelerate.Array.Representation                   ( SliceIndex(..) )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
+import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -39,30 +41,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad                     ( CodeGen )
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
-
-
--- | A class covering code generation for a subset of the scalar operations.
--- All operations (except Foreign) have a default instance, but this allows a
--- backend to specialise the implementation for the more complex operations.
---
-class Expression arch where
-  eforeign      :: (Foreign f, Elt x, Elt y)
-                => arch
-                -> f x y
-                -> IRFun1    arch ()   (x -> y)
-                -> IROpenExp arch env aenv x
-                -> IROpenExp arch env aenv y
-  eforeign = $internalError "eforeign" "default instance not implemented yet"
-
-  while         :: Elt a
-                => IROpenFun1 arch env aenv (a -> Bool)
-                -> IROpenFun1 arch env aenv (a -> a)
-                -> IROpenExp  arch env aenv a
-                -> IROpenExp  arch env aenv a
-  while p f x =
-    L.while (app1 p) (app1 f) =<< x
 
 
 -- Scalar expressions
@@ -70,7 +51,7 @@ class Expression arch where
 
 {-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
-    :: Expression arch
+    :: Foreign arch
     => arch
     -> DelayedFun aenv (a -> b)
     -> Gamma aenv
@@ -80,7 +61,7 @@ llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible
 
 {-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
-    :: Expression arch
+    :: Foreign arch
     => arch
     -> DelayedFun aenv (a -> b -> c)
     -> Gamma aenv
@@ -95,7 +76,7 @@ llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impo
 --
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
-    :: forall arch env aenv _t. Expression arch
+    :: forall arch env aenv _t. Foreign arch
     => arch
     -> DelayedOpenExp env aenv _t
     -> Val env
@@ -119,7 +100,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Var ix                      -> return $ prj ix env
         Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
         PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
-        PrimApp f x                 -> llvmOfPrimFun f =<< cvtE x
+        PrimApp f x                 -> primFun f x
         IndexNil                    -> return indexNil
         IndexAny                    -> return indexAny
         IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
@@ -127,7 +108,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexTail ix                -> indexTail <$> cvtE ix
         Prj ix tup                  -> prjT ix <$> cvtE tup
         Tuple tup                   -> cvtT tup
-        Foreign asm native x        -> eforeign arch asm (llvmOfFun1 arch native IM.empty) (cvtE x)
+        Foreign asm f x             -> foreignE asm f =<< cvtE x
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
@@ -148,17 +129,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
     indexAny = let any = Any :: Any sh
                in  IR (constant (eltType any) (fromElt any))
 
-    indexHead :: IR (sh :. sz) -> IR sz
-    indexHead (IR (OP_Pair _ sz)) = IR sz
-
-    indexCons :: IR sh -> IR sz -> IR (sh :. sz)
-    indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
-
-    indexTail :: IR (sh :. sz) -> IR sh
-    indexTail (IR (OP_Pair sh _)) = IR sh
-
-    indexSlice :: (Shape sh, Shape sl, Elt slix)
-               => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+    indexSlice :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
                -> IR slix
                -> IR sh
                -> IR sl
@@ -172,8 +143,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
           restrict sliceIdx slx sl
 
-    indexFull :: (Shape sh, Shape sl, Elt slix)
-              => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
+    indexFull :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
               -> IR slix
               -> IR sl
               -> IR sh
@@ -193,7 +163,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
       where
         go :: TupleIdx v e -> TupleType t' -> Operands t' -> Operands (EltRepr e)
         go ZeroTupIdx (PairTuple _ t) (OP_Pair _ v)
-          | Just REFL <- matchTupleType t (eltType (undefined :: e))
+          | Just Refl <- matchTupleType t (eltType (undefined :: e))
           = v
         go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _)      = go ix t tup
         go _ _ _                                                = $internalError "prjT" "inconsistent valuation"
@@ -208,7 +178,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
           -- We must assert that the reified type 'tb' of 'b' is actually
           -- equivalent to the type of 'b'. This can not fail, but is necessary
           -- because 'tb' observes the representation type of surface type 'b'.
-          | Just REFL <- matchTupleType tb (eltType (undefined::b))
+          | Just Refl <- matchTupleType tb (eltType (undefined::b))
           = do a'    <- go ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
@@ -233,13 +203,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit
           = return $ IR (constant (eltType (undefined :: Int)) 1)
         go (PairTuple tsh t) (OP_Pair sh sz)
-          | Just REFL <- matchTupleType t (eltType (undefined::Int))
+          | Just Refl <- matchTupleType t (eltType (undefined::Int))
           = do
                a <- go tsh sh
                b <- A.mul numType a (IR sz)
                return b
         go (SingleTuple t) (op' t -> i)
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = return $ ir t i
         go _ _
           = $internalError "shapeSize" "expected shape with Int components"
@@ -251,7 +221,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit OP_Unit
           = return OP_Unit
         go (SingleTuple t) sh1 sh2
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
           = do IR x <- A.min t (IR sh1) (IR sh2)
                return x
         go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
@@ -269,7 +239,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go UnitTuple OP_Unit OP_Unit
           = return OP_Unit
         go (SingleTuple t) sh1 sh2
-          | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
+          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
           = do IR x <- A.max t (IR sh1) (IR sh2)
                return x
         go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
@@ -279,6 +249,134 @@ llvmOfOpenExp arch top env aenv = cvtE top
                return $ OP_Pair sh' sz'
         go _ _ _
           = $internalError "union" "expected shape with Int components"
+
+    while :: Elt a
+          => IROpenFun1 arch env aenv (a -> Bool)
+          -> IROpenFun1 arch env aenv (a -> a)
+          -> IROpenExp  arch env aenv a
+          -> IROpenExp  arch env aenv a
+    while p f x =
+      L.while (app1 p) (app1 f) =<< x
+
+    foreignE :: (Elt a, Elt b, Foreign arch, A.Foreign asm)
+             => asm           (a -> b)
+             -> DelayedFun () (a -> b)
+             -> IR a
+             -> IRExp arch () b
+    foreignE asm no x =
+      case foreignExp arch asm of
+        Just f                       -> app1 f x
+        Nothing | Lam (Body b) <- no -> llvmOfOpenExp arch b (Empty `Push` x) IM.empty
+        _                            -> error "when a grid's misaligned with another behind / that's a moiré..."
+
+    primFun :: Elt r
+            => PrimFun (a -> r)
+            -> DelayedOpenExp env aenv a
+            -> CodeGen (IR r)
+    primFun f x =
+      let
+          -- The Accelerate language and its code generator are hyper-strict.
+          -- However, we must not eagerly evaluate the arguments to logical
+          -- operations (&&*) and (||*) so that they can short-circuit. Since we
+          -- only have unary functions, this is a little tricky for us.
+          --
+          -- 'inl' and 'inr' attempt to destruct the incoming AST so that we can
+          -- evaluate the left or right components of a pair individually. It
+          -- should be noted that there are other cases which can evaluate to
+          -- pairs; 'Constant', 'Let' and 'Var', for example, but these cases
+          -- are (probably) not applicable in this context.
+          --
+          inl :: (Elt a, Elt b) => DelayedOpenExp env aenv (a,b) -> IROpenExp arch env aenv a
+          inl (Tuple (SnocTup (SnocTup NilTup a) _)) = cvtE a
+          inl t                                      = cvtE $ Prj (SuccTupIdx ZeroTupIdx) t
+
+          inr :: (Elt a, Elt b) => DelayedOpenExp env aenv (a,b) -> IROpenExp arch env aenv b
+          inr (Tuple (SnocTup _ b)) = cvtE b
+          inr t                     = cvtE $ Prj ZeroTupIdx t
+      in
+      case f of
+        PrimAdd t                 -> A.uncurry (A.add t)     =<< cvtE x
+        PrimSub t                 -> A.uncurry (A.sub t)     =<< cvtE x
+        PrimMul t                 -> A.uncurry (A.mul t)     =<< cvtE x
+        PrimNeg t                 -> A.negate t              =<< cvtE x
+        PrimAbs t                 -> A.abs t                 =<< cvtE x
+        PrimSig t                 -> A.signum t              =<< cvtE x
+        PrimQuot t                -> A.uncurry (A.quot t)    =<< cvtE x
+        PrimRem t                 -> A.uncurry (A.rem t)     =<< cvtE x
+        PrimQuotRem t             -> A.uncurry (A.quotRem t) =<< cvtE x
+        PrimIDiv t                -> A.uncurry (A.idiv t)    =<< cvtE x
+        PrimMod t                 -> A.uncurry (A.mod t)     =<< cvtE x
+        PrimDivMod t              -> A.uncurry (A.divMod t)  =<< cvtE x
+        PrimBAnd t                -> A.uncurry (A.band t)    =<< cvtE x
+        PrimBOr t                 -> A.uncurry (A.bor t)     =<< cvtE x
+        PrimBXor t                -> A.uncurry (A.xor t)     =<< cvtE x
+        PrimBNot t                -> A.complement t          =<< cvtE x
+        PrimBShiftL t             -> A.uncurry (A.shiftL t)  =<< cvtE x
+        PrimBShiftR t             -> A.uncurry (A.shiftR t)  =<< cvtE x
+        PrimBRotateL t            -> A.uncurry (A.rotateL t) =<< cvtE x
+        PrimBRotateR t            -> A.uncurry (A.rotateR t) =<< cvtE x
+        PrimPopCount t            -> A.popCount t            =<< cvtE x
+        PrimCountLeadingZeros t   -> A.countLeadingZeros t   =<< cvtE x
+        PrimCountTrailingZeros t  -> A.countTrailingZeros t  =<< cvtE x
+        PrimFDiv t                -> A.uncurry (A.fdiv t)    =<< cvtE x
+        PrimRecip t               -> A.recip t               =<< cvtE x
+        PrimSin t                 -> A.sin t                 =<< cvtE x
+        PrimCos t                 -> A.cos t                 =<< cvtE x
+        PrimTan t                 -> A.tan t                 =<< cvtE x
+        PrimSinh t                -> A.sinh t                =<< cvtE x
+        PrimCosh t                -> A.cosh t                =<< cvtE x
+        PrimTanh t                -> A.tanh t                =<< cvtE x
+        PrimAsin t                -> A.asin t                =<< cvtE x
+        PrimAcos t                -> A.acos t                =<< cvtE x
+        PrimAtan t                -> A.atan t                =<< cvtE x
+        PrimAsinh t               -> A.asinh t               =<< cvtE x
+        PrimAcosh t               -> A.acosh t               =<< cvtE x
+        PrimAtanh t               -> A.atanh t               =<< cvtE x
+        PrimAtan2 t               -> A.uncurry (A.atan2 t)   =<< cvtE x
+        PrimExpFloating t         -> A.exp t                 =<< cvtE x
+        PrimFPow t                -> A.uncurry (A.fpow t)    =<< cvtE x
+        PrimSqrt t                -> A.sqrt t                =<< cvtE x
+        PrimLog t                 -> A.log t                 =<< cvtE x
+        PrimLogBase t             -> A.uncurry (A.logBase t) =<< cvtE x
+        PrimTruncate ta tb        -> A.truncate ta tb        =<< cvtE x
+        PrimRound ta tb           -> A.round ta tb           =<< cvtE x
+        PrimFloor ta tb           -> A.floor ta tb           =<< cvtE x
+        PrimCeiling ta tb         -> A.ceiling ta tb         =<< cvtE x
+        PrimIsNaN t               -> A.isNaN t               =<< cvtE x
+        PrimLt t                  -> A.uncurry (A.lt t)      =<< cvtE x
+        PrimGt t                  -> A.uncurry (A.gt t)      =<< cvtE x
+        PrimLtEq t                -> A.uncurry (A.lte t)     =<< cvtE x
+        PrimGtEq t                -> A.uncurry (A.gte t)     =<< cvtE x
+        PrimEq t                  -> A.uncurry (A.eq t)      =<< cvtE x
+        PrimNEq t                 -> A.uncurry (A.neq t)     =<< cvtE x
+        PrimMax t                 -> A.uncurry (A.max t)     =<< cvtE x
+        PrimMin t                 -> A.uncurry (A.min t)     =<< cvtE x
+        PrimLAnd                  -> A.land (inl x) (inr x)  -- short circuit
+        PrimLOr                   -> A.lor  (inl x) (inr x)  -- short circuit
+        PrimLNot                  -> A.lnot                  =<< cvtE x
+        PrimOrd                   -> A.ord                   =<< cvtE x
+        PrimChr                   -> A.chr                   =<< cvtE x
+        PrimBoolToInt             -> A.boolToInt             =<< cvtE x
+        PrimFromIntegral ta tb    -> A.fromIntegral ta tb    =<< cvtE x
+        PrimToFloating ta tb      -> A.toFloating ta tb      =<< cvtE x
+        PrimCoerce ta tb          -> A.coerce ta tb          =<< cvtE x
+          -- no missing patterns, whoo!
+
+
+-- | Extract the head of an index
+--
+indexHead :: IR (sh :. sz) -> IR sz
+indexHead (IR (OP_Pair _ sz)) = IR sz
+
+-- | Extract the tail of an index
+--
+indexTail :: IR (sh :. sz) -> IR sh
+indexTail (IR (OP_Pair sh _)) = IR sh
+
+-- | Construct an index from the head and tail
+--
+indexCons :: IR sh -> IR sz -> IR (sh :. sz)
+indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 
 
 -- | Convert a multidimensional array index into a linear index
@@ -291,11 +389,11 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
       = return $ IR (constant (eltType (undefined :: Int)) 0)
 
     cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
-      | Just REFL <- matchTupleType t (eltType (undefined::Int))
+      | Just Refl <- matchTupleType t (eltType (undefined::Int))
       -- If we short-circuit the last dimension, we can avoid inserting
       -- a multiply by zero and add of the result.
       = case matchTupleType tsh (eltType (undefined::Z)) of
-          Just REFL -> return (IR i)
+          Just Refl -> return (IR i)
           Nothing   -> do
             a <- cvt tsh sh ix
             b <- A.mul numType a (IR sz)
@@ -303,7 +401,7 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
             return c
 
     cvt (SingleTuple t) _ (op' t -> i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return $ ir t i
 
     cvt _ _ _
@@ -320,90 +418,21 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
       = return OP_Unit
 
     cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
-      | Just REFL <- matchTupleType tsz (eltType (undefined::Int))
+      | Just Refl <- matchTupleType tsz (eltType (undefined::Int))
       = do
            i'    <- A.quot integralType i (IR sz)
            -- If we assume the index is in range, there is no point computing
            -- the remainder of the highest dimension since (i < sz) must hold
            IR r  <- case matchTupleType tsh (eltType (undefined::Z)) of
-                      Just REFL -> return i     -- TODO: in debug mode assert (i < sz)
+                      Just Refl -> return i     -- TODO: in debug mode assert (i < sz)
                       Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
 
     cvt (SingleTuple t) _ (IR i)
-      | Just REFL <- matchScalarType t (scalarType :: ScalarType Int)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return i
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"
-
-
--- Primitive functions
--- ===================
-
--- | Generate llvm operations for primitive scalar functions
---
-llvmOfPrimFun :: (Elt a, Elt r) => PrimFun (a -> r) -> IR a -> CodeGen (IR r)
-llvmOfPrimFun (PrimAdd t)               = A.uncurry (A.add t)
-llvmOfPrimFun (PrimSub t)               = A.uncurry (A.sub t)
-llvmOfPrimFun (PrimMul t)               = A.uncurry (A.mul t)
-llvmOfPrimFun (PrimNeg t)               = A.negate t
-llvmOfPrimFun (PrimAbs t)               = A.abs t
-llvmOfPrimFun (PrimSig t)               = A.signum t
-llvmOfPrimFun (PrimQuot t)              = A.uncurry (A.quot t)
-llvmOfPrimFun (PrimRem t)               = A.uncurry (A.rem t)
-llvmOfPrimFun (PrimQuotRem t)           = A.uncurry (A.quotRem t)
-llvmOfPrimFun (PrimIDiv t)              = A.uncurry (A.idiv t)
-llvmOfPrimFun (PrimMod t)               = A.uncurry (A.mod t)
-llvmOfPrimFun (PrimDivMod t)            = A.uncurry (A.divMod t)
-llvmOfPrimFun (PrimBAnd t)              = A.uncurry (A.band t)
-llvmOfPrimFun (PrimBOr t)               = A.uncurry (A.bor t)
-llvmOfPrimFun (PrimBXor t)              = A.uncurry (A.xor t)
-llvmOfPrimFun (PrimBNot t)              = A.complement t
-llvmOfPrimFun (PrimBShiftL t)           = A.uncurry (A.shiftL t)
-llvmOfPrimFun (PrimBShiftR t)           = A.uncurry (A.shiftR t)
-llvmOfPrimFun (PrimBRotateL t)          = A.uncurry (A.rotateL t)
-llvmOfPrimFun (PrimBRotateR t)          = A.uncurry (A.rotateR t)
-llvmOfPrimFun (PrimFDiv t)              = A.uncurry (A.fdiv t)
-llvmOfPrimFun (PrimRecip t)             = A.recip t
-llvmOfPrimFun (PrimSin t)               = A.sin t
-llvmOfPrimFun (PrimCos t)               = A.cos t
-llvmOfPrimFun (PrimTan t)               = A.tan t
-llvmOfPrimFun (PrimSinh t)              = A.sinh t
-llvmOfPrimFun (PrimCosh t)              = A.cosh t
-llvmOfPrimFun (PrimTanh t)              = A.tanh t
-llvmOfPrimFun (PrimAsin t)              = A.asin t
-llvmOfPrimFun (PrimAcos t)              = A.acos t
-llvmOfPrimFun (PrimAtan t)              = A.atan t
-llvmOfPrimFun (PrimAsinh t)             = A.asinh t
-llvmOfPrimFun (PrimAcosh t)             = A.acosh t
-llvmOfPrimFun (PrimAtanh t)             = A.atanh t
-llvmOfPrimFun (PrimAtan2 t)             = A.uncurry (A.atan2 t)
-llvmOfPrimFun (PrimExpFloating t)       = A.exp t
-llvmOfPrimFun (PrimFPow t)              = A.uncurry (A.fpow t)
-llvmOfPrimFun (PrimSqrt t)              = A.sqrt t
-llvmOfPrimFun (PrimLog t)               = A.log t
-llvmOfPrimFun (PrimLogBase t)           = A.uncurry (A.logBase t)
-llvmOfPrimFun (PrimTruncate ta tb)      = A.truncate ta tb
-llvmOfPrimFun (PrimRound ta tb)         = A.round ta tb
-llvmOfPrimFun (PrimFloor ta tb)         = A.floor ta tb
-llvmOfPrimFun (PrimCeiling ta tb)       = A.ceiling ta tb
-llvmOfPrimFun (PrimIsNaN t)             = A.isNaN t
-llvmOfPrimFun (PrimLt t)                = A.uncurry (A.lt t)
-llvmOfPrimFun (PrimGt t)                = A.uncurry (A.gt t)
-llvmOfPrimFun (PrimLtEq t)              = A.uncurry (A.lte t)
-llvmOfPrimFun (PrimGtEq t)              = A.uncurry (A.gte t)
-llvmOfPrimFun (PrimEq t)                = A.uncurry (A.eq t)
-llvmOfPrimFun (PrimNEq t)               = A.uncurry (A.neq t)
-llvmOfPrimFun (PrimMax t)               = A.uncurry (A.max t)
-llvmOfPrimFun (PrimMin t)               = A.uncurry (A.min t)
-llvmOfPrimFun PrimLAnd                  = A.uncurry A.land
-llvmOfPrimFun PrimLOr                   = A.uncurry A.lor
-llvmOfPrimFun PrimLNot                  = A.lnot
-llvmOfPrimFun PrimOrd                   = A.ord
-llvmOfPrimFun PrimChr                   = A.chr
-llvmOfPrimFun PrimBoolToInt             = A.boolToInt
-llvmOfPrimFun (PrimFromIntegral ta tb)  = A.fromIntegral ta tb
-  -- no missing patterns, whoo!
 

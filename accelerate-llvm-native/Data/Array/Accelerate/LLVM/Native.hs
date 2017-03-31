@@ -1,10 +1,9 @@
 {-# LANGUAGE BangPatterns         #-}
-{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -36,26 +35,27 @@ module Data.Array.Accelerate.LLVM.Native (
   run1Async, run1AsyncWith,
 
   -- * Execution targets
-  Native, createTarget,
+  Native, Strategy,
+  createTarget, balancedParIO, unbalancedParIO,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Array.Sugar                ( Arrays )
-import Data.Array.Accelerate.Smart                      ( Acc )
-import Data.Array.Accelerate.Debug                      as Debug
+import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
-import Data.Array.Accelerate.LLVM.Native.Compile        ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute        ( executeAcc, executeAfun1 )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
 -- standard library
 import Control.Monad.Trans
 import System.IO.Unsafe
-import GHC.Conc                                         ( numCapabilities )
+import Text.Printf
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -63,7 +63,7 @@ import GHC.Conc                                         ( numCapabilities )
 
 -- | Compile and run a complete embedded array program.
 --
--- Note that it is recommended that you use 'run1' whenever possible.
+-- NOTE: it is recommended to use 'run1' whenever possible.
 --
 run :: Arrays a => Acc a -> a
 run = runWith defaultTarget
@@ -88,8 +88,13 @@ runAsyncWith target a = async (run' target a)
 run' :: Arrays a => Native -> Acc a -> IO a
 run' target a = execute
   where
-    !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalNative target (compileAcc acc >>= dumpStats >>= executeAcc)
+    !acc        = convertAccWith (config target) a
+    execute     = do
+      dumpGraph acc
+      evalNative target $ do
+        exec <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
+        res  <- phase "execute" elapsedP (executeAcc exec)
+        return res
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -146,9 +151,11 @@ run1AsyncWith = run1' async
 run1' :: (Arrays a, Arrays b) => (IO b -> c) -> Native -> (Acc a -> Acc b) -> a -> c
 run1' using target f = \a -> using (execute a)
   where
-    !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalNative target (compileAfun acc) >>= dumpStats
-    execute a   = evalNative target (executeAfun1 afun a)
+    !acc        = convertAfunWith (config target) f
+    !afun       = unsafePerformIO $ do
+                    dumpGraph acc
+                    phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
+    execute a   =   phase "execute" elapsedP (evalNative target (executeAfun1 afun a))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -169,9 +176,9 @@ streamWith target f arrs = map go arrs
 --
 -- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
 --
-config :: Phase
-config =  phases
-  { convertOffsetOfSegment = numCapabilities > 1
+config :: Native -> Phase
+config target = phases
+  { convertOffsetOfSegment = gangSize target > 1
   }
 
 
@@ -179,5 +186,8 @@ config =  phases
 -- =========
 
 dumpStats :: MonadIO m => a -> m a
-dumpStats next = dumpSimplStats >> return next
+dumpStats x = dumpSimplStats >> return x
+
+phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
+phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go
 

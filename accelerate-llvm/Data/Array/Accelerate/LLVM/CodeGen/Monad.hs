@@ -4,9 +4,10 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -20,7 +21,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   runLLVM,
 
   -- declarations
-  fresh, declare, intrinsic,
+  fresh, freshName,
+  declare,
+  intrinsic,
 
   -- basic blocks
   Block,
@@ -28,6 +31,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   -- instructions
   instr, instr', do_, return_, retval_, br, cbr, phi, phi',
+  instr_,
 
   -- metadata
   addMetadata,
@@ -50,17 +54,17 @@ import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
 
 -- accelerate
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar                                ( Elt, eltType )
 import qualified Data.Array.Accelerate.Debug                            as Debug
 
 -- accelerate-llvm
-import LLVM.General.AST.Type.Instruction
-import LLVM.General.AST.Type.Metadata
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
-import LLVM.General.AST.Type.Terminator
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Metadata
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
+import LLVM.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
@@ -69,11 +73,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar                         ( IROpenAcc(..) )
 
--- llvm-general-pure
-import qualified LLVM.General.AST                                       as LLVM
-import qualified LLVM.General.AST.Global                                as LLVM
+-- llvm-hs
+import qualified LLVM.AST                                               as LLVM
+import qualified LLVM.AST.Global                                        as LLVM
 
 
 -- Code generation
@@ -109,9 +113,6 @@ runLLVM
     -> Module arch aenv a
 runLLVM  ll =
   let
-      (kernels, st)     = case runState (runCodeGen ll) initialState of
-                            (IROpenAcc r, s) -> (map unKernel r, s)
-
       initialState      = CodeGenState
                             { blockChain        = initBlockChain
                             , symbolTable       = Map.empty
@@ -120,21 +121,28 @@ runLLVM  ll =
                             , next              = 0
                             }
 
+      (kernels, md, st) = case runState (runCodeGen ll) initialState of
+                            (IROpenAcc ks, s) -> let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
+                                                 in  (fs, Map.fromList as, s)
+
       definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
            , f@LLVM.Function{} <- x
-           , LLVM.Name s <- LLVM.name f = s
-           | otherwise                  = "<undefined>"
+           , LLVM.Name s       <- LLVM.name f = s
+           | otherwise                        = "<undefined>"
 
   in
-  Module $ LLVM.Module
-    { LLVM.moduleName         = name
-    , LLVM.moduleDataLayout   = targetDataLayout (undefined::arch)
-    , LLVM.moduleTargetTriple = targetTriple (undefined::arch)
-    , LLVM.moduleDefinitions  = definitions
-    }
+  Module { moduleMetadata = md
+         , unModule       = LLVM.Module
+                          { LLVM.moduleName           = name
+                          , LLVM.moduleSourceFileName = []
+                          , LLVM.moduleDataLayout     = targetDataLayout (undefined::arch)
+                          , LLVM.moduleTargetTriple   = targetTriple (undefined::arch)
+                          , LLVM.moduleDefinitions    = definitions
+                          }
+         }
 
 
 -- Basic Blocks
@@ -232,7 +240,7 @@ fresh = IR <$> go (eltType (undefined::a))
     go :: TupleType t -> CodeGen (Operands t)
     go UnitTuple         = return OP_Unit
     go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (SingleTuple t)   = ir' t . LocalReference t <$> freshName
+    go (SingleTuple t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -249,22 +257,23 @@ instr ins = ir (typeOf ins) <$> instr' ins
 
 instr' :: Instruction a -> CodeGen (Operand a)
 instr' ins = do
-  name  <- freshName
-  state $ \s ->
-    case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "instr" "empty block chain"
-      bs Seq.:> b -> ( LocalReference (typeOf ins) name
-                     , s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (name := ins) } } )
-
+  name <- freshName
+  instr_ $ downcast (name := ins)
+  return $ LocalReference (typeOf ins) name
 
 -- | Execute an unnamed instruction
 --
 do_ :: Instruction () -> CodeGen ()
-do_ ins =
+do_ ins = instr_ $ downcast (Do ins)
+
+-- | Add raw assembly instructions to the execution stream
+--
+instr_ :: LLVM.Named LLVM.Instruction -> CodeGen ()
+instr_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "do_" "empty block chain"
-      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> downcast (Do ins) } }
+      Seq.EmptyR  -> $internalError "instr_" "empty block chain"
+      bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> ins } }
 
 
 -- | Return void from a basic block
@@ -317,15 +326,17 @@ phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b)
 phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
-      update b  = b { instructions = downcast (crit := Phi ty [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
-      ty        = case incoming of
+      update b  = b { instructions = downcast (crit := Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
+      t         = case incoming of
                     []        -> $internalError "phi" "no incoming values specified"
-                    (o,_):_   -> typeOf o
+                    (o,_):_   -> case typeOf o of
+                                   VoidType    -> $internalError "phi" "operand has void type"
+                                   PrimType x  -> x
   in
   state $ \s ->
     case Seq.findIndexR (cmp target) (blockChain s) of
       Nothing -> $internalError "phi" "unknown basic block"
-      Just i  -> ( LocalReference ty crit
+      Just i  -> ( LocalReference (PrimType t) crit
                  , s { blockChain = Seq.adjust update i (blockChain s) } )
 
 

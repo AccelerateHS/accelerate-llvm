@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
@@ -7,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -22,28 +21,22 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 
 ) where
 
--- llvm-general
-import LLVM.General.Context
-import LLVM.General.Module                                      as LLVM
-
-import LLVM.General.AST                                         as AST ( Module(..), Definition(..), defaultModule )
-import LLVM.General.AST.Instruction                             as AST ( Named(..) )
-import LLVM.General.AST.Attribute
-import LLVM.General.AST.Global                                  as G
-import qualified LLVM.General.AST.Name                          as AST
+-- llvm-hs
+import LLVM.Context
+import LLVM.Module                                                  as LLVM
+import LLVM.AST                                                     as AST ( Module(..), Definition(..) )
+import LLVM.AST.Attribute
+import LLVM.AST.Global                                              as G
+import qualified LLVM.AST.Name                                      as AST
 
 -- accelerate
-import LLVM.General.AST.Type.Name                               ( Label(..) )
-import LLVM.General.AST.Type.Terminator                         ( Terminator(..) )
+import LLVM.AST.Type.Name                                           ( Label(..) )
+import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
-
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
@@ -51,17 +44,17 @@ import Foreign.CUDA.Analysis
 
 -- standard library
 import Control.Monad.Except
-import Data.ByteString                                          ( ByteString )
-import Data.HashMap.Strict                                      ( HashMap )
+import Data.ByteString                                              ( ByteString )
+import Data.HashMap.Strict                                          ( HashMap )
 import Data.List
 import Data.Maybe
 import System.Directory
 import System.FilePath
 import System.IO.Unsafe
 import Text.Printf
-import qualified Data.ByteString                                as B
-import qualified Data.ByteString.Char8                          as B8
-import qualified Data.HashMap.Strict                            as HashMap
+import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.HashMap.Strict                                as HashMap
 
 
 -- NVVM Reflect
@@ -100,17 +93,17 @@ instance NVVMReflect (String, ByteString) where
 --
 nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
-  AST.defaultModule {
-    moduleDefinitions = [GlobalDefinition $ functionDefaults
-      { name                 = AST.Name "__nvvm_reflect"
-      , returnType           = downcast (integralType :: IntegralType Int32)
-      , parameters           = ( [ptrParameter scalarType (UnName 0 :: Name Int8)], False )
-#if MIN_VERSION_llvm_general(3,5,0)
-      , G.functionAttributes = map Right [NoUnwind, ReadNone, AlwaysInline]
-#else
-      , G.functionAttributes = [NoUnwind, ReadNone, AlwaysInline]
-#endif
-      , basicBlocks          = [BasicBlock (AST.Name "") [] (AST.Do $ downcast (RetVal (num numType (0::Int32))))]
+  AST.Module
+    { moduleName            = "nvvm-reflect"
+    , moduleSourceFileName  = []
+    , moduleDataLayout      = targetDataLayout (undefined::PTX)
+    , moduleTargetTriple    = targetTriple (undefined::PTX)
+    , moduleDefinitions     = [GlobalDefinition $ functionDefaults
+      { name                  = AST.Name "__nvvm_reflect"
+      , returnType            = downcast (integralType :: IntegralType Int32)
+      , parameters            = ( [ptrParameter scalarType (UnName 0 :: Name (Ptr Int8))], False )
+      , G.functionAttributes  = map Right [NoUnwind, ReadNone, AlwaysInline]
+      , basicBlocks           = []
       }]
     }
 
@@ -122,14 +115,16 @@ nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
   where
     name     = "__nvvm_reflect"
     runError = either ($internalError "nvvmReflectPass") return <=< runExceptT
-#if !MIN_VERSION_llvm_general(3,3,0)
-    moduleLLVMAssembly = moduleString
-#endif
 
 
 -- libdevice
 -- ---------
 
+-- Compatible version of libdevice for a given compute capability should be
+-- listed here:
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+--
 class Libdevice a where
   libdevice :: Compute -> a
 
@@ -137,18 +132,20 @@ instance Libdevice AST.Module where
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_mdl   -- 2.0, 2.1
-      (3,n) | n < 5     -> libdevice_30_mdl   -- 3.0, 3.2
+      (3,x) | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
             | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-      (5,_)             -> libdevice_50_mdl   -- 5.0
+      (5,_)             -> libdevice_50_mdl   -- 5.x
+      (6,_)             -> libdevice_50_mdl   -- 6.x
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
 instance Libdevice (String, ByteString) where
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_bc    -- 2.0, 2.1
-      (3,n) | n < 5     -> libdevice_30_bc    -- 3.0, 3.2
+      (3,x) | x < 5     -> libdevice_30_bc    -- 3.0, 3.2
             | otherwise -> libdevice_35_bc    -- 3.5, 3.7
-      (5,_)             -> libdevice_50_bc    -- 5.0
+      (5,_)             -> libdevice_50_bc    -- 5.x
+      (6,_)             -> libdevice_50_bc    -- 6.x
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
 
@@ -201,24 +198,9 @@ libdeviceModule arch = do
   --      fully apply this function that can be lifted out to a CAF and only
   --      executed once per program execution.
   --
-  Module{..} <- withContext $ \ctx ->
+  withContext $ \ctx ->
     either ($internalError "libdeviceModule") id `fmap`
     runExceptT (withModuleFromBitcode ctx bc moduleAST)
-
-  -- This is to avoid the warning message:
-  --
-  --   WARNING: Linking two modules of different target triples: map:
-  --            'nvptx64-nvidia-cuda' and 'nvptx-nvidia-cl.1.0'
-  --
-  -- We can't use the second target, used by libdevice*.bc, because we get an
-  -- unknown internal driver error code.
-  --
-  return $! Module { moduleTargetTriple=Nothing, .. }
-
-#if !MIN_VERSION_llvm_general(3,3,0)
-withModuleFromBitcode :: Context -> (String,ByteString) -> (LLVM.Module -> IO a) -> ErrorT String IO a
-withModuleFromBitcode _ _ _ = error "withModuleFromBitcode: requires llvm-general >= 3.3"
-#endif
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name

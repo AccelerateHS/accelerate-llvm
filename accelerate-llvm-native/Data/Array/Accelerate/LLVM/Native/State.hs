@@ -1,7 +1,7 @@
 {-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.State
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -37,7 +37,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
-import Prelude                                                  hiding ( init )
 
 import GHC.Conc
 
@@ -48,46 +47,55 @@ evalNative :: Native -> LLVM Native a -> IO a
 evalNative = evalLLVM
 
 
--- | Create a Native execution target for the given capabilities.
---
--- This spawns a worker thread on the specified CPUs. A lazy binary splitting
--- work-stealing scheduler is used to balance the load amongst the available
--- processors. A suitable PPT should be chosen when invoking the continuation in
--- order to balance scheduler overhead with fine-grained function calls.
+-- | Create a Native execution target by spawning a worker thread on each of the
+-- given capabilities, and using the given strategy to load balance the workers
+-- when executing parallel operations.
 --
 createTarget
-    :: [Int]
-    -> Strategy
+    :: [Int]              -- ^ CPU IDs to launch worker threads on
+    -> Strategy           -- ^ Strategy to balance parallel workloads
     -> IO Native
-createTarget caps strategy = do
+createTarget caps parallelIO = do
   gang   <- forkGangOn caps
-  return $! Native gang (strategy gang)
+  return $! Native (length caps) (sequentialIO gang) (parallelIO gang)
 
 
 -- | The strategy for balancing work amongst the available worker threads.
 --
 type Strategy = Gang -> Executable
 
+
+-- | Execute an operation sequentially on a single thread
+--
+sequentialIO :: Strategy
+sequentialIO gang =
+  Executable $ \name _ppt range fill ->
+    timed name $ runSeqIO gang range fill
+
+
 -- | Execute a computation without load balancing. Each thread computes an
 -- equally sized chunk of the input. No work stealing occurs.
 --
 unbalancedParIO :: Strategy
 unbalancedParIO gang =
-  Executable $ \_ range after init fill ->
-    timed $ runParIO Single.mkResource gang range init fill after
+  Executable $ \name _ppt range fill ->
+    timed name $ runParIO Single.mkResource gang range fill
 
 
 -- | Execute a computation where threads use work stealing (based on lazy
 -- splitting of work stealing queues and exponential backoff) in order to
 -- automatically balance the workload amongst themselves.
 --
-balancedParIO :: Strategy
-balancedParIO gang =
-  Executable $ \ppt range after init fill ->
-    let retries  = gangSize gang
-        resource = LBS.mkResource ppt (SMP.mkResource retries gang <> Backoff.mkResource)
-    in
-    timed $ runParIO resource gang range init fill after
+balancedParIO
+    :: Int                -- ^ number of steal attempts before backing off
+    -> Strategy
+balancedParIO retries gang =
+  Executable $ \name ppt range fill ->
+    -- TLM: A suitable PPT should be chosen when invoking the continuation in
+    --      order to balance scheduler overhead with fine-grained function calls
+    --
+    let resource = LBS.mkResource ppt (SMP.mkResource retries <> Backoff.mkResource)
+    in  timed name $ runParIO resource gang range fill
 
 
 -- Top-level mutable state
@@ -114,17 +122,19 @@ balancedParIO gang =
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  createTarget [0 .. numCapabilities - 1] balancedParIO
+  case numCapabilities of
+    1 -> createTarget [0]        sequentialIO
+    n -> createTarget [0 .. n-1] (balancedParIO n)
 
 
 -- Debugging
 -- ---------
 
 {-# INLINE timed #-}
-timed :: IO a -> IO a
-timed f = Debug.timed Debug.dump_exec elapsed f
+timed :: String -> IO a -> IO a
+timed name f = Debug.timed Debug.dump_exec (elapsed name) f
 
 {-# INLINE elapsed #-}
-elapsed :: Double -> Double -> String
-elapsed x y = "exec: " ++ Debug.elapsed x y
+elapsed :: String -> Double -> Double -> String
+elapsed name x y = printf "exec: %s %s" name (Debug.elapsedP x y)
 

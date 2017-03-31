@@ -1,12 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Data
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -40,12 +40,13 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
-import Control.Monad
+import Control.Monad                                                ( liftM, liftM2 )
 import Control.Monad.Trans
 import Data.Typeable
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
+import Prelude
 
 
 class Async arch => Remote arch where
@@ -120,43 +121,6 @@ class Async arch => Remote arch where
   indexRemote (Array _ adata) i = return . toElt $! unsafeIndexArrayData adata i
 
 
--- CPP hackery to generate the cases where we dispatch to the worker function handling
--- elementary types.
---
--- TODO: Turn me into Template Haskell so that I can be exported and reused.
---
-#define mkPrimDispatch(dispatcher,worker)                                       \
-; dispatcher ArrayEltRint     = worker                                          \
-; dispatcher ArrayEltRint8    = worker                                          \
-; dispatcher ArrayEltRint16   = worker                                          \
-; dispatcher ArrayEltRint32   = worker                                          \
-; dispatcher ArrayEltRint64   = worker                                          \
-; dispatcher ArrayEltRword    = worker                                          \
-; dispatcher ArrayEltRword8   = worker                                          \
-; dispatcher ArrayEltRword16  = worker                                          \
-; dispatcher ArrayEltRword32  = worker                                          \
-; dispatcher ArrayEltRword64  = worker                                          \
-; dispatcher ArrayEltRfloat   = worker                                          \
-; dispatcher ArrayEltRdouble  = worker                                          \
-; dispatcher ArrayEltRbool    = worker                                          \
-; dispatcher ArrayEltRchar    = worker                                          \
-; dispatcher ArrayEltRcshort  = worker                                          \
-; dispatcher ArrayEltRcushort = worker                                          \
-; dispatcher ArrayEltRcint    = worker                                          \
-; dispatcher ArrayEltRcuint   = worker                                          \
-; dispatcher ArrayEltRclong   = worker                                          \
-; dispatcher ArrayEltRculong  = worker                                          \
-; dispatcher ArrayEltRcllong  = worker                                          \
-; dispatcher ArrayEltRcullong = worker                                          \
-; dispatcher ArrayEltRcfloat  = worker                                          \
-; dispatcher ArrayEltRcdouble = worker                                          \
-; dispatcher ArrayEltRcchar   = worker                                          \
-; dispatcher ArrayEltRcschar  = worker                                          \
-; dispatcher ArrayEltRcuchar  = worker                                          \
-; dispatcher _                = error "mkPrimDispatcher: not primitive"
-
-
-
 -- | Create a new array from its representation on the host, and upload it to
 -- a new remote array.
 --
@@ -167,7 +131,7 @@ newRemote
     -> (sh -> e)
     -> LLVM arch (Array sh e)
 newRemote sh f =
-  useRemote $! newArray sh f
+  useRemote $! fromFunction sh f
 
 
 -- | Upload an immutable array from the host to the remote device. This is
@@ -177,7 +141,9 @@ newRemote sh f =
 --
 {-# INLINEABLE useRemote #-}
 useRemote :: (Remote arch, Arrays arrs) => arrs -> LLVM arch arrs
-useRemote arrs = get =<< useRemoteAsync arrs =<< spawn
+useRemote arrs = do
+  AsyncR _ a <- async (useRemoteAsync arrs)
+  get a
 
 
 -- | Upload an immutable array from the host to the remote device,
@@ -191,15 +157,17 @@ useRemoteAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch arrs)
 useRemoteAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           useRemoteR n (Just s) ad
           after stream =<< checkpoint s
+          join s
+          return ad
   --
   event  <- checkpoint stream   -- TLM: Assuming that adding events to a stream counts as things to wait for
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Uploading existing arrays from the host to the remote device. This is
@@ -208,7 +176,9 @@ useRemoteAsync arrs stream = do
 --
 {-# INLINEABLE copyToRemote #-}
 copyToRemote :: (Remote arch, Arrays a) => a -> LLVM arch a
-copyToRemote arrs = get =<< copyToRemoteAsync arrs =<< spawn
+copyToRemote arrs = do
+  AsyncR _ a <- async (copyToRemoteAsync arrs)
+  get a
 
 
 -- | Upload an existing array to the remote device, asynchronously.
@@ -220,15 +190,17 @@ copyToRemoteAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToRemoteAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToRemoteR 0 n (Just s) ad
           after stream =<< checkpoint s
+          join s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Copy an array from the remote device to the host. This is synchronous with
@@ -237,7 +209,9 @@ copyToRemoteAsync arrs stream = do
 --
 {-# INLINEABLE copyToHost #-}
 copyToHost :: (Remote arch, Arrays a) => a -> LLVM arch a
-copyToHost arrs = get =<< copyToHostAsync arrs =<< spawn
+copyToHost arrs = do
+  AsyncR _ a <- async (copyToHostAsync arrs)
+  get a
 
 
 -- | Copy an array from the remote device to the host, asynchronously
@@ -249,15 +223,17 @@ copyToHostAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToHostAsync arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToHostR 0 n (Just s) ad
           after stream =<< checkpoint s
+          join s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- | Copy arrays between two remote instances of the same type. This may be more
@@ -266,7 +242,9 @@ copyToHostAsync arrs stream = do
 --
 {-# INLINEABLE copyToPeer #-}
 copyToPeer :: (Remote arch, Arrays a) => arch -> a -> LLVM arch a
-copyToPeer peer arrs = get =<< copyToPeerAsync peer arrs =<< spawn
+copyToPeer peer arrs = do
+  AsyncR _ a <- async (copyToPeerAsync peer arrs)
+  get a
 
 
 -- | As 'copyToPeer', asynchronously.
@@ -279,15 +257,17 @@ copyToPeerAsync
     -> StreamR arch
     -> LLVM arch (AsyncR arch a)
 copyToPeerAsync peer arrs stream = do
-  runArrays arrs $ \arr@Array{} ->
+  arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
     in  runArray arr $ \ad -> do
-          s <- spawn
+          s <- fork
           copyToPeerR 0 n peer (Just s) ad
           after stream =<< checkpoint s
+          join s
+          return ad
   --
   event  <- checkpoint stream
-  return $! AsyncR event arrs
+  return $! AsyncR event arrs'
 
 
 -- Helpers for traversing the Arrays data structure
@@ -347,14 +327,14 @@ runIndexArray worker (Array _ adata) i = toElt `liftM` indexR arrayElt adata
 runArrays
     :: forall m arrs. (Monad m, Arrays arrs)
     => arrs
-    -> (forall sh e. Array sh e -> m ())
-    -> m ()
-runArrays arrs worker = runR (arrays arrs) (fromArr arrs)
+    -> (forall sh e. Array sh e -> m (Array sh e))
+    -> m arrs
+runArrays arrs worker = toArr `liftM` runR (arrays arrs) (fromArr arrs)
   where
-    runR :: ArraysR a -> a -> m ()
+    runR :: ArraysR a -> a -> m a
     runR ArraysRunit             ()             = return ()
     runR ArraysRarray            arr            = worker arr
-    runR (ArraysRpair aeR1 aeR2) (arrs1, arrs2) = runR aeR1 arrs1 >> runR aeR2 arrs2
+    runR (ArraysRpair aeR2 aeR1) (arrs2, arrs1) = liftM2 (,) (runR aeR2 arrs2) (runR aeR1 arrs1)
 
 
 -- | Generalised function to traverse the ArrayData structure with one
@@ -364,16 +344,39 @@ runArrays arrs worker = runR (arrays arrs) (fromArr arrs)
 runArray
     :: forall m sh e. Monad m
     => Array sh e
-    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m ())
-    -> m ()
-runArray (Array _ adata) worker = runR arrayElt adata
+    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m (ArrayData e'))
+    -> m (Array sh e)
+runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata
   where
-    runR :: ArrayEltR e' -> ArrayData e' -> m ()
-    runR ArrayEltRunit             _  = return ()
-    runR (ArrayEltRpair aeR1 aeR2) ad = runR aeR1 (fstArrayData ad) >>
-                                        runR aeR2 (sndArrayData ad)
-    runR aer                       ad = runW aer ad
+    runR :: ArrayEltR e' -> ArrayData e' -> m (ArrayData e')
+    runR ArrayEltRunit             AD_Unit           = return AD_Unit
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) = liftM2 AD_Pair (runR aeR2 ad2) (runR aeR1 ad1)
     --
-    runW :: ArrayEltR e' -> ArrayData e' -> m ()
-    mkPrimDispatch(runW, worker)
+    runR ArrayEltRint              ad                = worker ad
+    runR ArrayEltRint8             ad                = worker ad
+    runR ArrayEltRint16            ad                = worker ad
+    runR ArrayEltRint32            ad                = worker ad
+    runR ArrayEltRint64            ad                = worker ad
+    runR ArrayEltRword             ad                = worker ad
+    runR ArrayEltRword8            ad                = worker ad
+    runR ArrayEltRword16           ad                = worker ad
+    runR ArrayEltRword32           ad                = worker ad
+    runR ArrayEltRword64           ad                = worker ad
+    runR ArrayEltRfloat            ad                = worker ad
+    runR ArrayEltRdouble           ad                = worker ad
+    runR ArrayEltRbool             ad                = worker ad
+    runR ArrayEltRchar             ad                = worker ad
+    runR ArrayEltRcshort           ad                = worker ad
+    runR ArrayEltRcushort          ad                = worker ad
+    runR ArrayEltRcint             ad                = worker ad
+    runR ArrayEltRcuint            ad                = worker ad
+    runR ArrayEltRclong            ad                = worker ad
+    runR ArrayEltRculong           ad                = worker ad
+    runR ArrayEltRcllong           ad                = worker ad
+    runR ArrayEltRcullong          ad                = worker ad
+    runR ArrayEltRcfloat           ad                = worker ad
+    runR ArrayEltRcdouble          ad                = worker ad
+    runR ArrayEltRcchar            ad                = worker ad
+    runR ArrayEltRcschar           ad                = worker ad
+    runR ArrayEltRcuchar           ad                = worker ad
 

@@ -1,89 +1,116 @@
 # vim: nospell
-language: minimal
-sudo: required
+#
+# Basic template to test with GHC=[7.8, 7.10, 8.0], but also installs the
+# relevant version of LLVM as (a very old version of) the CUDA toolkit (4.0).
+# Caches the 'stack' build directory to speed subsequent compilations.
+#
+language: generic
+dist: precise
 
 cache:
   directories:
     - $HOME/.stack
+    - $HOME/llvm
+    - .stack-work/install
+
+addons:
+  apt:
+    sources: &apt_sources
+      - hvr-ghc
+      - ubuntu-toolchain-r-test
+      - llvm-toolchain-precise
+      # - llvm-toolchain-precise-3.5
+      # - llvm-toolchain-precise-3.6
+      # - llvm-toolchain-precise-3.7
+      # - llvm-toolchain-precise-3.8
+      # - llvm-toolchain-precise-3.9
+      # - llvm-toolchain-precise-4.0  # not white-listed yet
+      - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main'
+        key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+
+    packages: &apt_packages
+      - nvidia-cuda-toolkit
+      - g++-4.8
+      - libgmp-dev
+      - happy-1.19.5
+      - alex-3.1.7
+      - llvm-4.0-dev
 
 matrix:
   include:
-    - env: GHC=7.8.4 LLVM=3.4 CUDA=7.0-28 CABAL=1.18
+    - env: GHC=7.8.4 CABAL=1.18 LLVM=4.0.0
       compiler: "GHC 7.8"
       addons:
         apt:
-          sources:
-            - hvr-ghc
+          sources: *apt_sources
           packages:
-            # - ghc-7.8.4
+            - *apt_packages
             - cabal-install-1.18
-            - happy-1.19.5
-            - alex-3.1.4
-            - llvm-3.4-dev
 
-    - env: GHC=7.10.3 LLVM=3.5 CUDA=7.0-28 CABAL=1.22
+    - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0
       compiler: "GHC 7.10"
       addons:
         apt:
-          sources:
-            - hvr-ghc
-            - llvm-toolchain-precise-3.5
-            - ubuntu-toolchain-r-test
+          sources: *apt_sources
           packages:
-            # - ghc-7.10.3
+            - *apt_packages
             - cabal-install-1.22
-            - happy-1.19.5
-            - alex-3.1.4
-            - llvm-3.5-dev
-            - libedit-dev
-            - gcc-4.8
-            - g++-4.8
 
-  allow_failures:
-    - env: CABAL=head GHC=head LLVM=3.6
+    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0
+      compiler: "GHC 8.0"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-1.24
+
+    # - env: GHC=head CABAL=head LLVM=3.9.1
+    #   compiler: "GHC HEAD"
+    #   addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, ghc-head, cabal-install-head, happy-1.19.5, alex-3.1.7 ] }}
+
+  # allow_failures:
+  #   - env: GHC=head CABAL=head LLVM=3.9.1
+
+  fast_finish: true
 
 before_install:
-  - export PATH=/opt/cabal/$CABAL/bin:/opt/alex/3.1.4/bin:/opt/happy/1.19.5/bin:/usr/lib/llvm-$LLVM/bin:$PATH
-
-  # llvm-general-3.5 requires a newer version of gcc/g++ which understands c++11
-  - |
-      if [ ${LLVM} == 3.5 ]; then
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 20
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 20
-      fi
-
-  # Fetch stack
-  - mkdir $HOME/bin
-  - export PATH=$HOME/bin:$PATH
-  - travis_retry curl -L "https://www.stackage.org/stack/linux-x86_64" | gunzip | tar -x
-  - mv stack-*/stack $HOME/bin
-  - ln -s stack-${GHC%.*}.yaml stack.yaml
-  - travis_retry stack setup
-  - |
-      if [ ${GHC%.*} == 7.8 ]; then
-        # required to install the 'cuda' package
-        travis_retry stack setup --upgrade-cabal || exit 1
-      fi
-
-  # Fetch CUDA
-  - travis_retry wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1204/x86_64/cuda-repo-ubuntu1204_${CUDA}_amd64.deb
-  - travis_retry sudo dpkg -i cuda-repo-ubuntu1204_${CUDA}_amd64.deb
-  - travis_retry sudo apt-get update -qq
-  - export CUDA_APT=${CUDA%-*}
-  - export CUDA_APT=${CUDA_APT/./-}
-  - travis_retry sudo apt-get install -y cuda-drivers cuda-core-${CUDA_APT} cuda-cudart-dev-${CUDA_APT}
-  - travis_retry sudo apt-get clean
-  - export CUDA_HOME=/usr/local/cuda-${CUDA%%-*}
-  - export LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-  - export PATH=${CUDA_HOME}/bin:${PATH}
+  - export PATH=/opt/cabal/$CABAL/bin:/opt/alex/3.1.7/bin:/opt/happy/1.19.5/bin:$HOME/.cabal/bin:$PATH
+  # - |
+  #     case ${GHC} in
+  #       7.8.*) export UPGRADE_CABAL=1 ;;
+  #     esac
+  # - |
+  #     case ${LLVM} in
+  #       3.5.*) source .travis/install-llvm-trusty.sh ;;
+  #     esac
+  - source .travis/install-stack.sh
+  - source .travis/update-ghc-settings.sh
 
 install:
-  - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - cabal --version
   - stack --version
-  - opt --version; true
   - llc --version; true
-  - travis_retry stack build --only-dependencies --no-terminal --no-haddock-deps -j2
+  - opt --version; true
+  - |
+      if [ ${GHC} == head -o ! -e stack.yaml ]; then
+        travis_retry cabal install --only-dependencies
+      else
+        travis_retry stack build --only-dependencies --no-terminal --no-haddock-deps
+      fi
 
 script:
-  - stack build --no-terminal --haddock --no-haddock-deps
+  - |
+      if [ ${GHC} == head -o ! -e stack.yaml ]; then
+        travis_retry cabal install
+        travis_retry cabal haddock
+      else
+        travis_retry stack build accelerate-llvm        --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm-native --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm-ptx    --no-terminal --haddock --no-haddock-deps
+      fi
+
+after_success:
+  - source .travis/update-accelerate-buildbot.sh
 

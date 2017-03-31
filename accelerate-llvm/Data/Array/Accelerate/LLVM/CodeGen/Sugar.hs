@@ -1,9 +1,10 @@
 {-# LANGUAGE GADTs        #-}
 {-# LANGUAGE RankNTypes   #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -21,6 +22,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 
 ) where
 
+import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Instruction.Volatile
+
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 
@@ -28,6 +32,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Monad
 
+
+-- Scalar expressions
+-- ------------------
 
 -- | LLVM IR is in single static assignment, so we need to be able to generate
 -- fresh names for each application of a scalar function or expression.
@@ -46,8 +53,12 @@ data IROpenFun2 arch env aenv t where
   IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
+
+-- Arrays
+-- ------
+
 data IROpenAcc arch aenv arrs where
-  IROpenAcc :: [Kernel arch aenv a]             -- TLM: ???
+  IROpenAcc :: [Kernel arch aenv arrs]
             -> IROpenAcc arch aenv arrs
 
 data IRDelayed arch aenv a where
@@ -64,8 +75,10 @@ data IRManifest arch aenv a where
 
 data IRArray a where
   IRArray :: (Shape sh, Elt e)
-          => { irArrayShape :: IR sh
-             , irArrayData  :: IR e             -- TLM: local operand name for array(s) containing elements of type 'e'
+          => { irArrayShape       :: IR sh        -- Array extent
+             , irArrayData        :: IR e         -- Array payloads (should really be 'Ptr e')
+             , irArrayAddrSpace   :: AddrSpace
+             , irArrayVolatility  :: Volatility
              }
           -> IRArray (Array sh e)
 

@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Stream
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -14,39 +14,39 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Stream (
 
-  Stream, Reservoir, new, create, streaming,
+  Reservoir, new,
+  Stream, create, destroy, streaming,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Lifetime
+import qualified Data.Array.Accelerate.Array.Remote.LRU             as Remote
 
-import Data.Array.Accelerate.LLVM.PTX.Context                   ( Context(..) )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( Event, Stream )
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import Data.Array.Accelerate.LLVM.PTX.Array.Remote                  ( )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( Event )
+import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX(..) )
+import Data.Array.Accelerate.LLVM.State
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      as RSV
 
 -- cuda
-import qualified Foreign.CUDA.Driver.Stream                     as Stream
+import Foreign.CUDA.Driver.Error
+import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
 -- standard library
-import Control.Concurrent.MVar
-import Control.Monad.Trans
-import Data.Sequence                                            ( Seq )
-import qualified Data.Sequence                                  as Seq
+import Control.Exception
+import Control.Monad.State
 
 
--- Reservoir
--- ---------
+-- | A 'Stream' represents an independent sequence of computations executed on
+-- the GPU. Operations in different streams may be executed concurrently with
+-- each other, but operations in the same stream can never overlap.
+-- 'Data.Array.Accelerate.LLVM.PTX.Execute.Event.Event's can be used for
+-- efficient cross-stream synchronisation.
 --
--- The reservoir is a place to store CUDA execution streams that are currently
--- inactive. When a new stream is requested one is provided from the reservoir
--- if available, otherwise a fresh execution stream is created.
---
--- TLM: In a multi-threaded multi-device environment, the Reservoir might need
---      to be augmented to explicitly push/pop the surrounding any operation.
---
-type Reservoir  = MVar (Seq Stream.Stream)
+type Stream = Lifetime Stream.Stream
 
 
 -- Executing operations in streams
@@ -59,37 +59,28 @@ type Reservoir  = MVar (Seq Stream.Stream)
 --
 {-# INLINEABLE streaming #-}
 streaming
-    :: MonadIO m
-    => Context
-    -> Reservoir
-    -> (Stream -> m a)
-    -> (Event -> a -> m b)
-    -> m b
-streaming !ctx !rsv !action !after = do
-  stream <- liftIO $ create ctx rsv
-  first  <- action stream
-  end    <- liftIO $ Event.waypoint stream
-  final  <- after end first
-  liftIO $ do destroy ctx rsv stream
-              Event.destroy end
+    :: (Stream -> LLVM PTX a)
+    -> (Event -> a -> LLVM PTX b)
+    -> LLVM PTX b
+streaming !action !after = do
+  PTX{..} <- gets llvmTarget
+  stream  <- create
+  first   <- action stream
+  end     <- Event.waypoint stream
+  final   <- after end first
+  liftIO $ do
+    destroy stream
+    Event.destroy end
   return final
 
 
 -- Primitive operations
 -- --------------------
 
--- | Generate a new empty reservoir. It is not necessary to pre-populate it with
--- any streams because stream creation does not cause a device synchronisation.
---
--- Additionally, we do not need to finalise any of the streams. A reservoir is
--- tied to a specific execution context, so when the reservoir dies it is
--- because the PTX state and contained CUDA context have died, so there is
--- nothing more to do.
---
-new :: Context -> IO Reservoir
-new _ctx = newMVar ( Seq.empty )
-
 {--
+-- | Delete all execution streams from the reservoir
+--
+{-# INLINEABLE flush #-}
 flush :: Context -> Reservoir -> IO ()
 flush !Context{..} !ref = do
   mc <- deRefWeak weakContext
@@ -97,71 +88,82 @@ flush !Context{..} !ref = do
     Nothing     -> message "delete reservoir/dead context"
     Just ctx    -> do
       message "flush reservoir"
-      withMVar ref $ \rsv ->
-        let delete st = trace ("free " ++ show st) (Stream.destroy st)
-        in  bracket_ (CUDA.push ctx) CUDA.pop (mapM_ delete (Seq.toList rsv))
+      old <- swapMVar ref Seq.empty
+      bracket_ (CUDA.push ctx) CUDA.pop $ Seq.mapM_ Stream.destroy old
 --}
+
 
 -- | Create a CUDA execution stream. If an inactive stream is available for use,
 -- use that, otherwise generate a fresh stream.
 --
+-- Note: [Finalising execution streams]
+--
+-- We don't actually ensure that the stream has executed all of its operations
+-- to completion before attempting to return it to the reservoir for reuse.
+-- Doing so increases overhead of the LLVM RTS due to 'forkIO', and consumes CPU
+-- time as 'Stream.block' busy-waits for the stream to complete. It is quicker
+-- to optimistically return the streams to the end of the reservoir immediately,
+-- and just check whether the stream is done before reusing it.
+--
+-- > void . forkIO $ do
+-- >   Stream.block stream
+-- >   modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
+--
 {-# INLINEABLE create #-}
-create :: Context -> Reservoir -> IO Stream
-create _ctx !ref = do
-  s <- modifyMVar ref $ \rsv ->
-          case Seq.viewl rsv of
-            s Seq.:< ss -> do
-              message ("reuse " ++ showStream s)
-              return (ss, s)
-
-            Seq.EmptyL  -> do
-              s <- Stream.create []
-              message ("new " ++ showStream s)
-              return (Seq.empty, s)
-
-  stream <- newLifetime s
-  addFinalizer stream $ do
-      message ("stash stream " ++ showStream s)
-      -- TLM: We should ensure that all operations in the stream have completed
-      -- before attempting to return it to the reservoir.
-      --
-      -- forkOS $ bracket_ (push ctx) pop (Stream.block s)
-      modifyMVar_ ref $ \rsv -> return (rsv Seq.|> s)
-
+create :: LLVM PTX Stream
+create = do
+  PTX{..} <- gets llvmTarget
+  s       <- create'
+  stream  <- liftIO $ newLifetime s
+  liftIO $ addFinalizer stream (RSV.insert ptxStreamReservoir s)
   return stream
+
+create' :: LLVM PTX Stream.Stream
+create' = do
+  PTX{..} <- gets llvmTarget
+  ms      <- attempt "create/reservoir" (liftIO $ RSV.malloc ptxStreamReservoir)
+             `orElse`
+             attempt "create/new"       (liftIO . catchOOM $ Stream.create [])
+             `orElse` do
+               Remote.reclaim ptxMemoryTable
+               liftIO $ do
+                 message "create/new: failed (purging)"
+                 catchOOM $ Stream.create []
+  case ms of
+    Just s  -> return s
+    Nothing -> liftIO $ do
+      message "create/new: failed (non-recoverable)"
+      throwIO (ExitCode OutOfMemory)
+
+  where
+    catchOOM :: IO a -> IO (Maybe a)
+    catchOOM it =
+      liftM Just it `catch` \e -> case e of
+                                    ExitCode OutOfMemory -> return Nothing
+                                    _                    -> throwIO e
+
+    attempt :: MonadIO m => String -> m (Maybe a) -> m (Maybe a)
+    attempt msg ea = do
+      ma <- ea
+      case ma of
+        Nothing -> return Nothing
+        Just a  -> do liftIO (message msg)
+                      return (Just a)
+
+    orElse :: MonadIO m => m (Maybe a) -> m (Maybe a) -> m (Maybe a)
+    orElse ea eb = do
+      ma <- ea
+      case ma of
+        Just a  -> return (Just a)
+        Nothing -> eb
 
 
 -- | Merge a stream back into the reservoir. This must only be done once all
 -- pending operations in the stream have completed.
 --
 {-# INLINEABLE destroy #-}
-destroy :: Context -> Reservoir -> Stream -> IO ()
-destroy _ctx _ref = finalize
-
-{--
-  message ("stash stream " ++ showStream stream)
-
-  -- TLM TODO: forkIO a thread to do the wait and stash. Need to test that.
-
-  -- Wait for all preceding operations submitted to the stream to complete.
-  --
-  -- Note: Placing the block here seems to force _all_ streams to block, or at
-  --       least significantly impacts the chances of other streams overlapping.
-  --       However by using the 'streaming' interface, we avoid the need to
-  --       block the stream here, because the binding will always be evaluated
-  --       before the body begins execution.
-  --
-  -- Stream.block stream
-
-  -- Note: We use a sequence here so that the old stream can be placed onto the
-  --       end of the reservoir, while new streams are popped from the front.
-  --       Since we don't block on the stream when returning it (see above),
-  --       in this configuration most likely the stream won't be required
-  --       immediately, and so it has some time yet to finish any outstanding
-  --       operations (just in case).
-  --
-  modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
---}
+destroy :: Stream -> IO ()
+destroy = finalize
 
 
 -- Debug
@@ -170,14 +172,10 @@ destroy _ctx _ref = finalize
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-  Debug.when Debug.verbose $ Debug.traceIO Debug.dump_exec ("stream: " ++ msg)
+  Debug.traceIO Debug.dump_sched ("stream: " ++ msg)
   next
 
 {-# INLINE message #-}
 message :: String -> IO ()
 message s = s `trace` return ()
-
-{-# INLINE showStream #-}
-showStream :: Stream.Stream -> String
-showStream (Stream.Stream s) = show s
 

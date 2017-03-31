@@ -1,7 +1,8 @@
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Constant
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Constant
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -9,13 +10,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Constant
+module LLVM.AST.Type.Constant
   where
 
-import Data.Array.Accelerate.Type
-
-import LLVM.General.AST.Type.Name
--- import LLVM.General.AST.Type.Representation
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Representation
 
 
 -- | Although constant expressions and instructions have many similarities,
@@ -33,7 +32,10 @@ data Constant a where
                         -> a
                         -> Constant a
 
-  GlobalReference       :: Maybe (ScalarType a)
+  UndefConstant         :: Type a
+                        -> Constant a
+
+  GlobalReference       :: Type a
                         -> Name a
                         -> Constant a
 

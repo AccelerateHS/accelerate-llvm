@@ -1,6 +1,6 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.LBS
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -22,9 +22,13 @@ module Data.Array.Accelerate.LLVM.Native.Execute.LBS
 -- is meant for operations such as multidimensional reduction, where each input
 -- index corresponds to a non-unit amount of work.
 --
+-- These should really be dynamic values based on how long it took to execute
+-- the last chunk, increase or decrease the chunk size to ensure quick
+-- turnaround and also low scheduler overhead.
+--
 defaultLargePPT :: Int
-defaultLargePPT = 2048
+defaultLargePPT = 4096
 
 defaultSmallPPT :: Int
-defaultSmallPPT = 32
+defaultSmallPPT = 64
 

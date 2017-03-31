@@ -1,6 +1,6 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -41,10 +41,7 @@ imapFromTo :: IR Int32 -> IR Int32 -> (IR Int32 -> CodeGen ()) -> CodeGen ()
 imapFromTo start end body = do
   step  <- gridSize
   tid   <- globalThreadIdx
-  ix    <- add numType tid start
-
-  Loop.for ix
-           (\i -> lt scalarType i end)
-           (\i -> add numType i step)
-           body
+  i0    <- add numType tid start
+  --
+  Loop.imapFromStepTo i0 step end body
 

@@ -1,6 +1,7 @@
+{-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Event
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -11,36 +12,85 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Event (
 
-  Event, Stream,
+  Event,
   create, destroy, query, waypoint, after, block,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Lifetime
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.Array.Remote.LRU             as Remote
+
+import Data.Array.Accelerate.LLVM.PTX.Array.Remote                  ( )
+import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX(..) )
+import Data.Array.Accelerate.LLVM.State
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
 -- cuda
-import qualified Foreign.CUDA.Driver.Event                      as Event
-import qualified Foreign.CUDA.Driver.Stream                     as Stream
+import Foreign.CUDA.Driver.Error
+import qualified Foreign.CUDA.Driver.Event                          as Event
+import qualified Foreign.CUDA.Driver.Stream                         as Stream
+
+import Control.Exception
+import Control.Monad.State
 
 
-type Event  = Lifetime Event.Event
-type Stream = Lifetime Stream.Stream
+-- | Events can be used for efficient device-side synchronisation between
+-- execution streams and between the host.
+--
+type Event = Lifetime Event.Event
 
 
 -- | Create a new event. It will not be automatically garbage collected, and is
 -- not suitable for timing purposes.
 --
 {-# INLINEABLE create #-}
-create :: IO Event
+create :: LLVM PTX Event
 create = do
-  e     <- Event.create [Event.DisableTiming]
-  event <- newLifetime e
-  message ("create " ++ showEvent e)
-  addFinalizer event $ do message $ "destroy " ++ showEvent e
-                          Event.destroy e
+  e     <- create'
+  event <- liftIO $ newLifetime e
+  liftIO $ addFinalizer event $ do message $ "destroy " ++ showEvent e
+                                   Event.destroy e
   return event
+
+create' :: LLVM PTX Event.Event
+create' = do
+  PTX{..} <- gets llvmTarget
+  me      <- attempt "create/new" (liftIO . catchOOM $ Event.create [Event.DisableTiming])
+             `orElse` do
+               Remote.reclaim ptxMemoryTable
+               liftIO $ do
+                 message "create/new: failed (purging)"
+                 catchOOM $ Event.create [Event.DisableTiming]
+  case me of
+    Just e  -> return e
+    Nothing -> liftIO $ do
+      message "create/new: failed (non-recoverable)"
+      throwIO (ExitCode OutOfMemory)
+
+  where
+    catchOOM :: IO a -> IO (Maybe a)
+    catchOOM it =
+      liftM Just it `catch` \e -> case e of
+                                    ExitCode OutOfMemory -> return Nothing
+                                    _                    -> throwIO e
+
+    attempt :: MonadIO m => String -> m (Maybe a) -> m (Maybe a)
+    attempt msg ea = do
+      ma <- ea
+      case ma of
+        Nothing -> return Nothing
+        Just a  -> do liftIO (message msg)
+                      return (Just a)
+
+    orElse :: MonadIO m => m (Maybe a) -> m (Maybe a) -> m (Maybe a)
+    orElse ea eb = do
+      ma <- ea
+      case ma of
+        Just a  -> return (Just a)
+        Nothing -> eb
+
 
 -- | Delete an event
 --
@@ -52,14 +102,15 @@ destroy = finalize
 -- specified stream has completed all previously submitted work.
 --
 {-# INLINEABLE waypoint #-}
-waypoint :: Stream -> IO Event
+waypoint :: Stream -> LLVM PTX Event
 waypoint stream = do
   event <- create
-  withLifetime stream  $ \s -> do
-    withLifetime event $ \e -> do
-      message $ "add waypoint " ++ showEvent e ++ " in stream " ++ showStream s
-      Event.record e (Just s)
-      return event
+  liftIO $
+    withLifetime stream  $ \s -> do
+      withLifetime event $ \e -> do
+        message $ "add waypoint " ++ showEvent e ++ " in stream " ++ showStream s
+        Event.record e (Just s)
+        return event
 
 -- | Make all future work submitted to the given stream wait until the event
 -- reports completion before beginning execution.
@@ -94,7 +145,7 @@ query event = withLifetime event Event.query
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
 trace msg next = do
-  Debug.when Debug.verbose $ Debug.traceIO Debug.dump_exec ("event: " ++ msg)
+  Debug.traceIO Debug.dump_sched ("event: " ++ msg)
   next
 
 {-# INLINE message #-}

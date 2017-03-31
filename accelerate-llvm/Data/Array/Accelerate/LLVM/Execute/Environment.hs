@@ -2,9 +2,10 @@
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Environment
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -18,7 +19,10 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
 
 -- accelerate
 import Data.Array.Accelerate.AST
+#if __GLASGOW_HASKELL__ < 800
 import Data.Array.Accelerate.Error
+#endif
+
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 
@@ -37,5 +41,7 @@ data AvalR arch env where
 aprj :: Idx env t -> AvalR arch env -> AsyncR arch t
 aprj ZeroIdx       (Apush _   x) = x
 aprj (SuccIdx idx) (Apush val _) = aprj idx val
+#if __GLASGOW_HASKELL__ < 800
 aprj _             _             = $internalError "aprj" "inconsistent valuation"
+#endif
 

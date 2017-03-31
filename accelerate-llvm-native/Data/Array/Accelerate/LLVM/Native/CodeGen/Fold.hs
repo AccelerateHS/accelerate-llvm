@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -16,14 +16,13 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
-import Data.Typeable
-
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+import Data.Array.Accelerate.LLVM.Analysis.Match
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -32,12 +31,19 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-import Data.Array.Accelerate.LLVM.Native.Target                         ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
+
+import Control.Applicative
+import Prelude                                                      as P hiding ( length )
 
 
--- Reduce an array along the innermost dimension.
+-- Reduce a (possibly empty) array along the innermost dimension. The reduction
+-- function must be associative to allow for an efficient parallel
+-- implementation. The initial element does not need to be a neutral element of
+-- the operator.
 --
 mkFold
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -47,13 +53,18 @@ mkFold
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold aenv f z acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
-  = mkFoldAll aenv f (Just z) acc
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  = (+++) <$> mkFoldAll  aenv f (Just z) acc
+          <*> mkFoldFill aenv z
 
   | otherwise
-  = mkFold' aenv f (Just z) acc
+  = (+++) <$> mkFoldDim  aenv f (Just z) acc
+          <*> mkFoldFill aenv z
 
 
+-- Reduce a non-empty array along the innermost dimension. The reduction
+-- function must be associative to allow for efficient parallel implementation.
+--
 mkFold1
     :: forall aenv sh e. (Shape sh, Elt e)
     => Gamma            aenv
@@ -61,29 +72,33 @@ mkFold1
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFold1 aenv f acc
-  | Just REFL <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll aenv f Nothing acc
 
   | otherwise
-  = mkFold' aenv f Nothing acc
+  = mkFoldDim aenv f Nothing acc
 
 
-mkFold'
+-- Reduce a multidimensional (>1) array along the innermost dimension.
+--
+-- For simplicity, each element of the output (reduction along the entire length
+-- of an innermost-dimension index) is computed by a single thread.
+--
+mkFoldDim
   :: forall aenv sh e. (Shape sh, Elt e)
   =>          Gamma            aenv
   ->          IRFun2    Native aenv (e -> e -> e)
   -> Maybe   (IRExp     Native aenv e)
   ->          IRDelayed Native aenv (Array (sh :. Int) e)
   -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkFold' aenv combine mseed IRDelayed{..} =
+mkFoldDim aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      name                      = "ix.stride" :: Name Int
-      paramStride               = scalarParameter scalarType name
-      stride                    = local           scalarType name
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
   in
   makeOpenAcc "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
 
@@ -107,12 +122,12 @@ mkFold' aenv combine mseed IRDelayed{..} =
 --
 -- > dotp xs ys = fold (+) 0 (zipWith (*) xs ys)
 --
---   1. The first pass reads in the fused array data, in this case
---   corresponding to the function (\i -> (xs!i) * (ys!i)).
+--   1. The first pass reads in the fused array data, in this case corresponding
+--   to the function (\i -> (xs!i) * (ys!i)).
 --
---   2. The second pass reads in the manifest array data from the first
---   step and directly reduces the array. This second step should be small
---   (one element per thread) and so is just done by a single core.
+--   2. The second pass reads in the manifest array data from the first step and
+--   directly reduces the array. This second step should be small and so is
+--   usually just done by a single core.
 --
 -- Note that the first step is split into two kernels, the second of which
 -- reads a carry-in value of that thread's partial reduction, so that
@@ -129,110 +144,117 @@ mkFoldAll
     -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed Native aenv (Vector e)                -- ^ input data
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
-mkFoldAll aenv combine mseed IRDelayed{..} = do
+mkFoldAll aenv combine mseed arr =
+  foldr1 (+++) <$> sequence [ mkFoldAllS  aenv combine mseed arr
+                            , mkFoldAllP1 aenv combine       arr
+                            , mkFoldAllP2 aenv combine mseed
+                            ]
+
+
+-- Sequential reduction of an entire array to a single element
+--
+mkFoldAllS
+    :: forall aenv e. Elt e
+    =>          Gamma            aenv                           -- ^ array environment
+    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
+    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
+    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
+    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+mkFoldAllS aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
-      (tid, paramId)            = gangId
-      (arrOut,  paramOut)       = mutableArray ("out"  :: Name (Scalar e))
-      (arrTmp,  paramTmp)       = mutableArray ("tmp"  :: Name (Vector e))
-      (arrFlag, paramFlag)      = mutableArray ("flag" :: Name (Vector Word8))
       paramEnv                  = envParam aenv
-      --
-      zero                      = ir numType (num numType 0)
-      one                       = ir numType (num numType 1)
+      (arrOut,  paramOut)       = mutableArray ("out" :: Name (Scalar e))
+      zero                      = lift 0 :: IR Int
+  in
+  makeOpenAcc "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
+    r <- case mseed of
+           Just seed -> do z <- seed
+                           reduceFromTo  start end (app2 combine) z (app1 delayedLinearIndex)
+           Nothing   ->    reduce1FromTo start end (app2 combine)   (app1 delayedLinearIndex)
+    writeArray arrOut zero r
+    return_
 
-  -- Sequential reduction
-  -- --------------------
-  s1 <- makeKernel "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
-          r <- case mseed of
-                 Just seed -> do z <- seed
-                                 reduceFromTo  zero end (app2 combine) z (app1 delayedLinearIndex)
-                 Nothing   ->    reduce1FromTo zero end (app2 combine)   (app1 delayedLinearIndex)
-          writeArray arrOut zero r
-          return_
+-- Parallel reduction of an entire array to a single element, step 1.
+--
+-- Threads reduce each stripe of the input into a temporary array, incorporating
+-- any fused functions on the way.
+--
+mkFoldAllP1
+    :: forall aenv e. Elt e
+    =>          Gamma            aenv                           -- ^ array environment
+    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
+    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
+    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+mkFoldAllP1 aenv combine IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParam
+      paramEnv                  = envParam aenv
+      (arrTmp,  paramTmp)       = mutableArray ("tmp" :: Name (Vector e))
+      length                    = local           scalarType ("ix.length" :: Name Int)
+      stride                    = local           scalarType ("ix.stride" :: Name Int)
+      paramLength               = scalarParameter scalarType ("ix.length" :: Name Int)
+      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+  in
+  makeOpenAcc "foldAllP1" (paramGang ++ paramLength : paramStride : paramTmp ++ paramEnv) $ do
 
-  -- Parallel reduction
-  -- ------------------
-  --
-  -- Step 1: Threads participate in a parallel reduction of the input array
-  --
-  p1 <- makeKernel "foldAllP1" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
-          r <- reduce1FromTo start end (app2 combine) (app1 delayedLinearIndex)
-          writeArray arrTmp tid r
-          return_
+    -- A thread reduces a sequential (non-empty) stripe of the input and stores
+    -- that value into a temporary array at a specific index. The size of the
+    -- stripe is fixed, but work stealing occurs between stripe indices. This
+    -- method thus supports non-commutative operators because the order of
+    -- operations remains left-to-right.
+    --
+    imapFromTo start end $ \i -> do
+      inf <- A.mul numType i   stride
+      a   <- A.add numType inf stride
+      sup <- A.min scalarType a length
+      r   <- reduce1FromTo inf sup (app2 combine) (app1 delayedLinearIndex)
+      writeArray arrTmp i r
 
-  -- Step 2: Threads participate in parallel reduction of the input array,
-  --         but additionally carry in a temporary value from step1. This
-  --         enables work-stealing over the main reduction loop.
-  --
-  p2 <- makeKernel "foldAllP2" (paramGang ++ paramId ++ paramTmp ++ paramEnv) $ do
-          c <- readArray arrTmp tid
-          r <- reduceFromTo start end (app2 combine) c (app1 delayedLinearIndex)
-          writeArray arrTmp tid r
-          return_
+    return_
 
-  -- Step 3: A single thread combines the partial results from all the
-  -- threads. If this is an exclusive reduction, this is the time to
-  -- include the seed element.
-  --
-  -- We also need to be careful to only include those local sums that were
-  -- actually initialised, as marked by the flag parameter. This is an awkward
-  -- race condition in the scheduler, where a thread might be assigned some work
-  -- to do, but that is stolen before it gets a chance to execute it. If this
-  -- becomes a problem with other parallel operations, we will need to build
-  -- a better solution.
-  --
-  p3 <- makeKernel "foldAllP3" (paramGang ++ paramTmp ++ paramFlag ++ paramOut ++ paramEnv) $ do
-          let
-              -- Add any initialised elements to the given initial value
-              reduceFromToIf m n seed = do
-                z <- seed
-                r <- iterFromTo m n z $ \i acc ->
-                       ifThenElse
-                         (eq scalarType one =<< readArray arrFlag i)
-                         (app2 combine acc  =<< readArray arrTmp i)
-                         (return acc)
+-- Parallel reduction of an entire array to a single element, step 2.
+--
+-- A single thread reduces the temporary array to a single element.
+--
+-- During execution, we choose a stripe size in phase 1 so that the temporary is
+-- small-ish and thus suitable for sequential reduction. An alternative would be
+-- to keep the stripe size constant and, for if the partial reductions array is
+-- large, continuing reducing it in parallel.
+--
+mkFoldAllP2
+    :: forall aenv e. Elt e
+    =>          Gamma            aenv                           -- ^ array environment
+    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
+    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
+    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+mkFoldAllP2 aenv combine mseed =
+  let
+      (start, end, paramGang)   = gangParam
+      paramEnv                  = envParam aenv
+      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      zero                      = lift 0 :: IR Int
+  in
+  makeOpenAcc "foldAllP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+    r <- case mseed of
+           Just seed -> do z <- seed
+                           reduceFromTo  start end (app2 combine) z (readArray arrTmp)
+           Nothing   ->    reduce1FromTo start end (app2 combine)   (readArray arrTmp)
+    writeArray arrOut zero r
+    return_
 
-                -- store result
-                writeArray arrOut zero r
-                return_
-          --
-          case mseed of
-            Just seed -> reduceFromToIf start end seed
-            Nothing   -> do
-              loop   <- newBlock "search.top"
-              mid    <- newBlock "search.mid"
-              exit   <- newBlock "search.exit"
-              _      <- newBlock "search.entry"
 
-              p      <- lt scalarType start end
-              top    <- cbr p loop exit
-              prev   <- fresh
-
-              -- loop over the temporary array, searching for a valid entry, and
-              -- break out as soon as we find one.
-              setBlock loop
-              ok     <- readArray arrFlag prev
-              p'     <- eq scalarType ok one
-              found  <- cbr p' exit mid
-
-              setBlock mid
-              next   <- add numType prev (ir numType (num numType 1))
-              p''    <- lt scalarType next end
-              bot    <- cbr p'' loop exit
-              _      <- phi' loop prev [(start,top), (next, bot)]
-
-              setBlock exit
-              start' <- phi [(start,top), (prev,found), (end,bot)]
-              next'  <- add numType start' (ir numType (num numType 1))
-
-              -- Assume at least one element was valid
-              reduceFromToIf next' end (readArray arrTmp start')
-
-  -- NOTE: The sequential kernel must appear first in the list, so it will
-  --       be treated as the default function to execute.
-  return $ IROpenAcc [s1,p1,p2,p3]
-
+-- Exclusive reductions over empty arrays (of any dimension) fill the lower
+-- dimensions with the initial element
+--
+mkFoldFill
+    :: (Shape sh, Elt e)
+    => Gamma aenv
+    -> IRExp Native aenv e
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+mkFoldFill aenv seed =
+  mkGenerate aenv (IRFun1 (const seed))
 
 -- Reduction loops
 -- ---------------
@@ -267,22 +289,4 @@ reduce1FromTo m n f get = do
   z  <- get m
   m1 <- add numType m (ir numType (num numType 1))
   reduceFromTo m1 n f z get
-
-
--- Utilities
--- ---------
-
--- Match reified shape types
---
-matchShapeType
-    :: forall sh sh'. (Shape sh, Shape sh')
-    => sh
-    -> sh'
-    -> Maybe (sh :=: sh')
-matchShapeType _ _
-  | Just REFL <- matchTupleType (eltType (undefined::sh)) (eltType (undefined::sh'))
-  = gcast REFL
-
-matchShapeType _ _
-  = Nothing
 

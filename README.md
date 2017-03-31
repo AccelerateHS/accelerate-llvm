@@ -4,107 +4,167 @@ An LLVM backend for the Accelerate Array Language
 [![Build Status](https://travis-ci.org/AccelerateHS/accelerate-llvm.svg)](https://travis-ci.org/AccelerateHS/accelerate-llvm)
 
 This package compiles Accelerate code to LLVM IR, and executes that code on
-multicore CPUs as well as NVIDIA GPUs. This avoids the need to go through 'nvcc'
-or 'clang'. For details on Accelerate, refer to the [main repository][GitHub].
-Please also file bug reports and feature requests with the [issue
-tracker][Issues] of the main repository.
+multicore CPUs as well as NVIDIA GPUs. This avoids the need to go through `nvcc`
+or `clang`. For details on Accelerate, refer to the [main repository][GitHub].
+
+We love all kinds of contributions, so feel free to open issues for missing
+features as well as report (or fix!) bugs on the [issue tracker][Issues].
 
   [GitHub]:  https://github.com/AccelerateHS/accelerate
   [Issues]:  https://github.com/AccelerateHS/accelerate/issues
 
+
+ * [Dependencies](#dependencies)
+ * [Installing LLVM](#installing-llvm)
+   * [Homebrew](#homebrew)
+   * [Debian/Ubuntu](#debianubuntu)
+   * [Building from source](#building-from-source)
+ * [Installing Accelerate-LLVM](#installing-accelerate-llvm)
+   * [libNVVM](#libNVVM)
+
+
 Dependencies
 ------------
 
-Haskell dependencies are available from Hackage. There are several external
-dependencies that you will need to install as well:
+Haskell dependencies are available from Hackage, but there are several external
+library dependencies that you will need to install as well:
 
- * [LLVM](http://llvm.org)
- * [libFFI](http://sourceware.org/libffi/)
+ * [`LLVM`](http://llvm.org)
+ * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
+ * [`CUDA`](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
 
 
-Installation
-------------
+Installing LLVM
+---------------
 
-You will need to install a couple of foreign libraries: libffi as well as LLVM
-(with shared library support). If you want to use the GPU targeting
-`accelerate-llvm-ptx` backend, make sure you install (or build) LLVM with the
-'nvptx' target.
+When installing LLVM, make sure that it includes the `libLLVM` shared library.
+If you want to use the GPU targeting `accelerate-llvm-ptx` backend, make sure
+you install (or build) LLVM with the 'nvptx' target.
 
-Example using [Homebrew](http://brew.sh) on Mac OS X:
+## Homebrew
 
-```
-$ brew update
-$ brew install libffi
-$ brew install llvm34 --all-targets
-```
+Example using [Homebrew](http://brew.sh) on macOS:
 
-Then, installation using
-[`stack`](http://docs.haskellstack.org/en/stable/README.html) just requires you
-to point it to the appropriate configuration file, for example:
-
-```
-stack --stack-yaml=stack-7.8.yaml build
+```sh
+$ brew install llvm-hs/homebrew-llvm/llvm-4.0
 ```
 
-If installing via `cabal`, note that you will need to tell the `llvm-general`
-package to use the shared library version of LLVM ([84][llvm-general-issue84],
-[85][llvm-general-issue85]) before attempting to install `accelerate-llvm*`.
+## Debian/Ubuntu
 
+For Debian/Ubuntu based Linux distributions, the LLVM.org website provides
+binary distribution packages. Check [apt.llvm.org](http://apt.llvm.org) for
+instructions for adding the correct package database for your OS version, and
+then:
+
+```sh
+$ apt-get install llvm-4.0-dev
 ```
-$ cabal install llvm-general -fshared-llvm
-$ cabal install ./accelerate-llvm
+
+## Building from source
+
+If your OS does not have an appropriate LLVM distribution available, you can also build from source. Detailed build instructions are available on the [LLVM.org website](http://releases.llvm.org/4.0.0/docs/CMake.html). Note that you will require at least [CMake 3.4.3](http://www.cmake.org/cmake/resources/software.html) and a recent C++ compiler; at least Clang 3.1, GCC 4.8, or Visual Studio 2015 (update 3).
+
+  1. Download and unpack the [LLVM-4.0 source code](http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz). We'll refer to
+     the path that the source tree was unpacked to as `LLVM_SRC`. Only the main
+     LLVM source tree is required, but you can optionally add other components
+     such as the Clang compiler or Polly loop optimiser. See the [LLVM releases](http://releases.llvm.org/download.html#4.0.0)
+     page for the complete list.
+
+  2. Create a temporary build directory and `cd` into it, for example:
+     ```sh
+     $ mkdir /tmp/build
+     $ cd /tmp/build
+     ```
+
+  3. Execute the following to configure the build. Here `INSTALL_PREFIX` is
+     where LLVM is to be installed, for example `/usr/local` or
+     `$HOME/opt/llvm`:
+     ```sh
+     $ cmake $LLVM_SRC -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON
+     ```
+     See [options and variables](http://llvm.org/docs/CMake.html#options-and-variables)
+     for a list of additional build parameters you can specify.
+
+  4. Build and install:
+     ```sh
+     $ cmake --build .
+     $ cmake --build . --target install
+     ```
+
+  5. For macOS only, some additional steps are useful to work around issues related
+     to [System Integrity Protection](https://en.wikipedia.org/wiki/System_Integrity_Protection):
+     ```sh
+     cd $INSTALL_PREFIX/lib
+     ln -s libLLVM.dylib libLLVM-4.0.dylib
+     install_name_tool -id $PWD/libLTO.dylib libLTO.dylib
+     install_name_tool -id $PWD/libLLVM.dylib libLLVM.dylib
+     install_name_tool -change '@rpath/libLLVM.dylib' $PWD/libLLVM.dylib libLTO.dylib
+     ```
+
+
+Installing Accelerate-LLVM
+--------------------------
+
+Once the dependencies are installed, we are ready to install `accelerate-llvm`.
+
+For example, installation using [`stack`](http://docs.haskellstack.org/en/stable/README.html)
+just requires you to point it to the appropriate configuration file:
+```sh
+$ ln -s stack-8.0.yaml stack.yaml
+$ stack setup
+$ stack install
 ```
 
-Finally, it is possible to use libNVVM to optimise the generated GPU code,
-rather than LLVM's inbuilt NVPTX backend (so, you will not need to install LLVM
-with the nvptx target). However, this will require an older version of LLVM,
-which may impact CPU performance. If you wish to use libNVVM, supply the flag
-`-flibnvvm` to cabal when installing `accelerate-llvm`. [**WARNING:** bitrot]
+Note that the version of [`llvm-hs`](https://hackage.haskell.org/package/llvm-hs)
+used must match the installed version of LLVM, which is currently 4.0.
 
 
-Current status
---------------
+## libNVVM
 
-**Native backend**
+The `accelerate-llvm-ptx` backend can optionally be compiled to generate GPU
+code using the `libNVVM` library, rather than LLVM's inbuilt NVPTX code
+generator. `libNVVM` is a closed-source library distributed as part of the
+NVIDIA CUDA toolkit, and is what the `nvcc` compiler itself uses internally when
+compiling CUDA C code.
 
-  * Coverage of skeleton operations
-- [x] map
-- [x] generate/zipWith
-- [x] backpermute/transform
-- [x] slice/replicate
-- [x] reshape
-- [x] fold (multidimensional)
-- [x] foldAll (parallel)
-- [ ] scanl, scanr
-- [ ] scanl1, scanr1
-- [ ] scanl', scanr'
-- [ ] foldSeg
-- [ ] permute
-- [x] stencil (preliminary support)
-- [x] stencil2 (preliminary support)
-- [ ] foreign functions
+Using `libNVVM` _may_ improve GPU performance compared to the code generator
+built in to LLVM. One difficulty with using it however is that since `libNVVM`
+is also based on LLVM, and typically lags LLVM by several releases, you must
+install `accelerate-llvm` with a "compatible" version of LLVM, which will depend
+on the version of the CUDA toolkit you have installed. The following table shows
+some combinations:
 
+|              | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 | LLVM-4.0 |
+|:------------:|:--------:|:--------:|:--------:|:--------:|:--------:|:--------:|
+| **CUDA-7.0** |     ⭕    |     ❌    |          |          |          |          |
+| **CUDA-7.5** |          |     ⭕    |     ⭕    |     ❌    |          |          |
+| **CUDA-8.0** |          |          |     ⭕    |     ⭕    |     ❌    |     ❌    |
 
-**PTX backend**
+Where ⭕ = Works, and ❌ = Does not work.
 
-  * Coverage of skeleton operations
-- [x] map
-- [x] generate/zipWith
-- [x] backpermute/transform
-- [x] slice/replicate
-- [x] reshape
-- [ ] fold (multidimensional)
-- [ ] foldAll (parallel optimisation)
-- [ ] scanl, scanr
-- [ ] scanl1, scanr1
-- [ ] scanl', scanr'
-- [ ] foldSeg
-- [ ] permute
-- [x] stencil (preliminary support)
-- [x] stencil2 (preliminary support)
-- [ ] foreign functions
+Note that the above restrictions on CUDA and LLVM version exist _only_ if you
+want to use the NVVM component. Otherwise, you should be free to use any
+combination of CUDA and LLVM.
 
+Also note that `accelerate-llvm-ptx` itself currently requires at least LLVM-3.5.
 
- [llvm-general-issue84]:        https://github.com/bscarlet/llvm-general/issues/84
- [llvm-general-issue85]:        https://github.com/bscarlet/llvm-general/issues/85
+Using `stack`, either edit the `stack.yaml` and add the following section:
+
+```yaml
+flags:
+  accelerate-llvm-ptx:
+    nvvm: true
+```
+
+Or install using the following option on the command line:
+
+```sh
+$ stack install accelerate-llvm-ptx --flag accelerate-llvm-ptx:nvvm
+```
+
+If installing via `cabal`:
+
+```sh
+$ cabal install accelerate-llvm-ptx -fnvvm
+```
 

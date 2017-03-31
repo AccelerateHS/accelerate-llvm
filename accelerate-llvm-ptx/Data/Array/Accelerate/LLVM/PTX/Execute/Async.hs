@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Async
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( Async )
 import qualified Data.Array.Accelerate.LLVM.Execute.Async       as A
 
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( Event )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
@@ -43,14 +42,17 @@ instance A.Async PTX where
   type StreamR PTX = Stream
   type EventR  PTX = Event
 
-  {-# INLINEABLE spawn #-}
-  spawn = do
-    PTX{..} <- gets llvmTarget
-    liftIO  $! Stream.create ptxContext ptxStreamReservoir
+  {-# INLINEABLE fork #-}
+  fork =
+    Stream.create
+
+  {-# INLINEABLE join #-}
+  join stream =
+    liftIO $! Stream.destroy stream
 
   {-# INLINEABLE checkpoint #-}
   checkpoint stream =
-    liftIO $! Event.waypoint stream
+    Event.waypoint stream
 
   {-# INLINEABLE after #-}
   after stream event =

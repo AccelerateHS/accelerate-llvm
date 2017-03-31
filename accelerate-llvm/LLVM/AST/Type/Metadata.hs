@@ -1,7 +1,8 @@
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Metadata
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Metadata
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -9,11 +10,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Metadata
+module LLVM.AST.Type.Metadata
   where
 
-import LLVM.General.AST.Type.Operand
-import qualified LLVM.General.AST.Operand                       as LLVM
+import LLVM.AST.Type.Operand
+import qualified LLVM.AST.Operand                         as LLVM
 
 
 -- | <http://llvm.org/docs/LangRef.html#metadata>

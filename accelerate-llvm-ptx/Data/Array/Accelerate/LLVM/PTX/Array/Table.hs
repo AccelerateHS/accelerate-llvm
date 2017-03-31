@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Table
--- Copyright   : [2014..2016] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -16,15 +16,14 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Table (
 
 ) where
 
-import Data.Array.Accelerate.LLVM.PTX.Context                           ( Context, push, pop )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event                     ( Event )
-import qualified Data.Array.Accelerate.Array.Remote                     as Remote
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
+import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, withContext )
+import qualified Data.Array.Accelerate.Array.Remote                 as Remote
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 
-import qualified Foreign.CUDA.Ptr                                       as CUDA
-import qualified Foreign.CUDA.Driver                                    as CUDA
+import qualified Foreign.CUDA.Ptr                                   as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Control.Exception
 import Text.Printf
 
 
@@ -44,7 +43,7 @@ new !ctx = Remote.new freeRemote
     freeRemote :: CUDA.DevicePtr a -> IO ()
     freeRemote !ptr = do
       message (printf "freeRemote %s" (show ptr))
-      bracket_ (push ctx) pop (CUDA.free ptr)
+      withContext ctx (CUDA.free ptr)
 
 
 -- Debugging

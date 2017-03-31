@@ -2,9 +2,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Target
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -16,8 +17,8 @@
 module Data.Array.Accelerate.LLVM.Target
   where
 
--- llvm-general
-import LLVM.General.AST.DataLayout                              ( DataLayout )
+-- llvm-hs
+import LLVM.AST.DataLayout                                ( DataLayout )
 
 
 -- | Describes some target specific information needed for code generation

@@ -2,9 +2,10 @@
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE KindSignatures       #-}
 {-# LANGUAGE TypeOperators        #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Global
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Global
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -12,22 +13,18 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Global
+module LLVM.AST.Type.Global
   where
 
-import Foreign.Ptr
-
-import Data.Array.Accelerate.Type
-
-import LLVM.General.AST.Type.Name
-import LLVM.General.AST.Type.Operand
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
 
 -- | Parameters for functions
 --
 data Parameter a where
-  ScalarParameter       :: ScalarType a -> Name a -> Parameter a
-  PtrParameter          :: ScalarType a -> Name a -> Parameter (Ptr a)
+  Parameter :: PrimType a -> Name a -> Parameter a
 
 -- | Attributes for the function call instruction
 --
@@ -37,6 +34,8 @@ data FunctionAttribute
   | ReadOnly
   | ReadNone
   | AlwaysInline
+  | NoDuplicate
+  | Convergent
 
 -- | Attribute groups are groups of attributes that are referenced by
 -- objects within the IR. To use an attribute group, an object must
@@ -44,15 +43,11 @@ data FunctionAttribute
 --
 data GroupID = GroupID !Word
 
--- | A global function definition
---
--- Note that because we just use the reified dictionary structure of Accelerate
--- types, our functions are limited to operating over scalar types only; no
--- pointers to functions and nothing that returns void.
+-- | A global function definition.
 --
 data GlobalFunction args t where
-  Body :: Maybe (ScalarType r) -> Label                              -> GlobalFunction '[]         r
-  Lam  :: ScalarType a         -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
+  Body :: Type r     -> Label                              -> GlobalFunction '[]         r
+  Lam  :: PrimType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
 
 data HList (l :: [*]) where
   HNil  ::                 HList '[]

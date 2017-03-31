@@ -1,9 +1,11 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE RankNTypes   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -18,9 +20,11 @@ module Data.Array.Accelerate.LLVM.CodeGen.IR (
 
 ) where
 
-import LLVM.General.AST.Type.Operand
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
 
@@ -67,6 +71,77 @@ data instance Operands CSChar   = OP_CSChar  (Operand CSChar)
 data instance Operands CUChar   = OP_CUChar  (Operand CUChar)
 data instance Operands (a,b)    = OP_Pair    (Operands a) (Operands b)
 
+-- Extra instances to support operands of pointer type
+--
+-- data instance Operands (Ptr Int)      = OP_PtrInt     (Operand (Ptr Int))
+-- data instance Operands (Ptr Int8)     = OP_PtrInt8    (Operand (Ptr Int8))
+-- data instance Operands (Ptr Int16)    = OP_PtrInt16   (Operand (Ptr Int16))
+-- data instance Operands (Ptr Int32)    = OP_PtrInt32   (Operand (Ptr Int32))
+-- data instance Operands (Ptr Int64)    = OP_PtrInt64   (Operand (Ptr Int64))
+-- data instance Operands (Ptr Word)     = OP_PtrWord    (Operand (Ptr Word))
+-- data instance Operands (Ptr Word8)    = OP_PtrWord8   (Operand (Ptr Word8))
+-- data instance Operands (Ptr Word16)   = OP_PtrWord16  (Operand (Ptr Word16))
+-- data instance Operands (Ptr Word32)   = OP_PtrWord32  (Operand (Ptr Word32))
+-- data instance Operands (Ptr Word64)   = OP_PtrWord64  (Operand (Ptr Word64))
+-- data instance Operands (Ptr CShort)   = OP_PtrCShort  (Operand (Ptr CShort))
+-- data instance Operands (Ptr CUShort)  = OP_PtrCUShort (Operand (Ptr CUShort))
+-- data instance Operands (Ptr CInt)     = OP_PtrCInt    (Operand (Ptr CInt))
+-- data instance Operands (Ptr CUInt)    = OP_PtrCUInt   (Operand (Ptr CUInt))
+-- data instance Operands (Ptr CLong)    = OP_PtrCLong   (Operand (Ptr CLong))
+-- data instance Operands (Ptr CULong)   = OP_PtrCULong  (Operand (Ptr CULong))
+-- data instance Operands (Ptr CLLong)   = OP_PtrCLLong  (Operand (Ptr CLLong))
+-- data instance Operands (Ptr CULLong)  = OP_PtrCULLong (Operand (Ptr CULLong))
+-- data instance Operands (Ptr Float)    = OP_PtrFloat   (Operand (Ptr Float))
+-- data instance Operands (Ptr Double)   = OP_PtrDouble  (Operand (Ptr Double))
+-- data instance Operands (Ptr CFloat)   = OP_PtrCFloat  (Operand (Ptr CFloat))
+-- data instance Operands (Ptr CDouble)  = OP_PtrCDouble (Operand (Ptr CDouble))
+-- data instance Operands (Ptr Bool)     = OP_PtrBool    (Operand (Ptr Bool))
+-- data instance Operands (Ptr Char)     = OP_PtrChar    (Operand (Ptr Char))
+-- data instance Operands (Ptr CChar)    = OP_PtrCChar   (Operand (Ptr CChar))
+-- data instance Operands (Ptr CSChar)   = OP_PtrCSChar  (Operand (Ptr CSChar))
+-- data instance Operands (Ptr CUChar)   = OP_PtrCUChar  (Operand (Ptr CUChar))
+
+-- type instance EltRepr (Ptr Int)       = Ptr Int
+-- type instance EltRepr (Ptr Int8)      = Ptr Int8
+-- type instance EltRepr (Ptr Int16)     = Ptr Int16
+-- type instance EltRepr (Ptr Int32)     = Ptr Int32
+-- type instance EltRepr (Ptr Int64)     = Ptr Int64
+-- type instance EltRepr (Ptr Word)      = Ptr Word
+-- type instance EltRepr (Ptr Word8)     = Ptr Word8
+-- type instance EltRepr (Ptr Word16)    = Ptr Word16
+-- type instance EltRepr (Ptr Word32)    = Ptr Word32
+-- type instance EltRepr (Ptr Word64)    = Ptr Word64
+-- type instance EltRepr (Ptr CShort)    = Ptr CShort
+-- type instance EltRepr (Ptr CUShort)   = Ptr CUShort
+-- type instance EltRepr (Ptr CInt)      = Ptr CInt
+-- type instance EltRepr (Ptr CUInt)     = Ptr CUInt
+-- type instance EltRepr (Ptr CLong)     = Ptr CLong
+-- type instance EltRepr (Ptr CULong)    = Ptr CULong
+-- type instance EltRepr (Ptr CLLong)    = Ptr CLLong
+-- type instance EltRepr (Ptr CULLong)   = Ptr CULLong
+-- type instance EltRepr (Ptr Float)     = Ptr Float
+-- type instance EltRepr (Ptr Double)    = Ptr Double
+-- type instance EltRepr (Ptr CFloat)    = Ptr CFloat
+-- type instance EltRepr (Ptr CDouble)   = Ptr CDouble
+-- type instance EltRepr (Ptr Bool)      = Ptr Bool
+-- type instance EltRepr (Ptr Char)      = Ptr Char
+-- type instance EltRepr (Ptr CChar)     = Ptr CChar
+-- type instance EltRepr (Ptr CSChar)    = Ptr CSChar
+-- type instance EltRepr (Ptr CUChar)    = Ptr CUChar
+-- type instance EltRepr (Ptr (a,b))     = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b))
+-- type instance EltRepr (Ptr (a,b,c))   = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c))
+-- type instance EltRepr (Ptr (a,b,c,d)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d))
+-- type instance EltRepr (Ptr (a,b,c,d,e)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m,n)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m), EltRepr (Ptr n))
+-- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m,n,o)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m), EltRepr (Ptr n), EltRepr (Ptr o))
 
 -- | Given some evidence that 'IR a' represents a scalar type, it can be
 -- converted between the IR and Operand data types.
@@ -75,8 +150,32 @@ class IROP dict where
   op :: dict a -> IR a -> Operand a
   ir :: dict a -> Operand a -> IR a
   --
-  ir' :: dict a -> Operand a -> Operands a
   op' :: dict a -> Operands a -> Operand a
+  ir' :: dict a -> Operand a -> Operands a
+
+instance IROP Type where
+  op VoidType     _  = LocalReference VoidType (Name []) -- TLM: ???
+  op (PrimType t) x  = op t x
+
+  ir VoidType     _  = IR OP_Unit
+  ir (PrimType t) x  = ir t x
+  --
+  ir' VoidType     _ = OP_Unit
+  ir' (PrimType t) x = ir' t x
+
+  op' VoidType     _ = LocalReference VoidType (Name [])  -- TLM: ???
+  op' (PrimType t) x = op' t x
+
+instance IROP PrimType where
+  op (ScalarPrimType t)  = op t
+  op t                   = $internalError "op" ("unhandled type: " ++ show t)
+  ir (ScalarPrimType t)  = ir t
+  ir t                   = $internalError "ir" ("unhandeld type: " ++ show t)
+
+  op' (ScalarPrimType t) = op' t
+  op' t                  = $internalError "op'" ("unhandled type: " ++ show t)
+  ir' (ScalarPrimType t) = ir' t
+  ir' t                  = $internalError "ir'" ("unhandled type: " ++ show t)
 
 instance IROP ScalarType where
   op (NumScalarType t)    = op t

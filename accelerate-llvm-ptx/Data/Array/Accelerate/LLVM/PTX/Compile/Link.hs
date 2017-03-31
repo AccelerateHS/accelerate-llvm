@@ -1,11 +1,10 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Link
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,31 +20,31 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Link (
 
 ) where
 
--- llvm-general
-import LLVM.General.Context
-import qualified LLVM.General.Module                            as LLVM
+-- llvm-hs
+import LLVM.Context
+import qualified LLVM.Module                                        as LLVM
 
-import LLVM.General.AST                                         as AST
-import LLVM.General.AST.Global                                  as G
-import LLVM.General.AST.Linkage
+import LLVM.AST                                                     as AST
+import LLVM.AST.Global                                              as G
+import LLVM.AST.Linkage
 
 -- accelerate
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
 import Foreign.CUDA.Analysis
 
 -- standard library
 import Control.Monad.Except
-import Data.ByteString                                          ( ByteString )
-import Data.HashSet                                             ( HashSet )
+import Data.ByteString                                              ( ByteString )
+import Data.HashSet                                                 ( HashSet )
 import Data.List
 import Data.Maybe
 import Text.Printf
-import qualified Data.HashSet                                   as Set
+import qualified Data.HashSet                                       as Set
 
 
 -- | Lower an LLVM AST to C++ objects and link it against the libdevice module,
@@ -81,16 +80,21 @@ withLibdeviceNVPTX dev ctx ast next =
   case Set.null externs of
     True        -> runError $ LLVM.withModuleFromAST ctx ast next
     False       ->
-      runError $ LLVM.withModuleFromAST ctx ast                                    $ \mdl  ->
-      runError $ LLVM.withModuleFromAST ctx nvvmReflect                            $ \refl ->
-      runError $ LLVM.withModuleFromAST ctx (internalise externs (libdevice arch)) $ \libd -> do
-        runError $ LLVM.linkModules False libd refl
-        runError $ LLVM.linkModules False libd mdl
+      runError $ LLVM.withModuleFromAST ctx ast                          $ \mdl  ->
+      runError $ LLVM.withModuleFromAST ctx nvvmReflect                  $ \refl ->
+      runError $ LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
+        runError $ linkModules mdl refl
+        runError $ linkModules mdl libd
         Debug.traceIO Debug.dump_cc msg
-        next libd
+        next mdl
   where
+    -- Replace the target triple and datalayout from the libdevice.bc module
+    -- with those of the generated code. This avoids warnings such as "linking
+    -- two modules of different target triples..."
+    libdev      = (libdevice arch) { moduleTargetTriple = moduleTargetTriple ast
+                                   , moduleDataLayout   = moduleDataLayout ast
+                                   }
     externs     = analyse ast
-
     arch        = computeCapability dev
     runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
 
@@ -98,13 +102,25 @@ withLibdeviceNVPTX dev ctx ast next =
                 $ intercalate ", " (Set.toList externs)
 
 
--- | Lower an LLVM AST to C++ objects and prepare it for linking against
--- libdevice using the libnvvm bindings, iff any libdevice functions are
--- referenced from the base module.
+-- | Link LLVM modules by copying parts of the second argument into the first.
 --
--- Note that due to limitations in the llvm-general-3.2.* API, which we are
--- required to use due to limitations with libnvvm, unused functions from
--- libdevice are NOT internalised.
+linkModules
+    :: LLVM.Module            -- module into which to link (destination: contains all symbols)
+    -> LLVM.Module            -- module to copy into the other (this is destroyed in the process)
+    -> ExceptT String IO ()
+linkModules = LLVM.linkModules
+
+
+-- | Lower an LLVM AST to C++ objects and prepare it for linking against
+-- libdevice using the nvvm bindings, iff any libdevice functions are referenced
+-- from the base module.
+--
+-- Rather than internalise and strip any unused functions ourselves, allow the
+-- nvvm library to do so when linking the two modules together.
+--
+-- TLM: This really should work with the above method, however for some reason
+-- we get a "CUDA Exception: function named symbol not found" error, even though
+-- the function is clearly visible in the generated code. hmm...
 --
 withLibdeviceNVVM
     :: DeviceProperties
@@ -116,7 +132,6 @@ withLibdeviceNVVM dev ctx ast next =
   runError $ LLVM.withModuleFromAST ctx ast $ \mdl -> do
     when withlib $ Debug.traceIO Debug.dump_cc msg
     next lib mdl
-
   where
     externs             = analyse ast
     withlib             = not (Set.null externs)

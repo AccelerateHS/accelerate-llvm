@@ -2,7 +2,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -26,15 +26,15 @@ import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table     as MT
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as RT
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import Data.Range.Range                                         ( Range(..) )
 import Control.Parallel.Meta                                    ( Executable(..) )
 
 -- standard library
-import Control.Exception                                        ( bracket_, catch )
 import Control.Concurrent                                       ( runInBoundThread )
+import Control.Exception                                        ( catch )
 import System.IO.Unsafe                                         ( unsafePerformIO )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -45,13 +45,9 @@ import qualified Foreign.CUDA.Driver.Context                    as Context
 --
 evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
-  runInBoundThread (bracket_ setup teardown action)
+  runInBoundThread (CT.withContext (ptxContext ptx) (evalLLVM ptx acc))
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
-  where
-    setup       = CT.push (ptxContext ptx)
-    teardown    = CT.pop
-    action      = evalLLVM ptx acc
 
 
 -- | Create a new PTX execution target for the given device
@@ -64,7 +60,7 @@ createTargetForDevice
 createTargetForDevice dev prp flags = do
   ctx    <- CT.new dev prp flags
   mt     <- MT.new ctx
-  st     <- RT.new ctx
+  st     <- ST.new ctx
   return $! PTX ctx mt st simpleIO
 
 
@@ -78,13 +74,13 @@ createTargetFromContext ctx' = do
   prp    <- CUDA.props dev
   ctx    <- CT.raw dev prp ctx'
   mt     <- MT.new ctx
-  st     <- RT.new ctx
+  st     <- ST.new ctx
   return $! PTX ctx mt st simpleIO
 
 
 {-# INLINE simpleIO #-}
 simpleIO :: Executable
-simpleIO = Executable $ \_ppt range _after _init action ->
+simpleIO = Executable $ \_name _ppt range action ->
   case range of
     Empty       -> return ()
     IE u v      -> action u v 0

@@ -1,12 +1,14 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Prim
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -18,10 +20,12 @@
 module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 
   mallocArray,
+  memsetArray, memsetArrayAsync,
   useArray, useArrayAsync,
   indexArray,
   peekArray, peekArrayR, peekArrayAsync, peekArrayAsyncR,
   pokeArray, pokeArrayR, pokeArrayAsync, pokeArrayAsyncR,
+  copyArray, copyArrayR, copyArrayAsync, copyArrayAsyncR,
   copyArrayPeer, copyArrayPeerR, copyArrayPeerAsync, copyArrayPeerAsyncR,
   withDevicePtr,
 
@@ -31,6 +35,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -47,14 +52,15 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
 -- standard library
-import Prelude                                                  hiding ( lookup )
+import Control.Exception
 import Control.Monad
 import Control.Monad.State
-import Control.Exception
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.TypeLits
 import Text.Printf
+import Prelude                                                  hiding ( lookup )
 
 
 -- | Allocate a device-side array associated with the given host array. If the
@@ -117,9 +123,9 @@ pokeArrayAsync
     -> ArrayData e
     -> LLVM PTX ()
 pokeArrayAsync !stream !n !ad = do
-  let src      = CUDA.HostPtr (ptrsOfArrayData ad)
-      bytes    = n * sizeOf (undefined :: a)
-      st       = unsafeGetValue stream
+  let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
+      !bytes    = n * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
   --
   withDevicePtr ad $ \dst ->
     nonblocking stream $
@@ -240,6 +246,74 @@ peekArrayAsyncR !stream !from !to !ad = do
   liftIO (touchLifetime stream)
 
 
+-- | Copy data between arrays in the same context
+--
+{-# INLINEABLE copyArray #-}
+copyArray
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArray !n !src !dst =
+  blocking $ \st -> copyArrayAsync st n src dst
+
+{-# INLINEABLE copyArrayAsync #-}
+copyArrayAsync
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Stream
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayAsync !stream !n !ad_src !ad_dst = do
+  let !bytes    = n * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr        ad_src $ \src -> do
+    e <- withDevicePtr ad_dst $ \dst -> do
+      (e,()) <- nonblocking stream
+              $ transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
+      return (e,e)
+    return (e,())
+  liftIO (touchLifetime stream)
+
+{-# INLINEABLE copyArrayR #-}
+copyArrayR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayR !from !to !src !dst =
+  blocking $ \st -> copyArrayAsyncR st from to src dst
+
+{-# INLINEABLE copyArrayAsyncR #-}
+copyArrayAsyncR
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
+    => Stream
+    -> Int
+    -> Int
+    -> ArrayData e
+    -> ArrayData e
+    -> LLVM PTX ()
+copyArrayAsyncR !stream !from !to !ad_src !ad_dst = do
+  let !n        = to - from
+      !bytes    = n    * sizeOf (undefined :: a)
+      !offset   = from * sizeOf (undefined :: a)
+      !st       = unsafeGetValue stream
+  --
+  withDevicePtr        ad_src $ \src -> do
+    e <- withDevicePtr ad_dst $ \dst -> do
+      (e,()) <- nonblocking stream
+              $ transfer "copyArray" bytes (Just st)
+              $ CUDA.copyArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
+      return (e,e)
+    return (e,())
+  liftIO (touchLifetime stream)
+
+
 -- | Copy data from one device context into a _new_ array on the second context.
 -- It is an error if the destination array already exists.
 --
@@ -311,6 +385,38 @@ copyArrayPeerAsyncR !ctx2 !mt2 !st !from !to !ad = do
                               (dst `CUDA.plusDevPtr` offset) (deviceContext ctx2) (Just st)
 --}
 
+
+-- | Set elements of the array to the specified value. Only 8-, 16-, and 32-bit
+-- values are supported.
+--
+{-# INLINEABLE memsetArray #-}
+memsetArray
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a, BitSize a <= 32)
+    => Int
+    -> a
+    -> ArrayData e
+    -> LLVM PTX ()
+memsetArray !n !v !ad =
+  blocking $ \st -> memsetArrayAsync st n v ad
+
+{-# INLINEABLE memsetArrayAsync #-}
+memsetArrayAsync
+    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a, BitSize a <= 32)
+    => Stream
+    -> Int
+    -> a
+    -> ArrayData e
+    -> LLVM PTX ()
+memsetArrayAsync !stream !n !v !ad = do
+  let !bytes = n * sizeOf (undefined :: a)
+      !st    = unsafeGetValue stream
+  --
+  withDevicePtr ad $ \ptr ->
+    nonblocking stream $
+      transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
+  liftIO (touchLifetime stream)
+
+
 {--
 -- | Lookup the device memory associated with a given host array
 --
@@ -352,9 +458,8 @@ withDevicePtr !ad !f = do
 --
 {-# INLINE blocking #-}
 blocking :: (Stream -> LLVM PTX a) -> LLVM PTX a
-blocking !f = do
-  PTX{..} <- gets llvmTarget
-  streaming ptxContext ptxStreamReservoir f $ \e r -> do
+blocking !f =
+  streaming f $ \e r -> do
     liftIO $ block e
     return r
 
@@ -365,7 +470,7 @@ blocking !f = do
 nonblocking :: Stream -> LLVM PTX a -> LLVM PTX (Maybe Event, a)
 nonblocking !stream !f = do
   r <- f
-  e <- liftIO $ waypoint stream
+  e <- waypoint stream
   return (Just e, r)
 
 
@@ -387,12 +492,12 @@ message s = s `trace` return ()
 {-# INLINE transfer #-}
 transfer :: MonadIO m => String -> Int -> Maybe CUDA.Stream -> IO () -> m ()
 transfer name bytes stream action
-  = let showRate x t         = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-        msg gpuTime wallTime = printf "gc: %s: %s bytes @ %s, %s"
-                                  name
-                                  (showBytes bytes)
-                                  (showRate bytes wallTime)
-                                  (Debug.elapsed gpuTime wallTime)
+  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
+        msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
+                              name
+                              (showBytes bytes)
+                              (showRate bytes wall)
+                              (Debug.elapsed wall cpu gpu)
     in
     liftIO (Debug.timed Debug.dump_gc msg stream action)
 

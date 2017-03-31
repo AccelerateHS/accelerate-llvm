@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Remote
--- Copyright   : [2014..2016] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -22,8 +22,8 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Remote (
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Array.Data
@@ -52,13 +52,15 @@ instance Remote.Task (Maybe Event) where
 instance Remote.RemoteMemory (LLVM PTX) where
   type RemotePtr (LLVM PTX) = CUDA.DevicePtr
   --
-  mallocRemote n = liftIO $ do
-    ep <- try (CUDA.mallocArray n)
-    case ep of
-      Right p                     -> return (Just p)
-      Left (ExitCode OutOfMemory) -> return Nothing
-      Left e                      -> do message ("malloc failed with error: " ++ show e)
-                                        throwIO e
+  mallocRemote n
+    | n <= 0    = return (Just CUDA.nullDevPtr)
+    | otherwise = liftIO $ do
+        ep <- try (CUDA.mallocArray n)
+        case ep of
+          Right p                     -> return (Just p)
+          Left (ExitCode OutOfMemory) -> return Nothing
+          Left e                      -> do message ("malloc failed with error: " ++ show e)
+                                            throwIO e
 
   peekRemote n src ad =
     let bytes = n * sizeOfPtr src
@@ -120,10 +122,9 @@ withRemote !ad !f = do
 --
 {-# INLINE blocking #-}
 blocking :: (Stream -> IO a) -> LLVM PTX a
-blocking !fun = do
-  PTX{..} <- gets llvmTarget
-  liftIO   $ streaming ptxContext ptxStreamReservoir fun $ \e r -> do
-    block e
+blocking !fun =
+  streaming (liftIO . fun) $ \e r -> do
+    liftIO $ block e
     return r
 
 {-# INLINE sizeOfPtr #-}
@@ -148,12 +149,12 @@ message s = s `trace` return ()
 {-# INLINE transfer #-}
 transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
-  = let showRate x t         = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-        msg gpuTime wallTime = printf "gc: %s: %s bytes @ %s, %s"
-                                  name
-                                  (showBytes bytes)
-                                  (showRate bytes wallTime)
-                                  (Debug.elapsed gpuTime wallTime)
+  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
+        msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
+                              name
+                              (showBytes bytes)
+                              (showRate bytes wall)
+                              (Debug.elapsed wall cpu gpu)
     in
     Debug.timed Debug.dump_gc msg stream action
 

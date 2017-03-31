@@ -1,7 +1,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Loop
--- Copyright   : [2015] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -16,7 +17,7 @@ import Prelude                                                  hiding ( fst, sn
 import Control.Monad
 
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                        hiding ( iter )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -39,9 +40,43 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- iterate from to body = error "CodeGen.Loop.iterate"
 
 
+-- | Execute the given function at each index in the range
+--
+imapFromStepTo
+    :: (IsNum i, Elt i)
+    => IR i                                     -- ^ starting index (inclusive)
+    -> IR i                                     -- ^ step size
+    -> IR i                                     -- ^ final index (exclusive)
+    -> (IR i -> CodeGen ())                     -- ^ loop body
+    -> CodeGen ()
+imapFromStepTo start step end body =
+  for start
+      (\i -> lt scalarType i end)
+      (\i -> add numType i step)
+      body
+
+
+-- | Iterate with an accumulator between given start and end indices, executing
+-- the given function at each.
+--
+iterFromStepTo
+    :: (IsNum i, Elt i, Elt a)
+    => IR i                                     -- ^ starting index (inclusive)
+    -> IR i                                     -- ^ step size
+    -> IR i                                     -- ^ final index (exclusive)
+    -> IR a                                     -- ^ initial value
+    -> (IR i -> IR a -> CodeGen (IR a))         -- ^ loop body
+    -> CodeGen (IR a)
+iterFromStepTo start step end seed body =
+  iter start seed
+       (\i -> lt scalarType i end)
+       (\i -> add numType i step)
+       body
+
+
 -- | A standard 'for' loop.
 --
-for :: (Elt i, IsIntegral i)
+for :: Elt i
     => IR i                                     -- ^ starting index
     -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
     -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
@@ -53,7 +88,7 @@ for start test incr body =
 
 -- | An loop with iteration count and accumulator.
 --
-iter :: (Elt i, IsIntegral i, Elt a)
+iter :: (Elt i, Elt a)
      => IR i                                    -- ^ starting index
      -> IR a                                    -- ^ initial value
      -> (IR i -> CodeGen (IR Bool))             -- ^ index test to keep looping

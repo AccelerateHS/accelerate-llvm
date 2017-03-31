@@ -3,9 +3,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE UndecidableInstances  #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Marshal
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -94,7 +95,7 @@ instance (Marshalable t a, Marshalable t b, Marshalable t c, Marshalable t d, Ma
 instance Marshalable t a => Marshalable t [a] where
   marshal' t s = fmap DL.concat . mapM (marshal' t s)
 
-instance (Shape sh, Elt e, Marshalable t Int, Marshalable t (ArrayData (EltRepr e)))
+instance (Shape sh, Marshalable t Int, Marshalable t (ArrayData (EltRepr e)))
     => Marshalable t (Array sh e) where
   marshal' t s (Array sh adata) =
     marshal' t s (adata, reverse (R.shapeToList sh))

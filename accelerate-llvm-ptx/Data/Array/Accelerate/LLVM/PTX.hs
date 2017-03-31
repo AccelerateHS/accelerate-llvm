@@ -2,10 +2,11 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -37,42 +38,33 @@ module Data.Array.Accelerate.LLVM.PTX (
   -- * Execution targets
   PTX, createTargetForDevice, createTargetFromContext,
 
+  -- * Controlling host-side allocation
+  registerPinnedAllocator, registerPinnedAllocatorWith,
+
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Async
-import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Smart                                ( Acc )
 import Data.Array.Accelerate.Array.Sugar                          ( Arrays )
+import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Debug                                as Debug
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Smart                                ( Acc )
+import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.State                           ( LLVM )
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
+import qualified Data.Array.Accelerate.LLVM.PTX.Context           as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Data        as AD
 
+import Foreign.CUDA.Driver                                        as CUDA ( CUDAException, mallocHostForeignPtr )
+
 -- standard library
+import Control.Exception
 import Control.Monad.Trans
 import System.IO.Unsafe
-
-
--- Remote memory
--- -------------
-
--- Represents that data is contained on the remote device only. It must be
--- explicitly copied back to the host before it can be used.
---
--- TODO: Remote needs to be a thing that can be subject to un/lift, so that we
---       can pick out just one piece of it and copy only that bit back.
---
-data Remote a where
-    Remote :: Arrays a => PTX -> a -> Remote a
-
-copyToHost :: Remote a -> IO a
-copyToHost (Remote target arrs) = do
-  evalPTX target (AD.copyToHost arrs)
+import Text.Printf
 
 
 -- Accelerate: LLVM backend for NVIDIA GPUs
@@ -115,21 +107,16 @@ runAsync = runAsyncWith defaultTarget
 -- operations have completed.
 --
 runAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async a)
-runAsyncWith = run' AD.copyToHost
-
-
--- | As 'runAsyncWith', but don't automatically transfer the array back to the
--- host on completion.
---
-runRemoteAsyncWith :: Arrays a => PTX -> Acc a -> IO (Async (Remote a))
-runRemoteAsyncWith target = run' (return . Remote target) target
-
-
-run' :: Arrays a => (a -> LLVM PTX b) -> PTX -> Acc a -> IO (Async b)
-run' finish target a = asyncBound execute
+runAsyncWith target a = asyncBound execute
   where
     !acc        = convertAccWith config a
-    execute     = dumpGraph acc >> evalPTX target (compileAcc acc >>= dumpStats >>= executeAcc >>= finish)
+    execute     = do
+      dumpGraph acc
+      evalPTX target $ do
+        acc `seq` dumpSimplStats
+        exec <- phase "compile" (compileAcc acc)
+        res  <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+        return res
 
 
 -- | Prepare and execute an embedded array program of one argument.
@@ -173,9 +160,7 @@ run1 = run1With defaultTarget
 -- default, automatically selected device.
 --
 run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
-run1With target f =
-  let go = run1AsyncWith target f
-  in \a -> unsafePerformIO $ wait =<< go a
+run1With = run1' unsafePerformIO
 
 
 -- | As 'run1', but the computation is executed asynchronously.
@@ -187,11 +172,16 @@ run1Async = run1AsyncWith defaultTarget
 -- | As 'run1With', but execute asynchronously.
 --
 run1AsyncWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> IO (Async b)
-run1AsyncWith target f = \a -> asyncBound (execute a)
+run1AsyncWith = run1' asyncBound
+
+run1' :: (Arrays a, Arrays b) => (IO b -> c) -> PTX -> (Acc a -> Acc b) -> a -> c
+run1' using target f = \a -> using (execute a)
   where
     !acc        = convertAfunWith config f
-    !afun       = unsafePerformIO $ dumpGraph acc >> evalPTX target (compileAfun acc) >>= dumpStats
-    execute a   = evalPTX target (executeAfun1 afun a >>= AD.copyToHost)
+    !afun       = unsafePerformIO $ do
+                    dumpGraph acc
+                    phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
+    execute a   =   phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -219,12 +209,38 @@ config =  phases
   }
 
 
+-- Controlling host-side allocation
+-- --------------------------------
+
+-- | Configure the default execution target to allocate all future host-side
+-- arrays using (CUDA) pinned memory. Any newly allocated arrays will be
+-- page-locked and directly accessible from the device, enabling high-speed
+-- (asynchronous) DMA.
+--
+-- Note that since the amount of available pageable memory will be reduced,
+-- overall system performance can suffer.
+--
+registerPinnedAllocator :: IO ()
+registerPinnedAllocator = registerPinnedAllocatorWith defaultTarget
+
+
+-- | As with 'registerPinnedAllocator', but configure the given execution
+-- context.
+--
+registerPinnedAllocatorWith :: PTX -> IO ()
+registerPinnedAllocatorWith target =
+  AD.registerForeignPtrAllocator $ \bytes ->
+    CT.withContext (ptxContext target) (CUDA.mallocHostForeignPtr [] bytes)
+    `catch`
+    \e -> $internalError "registerPinnedAlocator" (show (e :: CUDAException))
+
+
 -- Debugging
 -- =========
 
--- Compiler phase statistics
--- -------------------------
-
 dumpStats :: MonadIO m => a -> m a
-dumpStats next = dumpSimplStats >> return next
+dumpStats x = dumpSimplStats >> return x
+
+phase :: MonadIO m => String -> m a -> m a
+phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go
 

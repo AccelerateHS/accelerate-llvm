@@ -1,8 +1,10 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
--- Copyright   : [2015..2016] Trevor L. McDonell
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -22,7 +24,7 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
-import LLVM.General.AST.Type.Name
+import LLVM.AST.Type.Name
 
 
 -- Scalar environment
@@ -41,7 +43,9 @@ data Val env where
 prj :: Idx env t -> Val env -> IR t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
+#if __GLASGOW_HASKELL__ < 800
 prj _            _            = $internalError "prj" "inconsistent valuation"
+#endif
 
 
 -- Array environment

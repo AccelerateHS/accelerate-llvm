@@ -1,7 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : LLVM.General.AST.Type.Flags
--- Copyright   : [2015] Trevor L. McDonell
+-- Module      : LLVM.AST.Type.Flags
+-- Copyright   : [2015..2017] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -9,14 +10,14 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.General.AST.Type.Flags (
+module LLVM.AST.Type.Flags (
 
   NSW(..), NUW(..), FastMathFlags(..)
 
 ) where
 
 import Data.Default.Class
-import LLVM.General.AST.Instruction                     ( FastMathFlags(..) )
+import LLVM.AST.Instruction                               ( FastMathFlags(..) )
 
 
 -- If the 'NoSignedWrap' or 'NoUnsignedWrap' keywords are present, the result

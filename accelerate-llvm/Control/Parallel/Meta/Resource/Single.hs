@@ -1,6 +1,7 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Resource.Single
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -17,9 +18,8 @@ import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 
 -- library
-import Data.Monoid
 import Data.Concurrent.Deque.Class
-import Prelude
+import qualified Data.Vector                                    as V
 
 
 -- | Create a resource where each thread works in isolation. The resource is not
@@ -27,5 +27,7 @@ import Prelude
 -- from its own local queue.
 --
 mkResource :: Resource
-mkResource = Resource mempty (WorkSearch (tryPopL . workpool))
+mkResource
+  = Resource
+  $ WorkSearch $ \tid workers -> tryPopL (workpool (V.unsafeIndex workers tid))
 
