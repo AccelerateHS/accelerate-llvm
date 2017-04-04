@@ -17,17 +17,18 @@ description:
     libraries are alse required:
     .
       * <http://llvm.org LLVM>
+    .
       * <https://developer.nvidia.com/cuda-downloads CUDA>
     .
     [/Installing LLVM/]
     .
-    __Homebrew__
+    /Homebrew/
     .
     Example using Homebrew on macOS:
     .
     > brew install llvm-hs/homebrew-llvm/llvm-4.0
     .
-    __Debian/Ubuntu__
+    /Debian & Ubuntu/
     .
     For Debian/Ubuntu based Linux distributions, the LLVM.org website provides
     binary distribution packages. Check <http://apt.llvm.org apt.llvm.org> for
@@ -36,7 +37,7 @@ description:
     .
     > apt-get install llvm-4.0-dev
     .
-    __Building from source__
+    /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
