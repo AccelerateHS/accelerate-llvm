@@ -50,13 +50,21 @@ import Prelude                                                  hiding ( exp, un
 
 
 class Foreign arch => Compile arch where
+  type ObjectR     arch -- TODO: something serializable, for on-disk caching
   data ExecutableR arch
 
-  -- | Compile an accelerate computation into some backend-specific executable format
+  -- | Compile an accelerate computation into some backend-specific object-file
+  -- (like) format.
   --
   compileForTarget
       :: DelayedOpenAcc aenv a
       -> Gamma aenv
+      -> LLVM arch (ObjectR arch)
+
+  -- | Link an object into the current context to produce an executable thing.
+  --
+  linkForTarget
+      :: ObjectR arch
       -> LLVM arch (ExecutableR arch)
 
 
@@ -364,7 +372,7 @@ build :: forall arch aenv a. Compile arch
       -> Gamma aenv
       -> LLVM arch (ExecutableR arch)
 build acc aenv =
-  compileForTarget acc aenv
+  linkForTarget =<< compileForTarget acc aenv
 
 
 -- Applicative

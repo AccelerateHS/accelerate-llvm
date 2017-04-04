@@ -33,11 +33,11 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( unModule )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
-import Data.Array.Accelerate.LLVM.Native.CodeGen                ( )
+import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
-import Data.Array.Accelerate.LLVM.Native.Foreign                ( )
+import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
@@ -45,34 +45,36 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 -- standard library
 import Control.Monad.Except                                         ( runExceptT )
 import Control.Monad.State
+import Data.ByteString                                              ( ByteString )
 import Data.Maybe
 
 
 instance Compile Native where
+  type ObjectR     Native = ByteString
   data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !FunctionTable
                                     , nativeObjectCode :: {-# UNPACK #-} !ObjectCode
                                     }
-  compileForTarget        = compileForNativeTarget
+  compileForTarget  = compile
+  linkForTarget     = link
 
 instance Intrinsic Native
 
 
--- Compile an Accelerate expression for the native CPU target.
+-- | Compile an Accelerate expression to object code
 --
-compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
-compileForNativeTarget acc aenv = do
-  target <- gets llvmTarget
+compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
+compile acc aenv = do
+  target  <- gets llvmTarget
 
   -- Generate code for this Acc operation
   --
-  let ast        = unModule (llvmOfOpenAcc target acc aenv)
-      triple     = fromMaybe "" (moduleTargetTriple ast)
-      datalayout = moduleDataLayout ast
+  let Module ast _  = llvmOfOpenAcc target acc aenv
+      triple        = fromMaybe "" (moduleTargetTriple ast)
+      datalayout    = moduleDataLayout ast
+      --
+      runExcept     = either ($internalError "compileForNativeTarget") return <=< runExceptT
 
-      runExcept  = either ($internalError "compileForNativeTarget") return <=< runExceptT
-
-  -- Lower the generated LLVM to executable functions in the target address
-  -- space.
+  -- Lower the generated LLVM and produce an object file.
   --
   liftIO .
     withContext                           $ \ctx     ->
@@ -85,7 +87,13 @@ compileForNativeTarget acc aenv = do
           Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
           Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
-        obj     <- runExcept (moduleObject machine mdl)
-        (nm,vm) <- loadObject obj
-        return  $! NativeR nm vm
+        runExcept (moduleObject machine mdl)
+
+
+-- | Load the generated object file into the target address space
+--
+link :: ObjectR Native -> LLVM Native (ExecutableR Native)
+link obj = liftIO $ do
+  (nm, vm)  <- loadObject obj
+  return    $! NativeR nm vm
 

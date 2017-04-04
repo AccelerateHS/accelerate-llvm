@@ -27,7 +27,10 @@ import LLVM.AST                                                     hiding ( Mod
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
+import qualified LLVM.Target                                        as LLVM
 import qualified LLVM.Module                                        as LLVM
+import qualified LLVM.Internal.Module                               as LLVM.Internal
+import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.FFI
 import qualified LLVM.PassManager                                   as LLVM
 #ifdef ACCELERATE_INTERNAL_CHECKS
 import qualified LLVM.Analysis                                      as LLVM
@@ -68,17 +71,26 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.List                                                    ( intercalate )
+import Data.Word
+import Foreign.ForeignPtr
+import Foreign.Ptr
+import Foreign.Storable
 import Text.Printf                                                  ( printf )
-import qualified Data.ByteString.Char8                              as B
+import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Internal                           as B
+import qualified Data.ByteString.Unsafe                             as B
 import qualified Data.Map                                           as Map
 import Prelude                                                      as P
 
 
 instance Compile PTX where
+  type ObjectR     PTX = ( String, ByteString, [(String, LaunchConfig)] )
   data ExecutableR PTX = PTXR { ptxKernel :: ![Kernel]
                               , ptxModule :: {-# UNPACK #-} !(Lifetime CUDA.Module)
                               }
-  compileForTarget     = compileForPTX
+  compileForTarget  = compile
+  linkForTarget     = link
 
 
 data Kernel = Kernel {
@@ -90,55 +102,47 @@ data Kernel = Kernel {
   , kernelName                  :: String
   }
 
--- | Compile a given module for the NVPTX backend. This produces a CUDA module
--- as well as a list of the kernel functions in the module, together with some
--- occupancy information.
+
+-- | Compile an Accelerate expression to object code.
 --
-compileForPTX
-    :: DelayedOpenAcc aenv a
-    -> Gamma aenv
-    -> LLVM PTX (ExecutableR PTX)
-compileForPTX acc aenv = do
+-- This generates the target code together with a list of each kernel function
+-- defined in the module paired with its occupancy information.
+--
+compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
+compile acc aenv = do
   target <- gets llvmTarget
-  let
-      Module ast md = llvmOfOpenAcc target acc aenv
+
+  -- Generate code for this Acc operation
+  --
+  let Module ast md = llvmOfOpenAcc target acc aenv
       dev           = ptxDeviceProperties target
+      name          = moduleName ast
+
+  -- Lower the generated LLVM into PTX assembly
   --
   liftIO . LLVM.withContext $ \ctx -> do
-    ptx  <- compileModule dev ctx ast
-    funs <- sequence [ linkFunction ptx f x | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
-    ptx' <- newLifetime ptx
-    addFinalizer ptx' $ do
-      Debug.traceIO Debug.dump_gc
-        $ printf "gc: unload module: %s"
-        $ intercalate "," (P.map kernelName funs)
-      withContext (ptxContext target) (CUDA.unload ptx)
-    return $! PTXR funs ptx'
+    ptx <- compileModule dev ctx ast
+    return ( name, ptx, [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ] )
 
 
--- | Compile the LLVM module to produce a CUDA module.
+-- | Compile the LLVM module to PTX assembly. This is done either by the
+-- closed-source libNVVM library, or via the standard NVPTX backend (which is
+-- the default).
 --
---    * If we are using NVVM, this includes all LLVM optimisations plus some
---    sekrit optimisations.
---
---    * If we are just using the llvm ptx backend, we still need to run the
---    standard optimisations.
---
-compileModule :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO CUDA.Module
+compileModule :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
 compileModule dev ctx ast =
-  let name      = moduleName ast in
 #ifdef ACCELERATE_USE_NVVM
-  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev name)
+  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev (moduleName ast))
 #else
-  withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev name)
+  withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
 #endif
 
 
 #ifdef ACCELERATE_USE_NVVM
 -- Compile and optimise the module to PTX using the (closed source) NVVM
--- library. This may produce faster object code than the LLVM NVPTX compiler.
+-- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO CUDA.Module
+compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
 compileModuleNVVM dev name libdevice mdl = do
   _debug <- Debug.queryFlag Debug.debug_cc
   --
@@ -174,14 +178,15 @@ compileModuleNVVM dev name libdevice mdl = do
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B.unpack (NVVM.compileLog ptx)
 
-  -- Link into a new CUDA module in the current context
-  linkPTX name (NVVM.compileResult ptx)
+  -- Return the generated binary code
+  return (NVVM.compileResult ptx)
 
 #else
+
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
-compileModuleNVPTX dev name mdl =
+compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
+compileModuleNVPTX dev mdl =
   withPTXTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
@@ -201,36 +206,52 @@ compileModuleNVPTX dev name mdl =
         Debug.traceIO Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
-      ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
-
-      -- Link into a new CUDA module in the current context
-      linkPTX name (B.pack ptx)
+      runError (moduleTargetAssembly nvptx mdl)
 #endif
 
--- | Load the given CUDA PTX into a new module that is linked into the current
--- context.
+
+-- | Load the generated object code into the current CUDA context.
 --
-linkPTX :: String -> ByteString -> IO CUDA.Module
-linkPTX name ptx = do
-  _verbose      <- Debug.queryFlag Debug.verbose
-  _debug        <- Debug.queryFlag Debug.debug_cc
-  --
-  let v         = if _verbose then [ CUDA.Verbose ]                                  else []
-      d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
-      flags     = concat [v,d]
-  --
-  Debug.when (Debug.dump_asm) $
-    Debug.traceIO Debug.verbose (B.unpack ptx)
+link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
+link (name, ptx, nm) = do
+  target <- gets llvmTarget
+  liftIO $ do
+    _verbose      <- Debug.queryFlag Debug.verbose
+    _debug        <- Debug.queryFlag Debug.debug_cc
+    --
+    let v         = if _verbose then [ CUDA.Verbose ]                                  else []
+        d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
+        flags     = concat [v,d]
+    --
+    Debug.when (Debug.dump_asm) $
+      Debug.traceIO Debug.verbose (B8.unpack ptx)
 
-  jit   <- CUDA.loadDataEx ptx flags
+    -- Load the PTX into the current CUDA context
+    jit     <- B.unsafeUseAsCString ptx $ \p -> CUDA.loadDataFromPtrEx (castPtr p) flags
+    let mdl  = CUDA.jitModule jit
+        info = CUDA.jitInfoLog jit
 
-  Debug.traceIO Debug.dump_asm $
-    printf "ptx: compiled entry function \"%s\" in %s\n%s"
-           name
-           (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
-           (B.unpack (CUDA.jitInfoLog jit))
+    Debug.traceIO Debug.dump_asm $
+      printf "ptx: compiled entry function \"%s\" in %s"
+             name
+             (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
 
-  return $! CUDA.jitModule jit
+    Debug.when Debug.verbose $
+      unless (B.null info) $
+        Debug.traceIO Debug.dump_asm ("ptx: " ++ B8.unpack info)
+
+    -- Extract the kernel functions
+    kernels <- mapM (uncurry (linkFunction mdl)) nm
+    mdl'    <- newLifetime mdl
+
+    -- Finalise the module by unloading it from the CUDA context
+    addFinalizer mdl' $ do
+      Debug.traceIO Debug.dump_gc
+        $ printf "gc: unload module: %s"
+        $ intercalate "," (P.map kernelName kernels)
+      withContext (ptxContext target) (CUDA.unload mdl)
+
+    return $! PTXR kernels mdl'
 
 
 -- | Extract the named function from the module and package into a Kernel
@@ -266,6 +287,29 @@ linkFunction mdl name configure = do
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
   return $ Kernel f occ dsmem cta grid name
+
+
+-- | Produce target specific assembly as a 'ByteString'.
+--
+moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
+moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.FFI.codeGenFileTypeAssembly tm m
+  where
+    -- Ensure that the ByteString is NULL-terminated, so that it can be passed
+    -- directly to C. This will unsafely mutate the underlying ForeignPtr if the
+    -- string is not NULL-terminated but the last character is a whitespace
+    -- character (there are usually a few blank lines at the end).
+    --
+    unsafe0 :: ByteString -> ExceptT String IO ByteString
+    unsafe0 bs@(B.PS fp s l) =
+      liftIO . withForeignPtr fp $ \p -> do
+        let p' :: Ptr Word8
+            p' = p `plusPtr` (s+l-1)
+        --
+        x <- peek p'
+        case x of
+          0                    -> return bs
+          _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
+          _                    -> return (B.snoc bs 0)
 
 
 {--
