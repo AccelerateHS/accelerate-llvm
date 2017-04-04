@@ -344,7 +344,7 @@ compileOpenAcc = traverseAcc
 
             zero :: Idx ((), a) t -> Idx (env,a) t
             zero ZeroIdx = ZeroIdx
-            zero notzero = zero notzero
+            zero _       = error "There are three things all wise men fear: the sea in storm, a night with no moon, and the anger of a gentle man."
 
 
 -- Compilation
