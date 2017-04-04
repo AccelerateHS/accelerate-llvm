@@ -17,9 +17,9 @@ description:
     .
       * <http://llvm.org LLVM>
     .
-      * <http://sourceware.org/libffi/ libFFI> (if using @accelerate-llvm-native@)
+      * <http://sourceware.org/libffi/ libFFI> (if using <http://hackage.haskell.org/package/accelerate-llvm-native accelerate-llvm-native>)
     .
-      * <https://developer.nvidia.com/cuda-downloads CUDA> (if using @accelerate-llvm-ptx@)
+      * <https://developer.nvidia.com/cuda-downloads CUDA> (if using <http://hackage.haskell.org/package/accelerate-llvm-ptx accelerate-llvm-ptx>)
     .
     [/Installing LLVM/]
     .
