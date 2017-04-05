@@ -30,6 +30,9 @@ import qualified LLVM.Analysis                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
 import qualified LLVM.Module                                        as LLVM
 import qualified LLVM.PassManager                                   as LLVM
+import qualified LLVM.Target                                        as LLVM
+import qualified LLVM.Internal.Module                               as LLVM.Internal
+import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )
@@ -66,8 +69,15 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.List                                                    ( intercalate )
+import Data.Word
+import Foreign.ForeignPtr
+import Foreign.Ptr
+import Foreign.Storable
 import Text.Printf                                                  ( printf )
-import qualified Data.ByteString.Char8                              as B
+import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Internal                           as B
+import qualified Data.ByteString.Unsafe                             as B
 import qualified Data.Map                                           as Map
 import Prelude                                                      as P
 
@@ -176,6 +186,7 @@ compileModuleNVVM dev name libdevice mdl = do
   linkPTX name (NVVM.compileResult ptx)
 
 #else
+
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
 compileModuleNVPTX :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
@@ -199,11 +210,35 @@ compileModuleNVPTX dev name mdl =
         Debug.traceIO Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
-      ptx <- runError (LLVM.moduleTargetAssembly nvptx mdl)
+      ptx <- runError (moduleTargetAssembly nvptx mdl)
 
       -- Link into a new CUDA module in the current context
-      linkPTX name (B.pack ptx)
+      linkPTX name ptx
 #endif
+
+
+-- | Produce target specific assembly as a 'ByteString'.
+--
+moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
+moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Internal.FFI.codeGenFileTypeAssembly tm m
+  where
+    -- Ensure that the ByteString is NULL-terminated, so that it can be passed
+    -- directly to C. This will unsafely mutate the underlying ForeignPtr if the
+    -- string is not NULL-terminated but the last character is a whitespace
+    -- character (there are usually a few blank lines at the end).
+    --
+    unsafe0 :: ByteString -> ExceptT String IO ByteString
+    unsafe0 bs@(B.PS fp s l) =
+      liftIO . withForeignPtr fp $ \p -> do
+        let p' :: Ptr Word8
+            p' = p `plusPtr` (s+l-1)
+        --
+        x <- peek p'
+        case x of
+          0                    -> return bs
+          _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
+          _                    -> return (B.snoc bs 0)
+
 
 -- | Load the given CUDA PTX into a new module that is linked into the current
 -- context.
@@ -218,15 +253,18 @@ linkPTX name ptx = do
       flags     = concat [v,d]
   --
   Debug.when (Debug.dump_asm) $
-    Debug.traceIO Debug.verbose (B.unpack ptx)
+    Debug.traceIO Debug.verbose (B8.unpack ptx)
 
-  jit   <- CUDA.loadDataEx ptx flags
+  jit   <- B.unsafeUseAsCString ptx $ \p -> CUDA.loadDataFromPtrEx (castPtr p) flags
 
   Debug.traceIO Debug.dump_asm $
-    printf "ptx: compiled entry function \"%s\" in %s\n%s"
+    printf "ptx: compiled entry function \"%s\" in %s"
            name
            (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
-           (B.unpack (CUDA.jitInfoLog jit))
+
+  Debug.when Debug.verbose $
+    unless (B.null (CUDA.jitInfoLog jit)) $
+      Debug.traceIO Debug.dump_asm ("ptx: " ++ B8.unpack (CUDA.jitInfoLog jit))
 
   return $! CUDA.jitModule jit
 
