@@ -8,8 +8,61 @@ synopsis:               Accelerate backend generating LLVM
 description:
     This library implements a backend for the /Accelerate/ language which
     generates LLVM-IR targeting CUDA capable GPUs. For further information,
-    refer to the main /Accelerate/ package:
-    <http://hackage.haskell.org/package/accelerate>
+    refer to the main <http://hackage.haskell.org/package/accelerate accelerate>
+    package.
+    .
+    [/Dependencies/]
+    .
+    Haskell dependencies are available from Hackage. The following external
+    libraries are alse required:
+    .
+      * <http://llvm.org LLVM>
+    .
+      * <https://developer.nvidia.com/cuda-downloads CUDA>
+    .
+    [/Installing LLVM/]
+    .
+    /Homebrew/
+    .
+    Example using Homebrew on macOS:
+    .
+    > brew install llvm-hs/homebrew-llvm/llvm-4.0
+    .
+    /Debian & Ubuntu/
+    .
+    For Debian/Ubuntu based Linux distributions, the LLVM.org website provides
+    binary distribution packages. Check <http://apt.llvm.org apt.llvm.org> for
+    instructions for adding the correct package database for your OS version,
+    and then:
+    .
+    > apt-get install llvm-4.0-dev
+    .
+    /Building from source/
+    .
+    If your OS does not have an appropriate LLVM distribution available, you can
+    also build from source. Detailed build instructions are available on
+    <http://releases.llvm.org/4.0.0/docs/CMake.html LLVM.org>. Make sure to
+    include the cmake build options
+    @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
+    shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
+    option includes the @NVPTX@ target (if not specified all targets are built).
+    .
+    [/Installing accelerate-llvm/]
+    .
+    To use @accelerate-llvm@ it is important that the @llvm-hs@ package is
+    installed against the @libLLVM@ shared library, rather than statically
+    linked, so that we can use LLVM from GHCi and Template Haskell. This is the
+    default configuration, but you can also enforce this explicitly by adding
+    the following to your @stack.yaml@ file:
+    .
+    > flags:
+    >   llvm-hs:
+    >     shared-llvm: true
+    .
+    Or by specifying the @shared-llvm@ flag to cabal:
+    .
+    > cabal install llvm-hs -fshared-llvm
+    .
 
 license:                BSD3
 license-file:           LICENSE
@@ -137,6 +190,11 @@ Library
 
 source-repository head
   type:                 git
-  location:
+  location:             https://github.com/AccelerateHS/accelerate-llvm.git
+
+source-repository this
+  type:                 git
+  tag:                  1.0.0.0
+  location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell

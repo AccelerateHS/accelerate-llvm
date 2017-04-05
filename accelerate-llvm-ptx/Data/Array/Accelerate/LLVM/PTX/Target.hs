@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeFamilies    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --

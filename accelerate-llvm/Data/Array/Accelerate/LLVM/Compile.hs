@@ -8,7 +8,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2016] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -352,7 +352,7 @@ compileOpenAcc = traverseAcc
 
             zero :: Idx ((), a) t -> Idx (env,a) t
             zero ZeroIdx = ZeroIdx
-            zero notzero = zero notzero
+            zero _       = error "There are three things all wise men fear: the sea in storm, a night with no moon, and the anger of a gentle man."
 
 
 -- Compilation

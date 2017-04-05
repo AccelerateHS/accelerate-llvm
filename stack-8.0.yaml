@@ -8,14 +8,15 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
+# extra-deps:
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: a9677400b9a3e6c55b27e586286281a10c9f3b16
+    commit: a250e2b82b1730016bb018277b5e6205d6d229fb
   extra-dep: true
 
 extra-deps:
 - 'chaselev-deque-0.5.0.5'
-- 'cuda-0.7.5.2'
+- 'cuda-0.7.5.3'
 - 'libffi-0.1'
 - 'llvm-hs-4.0.0.0'
 - 'llvm-hs-pure-4.0.0.0'

@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
--- Copyright   : [2014..2015] Trevor L. McDonell
+-- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -26,15 +26,13 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 import LLVM.AST                                                     hiding ( Module )
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.Context                                       as LLVM
-import qualified LLVM.Target                                        as LLVM
-import qualified LLVM.Module                                        as LLVM
-import qualified LLVM.Internal.Module                               as LLVM.Internal
-import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.FFI
-import qualified LLVM.PassManager                                   as LLVM
-#ifdef ACCELERATE_INTERNAL_CHECKS
 import qualified LLVM.Analysis                                      as LLVM
-#endif
+import qualified LLVM.Context                                       as LLVM
+import qualified LLVM.Module                                        as LLVM
+import qualified LLVM.PassManager                                   as LLVM
+import qualified LLVM.Target                                        as LLVM
+import qualified LLVM.Internal.Module                               as LLVM.Internal
+import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )
@@ -210,6 +208,29 @@ compileModuleNVPTX dev mdl =
 #endif
 
 
+-- | Produce target specific assembly as a 'ByteString'.
+--
+moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
+moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Internal.FFI.codeGenFileTypeAssembly tm m
+  where
+    -- Ensure that the ByteString is NULL-terminated, so that it can be passed
+    -- directly to C. This will unsafely mutate the underlying ForeignPtr if the
+    -- string is not NULL-terminated but the last character is a whitespace
+    -- character (there are usually a few blank lines at the end).
+    --
+    unsafe0 :: ByteString -> ExceptT String IO ByteString
+    unsafe0 bs@(B.PS fp s l) =
+      liftIO . withForeignPtr fp $ \p -> do
+        let p' :: Ptr Word8
+            p' = p `plusPtr` (s+l-1)
+        --
+        x <- peek p'
+        case x of
+          0                    -> return bs
+          _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
+          _                    -> return (B.snoc bs 0)
+
+
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
@@ -287,29 +308,6 @@ linkFunction mdl name configure = do
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
   return $ Kernel f occ dsmem cta grid name
-
-
--- | Produce target specific assembly as a 'ByteString'.
---
-moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
-moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.FFI.codeGenFileTypeAssembly tm m
-  where
-    -- Ensure that the ByteString is NULL-terminated, so that it can be passed
-    -- directly to C. This will unsafely mutate the underlying ForeignPtr if the
-    -- string is not NULL-terminated but the last character is a whitespace
-    -- character (there are usually a few blank lines at the end).
-    --
-    unsafe0 :: ByteString -> ExceptT String IO ByteString
-    unsafe0 bs@(B.PS fp s l) =
-      liftIO . withForeignPtr fp $ \p -> do
-        let p' :: Ptr Word8
-            p' = p `plusPtr` (s+l-1)
-        --
-        x <- peek p'
-        case x of
-          0                    -> return bs
-          _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
-          _                    -> return (B.snoc bs 0)
 
 
 {--
