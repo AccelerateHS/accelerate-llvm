@@ -22,121 +22,112 @@ module Data.Array.Accelerate.LLVM.Compile (
   Compile(..),
   compileAcc, compileAfun,
 
-  ExecOpenAcc(..), ExecOpenAfun,
-  ExecAcc, ExecAfun,
-  ExecExp, ExecOpenExp,
-  ExecFun, ExecOpenFun
+  CompiledOpenAcc(..), CompiledOpenAfun,
+  CompiledAcc, CompiledAfun,
+  CompiledExp, CompiledOpenExp,
+  CompiledFun, CompiledOpenFun
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
-import qualified Data.Array.Accelerate.Array.Sugar              as A
+import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
-import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
-import Data.IntMap                                              ( IntMap )
-import Data.Monoid
-import Control.Applicative                                      hiding ( Const )
-import Prelude                                                  hiding ( exp, unzip )
+import Data.IntMap                                                  ( IntMap )
+import Control.Applicative                                          hiding ( Const )
+import Prelude                                                      hiding ( exp, unzip )
 
 
 class Foreign arch => Compile arch where
-  type ObjectR     arch -- TODO: something serializable, for on-disk caching
-  data ExecutableR arch
+  data ObjectR arch
+  -- TODO: Provide serialisation facilities, for on-disk caching etc.
 
-  -- | Compile an accelerate computation into some backend-specific object-file
-  -- (like) format.
+  -- | Compile an accelerate computation into some backend-specific code that
+  -- will be used to execute the given array expression. The code is not yet
+  -- linked into the running executable.
   --
   compileForTarget
       :: DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM arch (ObjectR arch)
 
-  -- | Link an object into the current context to produce an executable thing.
-  --
-  linkForTarget
-      :: ObjectR arch
-      -> LLVM arch (ExecutableR arch)
+
+data CompiledOpenAcc arch aenv a where
+  ExecAcc   :: Gamma aenv
+            -> ObjectR arch
+            -> PreOpenAcc (CompiledOpenAcc arch) aenv a
+            -> CompiledOpenAcc arch aenv a
+
+  EmbedAcc  :: (Shape sh, Elt e)
+            => PreExp (CompiledOpenAcc arch) aenv sh
+            -> CompiledOpenAcc arch aenv (Array sh e)
+
+  PlainAcc  :: Arrays a
+            => PreOpenAcc (CompiledOpenAcc arch) aenv a
+            -> CompiledOpenAcc arch aenv a
+
+  UnzipAcc  :: (Elt t, Elt e)
+            => TupleIdx (TupleRepr t) e
+            -> Idx aenv (Array sh t)
+            -> CompiledOpenAcc arch aenv (Array sh e)
 
 
--- | Annotate an open array expression with the information necessary to execute
--- each node directly.
+-- An annotated AST with embedded build products
 --
-data ExecOpenAcc arch aenv a where
-  ExecAcc  :: ExecutableR arch
-           -> Gamma aenv
-           -> PreOpenAcc (ExecOpenAcc arch) aenv a
-           -> ExecOpenAcc arch aenv a
+type CompiledOpenAfun arch  = PreOpenAfun (CompiledOpenAcc arch)
+type CompiledOpenExp arch   = PreOpenExp (CompiledOpenAcc arch)
+type CompiledOpenFun arch   = PreOpenFun (CompiledOpenAcc arch)
 
-  EmbedAcc :: (Shape sh, Elt e)
-           => PreExp (ExecOpenAcc arch) aenv sh
-           -> ExecOpenAcc arch aenv (Array sh e)
+type CompiledAcc arch a     = CompiledOpenAcc arch () a
+type CompiledAfun arch a    = CompiledOpenAfun arch () a
 
-  UnzipAcc :: (Elt t, Elt e)
-           => TupleIdx (TupleRepr t) e
-           -> Idx aenv (Array sh t)
-           -> ExecOpenAcc arch aenv (Array sh e)
+type CompiledExp arch       = CompiledOpenExp arch ()
+type CompiledFun arch       = CompiledOpenFun arch ()
 
 
--- An annotated AST suitable for execution
---
-type ExecAcc arch a     = ExecOpenAcc arch () a
-type ExecAfun arch a    = PreAfun (ExecOpenAcc arch) a
-
-type ExecOpenAfun arch  = PreOpenAfun (ExecOpenAcc arch)
-type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
-type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
-
-type ExecExp arch       = ExecOpenExp arch ()
-type ExecFun arch       = ExecOpenFun arch ()
-
-
--- | Initialise code generation, compilation, and data transfer (if required)
--- for an array expression. The returned array computation is annotated to be
--- suitable for execution on the target:
---
---   * A list of the array variables embedded within scalar expressions
---
---   * The compiled LLVM code required to execute the kernel
+-- | Generate and compile code for an array expression. The returned expression
+-- is annotated with the compilation products required to executed each
+-- operation on the given target, together with the list of array variables
+-- referenced from the embedded scalar expressions.
 --
 {-# INLINEABLE compileAcc #-}
 compileAcc
-    :: (Compile arch, Remote arch)
+    :: Compile arch
     => DelayedAcc a
-    -> LLVM arch (ExecAcc arch a)
+    -> LLVM arch (CompiledAcc arch a)
 compileAcc = compileOpenAcc
 
 {-# INLINEABLE compileAfun #-}
 compileAfun
-    :: (Compile arch, Remote arch)
+    :: Compile arch
     => DelayedAfun f
-    -> LLVM arch (ExecAfun arch f)
+    -> LLVM arch (CompiledAfun arch f)
 compileAfun = compileOpenAfun
 
 
 {-# INLINEABLE compileOpenAfun #-}
 compileOpenAfun
-    :: (Compile arch, Remote arch)
+    :: Compile arch
     => DelayedOpenAfun aenv f
-    -> LLVM arch (PreOpenAfun (ExecOpenAcc arch) aenv f)
+    -> LLVM arch (CompiledOpenAfun arch aenv f)
 compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
 compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
 
 
 {-# INLINEABLE compileOpenAcc #-}
 compileOpenAcc
-    :: forall arch _aenv _a. (Compile arch, Remote arch)
+    :: forall arch _aenv _a. Compile arch
     => DelayedOpenAcc _aenv _a
-    -> LLVM arch (ExecOpenAcc arch _aenv _a)
+    -> LLVM arch (CompiledOpenAcc arch _aenv _a)
 compileOpenAcc = traverseAcc
   where
     -- Traverse an open array expression in depth-first order. The top-level
@@ -148,104 +139,102 @@ compileOpenAcc = traverseAcc
     -- array variables that were referred to within scalar sub-expressions.
     -- These will be required during code generation and execution.
     --
-    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
+    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (CompiledOpenAcc arch aenv arrs)
     traverseAcc Delayed{}              = $internalError "compileOpenAcc" "unexpected delayed array"
     traverseAcc topAcc@(Manifest pacc) =
       case pacc of
         -- Environment and control flow
-        Avar ix                 -> node $ pure (Avar ix)
-        Alet a b                -> node . pure =<< Alet         <$> traverseAcc a <*> traverseAcc b
-        Apply f a               -> node =<< liftA2 Apply        <$> travAF f <*> travA a
-        Awhile p f a            -> node =<< liftA3 Awhile       <$> travAF p <*> travAF f <*> travA a
-        Acond p t e             -> node =<< liftA3 Acond        <$> travE  p <*> travA  t <*> travA e
-        Atuple tup              -> node =<< liftA  Atuple       <$> travAtup tup
-        Aprj ix tup             -> node =<< liftA (Aprj ix)     <$> travA    tup
+        Avar ix                 -> plain $ pure (Avar ix)
+        Alet a b                -> plain . pure =<< Alet        <$> traverseAcc a <*> traverseAcc b
+        Apply f a               -> plain =<< liftA2 Apply       <$> travAF f <*> travA a
+        Awhile p f a            -> plain =<< liftA3 Awhile      <$> travAF p <*> travAF f <*> travA a
+        Acond p t e             -> plain =<< liftA3 Acond       <$> travE  p <*> travA  t <*> travA e
+        Atuple tup              -> plain =<< liftA  Atuple      <$> travAtup tup
+        Aprj ix tup             -> plain =<< liftA (Aprj ix)    <$> travA    tup
 
         -- Foreign
         Aforeign ff afun a      -> foreignA ff afun a
 
         -- Array injection
-        Unit e                  -> node =<< liftA  Unit         <$> travE e
-        Use arrs                -> useRemote (toArr arrs::arrs) >> node (pure (Use arrs))
+        Unit e                  -> plain =<< liftA  Unit        <$> travE e
+        Use arrs                -> plain $ pure (Use arrs)
 
         -- Index space transforms
-        Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
-        Replicate slix e a      -> exec =<< liftA2 (Replicate slix)     <$> travE e <*> travA a
-        Slice slix a e          -> exec =<< liftA2 (Slice slix)         <$> travA a <*> travE e
-        Backpermute e f a       -> exec =<< liftA3 Backpermute          <$> travE e <*> travF f <*> travA a
+        Reshape s a             -> plain =<< liftA2 Reshape             <$> travE s <*> travA a
+        Replicate slix e a      -> build =<< liftA2 (Replicate slix)    <$> travE e <*> travA a
+        Slice slix a e          -> build =<< liftA2 (Slice slix)        <$> travA a <*> travE e
+        Backpermute e f a       -> build =<< liftA3 Backpermute         <$> travE e <*> travF f <*> travA a
 
         -- Producers
-        Generate e f            -> exec =<< liftA2 Generate             <$> travE e <*> travF f
+        Generate e f            -> build =<< liftA2 Generate            <$> travE e <*> travF f
         Map f a
           | Just b <- unzip f a -> return b
-          | otherwise           -> exec =<< liftA2 Map                  <$> travF f <*> travA a
-        ZipWith f a b           -> exec =<< liftA3 ZipWith              <$> travF f <*> travA a <*> travA b
-        Transform e p f a       -> exec =<< liftA4 Transform            <$> travE e <*> travF p <*> travF f <*> travA a
+          | otherwise           -> build =<< liftA2 Map                 <$> travF f <*> travA a
+        ZipWith f a b           -> build =<< liftA3 ZipWith             <$> travF f <*> travA a <*> travA b
+        Transform e p f a       -> build =<< liftA4 Transform           <$> travE e <*> travF p <*> travF f <*> travA a
 
         -- Consumers
-        Fold f z a              -> exec =<< liftA3 Fold                 <$> travF f <*> travE z <*> travA a
-        Fold1 f a               -> exec =<< liftA2 Fold1                <$> travF f <*> travA a
-        FoldSeg f e a s         -> exec =<< liftA4 FoldSeg              <$> travF f <*> travE e <*> travA a <*> travA s
-        Fold1Seg f a s          -> exec =<< liftA3 Fold1Seg             <$> travF f <*> travA a <*> travA s
-        Scanl f e a             -> exec =<< liftA3 Scanl                <$> travF f <*> travE e <*> travA a
-        Scanl' f e a            -> exec =<< liftA3 Scanl'               <$> travF f <*> travE e <*> travA a
-        Scanl1 f a              -> exec =<< liftA2 Scanl1               <$> travF f <*> travA a
-        Scanr f e a             -> exec =<< liftA3 Scanr                <$> travF f <*> travE e <*> travA a
-        Scanr' f e a            -> exec =<< liftA3 Scanr'               <$> travF f <*> travE e <*> travA a
-        Scanr1 f a              -> exec =<< liftA2 Scanr1               <$> travF f <*> travA a
-        Permute f d g a         -> exec =<< liftA4 Permute              <$> travF f <*> travA d <*> travF g <*> travA a
-        Stencil f b a           -> exec =<< liftA2 (flip Stencil b)     <$> travF f <*> travM a
-        Stencil2 f b1 a1 b2 a2  -> exec =<< liftA3 stencil2             <$> travF f <*> travM a1 <*> travM a2
+        Fold f z a              -> build =<< liftA3 Fold                <$> travF f <*> travE z <*> travA a
+        Fold1 f a               -> build =<< liftA2 Fold1               <$> travF f <*> travA a
+        FoldSeg f e a s         -> build =<< liftA4 FoldSeg             <$> travF f <*> travE e <*> travA a <*> travA s
+        Fold1Seg f a s          -> build =<< liftA3 Fold1Seg            <$> travF f <*> travA a <*> travA s
+        Scanl f e a             -> build =<< liftA3 Scanl               <$> travF f <*> travE e <*> travA a
+        Scanl' f e a            -> build =<< liftA3 Scanl'              <$> travF f <*> travE e <*> travA a
+        Scanl1 f a              -> build =<< liftA2 Scanl1              <$> travF f <*> travA a
+        Scanr f e a             -> build =<< liftA3 Scanr               <$> travF f <*> travE e <*> travA a
+        Scanr' f e a            -> build =<< liftA3 Scanr'              <$> travF f <*> travE e <*> travA a
+        Scanr1 f a              -> build =<< liftA2 Scanr1              <$> travF f <*> travA a
+        Permute f d g a         -> build =<< liftA4 Permute             <$> travF f <*> travA d <*> travF g <*> travA a
+        Stencil f b a           -> build =<< liftA2 (flip Stencil b)    <$> travF f <*> travM a
+        Stencil2 f b1 a1 b2 a2  -> build =<< liftA3 stencil2            <$> travF f <*> travM a1 <*> travM a2
           where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
 
       where
-        travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv a)
+        travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv a)
         travA acc = case acc of
           Manifest{}    -> pure                    <$> traverseAcc acc
           Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
 
         travM :: (Shape sh, Elt e)
-              => DelayedOpenAcc aenv (Array sh e) -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
+              => DelayedOpenAcc aenv (Array sh e)
+              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv (Array sh e))
         travM acc = case acc of
           Manifest (Avar ix) -> (freevar ix,) <$> traverseAcc acc
           _                  -> $internalError "compileOpenAcc" "expected array variable"
 
         travAF :: DelayedOpenAfun aenv f
-               -> LLVM arch (IntMap (Idx' aenv), PreOpenAfun (ExecOpenAcc arch) aenv f)
+               -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
         travAF afun = pure <$> compileOpenAfun afun
 
         travAtup :: Atuple (DelayedOpenAcc aenv) a
-                 -> LLVM arch (IntMap (Idx' aenv), Atuple (ExecOpenAcc arch aenv) a)
+                 -> LLVM arch (IntMap (Idx' aenv), Atuple (CompiledOpenAcc arch aenv) a)
         travAtup NilAtup        = return (pure NilAtup)
         travAtup (SnocAtup t a) = liftA2 SnocAtup <$> travAtup t <*> travA a
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
+              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenFun arch env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
-        exec :: (IntMap (Idx' aenv), PreOpenAcc (ExecOpenAcc arch) aenv arrs)
-             -> LLVM arch (ExecOpenAcc arch aenv arrs)
-        exec (aenv, eacc) = do
+        build :: (IntMap (Idx' aenv), PreOpenAcc (CompiledOpenAcc arch) aenv arrs)
+              -> LLVM arch (CompiledOpenAcc arch aenv arrs)
+        build (aenv, eacc) = do
           let aval = makeGamma aenv
-          kernel <- build topAcc aval
-          return $! ExecAcc kernel aval eacc
+          kernel <- compileForTarget topAcc aval
+          return $! ExecAcc aval kernel eacc
 
-        node :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
-             -> LLVM arch (ExecOpenAcc arch aenv' arrs')
-        node = fmap snd . wrap
-
-        wrap :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
-             -> LLVM arch (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
-        wrap = return . liftA (ExecAcc noKernel mempty)
+        plain :: Arrays arrs'
+              => (IntMap (Idx' aenv'), PreOpenAcc (CompiledOpenAcc arch) aenv' arrs')
+              -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
+        plain (_, eacc) = return (PlainAcc eacc)
 
         -- Unzips of manifest array data can be done in constant time without
         -- executing any array programs. We split them out here into a separate
-        -- case of 'ExecAcc' so that the execution phase does not have to
+        -- case of 'CompileAcc' so that the execution phase does not have to
         -- continually perform the below check (in particular; 'run1').
         unzip :: PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
-              -> Maybe (ExecOpenAcc arch aenv (Array sh b))
+              -> Maybe (CompiledOpenAcc arch aenv (Array sh b))
         unzip f a
           | Lam (Body (Prj tix (Var ZeroIdx)))  <- f
           , Delayed sh index _                  <- a
@@ -266,24 +255,21 @@ compileOpenAcc = traverseAcc
                  => asm         (a -> b)
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
-                 -> LLVM arch (ExecOpenAcc arch aenv b)
+                 -> LLVM arch (CompiledOpenAcc arch aenv b)
         foreignA asm f a =
           case foreignAcc (undefined :: arch) asm of
-            Just{}  -> node =<< liftA (Aforeign asm err) <$> travA a
+            Just{}  -> plain =<< liftA (Aforeign asm err) <$> travA a
             Nothing -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
               absurd :: Idx () t -> Idx aenv t
               absurd = error "complicated stuff in simple words"
-              err    = $internalError "compile" "attempt to use fallback in foreign function"
-
-        -- sadness
-        noKernel  = $internalError "compile" "no kernel module for this node"
+              err    = $internalError "compile" "attempt to use fallback foreign function"
 
 
     -- Traverse a scalar expression
     --
     travE :: DelayedOpenExp env aenv e
-          -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv e)
+          -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (CompiledOpenAcc arch) env aenv e)
     travE exp =
       case exp of
         Var ix                  -> return $ pure (Var ix)
@@ -316,22 +302,22 @@ compileOpenAcc = traverseAcc
       where
         travA :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), ExecOpenAcc arch aenv (Array sh e))
+              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv (Array sh e))
         travA a = do
           a'    <- traverseAcc a
           return $ (bind a', a')
 
         travT :: Tuple (DelayedOpenExp env aenv) t
-              -> LLVM arch (IntMap (Idx' aenv), Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) t)
+              -> LLVM arch (IntMap (Idx' aenv), Tuple (PreOpenExp (CompiledOpenAcc arch) env aenv) t)
         travT NilTup        = return (pure NilTup)
         travT (SnocTup t e) = liftA2 SnocTup <$> travT t <*> travE e
 
         travF :: DelayedOpenFun env aenv t
-              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (ExecOpenAcc arch) env aenv t)
+              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun (CompiledOpenAcc arch) env aenv t)
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
-        bind :: (Shape sh, Elt e) => ExecOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
+        bind :: (Shape sh, Elt e) => CompiledOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
         bind (ExecAcc _ _ (Avar ix)) = freevar ix
         bind _                       = $internalError "bind" "expected array variable"
 
@@ -339,7 +325,7 @@ compileOpenAcc = traverseAcc
                  => asm           (a -> b)
                  -> DelayedFun () (a -> b)
                  -> DelayedOpenExp env aenv a
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) env aenv b)
+                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (CompiledOpenAcc arch) env aenv b)
         foreignE asm f x =
           case foreignExp (undefined :: arch) asm of
             Just{}                      -> liftA (Foreign asm err) <$> travE x
@@ -353,28 +339,8 @@ compileOpenAcc = traverseAcc
             zero ZeroIdx = ZeroIdx
             zero _       = error "There are three things all wise men fear: the sea in storm, a night with no moon, and the anger of a gentle man."
 
-            err :: ExecFun arch () (a -> b)
+            err :: CompiledFun arch () (a -> b)
             err = $internalError "foreignE" "attempt to use fallback in foreign expression"
-
-
--- Compilation
--- -----------
-
--- | Generate code that will be used to evaluate an array computation. Pass the
--- generated code to the appropriate backend handler, which may then, for
--- example, compile and link the code into the running executable.
---
--- TODO:
---  * asynchronous compilation
---  * kernel caching
---
-{-# INLINEABLE build #-}
-build :: forall arch aenv a. Compile arch
-      => DelayedOpenAcc aenv a
-      -> Gamma aenv
-      -> LLVM arch (ExecutableR arch)
-build acc aenv =
-  linkForTarget =<< compileForTarget acc aenv
 
 
 -- Applicative
