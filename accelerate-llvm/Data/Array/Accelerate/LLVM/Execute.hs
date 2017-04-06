@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -213,7 +214,7 @@ executeAcc
     :: forall arch a. Execute arch
     => ExecAcc arch a
     -> LLVM arch a
-executeAcc acc =
+executeAcc !acc =
   get =<< async (executeOpenAcc acc Aempty)
 
 {-# INLINEABLE executeAfun1 #-}
@@ -222,7 +223,7 @@ executeAfun1
     => ExecAfun arch (a -> b)
     -> a
     -> LLVM arch b
-executeAfun1 afun arrs = do
+executeAfun1 !afun !arrs = do
   AsyncR _ a <- async (useRemoteAsync arrs)
   executeOpenAfun1 afun Aempty a
 
@@ -236,8 +237,8 @@ executeOpenAfun1
     -> AvalR arch aenv
     -> AsyncR arch a
     -> LLVM arch b
-executeOpenAfun1 (Alam (Abody f)) aenv a = get =<< async (executeOpenAcc f (aenv `Apush` a))
-executeOpenAfun1 _                _    _ = error "boop!"
+executeOpenAfun1 (Alam (Abody !f)) !aenv !a = get =<< async (executeOpenAcc f (aenv `Apush` a))
+executeOpenAfun1 _                 _     _  = error "boop!"
 
 
 -- Execute an open array computation
@@ -249,7 +250,7 @@ executeOpenAcc
     -> AvalR arch aenv
     -> StreamR arch
     -> LLVM arch arrs
-executeOpenAcc topAcc aenv stream = travA topAcc
+executeOpenAcc !topAcc !aenv !stream = travA topAcc
   where
     travA :: ExecOpenAcc arch aenv a -> LLVM arch a
     travA (PlainAcc pacc) =
@@ -269,7 +270,7 @@ executeOpenAcc topAcc aenv stream = travA topAcc
         Unzip tix ix    -> unzip tix <$> avar ix
         Aforeign asm a  -> aforeign asm =<< travA a
 
-    travA (ExecAcc gamma kernel pacc) =
+    travA (ExecAcc !gamma !kernel pacc) =
       case pacc of
         -- Producers
         Map sh          -> map kernel gamma aenv stream =<< travE sh
