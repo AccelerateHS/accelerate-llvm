@@ -40,6 +40,7 @@ import qualified Data.Array.Accelerate.Array.Sugar                  as A
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
+import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
 -- standard library
 import Data.IntMap                                                  ( IntMap )
@@ -62,23 +63,14 @@ class Foreign arch => Compile arch where
 
 
 data CompiledOpenAcc arch aenv a where
-  ExecAcc   :: Gamma aenv
+  BuildAcc  :: Gamma aenv
             -> ObjectR arch
-            -> PreOpenAcc (CompiledOpenAcc arch) aenv a
+            -> AST.PreOpenAccSkeleton (CompiledOpenAcc arch) aenv a
             -> CompiledOpenAcc arch aenv a
-
-  EmbedAcc  :: (Shape sh, Elt e)
-            => PreExp (CompiledOpenAcc arch) aenv sh
-            -> CompiledOpenAcc arch aenv (Array sh e)
 
   PlainAcc  :: Arrays a
-            => PreOpenAcc (CompiledOpenAcc arch) aenv a
+            => AST.PreOpenAccCommand  (CompiledOpenAcc arch) aenv a
             -> CompiledOpenAcc arch aenv a
-
-  UnzipAcc  :: (Elt t, Elt e)
-            => TupleIdx (TupleRepr t) e
-            -> Idx aenv (Array sh t)
-            -> CompiledOpenAcc arch aenv (Array sh e)
 
 
 -- An annotated AST with embedded build products
@@ -144,63 +136,69 @@ compileOpenAcc = traverseAcc
     traverseAcc topAcc@(Manifest pacc) =
       case pacc of
         -- Environment and control flow
-        Avar ix                 -> plain $ pure (Avar ix)
-        Alet a b                -> plain . pure =<< Alet        <$> traverseAcc a <*> traverseAcc b
-        Apply f a               -> plain =<< liftA2 Apply       <$> travAF f <*> travA a
-        Awhile p f a            -> plain =<< liftA3 Awhile      <$> travAF p <*> travAF f <*> travA a
-        Acond p t e             -> plain =<< liftA3 Acond       <$> travE  p <*> travA  t <*> travA e
-        Atuple tup              -> plain =<< liftA  Atuple      <$> travAtup tup
-        Aprj ix tup             -> plain =<< liftA (Aprj ix)    <$> travA    tup
+        Avar ix                     -> plain $ pure (AST.Avar ix)
+        Alet a b                    -> plain . pure =<< AST.Alet        <$> traverseAcc a <*> traverseAcc b
+        Apply f a                   -> plain =<< liftA2 AST.Apply       <$> travAF f <*> travA a
+        Awhile p f a                -> plain =<< liftA3 AST.Awhile      <$> travAF p <*> travAF f <*> travA a
+        Acond p t e                 -> plain =<< liftA3 AST.Acond       <$> travE  p <*> travA  t <*> travA e
+        Atuple tup                  -> plain =<< liftA  AST.Atuple      <$> travAtup tup
+        Aprj ix tup                 -> plain =<< liftA (AST.Aprj ix)    <$> travA    tup
 
-        -- Foreign
-        Aforeign ff afun a      -> foreignA ff afun a
+        -- Foreign arrays operations
+        Aforeign ff afun a          -> foreignA ff afun a
 
-        -- Array injection
-        Unit e                  -> plain =<< liftA  Unit        <$> travE e
-        Use arrs                -> plain $ pure (Use arrs)
-
-        -- Index space transforms
-        Reshape s a             -> plain =<< liftA2 Reshape             <$> travE s <*> travA a
-        Replicate slix e a      -> build =<< liftA2 (Replicate slix)    <$> travE e <*> travA a
-        Slice slix a e          -> build =<< liftA2 (Slice slix)        <$> travA a <*> travE e
-        Backpermute e f a       -> build =<< liftA3 Backpermute         <$> travE e <*> travF f <*> travA a
-
-        -- Producers
-        Generate e f            -> build =<< liftA2 Generate            <$> travE e <*> travF f
+        -- Array injection & manipulation
+        Reshape sh a                -> plain =<< liftA2 AST.Reshape     <$> travE sh <*> travM a
+        Unit e                      -> plain =<< liftA  AST.Unit        <$> travE e
+        Use arrs                    -> plain $ pure (AST.Use arrs)
         Map f a
-          | Just b <- unzip f a -> return b
-          | otherwise           -> build =<< liftA2 Map                 <$> travF f <*> travA a
-        ZipWith f a b           -> build =<< liftA3 ZipWith             <$> travF f <*> travA a <*> travA b
-        Transform e p f a       -> build =<< liftA4 Transform           <$> travE e <*> travF p <*> travF f <*> travA a
+          | Just (t,x) <- unzip f a -> plain $ pure (AST.Unzip t x)
+
+        -- Skeleton operations resulting in compiled code
+        -- Producers
+        Map f a                     -> build =<< liftA  AST.Map         <$> travD a  <*  travF f
+        Generate sh f               -> build =<< liftA  AST.Generate    <$> travE sh <*  travF f
+        Transform sh p f a          -> build =<< liftA  AST.Transform   <$> travE sh <*  travF p <* travF f <* travD a
+        Backpermute sh f a          -> build =<< liftA  AST.Backpermute <$> travE sh <*  travF f <* travD a
 
         -- Consumers
-        Fold f z a              -> build =<< liftA3 Fold                <$> travF f <*> travE z <*> travA a
-        Fold1 f a               -> build =<< liftA2 Fold1               <$> travF f <*> travA a
-        FoldSeg f e a s         -> build =<< liftA4 FoldSeg             <$> travF f <*> travE e <*> travA a <*> travA s
-        Fold1Seg f a s          -> build =<< liftA3 Fold1Seg            <$> travF f <*> travA a <*> travA s
-        Scanl f e a             -> build =<< liftA3 Scanl               <$> travF f <*> travE e <*> travA a
-        Scanl' f e a            -> build =<< liftA3 Scanl'              <$> travF f <*> travE e <*> travA a
-        Scanl1 f a              -> build =<< liftA2 Scanl1              <$> travF f <*> travA a
-        Scanr f e a             -> build =<< liftA3 Scanr               <$> travF f <*> travE e <*> travA a
-        Scanr' f e a            -> build =<< liftA3 Scanr'              <$> travF f <*> travE e <*> travA a
-        Scanr1 f a              -> build =<< liftA2 Scanr1              <$> travF f <*> travA a
-        Permute f d g a         -> build =<< liftA4 Permute             <$> travF f <*> travA d <*> travF g <*> travA a
-        Stencil f b a           -> build =<< liftA2 (flip Stencil b)    <$> travF f <*> travM a
-        Stencil2 f b1 a1 b2 a2  -> build =<< liftA3 stencil2            <$> travF f <*> travM a1 <*> travM a2
-          where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
+        Fold f z a                  -> build =<< liftA  AST.Fold        <$> travD a  <*  travF f <* travE z
+        Fold1 f a                   -> build =<< liftA  AST.Fold1       <$> travD a  <*  travF f
+        FoldSeg f z a s             -> build =<< liftA2 AST.FoldSeg     <$> travD a  <*> travD s <* travF f <* travE z
+        Fold1Seg f a s              -> build =<< liftA2 AST.Fold1Seg    <$> travD a  <*> travD s <* travF f
+        Scanl f z a                 -> build =<< liftA  AST.Scanl       <$> travD a  <*  travF f <* travE z
+        Scanl' f z a                -> build =<< liftA  AST.Scanl'      <$> travD a  <*  travF f <* travE z
+        Scanl1 f a                  -> build =<< liftA  AST.Scanl1      <$> travD a  <*  travF f
+        Scanr f z a                 -> build =<< liftA  AST.Scanr       <$> travD a  <*  travF f <* travE z
+        Scanr' f z a                -> build =<< liftA  AST.Scanr'      <$> travD a  <*  travF f <* travE z
+        Scanr1 f a                  -> build =<< liftA  AST.Scanr1      <$> travD a  <*  travF f
+        Permute f d g a             -> build =<< liftA2 AST.Permute     <$> travD a  <*> travA d <* travF f <* travF g
+        Stencil f _ a               -> build =<< liftA  AST.Stencil     <$> travM a  <*  travF f
+        Stencil2 f _ a _ b          -> build =<< liftA2 AST.Stencil2    <$> travM a  <*> travM b <* travF f
+
+        -- Removed by fusion
+        Replicate{}                 -> fusionError
+        Slice{}                     -> fusionError
+        ZipWith{}                   -> fusionError
 
       where
+        fusionError :: error
+        fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
+
         travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv a)
-        travA acc = case acc of
-          Manifest{}    -> pure                    <$> traverseAcc acc
-          Delayed{..}   -> liftA2 (const EmbedAcc) <$> travF indexD <*> travE extentD
+        travA acc = pure <$> traverseAcc acc
+
+        travD :: (Shape sh, Elt e)
+              => DelayedOpenAcc aenv (Array sh e)
+              -> LLVM arch (IntMap (Idx' aenv), PreExp (CompiledOpenAcc arch) aenv sh)
+        travD Manifest{}  = $internalError "compileOpenAcc" "expected delayed array"
+        travD Delayed{..} = travF indexD *> travE extentD
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv (Array sh e))
-        travM acc = case acc of
-          Manifest (Avar ix) -> (freevar ix,) <$> traverseAcc acc
-          _                  -> $internalError "compileOpenAcc" "expected array variable"
+              -> LLVM arch (IntMap (Idx' aenv), Idx aenv (Array sh e))
+        travM (Manifest (Avar ix)) = return (freevar ix, ix)
+        travM _                    = $internalError "compileOpenAcc" "expected array variable"
 
         travAF :: DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
@@ -216,25 +214,26 @@ compileOpenAcc = traverseAcc
         travF (Body b)  = liftA Body <$> travE b
         travF (Lam  f)  = liftA Lam  <$> travF f
 
-        build :: (IntMap (Idx' aenv), PreOpenAcc (CompiledOpenAcc arch) aenv arrs)
+        build :: (IntMap (Idx' aenv), AST.PreOpenAccSkeleton (CompiledOpenAcc arch) aenv arrs)
               -> LLVM arch (CompiledOpenAcc arch aenv arrs)
         build (aenv, eacc) = do
           let aval = makeGamma aenv
           kernel <- compileForTarget topAcc aval
-          return $! ExecAcc aval kernel eacc
+          return $! BuildAcc aval kernel eacc
 
         plain :: Arrays arrs'
-              => (IntMap (Idx' aenv'), PreOpenAcc (CompiledOpenAcc arch) aenv' arrs')
+              => (IntMap (Idx' aenv'), AST.PreOpenAccCommand (CompiledOpenAcc arch) aenv' arrs')
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
         plain (_, eacc) = return (PlainAcc eacc)
 
         -- Unzips of manifest array data can be done in constant time without
         -- executing any array programs. We split them out here into a separate
-        -- case of 'CompileAcc' so that the execution phase does not have to
-        -- continually perform the below check (in particular; 'run1').
+        -- case so that the execution phase does not have to continually perform
+        -- the below check.
+        --
         unzip :: PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
-              -> Maybe (CompiledOpenAcc arch aenv (Array sh b))
+              -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
         unzip f a
           | Lam (Body (Prj tix (Var ZeroIdx)))  <- f
           , Delayed sh index _                  <- a
@@ -242,7 +241,7 @@ compileOpenAcc = traverseAcc
           , Manifest (Avar ix)                  <- u
           , Lam (Body (Index v (Var ZeroIdx)))  <- index
           , Just Refl                           <- match u v
-          = Just (UnzipAcc tix ix)
+          = Just (tix, ix)
         unzip _ _
           = Nothing
 
@@ -251,6 +250,7 @@ compileOpenAcc = traverseAcc
         -- Subsequent phases, if they encounter a foreign node, can assume that
         -- it is for them. Otherwise, drop this term and continue walking down
         -- the list of alternate implementations.
+        --
         foreignA :: (Arrays a, Arrays b, A.Foreign asm)
                  => asm         (a -> b)
                  -> DelayedAfun (a -> b)
@@ -258,13 +258,11 @@ compileOpenAcc = traverseAcc
                  -> LLVM arch (CompiledOpenAcc arch aenv b)
         foreignA asm f a =
           case foreignAcc (undefined :: arch) asm of
-            Just{}  -> plain =<< liftA (Aforeign asm err) <$> travA a
+            Just{}  -> plain =<< liftA (AST.Aforeign asm) <$> travA a
             Nothing -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
               absurd :: Idx () t -> Idx aenv t
               absurd = error "complicated stuff in simple words"
-              err    = $internalError "compile" "attempt to use fallback foreign function"
-
 
     -- Traverse a scalar expression
     --
@@ -318,8 +316,8 @@ compileOpenAcc = traverseAcc
         travF (Lam  f)  = liftA Lam  <$> travF f
 
         bind :: (Shape sh, Elt e) => CompiledOpenAcc arch aenv (Array sh e) -> IntMap (Idx' aenv)
-        bind (ExecAcc _ _ (Avar ix)) = freevar ix
-        bind _                       = $internalError "bind" "expected array variable"
+        bind (PlainAcc (AST.Avar ix)) = freevar ix
+        bind _                        = $internalError "bind" "expected array variable"
 
         foreignE :: (Elt a, Elt b, A.Foreign asm)
                  => asm           (a -> b)
@@ -341,11 +339,4 @@ compileOpenAcc = traverseAcc
 
             err :: CompiledFun arch () (a -> b)
             err = $internalError "foreignE" "attempt to use fallback in foreign expression"
-
-
--- Applicative
--- -----------
---
-liftA4 :: Applicative f => (a -> b -> c -> d -> e) -> f a -> f b -> f c -> f d -> f e
-liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 

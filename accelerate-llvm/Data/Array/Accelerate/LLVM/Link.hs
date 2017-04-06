@@ -26,14 +26,13 @@ module Data.Array.Accelerate.LLVM.Link (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Product
 
+import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.Compile                           hiding ( ExecAcc, EmbedAcc, PlainAcc, UnzipAcc )
+import Data.Array.Accelerate.LLVM.Compile                           hiding ( PlainAcc )
 import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.Compile                 as C
 
@@ -57,22 +56,12 @@ class Remote arch => Link arch where
 data ExecOpenAcc arch aenv a where
   ExecAcc   :: Gamma aenv
             -> ExecutableR arch
-            -> PreOpenAcc (ExecOpenAcc arch) aenv a
+            -> PreOpenAccSkeleton (ExecOpenAcc arch) aenv a
             -> ExecOpenAcc arch aenv a
-
-  EmbedAcc  :: (Shape sh, Elt e)
-            => PreExp (ExecOpenAcc arch) aenv sh
-            -> ExecOpenAcc arch aenv (Array sh e)
 
   PlainAcc  :: Arrays a
-            => PreOpenAcc (ExecOpenAcc arch) aenv a
+            => PreOpenAccCommand (ExecOpenAcc arch) aenv a
             -> ExecOpenAcc arch aenv a
-
-  UnzipAcc  :: (Elt t, Elt e)
-            => TupleIdx (TupleRepr t) e
-            -> Idx aenv (Array sh t)
-            -> ExecOpenAcc arch aenv (Array sh e)
-
 
 -- An AST annotated with compiled and linked functions in the target address
 -- space, suitable for execution.
@@ -122,52 +111,40 @@ linkOpenAcc
 linkOpenAcc = travA
   where
     travA :: forall aenv arrs. CompiledOpenAcc arch aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
-    travA (C.UnzipAcc tix ix) = return $ UnzipAcc tix ix
-    travA (C.EmbedAcc sh)     = EmbedAcc <$> travE sh
     travA (C.PlainAcc pacc)   = PlainAcc <$>
       case pacc of
+        Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
         Use arrs                -> useRemote (toArr arrs :: arrs) >> return (Use arrs)
-        Unit e                  -> Unit             <$> travE e
-        Alet a b                -> Alet             <$> travA a  <*> travA b
-        Apply f a               -> Apply            <$> travAF f <*> travA a
-        Awhile p f a            -> Awhile           <$> travAF p <*> travAF f <*> travA a
-        Acond p t e             -> Acond            <$> travE p  <*> travA t  <*> travA e
-        Atuple tup              -> Atuple           <$> travAtup tup
-        Aprj ix tup             -> Aprj ix          <$> travA tup
-        Reshape s a             -> Reshape          <$> travE s <*> travA a
-        Aforeign asm _ a        -> foreignA asm     <$> travA a
-        _                       -> $internalError "link" $ "unexpected plain operator: " ++ showPreAccOp pacc
+        Unit e                  -> Unit         <$> travE e
+        Alet a b                -> Alet         <$> travA a  <*> travA b
+        Apply f a               -> Apply        <$> travAF f <*> travA a
+        Awhile p f a            -> Awhile       <$> travAF p <*> travAF f <*> travA a
+        Acond p t e             -> Acond        <$> travE p  <*> travA t  <*> travA e
+        Atuple tup              -> Atuple       <$> travAtup tup
+        Aprj ix tup             -> Aprj ix      <$> travA tup
+        Reshape s ix            -> Reshape      <$> travE s <*> pure ix
+        Aforeign asm a          -> Aforeign asm <$> travA a
 
-    travA (C.ExecAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
+    travA (BuildAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
       case pacc of
-        Map f a                 -> Map              <$> travF f <*> travA a
-        Generate e f            -> Generate         <$> travE e <*> travF f
-        Transform e p f a       -> Transform        <$> travE e <*> travF p <*> travF f <*> travA a
-        Backpermute e f a       -> Backpermute      <$> travE e <*> travF f <*> travA a
-        Fold f z a              -> Fold             <$> travF f <*> travE z <*> travA a
-        Fold1 f a               -> Fold1            <$> travF f <*> travA a
-        FoldSeg f e a s         -> FoldSeg          <$> travF f <*> travE e <*> travA a <*> travA s
-        Fold1Seg f a s          -> Fold1Seg         <$> travF f <*> travA a <*> travA s
-        Scanl f e a             -> Scanl            <$> travF f <*> travE e <*> travA a
-        Scanl' f e a            -> Scanl'           <$> travF f <*> travE e <*> travA a
-        Scanl1 f a              -> Scanl1           <$> travF f <*> travA a
-        Scanr f e a             -> Scanr            <$> travF f <*> travE e <*> travA a
-        Scanr' f e a            -> Scanr'           <$> travF f <*> travE e <*> travA a
-        Scanr1 f a              -> Scanr1           <$> travF f <*> travA a
-        Permute f d g a         -> Permute          <$> travF f <*> travA d <*> travF g <*> travA a
-        Stencil f b a           -> (flip Stencil b) <$> travF f <*> travA a
-        Stencil2 f b1 a1 b2 a2  -> stencil2         <$> travF f <*> travA a1 <*> travA a2
-          where stencil2 f' a1' a2' = Stencil2 f' b1 a1' b2 a2'
-        _                       -> $internalError "link" $ "unexpected executable operator: " ++ showPreAccOp pacc
-
-        -- removed by fusion
-        -- ZipWith f a b           -> ZipWith          <$> travF f <*> travA a <*> travA b
-        -- Replicate slix e a      -> Replicate slix   <$> travE e <*> travA a
-        -- Slice slix a e          -> Slice slix       <$> travA a <*> travE e
-
-    foreignA asm a = Aforeign asm err a
-      where err = $internalError "link" "attempt to use fallback foreign function"
+        Map sh                  -> Map          <$> travE sh
+        Generate sh             -> Generate     <$> travE sh
+        Transform sh            -> Transform    <$> travE sh
+        Backpermute sh          -> Backpermute  <$> travE sh
+        Fold sh                 -> Fold         <$> travE sh
+        Fold1 sh                -> Fold1        <$> travE sh
+        FoldSeg sa ss           -> FoldSeg      <$> travE sa <*> travE ss
+        Fold1Seg sa ss          -> Fold1Seg     <$> travE sa <*> travE ss
+        Scanl sh                -> Scanl        <$> travE sh
+        Scanl1 sh               -> Scanl1       <$> travE sh
+        Scanl' sh               -> Scanl'       <$> travE sh
+        Scanr sh                -> Scanr        <$> travE sh
+        Scanr1 sh               -> Scanr1       <$> travE sh
+        Scanr' sh               -> Scanr'       <$> travE sh
+        Permute sh d            -> Permute      <$> travE sh <*> travA d
+        Stencil a               -> return (Stencil a)
+        Stencil2 a b            -> return (Stencil2 a b)
 
     travAF :: CompiledOpenAfun arch aenv f
            -> LLVM arch (ExecOpenAfun arch aenv f)

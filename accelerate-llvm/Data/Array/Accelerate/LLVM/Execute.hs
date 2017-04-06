@@ -24,7 +24,6 @@ module Data.Array.Accelerate.LLVM.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
@@ -35,9 +34,10 @@ import Data.Array.Accelerate.Interpreter                        ( evalPrim, eval
 import qualified Data.Array.Accelerate.Array.Sugar              as S
 import qualified Data.Array.Accelerate.Array.Representation     as R
 
+import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
-import Data.Array.Accelerate.LLVM.Link
 import Data.Array.Accelerate.LLVM.Foreign
+import Data.Array.Accelerate.LLVM.Link
 import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
@@ -249,34 +249,48 @@ executeOpenAcc
     -> AvalR arch aenv
     -> StreamR arch
     -> LLVM arch arrs
-executeOpenAcc (PlainAcc pacc) aenv stream =
-  case pacc of
-    -- Array introduction
-    Use arr                     -> return (toArr arr)
-    Unit x                      -> newRemote Z . const =<< travE x
-
-    -- Environment manipulation
-    Avar ix                     -> do let AsyncR event arr = aprj ix aenv
-                                      after stream event
-                                      return arr
-    Alet bnd body               -> do bnd'  <- async (executeOpenAcc bnd aenv)
-                                      body' <- executeOpenAcc body (aenv `Apush` bnd') stream
-                                      return body'
-    Apply f a                   -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
-    Atuple tup                  -> toAtuple <$> travT tup
-    Aprj ix tup                 -> evalPrj ix . fromAtuple <$> travA tup
-    Acond p t e                 -> acond t e =<< travE p
-    Awhile p f a                -> awhile p f =<< travA a
-    Reshape sh a                -> reshape <$> travE sh <*> travA a
-
-    -- Foreign function
-    Aforeign asm _ a            -> foreignA asm =<< travA a
-
-    _                           -> $internalError "execute" $ "unexpected plain operator: " ++ showPreAccOp pacc
-
+executeOpenAcc topAcc aenv stream = travA topAcc
   where
     travA :: ExecOpenAcc arch aenv a -> LLVM arch a
-    travA acc = executeOpenAcc acc aenv stream
+    travA (PlainAcc pacc) =
+      case pacc of
+        Use arrs        -> return (toArr arrs)
+        Unit x          -> newRemote Z . const =<< travE x
+        Avar ix         -> avar ix
+        Alet bnd body   -> do bnd'  <- async (executeOpenAcc bnd aenv)
+                              body' <- executeOpenAcc body (aenv `Apush` bnd') stream
+                              return body'
+        Apply f a       -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
+        Atuple tup      -> toAtuple <$> travT tup
+        Aprj ix tup     -> evalPrj ix . fromAtuple <$> travA tup
+        Acond p t e     -> acond t e =<< travE p
+        Awhile p f a    -> awhile p f =<< travA a
+        Reshape sh ix   -> reshape <$> travE sh <*> avar ix
+        Unzip tix ix    -> unzip tix <$> avar ix
+        Aforeign asm a  -> aforeign asm =<< travA a
+
+    travA (ExecAcc gamma kernel pacc) =
+      case pacc of
+        -- Producers
+        Map sh          -> map kernel gamma aenv stream =<< travE sh
+        Generate sh     -> generate kernel gamma aenv stream =<< travE sh
+        Transform sh    -> transform kernel gamma aenv stream =<< travE sh
+        Backpermute sh  -> backpermute kernel gamma aenv stream =<< travE sh
+
+        -- Consumers
+        Fold sh         -> fold  kernel gamma aenv stream =<< travE sh
+        Fold1 sh        -> fold1 kernel gamma aenv stream =<< travE sh
+        FoldSeg sa ss   -> id =<< foldSeg  kernel gamma aenv stream <$> travE sa <*> travE ss
+        Fold1Seg sa ss  -> id =<< fold1Seg kernel gamma aenv stream <$> travE sa <*> travE ss
+        Scanl sh        -> scanl  kernel gamma aenv stream =<< travE sh
+        Scanr sh        -> scanr  kernel gamma aenv stream =<< travE sh
+        Scanl1 sh       -> scanl1 kernel gamma aenv stream =<< travE sh
+        Scanr1 sh       -> scanr1 kernel gamma aenv stream =<< travE sh
+        Scanl' sh       -> scanl' kernel gamma aenv stream =<< travE sh
+        Scanr' sh       -> scanr' kernel gamma aenv stream =<< travE sh
+        Permute sh d    -> id =<< permute kernel gamma aenv stream (inplace d) <$> travE sh <*> travA d
+        Stencil2 a b    -> id =<< stencil2 kernel gamma aenv stream <$> avar a <*> avar b
+        Stencil a       -> stencil1 kernel gamma aenv stream =<< avar a
 
     travE :: ExecExp arch aenv t -> LLVM arch t
     travE exp = executeExp exp aenv stream
@@ -285,14 +299,14 @@ executeOpenAcc (PlainAcc pacc) aenv stream =
     travT NilAtup        = return ()
     travT (SnocAtup t a) = (,) <$> travT t <*> travA a
 
-    -- Change the shape of an array without altering its contents. This does not
-    -- execute any kernel programs.
-    reshape :: Shape sh => sh -> Array sh' e -> Array sh e
-    reshape sh (Array sh' adata)
-      = $boundsCheck "reshape" "shape mismatch" (size sh == R.size sh')
-      $ Array (fromElt sh) adata
+    -- Access bound variables
+    avar :: Idx aenv a -> LLVM arch a
+    avar ix = do
+      let AsyncR event arr = aprj ix aenv
+      after stream event
+      return arr
 
-    -- Array level conditional
+    -- Array level conditionals
     acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> Bool -> LLVM arch a
     acond yes _  True  = travA yes
     acond _   no False = travA no
@@ -309,65 +323,13 @@ executeOpenAcc (PlainAcc pacc) aenv stream =
       if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
             else return a
 
-    -- Foreign functions
-    foreignA :: (Arrays a, Arrays b, Foreign arch, S.Foreign asm)
-             => asm (a -> b)
-             -> a
-             -> LLVM arch b
-    foreignA asm a =
-      case foreignAcc (undefined :: arch) asm of
-        Just f  -> f stream a
-        Nothing -> $internalError "foreignA" "failed to recover foreign function the second time"
+    -- Change the shape of an array without altering its contents
+    reshape :: Shape sh => sh -> Array sh' e -> Array sh e
+    reshape sh (Array sh' adata)
+      = $boundsCheck "reshape" "shape mismatch" (size sh == R.size sh')
+      $ Array (fromElt sh) adata
 
-executeOpenAcc (ExecAcc gamma kernel pacc) aenv stream =
-  case pacc of
-    -- Producers
-    Map _ a                     -> map kernel gamma aenv stream         =<< extent a
-    Generate sh _               -> generate kernel gamma aenv stream    =<< travE sh
-    Transform sh _ _ _          -> transform kernel gamma aenv stream   =<< travE sh
-    Backpermute sh _ _          -> backpermute kernel gamma aenv stream =<< travE sh
-
-    -- Consumers
-    Fold _ _ a                  -> fold  kernel gamma aenv stream =<< extent a
-    Fold1 _ a                   -> fold1 kernel gamma aenv stream =<< extent a
-    FoldSeg _ _ a s             -> join $ foldSeg  kernel gamma aenv stream <$> extent a <*> extent s
-    Fold1Seg _ a s              -> join $ fold1Seg kernel gamma aenv stream <$> extent a <*> extent s
-    Scanl _ _ a                 -> scanl kernel gamma aenv stream =<< extent a
-    Scanr _ _ a                 -> scanr kernel gamma aenv stream =<< extent a
-    Scanl1 _ a                  -> scanl1 kernel gamma aenv stream =<< extent a
-    Scanr1 _ a                  -> scanr1 kernel gamma aenv stream =<< extent a
-    Scanl' _ _ a                -> scanl' kernel gamma aenv stream =<< extent a
-    Scanr' _ _ a                -> scanr' kernel gamma aenv stream =<< extent a
-    Permute _ d _ a             -> join $ permute kernel gamma aenv stream (inplace d) <$> extent a <*> travA d
-    Stencil _ _ a               -> stencil1 kernel gamma aenv stream =<< travA a
-    Stencil2 _ _ a _ b          -> join $ stencil2 kernel gamma aenv stream <$> travA a <*> travA b
-
-    _                           -> $internalError "execute" $ "unexpected executable operator: " ++ showPreAccOp pacc
-
-  where
-    travA :: ExecOpenAcc arch aenv a -> LLVM arch a
-    travA acc = executeOpenAcc acc aenv stream
-
-    travE :: ExecExp arch aenv t -> LLVM arch t
-    travE exp = executeExp exp aenv stream
-
-    -- get the extent of an embedded array
-    extent :: Shape sh => ExecOpenAcc arch aenv (Array sh e) -> LLVM arch sh
-    extent ExecAcc{}       = $internalError "executeOpenAcc" "expected delayed array"
-    extent PlainAcc{}      = $internalError "executeOpenAcc" "expected delayed array"
-    extent (EmbedAcc sh)   = travE sh
-    extent (UnzipAcc _ ix) = let AsyncR _ a = aprj ix aenv
-                             in  return $ shape a
-
-    inplace :: ExecOpenAcc arch aenv a -> Bool
-    inplace (ExecAcc _ _ Avar{}) = False
-    inplace _                    = True
-
-executeOpenAcc (UnzipAcc tup v) aenv stream = do
-  let AsyncR event arr = aprj v aenv
-  after stream event
-  return $ unzip tup arr
-  where
+    -- Pull apart the unzipped struct-of-array representation
     unzip :: forall t sh e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> Array sh t -> Array sh e
     unzip tix (Array sh adata) = Array sh $ go tix (eltType (undefined::t)) adata
       where
@@ -377,8 +339,20 @@ executeOpenAcc (UnzipAcc tup v) aenv stream = do
           | Just Refl <- matchTupleType t (eltType (undefined::e)) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 
-executeOpenAcc EmbedAcc{} _ _ =
-  $internalError "execute" "unexpected delayed array"
+    -- Foreign functions
+    aforeign :: (Arrays a, Arrays b, Foreign arch, S.Foreign asm)
+             => asm (a -> b)
+             -> a
+             -> LLVM arch b
+    aforeign asm a =
+      case foreignAcc (undefined :: arch) asm of
+        Just f  -> f stream a
+        Nothing -> $internalError "foreignA" "failed to recover foreign function the second time"
+
+    -- Can the permutation function write directly into the results array?
+    inplace :: ExecOpenAcc arch aenv a -> Bool
+    inplace (PlainAcc Avar{}) = False
+    inplace _                 = True
 
 
 -- Scalar expression evaluation
