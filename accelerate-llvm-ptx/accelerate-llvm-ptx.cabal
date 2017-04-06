@@ -136,8 +136,8 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 
     Data.Array.Accelerate.LLVM.PTX.Compile
-    Data.Array.Accelerate.LLVM.PTX.Compile.Link
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
 
     Data.Array.Accelerate.LLVM.PTX.Link
 
