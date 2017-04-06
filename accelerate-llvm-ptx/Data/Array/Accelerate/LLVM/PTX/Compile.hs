@@ -43,9 +43,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-#ifdef ACCELERATE_USE_NVVM
 import Data.Array.Accelerate.LLVM.Util
-#endif
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
@@ -57,9 +55,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
-#ifdef ACCELERATE_USE_NVVM
 import qualified Foreign.NVVM                                       as NVVM
-#endif
 
 -- standard library
 import Control.Monad.Except
@@ -71,6 +67,7 @@ import Foreign.Ptr
 import Foreign.Storable
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Internal                           as B
 import qualified Data.Map                                           as Map
 import Prelude                                                      as P
@@ -114,13 +111,12 @@ compile acc aenv = do
 compileModule :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
 compileModule dev ctx ast =
 #ifdef ACCELERATE_USE_NVVM
-  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM  dev (moduleName ast))
+  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM dev (moduleName ast))
 #else
   withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
 #endif
 
 
-#ifdef ACCELERATE_USE_NVVM
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
@@ -158,12 +154,11 @@ compileModuleNVVM dev name libdevice mdl = do
   ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
-    Debug.traceIO Debug.dump_cc $ "llvm: " ++ B.unpack (NVVM.compileLog ptx)
+    Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)
 
   -- Return the generated binary code
   return (NVVM.compileResult ptx)
 
-#else
 
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
@@ -189,7 +184,6 @@ compileModuleNVPTX dev mdl =
 
       -- Lower the LLVM module into target assembly (PTX)
       runError (moduleTargetAssembly nvptx mdl)
-#endif
 
 
 -- | Produce target specific assembly as a 'ByteString'.

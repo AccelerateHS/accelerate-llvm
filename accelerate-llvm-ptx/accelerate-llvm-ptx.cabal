@@ -160,6 +160,7 @@ Library
         , llvm-hs                       >= 3.9
         , llvm-hs-pure                  >= 3.9
         , mtl                           >= 2.2.1
+        , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
         , time                          >= 1.4
         , unordered-containers          >= 0.2
@@ -174,8 +175,6 @@ Library
 
   if flag(nvvm)
     cpp-options:                -DACCELERATE_USE_NVVM
-    build-depends:
-          nvvm                  >= 0.7.5
 
   if flag(debug)
     cpp-options:                -DACCELERATE_DEBUG
