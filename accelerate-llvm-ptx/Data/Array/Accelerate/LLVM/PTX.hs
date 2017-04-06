@@ -53,10 +53,11 @@ import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
+import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.PTX.Context           as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Data        as AD
+import qualified Data.Array.Accelerate.LLVM.PTX.Context           as CT
 
 import Foreign.CUDA.Driver                                        as CUDA ( CUDAException, mallocHostForeignPtr )
 
@@ -114,8 +115,9 @@ runAsyncWith target a = asyncBound execute
       dumpGraph acc
       evalPTX target $ do
         acc `seq` dumpSimplStats
-        exec <- phase "compile" (compileAcc acc)
-        res  <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+        build <- phase "compile" (compileAcc acc)
+        exec  <- phase "link"    (linkAcc build)
+        res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
         return res
 
 
@@ -180,8 +182,11 @@ run1' using target f = \a -> using (execute a)
     !acc        = convertAfunWith config f
     !afun       = unsafePerformIO $ do
                     dumpGraph acc
-                    phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
-    execute a   =   phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
+                    evalPTX target $ do
+                      build <- phase "compile" (compileAfun acc) >>= dumpStats
+                      exec  <- phase "link"    (linkAfun build)
+                      return exec
+    execute a   = phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
