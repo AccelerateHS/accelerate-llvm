@@ -26,13 +26,15 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 import LLVM.AST                                                     hiding ( Module )
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.Analysis                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
 import qualified LLVM.Module                                        as LLVM
 import qualified LLVM.PassManager                                   as LLVM
 import qualified LLVM.Target                                        as LLVM
 import qualified LLVM.Internal.Module                               as LLVM.Internal
 import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
+#ifdef ACCELERATE_INTERNAL_CHECKS
+import qualified LLVM.Analysis                                      as LLVM
+#endif
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )
