@@ -15,7 +15,7 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  ExecutableR(..),
+  ObjectR(..),
 
 ) where
 
@@ -38,7 +38,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..)
 import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
-import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
@@ -50,12 +49,8 @@ import Data.Maybe
 
 
 instance Compile Native where
-  type ObjectR     Native = ByteString
-  data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !FunctionTable
-                                    , nativeObjectCode :: {-# UNPACK #-} !ObjectCode
-                                    }
-  compileForTarget  = compile
-  linkForTarget     = link
+  data ObjectR Native = ObjectR {-# UNPACK #-} !ByteString
+  compileForTarget    = compile
 
 instance Intrinsic Native
 
@@ -87,13 +82,6 @@ compile acc aenv = do
           Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
           Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
-        runExcept (moduleObject machine mdl)
-
-
--- | Load the generated object file into the target address space
---
-link :: ObjectR Native -> LLVM Native (ExecutableR Native)
-link obj = liftIO $ do
-  (nm, vm)  <- loadObject obj
-  return    $! NativeR nm vm
+        obj    <- runExcept (moduleObject machine mdl)
+        return $! ObjectR obj
 

@@ -34,7 +34,6 @@ import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
