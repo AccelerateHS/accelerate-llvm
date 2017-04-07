@@ -131,6 +131,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
     Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
