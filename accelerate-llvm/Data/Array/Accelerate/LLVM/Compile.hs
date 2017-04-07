@@ -210,7 +210,7 @@ compileOpenAcc = traverseAcc
               => DelayedOpenAcc aenv (Array sh e)
               -> LLVM arch (IntMap (Idx' aenv), PreExp (CompiledOpenAcc arch) aenv sh)
         travD Manifest{}  = $internalError "compileOpenAcc" "expected delayed array"
-        travD Delayed{..} = travF indexD *> travE extentD
+        travD Delayed{..} = liftA2 (flip const) <$> travF indexD <*> travE extentD
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
