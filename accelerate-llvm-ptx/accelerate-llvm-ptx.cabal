@@ -141,6 +141,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
+    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 
     Data.Array.Accelerate.LLVM.PTX.Link
 
@@ -158,6 +159,7 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
+        , file-embed                    >= 0.0.10
         , filepath                      >= 1.0
         , hashable                      >= 1.2
         , llvm-hs                       >= 3.9
@@ -165,6 +167,7 @@ Library
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
+        , template-haskell
         , time                          >= 1.4
         , unordered-containers          >= 0.2
 
