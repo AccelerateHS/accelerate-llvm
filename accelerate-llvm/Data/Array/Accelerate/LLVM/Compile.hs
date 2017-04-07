@@ -45,7 +45,7 @@ import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 -- standard library
 import Data.IntMap                                                  ( IntMap )
 import Control.Applicative                                          hiding ( Const )
-import Prelude                                                      hiding ( exp, unzip )
+import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
 
 
 class Foreign arch => Compile arch where
@@ -137,44 +137,44 @@ compileOpenAcc = traverseAcc
       case pacc of
         -- Environment and control flow
         Avar ix                     -> plain $ pure (AST.Avar ix)
-        Alet a b                    -> plain . pure =<< AST.Alet        <$> traverseAcc a <*> traverseAcc b
-        Apply f a                   -> plain =<< liftA2 AST.Apply       <$> travAF f <*> travA a
-        Awhile p f a                -> plain =<< liftA3 AST.Awhile      <$> travAF p <*> travAF f <*> travA a
-        Acond p t e                 -> plain =<< liftA3 AST.Acond       <$> travE  p <*> travA  t <*> travA e
-        Atuple tup                  -> plain =<< liftA  AST.Atuple      <$> travAtup tup
-        Aprj ix tup                 -> plain =<< liftA (AST.Aprj ix)    <$> travA    tup
+        Alet a b                    -> plain . pure =<< AST.Alet      <$> traverseAcc a <*> traverseAcc b
+        Apply f a                   -> plain =<< liftA2 AST.Apply     <$> travAF f <*> travA a
+        Awhile p f a                -> plain =<< liftA3 AST.Awhile    <$> travAF p <*> travAF f <*> travA a
+        Acond p t e                 -> plain =<< liftA3 AST.Acond     <$> travE  p <*> travA  t <*> travA e
+        Atuple tup                  -> plain =<< liftA  AST.Atuple    <$> travAtup tup
+        Aprj ix tup                 -> plain =<< liftA (AST.Aprj ix)  <$> travA    tup
 
         -- Foreign arrays operations
         Aforeign ff afun a          -> foreignA ff afun a
 
         -- Array injection & manipulation
-        Reshape sh a                -> plain =<< liftA2 AST.Reshape     <$> travE sh <*> travM a
-        Unit e                      -> plain =<< liftA  AST.Unit        <$> travE e
+        Reshape sh a                -> plain =<< liftA2 AST.Reshape   <$> travE sh <*> travM a
+        Unit e                      -> plain =<< liftA  AST.Unit      <$> travE e
         Use arrs                    -> plain $ pure (AST.Use arrs)
         Map f a
           | Just (t,x) <- unzip f a -> plain $ pure (AST.Unzip t x)
 
         -- Skeleton operations resulting in compiled code
         -- Producers
-        Map f a                     -> build =<< liftA  AST.Map         <$> travD a  <*  travF f
-        Generate sh f               -> build =<< liftA  AST.Generate    <$> travE sh <*  travF f
-        Transform sh p f a          -> build =<< liftA  AST.Transform   <$> travE sh <*  travF p <* travF f <* travD a
-        Backpermute sh f a          -> build =<< liftA  AST.Backpermute <$> travE sh <*  travF f <* travD a
+        Map f a                     -> build =<< liftA2 map           <$> travF f  <*> travD a
+        Generate sh f               -> build =<< liftA2 generate      <$> travE sh <*> travF f
+        Transform sh p f a          -> build =<< liftA4 transform     <$> travE sh <*> travF p <*> travF f <*> travD a
+        Backpermute sh f a          -> build =<< liftA3 backpermute   <$> travE sh <*> travF f <*> travD a
 
         -- Consumers
-        Fold f z a                  -> build =<< liftA  AST.Fold        <$> travD a  <*  travF f <* travE z
-        Fold1 f a                   -> build =<< liftA  AST.Fold1       <$> travD a  <*  travF f
-        FoldSeg f z a s             -> build =<< liftA2 AST.FoldSeg     <$> travD a  <*> travD s <* travF f <* travE z
-        Fold1Seg f a s              -> build =<< liftA2 AST.Fold1Seg    <$> travD a  <*> travD s <* travF f
-        Scanl f z a                 -> build =<< liftA  AST.Scanl       <$> travD a  <*  travF f <* travE z
-        Scanl' f z a                -> build =<< liftA  AST.Scanl'      <$> travD a  <*  travF f <* travE z
-        Scanl1 f a                  -> build =<< liftA  AST.Scanl1      <$> travD a  <*  travF f
-        Scanr f z a                 -> build =<< liftA  AST.Scanr       <$> travD a  <*  travF f <* travE z
-        Scanr' f z a                -> build =<< liftA  AST.Scanr'      <$> travD a  <*  travF f <* travE z
-        Scanr1 f a                  -> build =<< liftA  AST.Scanr1      <$> travD a  <*  travF f
-        Permute f d g a             -> build =<< liftA2 AST.Permute     <$> travD a  <*> travA d <* travF f <* travF g
-        Stencil f _ a               -> build =<< liftA  AST.Stencil     <$> travM a  <*  travF f
-        Stencil2 f _ a _ b          -> build =<< liftA2 AST.Stencil2    <$> travM a  <*> travM b <* travF f
+        Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travE z <*> travD a
+        Fold1 f a                   -> build =<< liftA2 fold1         <$> travF f <*> travD a
+        FoldSeg f z a s             -> build =<< liftA4 foldSeg       <$> travF f <*> travE z <*> travD a <*> travD s
+        Fold1Seg f a s              -> build =<< liftA3 fold1Seg      <$> travF f <*> travD a <*> travD s
+        Scanl f z a                 -> build =<< liftA3 scanl         <$> travF f <*> travE z <*> travD a
+        Scanl' f z a                -> build =<< liftA3 scanl'        <$> travF f <*> travE z <*> travD a
+        Scanl1 f a                  -> build =<< liftA2 scanl1        <$> travF f <*> travD a
+        Scanr f z a                 -> build =<< liftA3 scanr         <$> travF f <*> travE z <*> travD a
+        Scanr' f z a                -> build =<< liftA3 scanr'        <$> travF f <*> travE z <*> travD a
+        Scanr1 f a                  -> build =<< liftA2 scanr1        <$> travF f <*> travD a
+        Permute f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
+        Stencil f _ a               -> build =<< liftA2 stencil1      <$> travF f <*> travM a
+        Stencil2 f _ a _ b          -> build =<< liftA3 stencil2      <$> travF f <*> travM a <*> travM b
 
         -- Removed by fusion
         Replicate{}                 -> fusionError
@@ -182,6 +182,24 @@ compileOpenAcc = traverseAcc
         ZipWith{}                   -> fusionError
 
       where
+        map _ a             = AST.Map a
+        generate sh _       = AST.Generate sh
+        transform sh _ _ _  = AST.Transform sh
+        backpermute sh _ _  = AST.Backpermute sh
+        fold _ _ a          = AST.Fold a
+        fold1 _ a           = AST.Fold1 a
+        foldSeg _ _ a s     = AST.FoldSeg a s
+        fold1Seg _ a s      = AST.Fold1Seg a s
+        scanl _ _ a         = AST.Scanl a
+        scanl1 _ a          = AST.Scanl1 a
+        scanl' _ _ a        = AST.Scanl' a
+        scanr _ _ a         = AST.Scanr a
+        scanr1 _ a          = AST.Scanr1 a
+        scanr' _ _ a        = AST.Scanr' a
+        permute _ d _ a     = AST.Permute a d
+        stencil1 _ a        = AST.Stencil a
+        stencil2 _ a b      = AST.Stencil2 a b
+
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
 
@@ -277,25 +295,25 @@ compileOpenAcc = traverseAcc
         IndexNil                -> return $ pure IndexNil
         Foreign ff f x          -> foreignE ff f x
         --
-        Let a b                 -> liftA2 Let                   <$> travE a <*> travE b
-        IndexCons t h           -> liftA2 IndexCons             <$> travE t <*> travE h
-        IndexHead h             -> liftA  IndexHead             <$> travE h
-        IndexTail t             -> liftA  IndexTail             <$> travE t
-        IndexSlice slix x s     -> liftA2 (IndexSlice slix)     <$> travE x <*> travE s
-        IndexFull slix x s      -> liftA2 (IndexFull slix)      <$> travE x <*> travE s
-        ToIndex s i             -> liftA2 ToIndex               <$> travE s <*> travE i
-        FromIndex s i           -> liftA2 FromIndex             <$> travE s <*> travE i
-        Tuple t                 -> liftA  Tuple                 <$> travT t
-        Prj ix e                -> liftA  (Prj ix)              <$> travE e
-        Cond p t e              -> liftA3 Cond                  <$> travE p <*> travE t <*> travE e
-        While p f x             -> liftA3 While                 <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> liftA  (PrimApp f)           <$> travE e
-        Index a e               -> liftA2 Index                 <$> travA a <*> travE e
-        LinearIndex a e         -> liftA2 LinearIndex           <$> travA a <*> travE e
-        Shape a                 -> liftA  Shape                 <$> travA a
-        ShapeSize e             -> liftA  ShapeSize             <$> travE e
-        Intersect x y           -> liftA2 Intersect             <$> travE x <*> travE y
-        Union x y               -> liftA2 Union                 <$> travE x <*> travE y
+        Let a b                 -> liftA2 Let               <$> travE a <*> travE b
+        IndexCons t h           -> liftA2 IndexCons         <$> travE t <*> travE h
+        IndexHead h             -> liftA  IndexHead         <$> travE h
+        IndexTail t             -> liftA  IndexTail         <$> travE t
+        IndexSlice slix x s     -> liftA2 (IndexSlice slix) <$> travE x <*> travE s
+        IndexFull slix x s      -> liftA2 (IndexFull slix)  <$> travE x <*> travE s
+        ToIndex s i             -> liftA2 ToIndex           <$> travE s <*> travE i
+        FromIndex s i           -> liftA2 FromIndex         <$> travE s <*> travE i
+        Tuple t                 -> liftA  Tuple             <$> travT t
+        Prj ix e                -> liftA  (Prj ix)          <$> travE e
+        Cond p t e              -> liftA3 Cond              <$> travE p <*> travE t <*> travE e
+        While p f x             -> liftA3 While             <$> travF p <*> travF f <*> travE x
+        PrimApp f e             -> liftA  (PrimApp f)       <$> travE e
+        Index a e               -> liftA2 Index             <$> travA a <*> travE e
+        LinearIndex a e         -> liftA2 LinearIndex       <$> travA a <*> travE e
+        Shape a                 -> liftA  Shape             <$> travA a
+        ShapeSize e             -> liftA  ShapeSize         <$> travE e
+        Intersect x y           -> liftA2 Intersect         <$> travE x <*> travE y
+        Union x y               -> liftA2 Union             <$> travE x <*> travE y
 
       where
         travA :: (Shape sh, Elt e)
@@ -339,4 +357,11 @@ compileOpenAcc = traverseAcc
 
             err :: CompiledFun arch () (a -> b)
             err = $internalError "foreignE" "attempt to use fallback in foreign expression"
+
+
+-- Applicative
+-- -----------
+--
+liftA4 :: Applicative f => (a -> b -> c -> d -> e) -> f a -> f b -> f c -> f d -> f e
+liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 
