@@ -159,7 +159,7 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
-        , file-embed                    >= 0.0.10
+        , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
         , llvm-hs                       >= 3.9
