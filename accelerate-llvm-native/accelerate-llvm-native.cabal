@@ -184,9 +184,16 @@ Library
     other-modules:
       Data.Array.Accelerate.LLVM.Native.Link.ELF
 
+    build-depends:
+          bytestring                    >= 0.10
+
   if os(windows)
     other-modules:
       Data.Array.Accelerate.LLVM.Native.Link.COFF
+
+    build-depends:
+          bytestring                    >= 0.10
+
 
 source-repository head
   type:                 git
