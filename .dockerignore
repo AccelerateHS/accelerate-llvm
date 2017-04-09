@@ -1,0 +1,5 @@
+dist
+.git
+.stack-work
+.cabal-sandbox
+cabal*.config
