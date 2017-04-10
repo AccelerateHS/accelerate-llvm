@@ -36,6 +36,7 @@ import Data.Array.Accelerate.LLVM.Compile                           hiding ( Pla
 import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.Compile                 as C
 
+import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( exp )
 
 
