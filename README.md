@@ -2,6 +2,7 @@ An LLVM backend for the Accelerate Array Language
 =================================================
 
 [![Build Status](https://travis-ci.org/AccelerateHS/accelerate-llvm.svg)](https://travis-ci.org/AccelerateHS/accelerate-llvm)
+[![Hackage](https://img.shields.io/hackage/v/accelerate-llvm.svg)](https://hackage.haskell.org/package/accelerate-llvm)
 
 This package compiles Accelerate code to LLVM IR, and executes that code on
 multicore CPUs as well as NVIDIA GPUs. This avoids the need to go through `nvcc`
