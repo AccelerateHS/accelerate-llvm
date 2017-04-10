@@ -15,7 +15,7 @@ extra-deps:
 - 'libffi-0.1'
 - 'llvm-hs-4.0.1.0'
 - 'llvm-hs-pure-4.0.0.0'
-- 'nvvm-0.7.5.1'
+- 'nvvm-0.7.5.2'
 - 'unique-0'
 
 # Override default flag values for local packages and extra-deps
