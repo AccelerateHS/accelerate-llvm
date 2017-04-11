@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 ) where
 
 -- llvm-hs
-import LLVM.AST                                                     hiding ( Module )
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
@@ -67,6 +66,10 @@ import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
+import System.Exit
+import System.IO
+import System.IO.Temp
+import System.Process
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
@@ -76,9 +79,8 @@ import Prelude                                                      as P
 
 
 instance Compile PTX where
-  data ObjectR PTX = ObjectR { objName    :: !String
-                             , objConfig  :: ![(String, LaunchConfig)]
-                             , objData    :: {-# UNPACK #-} !ByteString
+  data ObjectR PTX = ObjectR { ptxConfig :: ![(String, LaunchConfig)]
+                             , ptxObject :: {-# UNPACK #-} !ByteString
                              }
   compileForTarget = compile
 
@@ -96,27 +98,67 @@ compile acc aenv = do
   --
   let Module ast md = llvmOfOpenAcc target acc aenv
       dev           = ptxDeviceProperties target
-      name          = moduleName ast
       config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
-  -- Lower the generated LLVM into PTX assembly
+  -- Lower the generated LLVM into a CUBIN object code
   --
   liftIO . LLVM.withContext $ \ctx -> do
-    ptx    <- compileModule dev ctx ast
-    return $! ObjectR name config ptx
+    ptx    <- compilePTX dev ctx ast
+    cubin  <- compileCUBIN dev ptx
+    return $! ObjectR config cubin
 
 
 -- | Compile the LLVM module to PTX assembly. This is done either by the
 -- closed-source libNVVM library, or via the standard NVPTX backend (which is
 -- the default).
 --
-compileModule :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
-compileModule dev ctx ast =
+compilePTX :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
+compilePTX dev ctx ast = do
 #ifdef ACCELERATE_USE_NVVM
-  withLibdeviceNVVM  dev ctx ast (compileModuleNVVM dev (moduleName ast))
+  ptx <- withLibdeviceNVVM  dev ctx ast (compileModuleNVVM dev (AST.moduleName ast))
 #else
-  withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
+  ptx <- withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
 #endif
+  Debug.when (Debug.dump_asm) $ Debug.traceIO Debug.verbose (B8.unpack ptx)
+  return ptx
+
+
+-- | Compile the given PTX assembly to a CUBIN file (SASS object code). This
+-- requires writing the assembly into file on disk, calling 'ptxas' (or 'nvcc')
+-- to compile to an object file, and reading back the result. The advantage of
+-- this is that there will be no additional work once the module is loaded into
+-- memory (i.e. this all would have happened indirectly when calling
+-- CUDA.loadData).
+--
+compileCUBIN :: CUDA.DeviceProperties -> ByteString -> IO ByteString
+compileCUBIN dev ptx =
+  withSystemTempFile "meep.ptx"   $ \ptxFile   ptxHandle   ->
+  withSystemTempFile "morp.cubin" $ \cubinFile cubinHandle -> do
+    _verbose      <- Debug.queryFlag Debug.verbose
+    _debug        <- Debug.queryFlag Debug.debug_cc
+    --
+    let verboseFlag       = if _verbose then [ "-v" ]              else []
+        debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
+        arch              = printf "-arch=sm_%d%d" m n
+        CUDA.Compute m n  = CUDA.computeCapability dev
+        flags             = ptxFile : "-o" : cubinFile : arch : verboseFlag ++ debugFlag
+
+    -- Save the PTX code to file
+    B.hPut ptxHandle ptx
+    hClose ptxHandle
+
+    -- Compile the PTX to SASS; requires that 'ptxas' is available on the PATH
+    (ex, _, info) <- readProcessWithExitCode "ptxas" flags []
+    case ex of
+      ExitFailure r -> $internalError "compile" (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
+      ExitSuccess   -> return ()
+
+    when _verbose $
+      unless (null info) $
+        Debug.traceIO Debug.dump_cc (printf "ptx: compiled entry function(s)\n%s" info)
+
+    -- Read back the results
+    B.hGetContents cubinHandle
 
 
 -- Compile and optimise the module to PTX using the (closed source) NVVM

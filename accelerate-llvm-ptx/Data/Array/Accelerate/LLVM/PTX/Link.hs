@@ -37,8 +37,6 @@ import Control.Monad.State
 import Data.List                                                    ( intercalate )
 import Foreign.Ptr
 import Text.Printf                                                  ( printf )
-import qualified Data.ByteString                                    as B
-import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P
 
@@ -48,7 +46,7 @@ instance Link PTX where
                               , ptxModule :: {-# UNPACK #-} !(Lifetime CUDA.Module)
                               }
   linkForTarget = link
- 
+
 
 data Kernel = Kernel {
     kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
@@ -63,32 +61,12 @@ data Kernel = Kernel {
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
-link (ObjectR name nm ptx) = do
+link (ObjectR nm obj) = do
   target <- gets llvmTarget
   liftIO $ do
-    _verbose      <- Debug.queryFlag Debug.verbose
-    _debug        <- Debug.queryFlag Debug.debug_cc
-    --
-    let v         = if _verbose then [ CUDA.Verbose ]                                  else []
-        d         = if _debug   then [ CUDA.GenerateDebugInfo, CUDA.GenerateLineInfo ] else []
-        flags     = concat [v,d]
-    --
-    Debug.when (Debug.dump_asm) $
-      Debug.traceIO Debug.verbose (B8.unpack ptx)
-
-    -- Load the PTX into the current CUDA context
-    jit     <- B.unsafeUseAsCString ptx $ \p -> CUDA.loadDataFromPtrEx (castPtr p) flags
+    -- Load the SASS object code into the current CUDA context
+    jit     <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
     let mdl  = CUDA.jitModule jit
-        info = CUDA.jitInfoLog jit
-
-    Debug.traceIO Debug.dump_asm $
-      printf "ptx: compiled entry function \"%s\" in %s"
-             name
-             (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
-
-    Debug.when Debug.verbose $
-      unless (B.null info) $
-        Debug.traceIO Debug.dump_asm ("ptx: " ++ B8.unpack info)
 
     -- Extract the kernel functions
     kernels <- mapM (uncurry (linkFunction mdl)) nm

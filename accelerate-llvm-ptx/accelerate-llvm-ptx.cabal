@@ -167,7 +167,9 @@ Library
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
+        , process                       >= 1.2
         , template-haskell
+        , temporary                     >= 1.2
         , time                          >= 1.4
         , unordered-containers          >= 0.2
 
