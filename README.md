@@ -18,6 +18,7 @@ features as well as report (or fix!) bugs on the [issue tracker][Issues].
 
 
  * [Dependencies](#dependencies)
+ * [Docker](#docker)
  * [Installing LLVM](#installing-llvm)
    * [Homebrew](#homebrew)
    * [Debian/Ubuntu](#debianubuntu)
@@ -35,6 +36,20 @@ library dependencies that you will need to install as well:
  * [`LLVM`](http://llvm.org)
  * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
  * [`CUDA`](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
+
+
+Docker
+------
+
+A [docker](https://www.docker.com) container is provided with this package
+preinstalled (via stack) at `/opt/accelerate-llvm`. Note that if you wish to use
+the `accelerate-llvm-ptx` GPU backend, you will need to install the [NVIDIA
+docker](https://github.com/NVIDIA/nvidia-docker) plugin; see that page for more
+information.
+
+```sh
+$ docker run tmcdonell/accelerate-llvm
+```
 
 
 Installing LLVM
