@@ -68,5 +68,6 @@ RUN stack build accelerate-llvm-native
 COPY ./accelerate-llvm-ptx /opt/accelerate-llvm/accelerate-llvm-ptx
 RUN stack build accelerate-llvm-ptx
 
+COPY ./utils/ghci /opt/accelerate-llvm/
 CMD ["bash"]
 
