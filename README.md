@@ -48,7 +48,7 @@ docker](https://github.com/NVIDIA/nvidia-docker) plugin; see that page for more
 information.
 
 ```sh
-$ docker run tmcdonell/accelerate-llvm
+$ docker run -it tmcdonell/accelerate-llvm
 ```
 
 
