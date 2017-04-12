@@ -130,6 +130,12 @@ compilePTX dev ctx ast = do
 -- memory (i.e. this all would have happened indirectly when calling
 -- CUDA.loadData).
 --
+-- TODO: It looks like ptxas will accept input from stdin when the input
+-- filename is '-'. I don't know if this is officially supported though. The
+-- output is always written to a file, so we can't do this entirely in-memory.
+-- Once we have on-disk caching set up change this to stream in the PTX and
+-- write the CUBIN directly to the final cache location.
+--
 compileCUBIN :: CUDA.DeviceProperties -> ByteString -> IO ByteString
 compileCUBIN dev ptx =
   withSystemTempFile "meep.ptx"   $ \ptxFile   ptxHandle   ->
