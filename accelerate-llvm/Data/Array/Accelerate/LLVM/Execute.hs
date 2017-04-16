@@ -201,7 +201,8 @@ class (Remote arch, Foreign arch) => Execute arch where
 -- Computations are evaluated by traversing the AST bottom up, and for each node
 -- distinguishing between three cases:
 --
---  1. If it is a Use node, we return a reference to the array data.
+--  1. If it is a Use node, asynchronously transfer the data to the remote
+--     device (if necessary).
 --
 --  2. If it is a non-skeleton node, such as a let-binding or shape conversion,
 --     then execute directly by updating the environment or similar.
@@ -255,12 +256,10 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
     travA :: ExecOpenAcc arch aenv a -> LLVM arch a
     travA (EvalAcc pacc) =
       case pacc of
-        Use arrs        -> return (toArr arrs)
+        Use arrs        -> get =<< useRemoteAsync (toArr arrs) stream
         Unit x          -> newRemote Z . const =<< travE x
         Avar ix         -> avar ix
-        Alet bnd body   -> do bnd'  <- async (executeOpenAcc bnd aenv)
-                              body' <- executeOpenAcc body (aenv `Apush` bnd') stream
-                              return body'
+        Alet bnd body   -> alet bnd body
         Apply f a       -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
         Atuple tup      -> toAtuple <$> travT tup
         Aprj ix tup     -> evalPrj ix . fromAtuple <$> travA tup
@@ -299,6 +298,17 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
     travT :: Atuple (ExecOpenAcc arch aenv) t -> LLVM arch t
     travT NilAtup        = return ()
     travT (SnocAtup t a) = (,) <$> travT t <*> travA a
+
+    -- Bound terms. Let-bound input arrays (Use nodes) are copied to the device
+    -- asynchronously, so that they may overlap other computations if possible.
+    alet :: ExecOpenAcc arch aenv bnd -> ExecOpenAcc arch (aenv, bnd) body -> LLVM arch body
+    alet bnd body = do
+      bnd'  <- case bnd of
+                 EvalAcc (Use arrs) -> do AsyncR _ bnd' <- async (useRemoteAsync (toArr arrs))
+                                          return bnd'
+                 _                  -> async (executeOpenAcc bnd aenv)
+      body' <- executeOpenAcc body (aenv `Apush` bnd') stream
+      return body'
 
     -- Access bound variables
     avar :: Idx aenv a -> LLVM arch a

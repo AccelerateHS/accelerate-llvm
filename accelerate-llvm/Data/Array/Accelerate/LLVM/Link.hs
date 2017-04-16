@@ -30,16 +30,16 @@ import Data.Array.Accelerate.Array.Sugar                            hiding ( For
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
-import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 
 import Control.Applicative                                          hiding ( Const )
+import Control.DeepSeq
 import Prelude                                                      hiding ( exp )
 
 
-class Remote arch => Link arch where
+class Link arch where
   data ExecutableR arch
 
   -- | Link a target-specific object file into the current context to produce an
@@ -115,7 +115,7 @@ linkOpenAcc = travA
       case pacc of
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
-        Use arrs                -> useRemote (toArr arrs :: arrs) >> return (Use arrs)
+        Use arrs                -> rnfArrs (arrays (undefined::arrs)) arrs `seq` return (Use arrs)
         Unit e                  -> Unit         <$> travE e
         Alet a b                -> Alet         <$> travA a  <*> travA b
         Apply f a               -> Apply        <$> travAF f <*> travA a
@@ -195,4 +195,9 @@ linkOpenAcc = travA
           -> LLVM arch (Tuple (ExecOpenExp arch env aenv) t)
     travT NilTup        = return NilTup
     travT (SnocTup t e) = SnocTup <$> travT t <*> travE e
+
+    rnfArrs :: ArraysR a -> a -> ()
+    rnfArrs (ArraysRpair ar1 ar2) (a1, a2) = rnfArrs ar1 a1 `seq` rnfArrs ar2 a2
+    rnfArrs ArraysRarray arr               = rnf arr
+    rnfArrs ArraysRunit ()                 = ()
 
