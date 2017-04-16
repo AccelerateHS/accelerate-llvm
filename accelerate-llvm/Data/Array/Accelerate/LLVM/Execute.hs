@@ -253,7 +253,7 @@ executeOpenAcc
 executeOpenAcc !topAcc !aenv !stream = travA topAcc
   where
     travA :: ExecOpenAcc arch aenv a -> LLVM arch a
-    travA (PlainAcc pacc) =
+    travA (EvalAcc pacc) =
       case pacc of
         Use arrs        -> return (toArr arrs)
         Unit x          -> newRemote Z . const =<< travE x
@@ -352,8 +352,8 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
 
     -- Can the permutation function write directly into the results array?
     inplace :: ExecOpenAcc arch aenv a -> Bool
-    inplace (PlainAcc Avar{}) = False
-    inplace _                 = True
+    inplace (EvalAcc Avar{}) = False
+    inplace _                = True
 
 
 -- Scalar expression evaluation

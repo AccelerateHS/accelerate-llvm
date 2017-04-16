@@ -32,9 +32,8 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.Compile                           hiding ( PlainAcc )
+import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import qualified Data.Array.Accelerate.LLVM.Compile                 as C
 
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( exp )
@@ -60,7 +59,7 @@ data ExecOpenAcc arch aenv a where
             -> PreOpenAccSkeleton (ExecOpenAcc arch) aenv a
             -> ExecOpenAcc arch aenv a
 
-  PlainAcc  :: Arrays a
+  EvalAcc   :: Arrays a
             => PreOpenAccCommand (ExecOpenAcc arch) aenv a
             -> ExecOpenAcc arch aenv a
 
@@ -112,7 +111,7 @@ linkOpenAcc
 linkOpenAcc = travA
   where
     travA :: forall aenv arrs. CompiledOpenAcc arch aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
-    travA (C.PlainAcc pacc)   = PlainAcc <$>
+    travA (PlainAcc pacc) = EvalAcc <$>
       case pacc of
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
