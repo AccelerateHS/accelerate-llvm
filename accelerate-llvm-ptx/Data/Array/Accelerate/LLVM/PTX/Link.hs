@@ -48,8 +48,8 @@ instance Link PTX where
   linkForTarget = link
 
 
-data Kernel = Kernel {
-    kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
+data Kernel = Kernel
+  { kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
   , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
   , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
   , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
