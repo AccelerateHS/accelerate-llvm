@@ -1,9 +1,11 @@
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute
@@ -19,7 +21,7 @@
 module Data.Array.Accelerate.LLVM.Execute (
 
   Execute(..), Gamma,
-  executeAcc, executeAfun1,
+  executeAcc, executeAfun,
 
 ) where
 
@@ -216,28 +218,34 @@ executeAcc
 executeAcc acc =
   get =<< async (executeOpenAcc acc Aempty)
 
-{-# INLINEABLE executeAfun1 #-}
-executeAfun1
-    :: forall arch a b. (Execute arch, Arrays a)
-    => ExecAfun arch (a -> b)
-    -> a
-    -> LLVM arch b
-executeAfun1 afun arrs = do
-  AsyncR _ a <- async (useRemoteAsync arrs)
-  executeOpenAfun1 afun Aempty a
 
-
--- Execute an open array function of one argument
+-- Execute a variadic array function
 --
-{-# INLINEABLE executeOpenAfun1 #-}
-executeOpenAfun1
-    :: Execute arch
-    => ExecOpenAfun arch aenv (a -> b)
-    -> AvalR arch aenv
-    -> AsyncR arch a
-    -> LLVM arch b
-executeOpenAfun1 (Alam (Abody f)) aenv a = get =<< async (executeOpenAcc f (aenv `Apush` a))
-executeOpenAfun1 _                _    _ = error "boop!"
+{-# INLINEABLE executeAfun #-}
+executeAfun
+    :: ExecuteAfun arch f
+    => ExecAfun arch (ExecAfunR arch f)
+    -> f
+executeAfun f = executeOpenAfun f Aempty
+
+class ExecuteAfun arch r where
+  type ExecAfunR arch r
+  executeOpenAfun :: ExecOpenAfun arch aenv (ExecAfunR arch r) -> AvalR arch aenv -> r
+
+instance Execute arch => ExecuteAfun arch (LLVM arch b) where
+  type ExecAfunR arch (LLVM arch b) = b
+  {-# INLINEABLE executeOpenAfun #-}
+  executeOpenAfun Alam{}    _         = error "meep"
+  executeOpenAfun (Abody b) aenv      =
+    get =<< async (executeOpenAcc b aenv)
+
+instance Execute arch => ExecuteAfun arch (a -> LLVM arch b) where
+  type ExecAfunR arch (a -> LLVM arch b) = a -> b
+  {-# INLINEABLE executeOpenAfun #-}
+  executeOpenAfun Abody{}   _    _    = error "morp"
+  executeOpenAfun (Alam f)  aenv arrs = do
+    AsyncR _ a <- async (useRemoteAsync arrs)
+    executeOpenAfun f (aenv `Apush` a)
 
 
 -- Execute an open array computation
@@ -265,7 +273,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Alet bnd body               -> do bnd'  <- async (executeOpenAcc bnd aenv)
                                       body' <- executeOpenAcc body (aenv `Apush` bnd') stream
                                       return body'
-    Apply f a                   -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
+    Apply f a                   -> travAF f =<< async (executeOpenAcc a aenv)
     Atuple tup                  -> toAtuple <$> travT tup
     Aprj ix tup                 -> evalPrj ix . fromAtuple <$> travA tup
     Acond p t e                 -> acond t e =<< travE p
@@ -310,6 +318,10 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     travA :: ExecOpenAcc arch aenv a -> LLVM arch a
     travA acc = executeOpenAcc acc aenv stream
 
+    travAF :: ExecOpenAfun arch aenv (a -> b) -> AsyncR arch a -> LLVM arch b
+    travAF (Alam (Abody f)) a = get =<< async (executeOpenAcc f (aenv `Apush` a))
+    travAF _                _ = error "boop!"
+
     travE :: ExecExp arch aenv t -> LLVM arch t
     travE exp = executeExp exp aenv stream
 
@@ -350,9 +362,9 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
            -> LLVM arch a
     awhile p f a = do
       e   <- checkpoint stream
-      r   <- executeOpenAfun1 p aenv (AsyncR e a)
+      r   <- travAF p (AsyncR e a)
       ok  <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
+      if ok then awhile p f =<< travAF f (AsyncR e a)
             else return a
 
     -- Foreign functions

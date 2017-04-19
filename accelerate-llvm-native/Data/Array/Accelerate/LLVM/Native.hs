@@ -48,7 +48,7 @@ import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1 )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
@@ -155,7 +155,7 @@ run1' using target f = \a -> using (execute a)
     !afun       = unsafePerformIO $ do
                     dumpGraph acc
                     phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
-    execute a   =   phase "execute" elapsedP (evalNative target (executeAfun1 afun a))
+    execute a   =   phase "execute" elapsedP (evalNative target (executeAfun afun a))
 
 
 -- | Stream a lazily read list of input arrays through the given program,

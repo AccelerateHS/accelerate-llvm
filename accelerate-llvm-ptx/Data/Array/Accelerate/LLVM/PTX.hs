@@ -181,7 +181,7 @@ run1' using target f = \a -> using (execute a)
     !afun       = unsafePerformIO $ do
                     dumpGraph acc
                     phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
-    execute a   =   phase "execute" (evalPTX target (executeAfun1 afun a >>= AD.copyToHostLazy))
+    execute a   =   phase "execute" (evalPTX target (executeAfun afun a >>= AD.copyToHostLazy))
 
 
 -- | Stream a lazily read list of input arrays through the given program,
