@@ -127,6 +127,8 @@ Library
     Data.Array.Accelerate.LLVM.Native.Link
     Data.Array.Accelerate.LLVM.Native.Link.Object
 
+    Data.Array.Accelerate.LLVM.Native.Embed
+
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
@@ -140,10 +142,12 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
+        , file-embed                    >= 0.0.8
         , libffi                        >= 0.1
         , llvm-hs                       >= 3.9
         , llvm-hs-pure                  >= 3.9
         , mtl                           >= 2.2.1
+        , template-haskell
         , time                          >= 1.4
 
   default-language:

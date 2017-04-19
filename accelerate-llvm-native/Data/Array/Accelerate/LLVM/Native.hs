@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE QuasiQuotes          #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
@@ -38,6 +40,9 @@ module Data.Array.Accelerate.LLVM.Native (
   Native, Strategy,
   createTarget, balancedParIO, unbalancedParIO,
 
+  -- * Ahead-of-time compilation
+  run1Q,
+
 ) where
 
 -- accelerate
@@ -48,6 +53,7 @@ import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun1 )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
@@ -57,6 +63,8 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
+import Language.Haskell.TH                                          ( Q, TExp )
+import qualified Language.Haskell.TH                                as TH
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -175,6 +183,30 @@ streamWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> [a] -> [b]
 streamWith target f arrs = map go arrs
   where
     !go = run1With target f
+
+
+
+run1Q
+    :: (Arrays a, Arrays b)
+    => (Acc a -> Acc b)
+    -> Q (TExp (a -> b))
+run1Q f = do
+  go <- run1'Q defaultTarget f
+  [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
+
+run1'Q
+    :: (Arrays a, Arrays b)
+    => Native
+    -> (Acc a -> Acc b)
+    -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
+run1'Q target f = do
+  let acc = convertAfunWith (config target) f
+  afun <- TH.runIO $ do
+            dumpGraph acc
+            evalNative target $
+              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+  [|| \using target a -> using $ evalNative target (executeAfun1 $$(embedAfun afun) a) ||]
+
 
 
 -- How the Accelerate program should be evaluated.

@@ -14,13 +14,13 @@
 module Data.Array.Accelerate.LLVM.Native.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
+  module Data.Array.Accelerate.LLVM.Native.Link,
   ExecutableR(..), FunctionTable(..), Function,
 
 ) where
 
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
-import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Compile
@@ -43,13 +43,13 @@ instance Link Native where
   data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !FunctionTable
                                     , nativeObjectCode :: {-# UNPACK #-} !ObjectCode
                                     }
-  linkForTarget = link
+  linkForTarget = liftIO . link
 
 
 -- | Load the generated object file into the target address space
 --
-link :: ObjectR Native -> LLVM Native (ExecutableR Native)
-link (ObjectR obj) = liftIO $ do
+link :: ObjectR Native -> IO (ExecutableR Native)
+link (ObjectR obj) = do
   (nm, vm)  <- loadObject obj
   return    $! NativeR nm vm
 
