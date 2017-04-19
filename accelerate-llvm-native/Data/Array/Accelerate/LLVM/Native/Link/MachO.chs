@@ -38,10 +38,9 @@ import Foreign.ForeignPtr.Unsafe
 import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.Ptr                                            ( Ptr(..), FunPtr(..) )
-import GHC.Prim                                           ( addr2Int#, int2Word# )
 import GHC.ForeignPtr                                     ( mallocPlainForeignPtrAlignedBytes )
-import GHC.Int                                            ( Int(..) )
+import GHC.Prim                                           ( addr2Int#, int2Word# )
+import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
 import System.IO.Unsafe
 import System.Posix.DynamicLinker
