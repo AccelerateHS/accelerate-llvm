@@ -8,9 +8,15 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
+- location:
+    git:    https://github.com/tmcdonell/accelerate.git
+    commit: eba123acbaa54d1b40424145267d0fb5b91dc1ac
+  extra-dep: true
+
 extra-deps:
-- 'accelerate-1.0.0.0'
+# - 'accelerate-1.0.0.0'
 - 'chaselev-deque-0.5.0.5'
+- 'containers-0.5.10.2'
 - 'cuda-0.7.5.3'
 - 'libffi-0.1'
 - 'llvm-hs-4.0.1.0'
