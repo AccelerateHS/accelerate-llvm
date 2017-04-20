@@ -226,26 +226,30 @@ executeAfun
     :: ExecuteAfun arch f
     => ExecAfun arch (ExecAfunR arch f)
     -> f
-executeAfun f = executeOpenAfun f Aempty
+executeAfun f = executeOpenAfun f (return Aempty)
 
-class ExecuteAfun arch r where
-  type ExecAfunR arch r
-  executeOpenAfun :: ExecOpenAfun arch aenv (ExecAfunR arch r) -> AvalR arch aenv -> r
+class ExecuteAfun arch f where
+  type ExecAfunR arch f
+  executeOpenAfun :: ExecOpenAfun arch aenv (ExecAfunR arch f) -> LLVM arch (AvalR arch aenv) -> f
 
 instance Execute arch => ExecuteAfun arch (LLVM arch b) where
   type ExecAfunR arch (LLVM arch b) = b
   {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Alam{}    _         = error "meep"
-  executeOpenAfun (Abody b) aenv      =
+  executeOpenAfun Alam{}    _ = error "meep"
+  executeOpenAfun (Abody b) k = do
+    aenv <- k
     get =<< async (executeOpenAcc b aenv)
 
-instance Execute arch => ExecuteAfun arch (a -> LLVM arch b) where
-  type ExecAfunR arch (a -> LLVM arch b) = a -> b
+instance (Remote arch, ExecuteAfun arch b) => ExecuteAfun arch (a -> b) where
+  type ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
   {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Abody{}   _    _    = error "morp"
-  executeOpenAfun (Alam f)  aenv arrs = do
-    AsyncR _ a <- async (useRemoteAsync arrs)
-    executeOpenAfun f (aenv `Apush` a)
+  executeOpenAfun Abody{}  _ _    = error "morp"
+  executeOpenAfun (Alam f) k arrs =
+    let k' = do aenv       <- k
+                AsyncR _ a <- async (useRemoteAsync arrs)
+                return (aenv `Apush` a)
+    in
+    executeOpenAfun f k'
 
 
 -- Execute an open array computation
