@@ -17,6 +17,9 @@
 -- automatically parallel, provided you specify '+RTS -Nwhatever' on the command
 -- line when running the program.
 --
+-- Programs must be compiled with '-threaded', otherwise you will get a "Blocked
+-- indefinitely on MVar" error.
+--
 
 module Data.Array.Accelerate.LLVM.Native (
 
