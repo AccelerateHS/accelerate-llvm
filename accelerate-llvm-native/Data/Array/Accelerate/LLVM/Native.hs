@@ -44,16 +44,16 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Async
-import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Smart                                  ( Acc )
-import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
+import Data.Array.Accelerate.Trafo
 
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 -- standard library
 import Control.Monad.Trans

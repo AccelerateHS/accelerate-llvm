@@ -232,24 +232,56 @@ class ExecuteAfun arch f where
   type ExecAfunR arch f
   executeOpenAfun :: ExecOpenAfun arch aenv (ExecAfunR arch f) -> LLVM arch (AvalR arch aenv) -> f
 
-instance Execute arch => ExecuteAfun arch (LLVM arch b) where
-  type ExecAfunR arch (LLVM arch b) = b
-  {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Alam{}    _ = error "meep"
-  executeOpenAfun (Abody b) k = do
-    aenv <- k
-    get =<< async (executeOpenAcc b aenv)
-
 instance (Remote arch, ExecuteAfun arch b) => ExecuteAfun arch (a -> b) where
   type ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
   {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Abody{}  _ _    = error "morp"
+  executeOpenAfun Abody{}  _ _    = $internalError "executeOpenAfun" "malformed array function"
   executeOpenAfun (Alam f) k arrs =
     let k' = do aenv       <- k
                 AsyncR _ a <- async (useRemoteAsync arrs)
                 return (aenv `Apush` a)
     in
     executeOpenAfun f k'
+
+instance Execute arch => ExecuteAfun arch (LLVM arch b) where
+  type ExecAfunR arch (LLVM arch b) = b
+  {-# INLINEABLE executeOpenAfun #-}
+  executeOpenAfun Alam{}    _ = $internalError "executeOpenAfun" "function not fully applied"
+  executeOpenAfun (Abody b) k = do
+    aenv <- k
+    get =<< async (executeOpenAcc b aenv)
+
+
+{--
+executeAfun
+    :: Execute arch
+    => ExecAfun arch f
+    -> ExecAfunR arch f
+executeAfun f = executeOpenAfun f (return Aempty)
+
+-- TLM: I'd like to use the following, which I think is nicer, but it seems that
+-- the first type family instance (->) is matching on everything and never falls
+-- through to the base case, so we get a type error on the Abody case.
+--
+type family ExecAfunR arch r :: * where
+  ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
+  ExecAfunR arch r        = LLVM arch r
+
+executeOpenAfun
+    :: Execute arch
+    => ExecOpenAfun arch aenv f
+    -> LLVM arch (AvalR arch aenv)
+    -> ExecAfunR arch f
+executeOpenAfun (Alam f)  k = \arrs ->
+  let k' = do aenv       <- k
+              AsyncR _ a <- async (useRemoteAsync arrs)
+              return (aenv `Apush` a)
+  in
+  executeOpenAfun f k'
+executeOpenAfun (Abody b) k = do
+  aenv <- k
+  get =<< async (executeOpenAcc b aenv)
+--}
 
 
 -- Execute an open array computation
