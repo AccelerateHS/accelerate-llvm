@@ -21,6 +21,7 @@
 module Data.Array.Accelerate.LLVM.Native.Execute (
 
   executeAcc, executeAfun,
+  executeOpenAcc
 
 ) where
 

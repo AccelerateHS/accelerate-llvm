@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.Execute (
 
   Execute(..), Gamma,
   executeAcc, executeAfun,
+  executeOpenAcc,
 
 ) where
 

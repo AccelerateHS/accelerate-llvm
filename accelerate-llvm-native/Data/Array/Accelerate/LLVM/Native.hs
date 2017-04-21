@@ -1,5 +1,7 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
@@ -28,6 +30,7 @@ module Data.Array.Accelerate.LLVM.Native (
   -- * Synchronous execution
   run, runWith,
   run1, run1With,
+  runN, runNWith,
   stream, streamWith,
 
   -- * Asynchronous execution
@@ -36,6 +39,7 @@ module Data.Array.Accelerate.LLVM.Native (
 
   runAsync, runAsyncWith,
   run1Async, run1AsyncWith,
+  runNAsync, runNAsyncWith,
 
   -- * Execution targets
   Native, Strategy,
@@ -45,15 +49,22 @@ module Data.Array.Accelerate.LLVM.Native (
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
 import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeAfun )
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
+import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
+import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun, ExecOpenAfun )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
+import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
 -- standard library
 import Control.Monad.Trans
@@ -75,6 +86,7 @@ run = runWith defaultTarget
 --
 runWith :: Arrays a => Native -> Acc a -> a
 runWith target a = unsafePerformIO (run' target a)
+
 
 -- | As 'run', but allow the computation to run asynchronously and return
 -- immediately without waiting for the result. The status of the computation can
@@ -100,22 +112,36 @@ run' target a = execute
         return res
 
 
--- | Prepare and execute an embedded array program of one argument.
+-- | This is 'runN', specialised to an array program of one argument.
+--
+run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
+run1 = run1With defaultTarget
+
+-- | As 'run1', but execute using the specified target (thread gang).
+--
+run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
+run1With = runNWith
+
+
+-- | Prepare and execute an embedded array program.
 --
 -- This function can be used to improve performance in cases where the array
 -- program is constant between invocations, because it enables us to bypass
 -- front-end conversion stages and move directly to the execution phase. If you
 -- have a computation applied repeatedly to different input data, use this,
--- specifying any changing aspects of the computation via the input parameter.
+-- specifying any changing aspects of the computation via the input parameters.
 -- If the function is only evaluated once, this is equivalent to 'run'.
 --
--- To use 'run1' effectively you must express your program as a function of one
--- argument. If your program takes more than one argument, you can use
--- 'Data.Array.Accelerate.lift' and 'Data.Array.Accelerate.unlift' to tuple up
--- the arguments.
+-- In order to use 'runN' you must express your Accelerate program as a function
+-- of array terms:
 --
--- At an example, once your program is expressed as a function of one argument,
--- instead of the usual:
+-- > f :: (Arrays a, Arrays b, ... Arrays c) => Acc a -> Acc b -> ... -> Acc c
+--
+-- This function then returns the compiled version of 'f':
+--
+-- > runN f :: (Arrays a, Arrays b, ... Arrays c) => a -> b -> ... -> c
+--
+-- At an example, rather than:
 --
 -- > step :: Acc (Vector a) -> Acc (Vector b)
 -- > step = ...
@@ -128,18 +154,39 @@ run' target a = execute
 -- > simulate xs = run1 step xs
 --
 -- You can use the debugging options to check whether this is working
--- successfully by, for example, observing no output from the @-ddump-cc@ flag
--- at the second and subsequent invocations.
+-- successfully. For example, running with the @-ddump-phases@ flag should show
+-- that the compilation steps only happen once, not on the second and subsequent
+-- invocations of 'simulate'. Note that this typically relies on GHC knowing
+-- that it can lift out the function returned by 'runN' and reuse it.
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
-run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
-run1 = run1With defaultTarget
+runN :: Afunction f => f -> AfunctionR f
+runN = runNWith defaultTarget
 
--- | As 'run1', but execute using the specified target (thread gang).
+-- | As 'runN', but execute using the specified target (thread gang).
 --
-run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
-run1With = run1' unsafePerformIO
+runNWith :: Afunction f => Native -> f -> AfunctionR f
+runNWith target f = go afun (return Aempty)
+  where
+    !acc  = convertAfunWith (config target) f
+    !afun = unsafePerformIO $ do
+              dumpGraph acc
+              phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
+
+    -- Sadly I haven't figured out how to express this in terms of
+    -- 'executeAfun', so we end up reimplementing it here.
+    --
+    go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
+    go (Alam l) k = \arrs ->
+      let k' = do aenv       <- k
+                  AsyncR _ a <- E.async (useRemoteAsync arrs)
+                  return (aenv `Apush` a)
+      in go l k'
+    go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target $ do
+      aenv   <- k
+      E.get =<< E.async (executeOpenAcc b aenv)
+
 
 -- | As 'run1', but execute asynchronously.
 --
@@ -149,16 +196,44 @@ run1Async = run1AsyncWith defaultTarget
 -- | As 'run1Async', but execute using the specified target (thread gang).
 --
 run1AsyncWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> IO (Async b)
-run1AsyncWith = run1' async
+run1AsyncWith = runNAsyncWith
 
-run1' :: (Arrays a, Arrays b) => (IO b -> c) -> Native -> (Acc a -> Acc b) -> a -> c
-run1' using target f = \a -> using (execute a)
+
+-- | As 'runN', but execute asynchronously.
+--
+runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
+runNAsync = runNAsyncWith defaultTarget
+
+-- | As 'runNWith', but execute asynchronously.
+--
+runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => Native -> f -> r
+runNAsyncWith target f = runAsync' target afun (return Aempty)
   where
-    !acc        = convertAfunWith (config target) f
-    !afun       = unsafePerformIO $ do
-                    dumpGraph acc
-                    phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
-    execute a   =   phase "execute" elapsedP (evalNative target (executeAfun afun a))
+    !acc  = convertAfunWith (config target) f
+    !afun = unsafePerformIO $ do
+              dumpGraph acc
+              phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
+
+
+class RunAsync f where
+  type RunAsyncR f
+  runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> LLVM Native (Aval aenv) -> f
+
+instance RunAsync b => RunAsync (a -> b) where
+  type RunAsyncR (a -> b) = a -> RunAsyncR b
+  runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
+  runAsync' target (Alam l) k arrs =
+    let k' = do aenv       <- k
+                AsyncR _ a <- E.async (useRemoteAsync arrs)
+                return (aenv `Apush` a)
+    in runAsync' target l k'
+
+instance RunAsync (IO (Async b)) where
+  type RunAsyncR  (IO (Async b)) = b
+  runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
+  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target $ do
+    aenv   <- k
+    E.get =<< E.async (executeOpenAcc b aenv)
 
 
 -- | Stream a lazily read list of input arrays through the given program,
