@@ -128,12 +128,14 @@ runAsyncWith target a = asyncBound execute
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
+{-# INLINE run1 #-}
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target rather than using the
 -- default, automatically selected device.
 --
+{-# INLINE run1With #-}
 run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
 run1With = runNWith
 
@@ -166,7 +168,7 @@ run1With = runNWith
 --
 -- Instead write:
 --
--- > simulate xs = run1 step xs
+-- > simulate = runN step
 --
 -- You can use the debugging options to check whether this is working
 -- successfully. For example, running with the @-ddump-phases@ flag should show
@@ -176,18 +178,21 @@ run1With = runNWith
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
+{-# INLINE runN #-}
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target device.
 --
+{-# INLINE runNWith #-}
 runNWith :: Afunction f => PTX -> f -> AfunctionR f
-runNWith target f = go afun (return Aempty)
+runNWith target f = exec
   where
     !acc  = convertAfunWith config f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
+    !exec = go afun (return Aempty)
 
     go :: ExecOpenAfun PTX aenv t -> LLVM PTX (Aval aenv) -> t
     go (Alam l) k = \arrs ->

@@ -114,11 +114,13 @@ run' target a = execute
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
+{-# INLINE run1 #-}
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target (thread gang).
 --
+{-# INLINE run1With #-}
 run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
 run1With = runNWith
 
@@ -151,7 +153,7 @@ run1With = runNWith
 --
 -- Instead write:
 --
--- > simulate xs = run1 step xs
+-- > simulate = runN step
 --
 -- You can use the debugging options to check whether this is working
 -- successfully. For example, running with the @-ddump-phases@ flag should show
@@ -161,22 +163,22 @@ run1With = runNWith
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
+{-# INLINE runN #-}
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target (thread gang).
 --
+{-# INLINE runNWith #-}
 runNWith :: Afunction f => Native -> f -> AfunctionR f
-runNWith target f = go afun (return Aempty)
+runNWith target f = exec
   where
     !acc  = convertAfunWith (config target) f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
+    !exec = go afun (return Aempty)
 
-    -- Sadly I haven't figured out how to express this in terms of
-    -- 'executeAfun', so we end up reimplementing it here.
-    --
     go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
     go (Alam l) k = \arrs ->
       let k' = do aenv       <- k
