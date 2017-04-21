@@ -252,37 +252,36 @@ instance Execute arch => ExecuteAfun arch (LLVM arch b) where
     get =<< async (executeOpenAcc b aenv)
 
 
-{--
-executeAfun
-    :: Execute arch
-    => ExecAfun arch f
-    -> ExecAfunR arch f
-executeAfun f = executeOpenAfun f (return Aempty)
-
--- TLM: I'd like to use the following, which I think is nicer, but it seems that
--- the first type family instance (->) is matching on everything and never falls
--- through to the base case, so we get a type error on the Abody case.
+-- NOTE: [ExecuteAfun and closed type families]
 --
-type family ExecAfunR arch r :: * where
-  ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
-  ExecAfunR arch r        = LLVM arch r
-
-executeOpenAfun
-    :: Execute arch
-    => ExecOpenAfun arch aenv f
-    -> LLVM arch (AvalR arch aenv)
-    -> ExecAfunR arch f
-executeOpenAfun (Alam f)  k = \arrs ->
-  let k' = do aenv       <- k
-              AsyncR _ a <- async (useRemoteAsync arrs)
-              return (aenv `Apush` a)
-  in
-  executeOpenAfun f k'
-executeOpenAfun (Abody b) k = do
-  aenv <- k
-  get =<< async (executeOpenAcc b aenv)
---}
-
+-- It would be nice to use something like the following closed type family
+-- instance, and implement 'executeOpenAfun' as a regular recursive function,
+-- rather than as a class function.
+--
+-- > type family ExecAfunR arch r :: * where
+-- >   ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
+-- >   ExecAfunR arch r        = LLVM arch r
+-- >
+-- > executeOpenAfun
+-- >     :: Execute arch
+-- >     => ExecOpenAfun arch aenv f
+-- >     -> LLVM arch (AvalR arch aenv)
+-- >     -> ExecAfunR arch f
+-- > executeOpenAfun (Alam f)  k = \arrs -> ...
+-- > executeOpenAfun (Abody b) k = do ...
+--
+-- However, closed type families don't quite work the way that we might think.
+-- It seems that they rely on some notion of type inequality, or at least types
+-- which don't have a unifier.
+--
+-- When we match of the `Abody` constructor, we expose a constraint of the form
+-- `Arrays a, T a ~ a0`. For the type checker to figure out that
+-- `a0 ~ LLVM arch a`, it needs to know that it _can not_ match on the first
+-- case of the type family; i.e., that `a` can't unify with `b -> c`. Since it
+-- doesn't have constraints to figure that out, it doesn't proceed and fall
+-- through to the case that we want. If we had something like `a ~ Array sh e`,
+-- then it could.
+--
 
 -- Execute an open array computation
 --
