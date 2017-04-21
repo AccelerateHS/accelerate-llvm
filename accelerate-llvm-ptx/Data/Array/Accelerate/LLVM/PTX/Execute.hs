@@ -20,6 +20,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Execute (
 
   executeAcc, executeAfun,
+  executeOpenAcc,
 
 ) where
 
