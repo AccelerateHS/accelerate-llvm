@@ -1,5 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 
+# Load up GHCi with an appropriate environment
+#
 DISTDIR=$(stack path --dist-dir)
 stack exec ghci -- -j +RTS -N -A64M -n2m -RTS -iaccelerate-llvm-native/${DISTDIR}/build $@
 

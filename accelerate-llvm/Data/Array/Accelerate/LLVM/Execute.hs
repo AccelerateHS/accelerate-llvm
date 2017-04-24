@@ -1,10 +1,12 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE CPP                 #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute
@@ -20,7 +22,8 @@
 module Data.Array.Accelerate.LLVM.Execute (
 
   Execute(..), Gamma,
-  executeAcc, executeAfun1,
+  executeAcc, executeAfun,
+  executeOpenAcc,
 
 ) where
 
@@ -218,28 +221,70 @@ executeAcc
 executeAcc !acc =
   get =<< async (executeOpenAcc acc Aempty)
 
-{-# INLINEABLE executeAfun1 #-}
-executeAfun1
-    :: forall arch a b. (Execute arch, Arrays a)
-    => ExecAfun arch (a -> b)
-    -> a
-    -> LLVM arch b
-executeAfun1 !afun !arrs = do
-  AsyncR _ a <- async (useRemoteAsync arrs)
-  executeOpenAfun1 afun Aempty a
 
-
--- Execute an open array function of one argument
+-- Execute a variadic array function
 --
-{-# INLINEABLE executeOpenAfun1 #-}
-executeOpenAfun1
-    :: Execute arch
-    => ExecOpenAfun arch aenv (a -> b)
-    -> AvalR arch aenv
-    -> AsyncR arch a
-    -> LLVM arch b
-executeOpenAfun1 (Alam (Abody !f)) !aenv !a = get =<< async (executeOpenAcc f (aenv `Apush` a))
-executeOpenAfun1 _                 _     _  = error "boop!"
+{-# INLINEABLE executeAfun #-}
+executeAfun
+    :: ExecuteAfun arch f
+    => ExecAfun arch (ExecAfunR arch f)
+    -> f
+executeAfun f = executeOpenAfun f (return Aempty)
+
+class ExecuteAfun arch f where
+  type ExecAfunR arch f
+  executeOpenAfun :: ExecOpenAfun arch aenv (ExecAfunR arch f) -> LLVM arch (AvalR arch aenv) -> f
+
+instance (Remote arch, ExecuteAfun arch b) => ExecuteAfun arch (a -> b) where
+  type ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
+  {-# INLINEABLE executeOpenAfun #-}
+  executeOpenAfun Abody{}  _ _    = $internalError "executeOpenAfun" "malformed array function"
+  executeOpenAfun (Alam f) k arrs =
+    let k' = do aenv       <- k
+                AsyncR _ a <- async (useRemoteAsync arrs)
+                return (aenv `Apush` a)
+    in
+    executeOpenAfun f k'
+
+instance Execute arch => ExecuteAfun arch (LLVM arch b) where
+  type ExecAfunR arch (LLVM arch b) = b
+  {-# INLINEABLE executeOpenAfun #-}
+  executeOpenAfun Alam{}    _ = $internalError "executeOpenAfun" "function not fully applied"
+  executeOpenAfun (Abody b) k = do
+    aenv <- k
+    get =<< async (executeOpenAcc b aenv)
+
+
+-- NOTE: [ExecuteAfun and closed type families]
+--
+-- It would be nice to use something like the following closed type family
+-- instance, and implement 'executeOpenAfun' as a regular recursive function,
+-- rather than as a class function.
+--
+-- > type family ExecAfunR arch r :: * where
+-- >   ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
+-- >   ExecAfunR arch r        = LLVM arch r
+-- >
+-- > executeOpenAfun
+-- >     :: Execute arch
+-- >     => ExecOpenAfun arch aenv f
+-- >     -> LLVM arch (AvalR arch aenv)
+-- >     -> ExecAfunR arch f
+-- > executeOpenAfun (Alam f)  k = \arrs -> ...
+-- > executeOpenAfun (Abody b) k = do ...
+--
+-- However, closed type families don't quite work the way that we might think.
+-- It seems that they rely on some notion of type inequality, or at least types
+-- which don't have a unifier.
+--
+-- When we match of the `Abody` constructor, we expose a constraint of the form
+-- `Arrays a, T a ~ a0`. For the type checker to figure out that
+-- `a0 ~ LLVM arch a`, it needs to know that it _can not_ match on the first
+-- case of the type family; i.e., that `a` can't unify with `b -> c`. Since it
+-- doesn't have constraints to figure that out, it doesn't proceed and fall
+-- through to the case that we want. If we had something like `a ~ Array sh e`,
+-- then it could.
+--
 
 
 -- Execute an open array computation
@@ -260,7 +305,7 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
         Unit x          -> newRemote Z . const =<< travE x
         Avar ix         -> avar ix
         Alet bnd body   -> alet bnd body
-        Apply f a       -> executeOpenAfun1 f aenv =<< async (executeOpenAcc a aenv)
+        Apply f a       -> travAF f =<< async (executeOpenAcc a aenv)
         Atuple tup      -> toAtuple <$> travT tup
         Aprj ix tup     -> evalPrj ix . fromAtuple <$> travA tup
         Acond p t e     -> acond t e =<< travE p
@@ -291,6 +336,10 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
         Permute sh d    -> id =<< permute kernel gamma aenv stream (inplace d) <$> travE sh <*> travA d
         Stencil2 a b    -> id =<< stencil2 kernel gamma aenv stream <$> avar a <*> avar b
         Stencil a       -> stencil1 kernel gamma aenv stream =<< avar a
+
+    travAF :: ExecOpenAfun arch aenv (a -> b) -> AsyncR arch a -> LLVM arch b
+    travAF (Alam (Abody f)) a = get =<< async (executeOpenAcc f (aenv `Apush` a))
+    travAF _                _ = error "boop!"
 
     travE :: ExecExp arch aenv t -> LLVM arch t
     travE exp = executeExp exp aenv stream
@@ -329,9 +378,9 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
            -> LLVM arch a
     awhile p f a = do
       e   <- checkpoint stream
-      r   <- executeOpenAfun1 p aenv (AsyncR e a)
+      r   <- travAF p (AsyncR e a)
       ok  <- indexRemote r 0
-      if ok then awhile p f =<< executeOpenAfun1 f aenv (AsyncR e a)
+      if ok then awhile p f =<< travAF f (AsyncR e a)
             else return a
 
     -- Change the shape of an array without altering its contents

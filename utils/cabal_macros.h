@@ -23,7 +23,7 @@
 #endif
 
 /* LLVM-3.9 */
-#if 1
+#if 0
 /* package llvm-hs-3.9.0.0 */
 #define VERSION_llvm_hs "3.9.0.0"
 #define MIN_VERSION_llvm_hs(major1,major2,minor) (\
