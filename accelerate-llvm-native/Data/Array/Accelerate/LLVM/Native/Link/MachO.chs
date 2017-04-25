@@ -19,9 +19,9 @@ module Data.Array.Accelerate.LLVM.Native.Link.MachO (
 
 ) where
 
-import Data.Array.Accelerate.Lifetime
-import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.Native.Link.Object
+import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Debug              as Debug
 
 import Control.Applicative
@@ -62,16 +62,6 @@ import Prelude                                            as P
 #endif
 #ifdef powerpc_HOST_ARCH
 #include <mach-o/ppc/reloc.h>
-#endif
-
-#ifdef i386_HOST_ARCH
-{# enum reloc_type_generic as RelocationType { } deriving (Eq, Show) #}
-#endif
-#ifdef x86_64_HOST_ARCH
-{# enum reloc_type_x86_64  as RelocationType { } deriving (Eq, Show) #}
-#endif
-#ifdef powerpc_HOST_ARCH
-{# enum reloc_type_ppc     as RelocationType { } deriving (Eq, Show) #}
 #endif
 
 
@@ -142,7 +132,7 @@ loadSegment obj symtab seg@LoadSegment{..} = do
       segsize     = seg_vmsize' + (V.length symtab * 16)  -- jump entries are 16 bytes each (x86_64)
   --
   seg_fp  <- mallocPlainForeignPtrAlignedBytes segsize pagesize
-  _       <- withForeignPtr seg_fp $ \seg_p  -> do
+  _       <- withForeignPtr seg_fp $ \seg_p -> do
               -- Just in case, clear out the segment data (corresponds to NOP)
               fillBytes seg_p 0 segsize
 
@@ -326,6 +316,16 @@ data Symbol = Symbol
     , sym_extern    :: !Bool
     }
     deriving Show
+
+#ifdef i386_HOST_ARCH
+{# enum reloc_type_generic as RelocationType { } deriving (Eq, Show) #}
+#endif
+#ifdef x86_64_HOST_ARCH
+{# enum reloc_type_x86_64  as RelocationType { } deriving (Eq, Show) #}
+#endif
+#ifdef powerpc_HOST_ARCH
+{# enum reloc_type_ppc     as RelocationType { } deriving (Eq, Show) #}
+#endif
 
 
 -- Parse the Mach-O object file and return the set of section load commands, as
