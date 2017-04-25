@@ -49,6 +49,7 @@ RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 
 # Setup stack
 RUN stack --resolver=${LTS_SLUG} setup
+RUN stack install c2hs
 
 # Copy over just the cabal and stack file and install dependencies
 WORKDIR /opt/accelerate-llvm
