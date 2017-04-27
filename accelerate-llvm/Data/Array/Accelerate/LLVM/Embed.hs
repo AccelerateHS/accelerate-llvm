@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE RankNTypes          #-}
@@ -31,7 +32,14 @@ import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
 
 import Language.Haskell.TH                                          ( Q, TExp )
+import qualified Language.Haskell.TH.Syntax                         as TH
+#if MIN_VERSION_containers(0,5,9)
 import qualified Data.IntMap.Internal                               as IM
+#elif MIN_VERSION_containers(0,5,8)
+import qualified Data.IntMap.Base                                   as IM
+#else
+import qualified Data.IntMap                                        as IM
+#endif
 
 
 class Embed arch where
@@ -74,17 +82,22 @@ embedOpenAcc = liftA
     liftA (PlainAcc pacc)          = [|| EvalAcc $$(liftPreOpenAccCommand pacc) ||]
     liftA (BuildAcc aenv obj pacc) = [|| ExecAcc $$(liftGamma aenv) $$(embedForTarget obj) $$(liftPreOpenAccSkeleton pacc) ||]
 
-    -- TODO: We could do this without relying on the internals module by using
-    -- to/fromListAsc. That would be O(n) at runtime, but n should be relatively
-    -- small.
-    --
-    liftGamma :: forall aenv. Gamma aenv -> Q (TExp (Gamma aenv))
+    liftGamma :: Gamma aenv -> Q (TExp (Gamma aenv))
+#if MIN_VERSION_containers(0,5,8)
     liftGamma IM.Nil           = [|| IM.Nil ||]
     liftGamma (IM.Bin p m l r) = [|| IM.Bin p m $$(liftGamma l) $$(liftGamma r) ||]
     liftGamma (IM.Tip k v)     = [|| IM.Tip k $$(liftV v) ||]
+#else
+    -- O(n) at runtime to reconstruct the set
+    liftGamma aenv             = [|| IM.fromAscList $$(liftIM (IM.toAscList aenv)) ||]
       where
-        liftV :: (Label, Idx' aenv) -> Q (TExp (Label, Idx' aenv))
-        liftV (Label n, Idx' ix) = [|| (Label n, Idx' $$(liftIdx ix)) ||]
+        liftIM :: [(Int, (Label, Idx' aenv))] -> Q (TExp [(Int, (Label, Idx' aenv))])
+        liftIM im = do
+          im' <- mapM (\(k,v) -> TH.unTypeQ [|| (k, $$(liftV v)) ||]) im
+          TH.unsafeTExpCoerce (return $ TH.ListE im')
+#endif
+    liftV :: (Label, Idx' aenv) -> Q (TExp (Label, Idx' aenv))
+    liftV (Label n, Idx' ix) = [|| (Label n, Idx' $$(liftIdx ix)) ||]
 
 
 {-# INLINEABLE liftPreOpenAfun #-}

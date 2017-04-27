@@ -16,7 +16,6 @@ packages:
 extra-deps:
 # - 'accelerate-1.0.0.0'
 - 'chaselev-deque-0.5.0.5'
-- 'containers-0.5.10.2'
 - 'cuda-0.7.5.3'
 - 'libffi-0.1'
 - 'llvm-hs-4.0.1.0'
