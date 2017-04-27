@@ -1,8 +1,6 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE QuasiQuotes          #-}
-{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
@@ -47,8 +45,8 @@ module Data.Array.Accelerate.LLVM.Native (
   Native, Strategy,
   createTarget, balancedParIO, unbalancedParIO,
 
-  -- * Ahead-of-time compilation
-  run1Q,
+  -- -- * Ahead-of-time compilation
+  -- run1Q,
 
 ) where
 
@@ -63,8 +61,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..)
 import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedAfun )
-import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc, executeAfun )
+import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
@@ -77,8 +74,6 @@ import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
-import Language.Haskell.TH                                          ( Q, TExp )
-import qualified Language.Haskell.TH                                as TH
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -267,28 +262,26 @@ streamWith target f arrs = map go arrs
     !go = run1With target f
 
 
+-- run1Q
+--     :: (Arrays a, Arrays b)
+--     => (Acc a -> Acc b)
+--     -> Q (TExp (a -> b))
+-- run1Q f = do
+--   go <- run1'Q defaultTarget f
+--   [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
 
-run1Q
-    :: (Arrays a, Arrays b)
-    => (Acc a -> Acc b)
-    -> Q (TExp (a -> b))
-run1Q f = do
-  go <- run1'Q defaultTarget f
-  [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
-
-run1'Q
-    :: (Arrays a, Arrays b)
-    => Native
-    -> (Acc a -> Acc b)
-    -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
-run1'Q target f = do
-  let acc = convertAfunWith (config target) f
-  afun <- TH.runIO $ do
-            dumpGraph acc
-            evalNative target $
-              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
-  [|| \using target a -> using $ evalNative target (executeAfun $$(embedAfun afun) a) ||]
-
+-- run1'Q
+--     :: (Arrays a, Arrays b)
+--     => Native
+--     -> (Acc a -> Acc b)
+--     -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
+-- run1'Q target f = do
+--   let acc = convertAfunWith (config target) f
+--   afun <- TH.runIO $ do
+--             dumpGraph acc
+--             evalNative target $
+--               phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+--   [|| \using target a -> using $ evalNative target (executeAfun $$(embedAfun afun) a) ||]
 
 
 -- How the Accelerate program should be evaluated.
