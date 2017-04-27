@@ -92,7 +92,7 @@ loadSegments obj symtab lcs = do
   -- Resolve the external symbols defined in the sections of this object into
   -- function pointers
   --
-  let local Symbol{..}    = sym_extern && sym_segment > 0
+  let extern Symbol{..}   = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
             name          = B8.unpack sym_name
@@ -100,7 +100,7 @@ loadSegments obj symtab lcs = do
         in
         (name, addr)
       --
-      funtab              = FunctionTable $ V.toList $ V.map resolve (V.filter local symtab)
+      funtab              = FunctionTable $ V.toList $ V.map resolve (V.filter extern symtab)
       objectcode          = V.toList segs
 
   -- The executable pages were allocated on the GC heap. When the pages are
@@ -207,10 +207,12 @@ processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
       False -> relocate value
       True  -> if (fromIntegral (fromIntegral value_rel::Word32) :: Word64) == value_rel
                  then relocate value_rel
-                 else let value'     = castPtrToWord64 (jump_p `plusPtr` (ri_symbolnum * 16 + 8))
-                          value'_rel = value' - pc' - 2 ^ ri_length
-                      in
-                      relocate value'_rel
+                 else do
+                   let value'     = castPtrToWord64 (jump_p `plusPtr` (ri_symbolnum * 16 + 8))
+                       value'_rel = value' - pc' - 2 ^ ri_length
+                   --
+                   -- message (printf "relocating %s via jump table" (B8.unpack (sym_name (symtab V.! ri_symbolnum))))
+                   relocate value'_rel
 
   -- Internal relocation (to constant sections, for example). Since the sections
   -- are loaded at the appropriate offsets in a single contiguous segment, this
