@@ -209,9 +209,9 @@ processRelocation :: Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Re
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
   message (printf "relocation: 0x%04x to symbol %d in section %d, type=%s, value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
   case r_type of
-    R_X86_64_None     -> return ()
-    R_X86_64_64       -> relocate (fromIntegral symval + r_addend)
-    R_X86_64_PC32     ->
+    R_X86_64_None -> return ()
+    R_X86_64_64   -> relocate (fromIntegral symval + r_addend)
+    R_X86_64_PC32 ->
       let offset = fromIntegral symval + r_addend - fromIntegral pc' in
       if  offset >= 0x7fffffff || offset < -0x80000000
         then do
@@ -223,7 +223,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
         else
           relocate offset
 
-    R_X86_64_PC64     ->
+    R_X86_64_PC64 ->
       let offset = fromIntegral symval + r_addend - fromIntegral pc' in
       relocate offset
 
@@ -239,7 +239,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
         Global  -> sym_value
         Weak    -> $internalError "processRelocation" "unhandled weak symbol"
 
-    Symbol{..}  = symtab V.! r_symbol
+    Symbol{..} = symtab V.! r_symbol
 
     relocate :: Int64 -> IO ()
     relocate x = do
