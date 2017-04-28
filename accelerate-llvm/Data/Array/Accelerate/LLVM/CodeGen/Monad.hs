@@ -40,18 +40,18 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State.Strict
+import Control.Monad.State
 import Data.Function
 import Data.HashMap.Strict                                              ( HashMap )
 import Data.Map                                                         ( Map )
 import Data.Sequence                                                    ( Seq )
 import Data.Word
 import Text.Printf
-import Prelude
 import qualified Data.Foldable                                          as F
 import qualified Data.HashMap.Strict                                    as HashMap
 import qualified Data.Map                                               as Map
 import qualified Data.Sequence                                          as Seq
+import Prelude                                                          as P
 
 -- accelerate
 import Data.Array.Accelerate.Error
