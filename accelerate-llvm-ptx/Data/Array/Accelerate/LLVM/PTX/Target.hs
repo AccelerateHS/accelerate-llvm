@@ -132,7 +132,7 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = ptxISAVersion m n
+      isa              = CPUFeature (ptxISAVersion m n)
       sm               = printf "sm_%d%d" m n
   in
   withTargetOptions $ \options -> do
@@ -152,15 +152,15 @@ withPTXTargetMachine dev go =
 --
 --   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
 --
-ptxISAVersion :: Int -> Int -> CPUFeature
-ptxISAVersion 2 _ = CPUFeature "ptx40"
-ptxISAVersion 3 7 = CPUFeature "ptx41"
-ptxISAVersion 3 _ = CPUFeature "ptx40"
-ptxISAVersion 5 0 = CPUFeature "ptx40"
-ptxISAVersion 5 2 = CPUFeature "ptx41"
-ptxISAVersion 5 3 = CPUFeature "ptx42"
-ptxISAVersion 6 _ = CPUFeature "ptx50"
-ptxISAVersion _ _ = CPUFeature "ptx40"
+ptxISAVersion :: Int -> Int -> String
+ptxISAVersion 2 _ = "ptx40"
+ptxISAVersion 3 7 = "ptx41"
+ptxISAVersion 3 _ = "ptx40"
+ptxISAVersion 5 0 = "ptx40"
+ptxISAVersion 5 2 = "ptx41"
+ptxISAVersion 5 3 = "ptx42"
+ptxISAVersion 6 _ = "ptx50"
+ptxISAVersion _ _ = "ptx40"
 
 
 -- | The NVPTX target for this host.

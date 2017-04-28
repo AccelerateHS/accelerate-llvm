@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -48,6 +49,7 @@ import Data.Array.Accelerate.LLVM.Util
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
+import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
 import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
@@ -59,16 +61,21 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.NVVM                                       as NVVM
 
 -- standard library
+import Control.Concurrent
+import Control.DeepSeq
+import Control.Exception
 import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.Word
+import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.IO.Exception                                             ( IOErrorType(..), IOException(..) )
+import System.Directory
 import System.Exit
 import System.IO
-import System.IO.Temp
 import System.Process
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
@@ -93,6 +100,7 @@ instance Compile PTX where
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
 compile acc aenv = do
   target <- gets llvmTarget
+  cache  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
@@ -102,10 +110,17 @@ compile acc aenv = do
 
   -- Lower the generated LLVM into a CUBIN object code
   --
-  liftIO . LLVM.withContext $ \ctx -> do
-    ptx    <- compilePTX dev ctx ast
-    cubin  <- compileCUBIN dev ptx
-    return $! ObjectR config cubin
+  cubin <- liftIO $ do
+    yes <- doesFileExist cache
+    if yes
+      then B.readFile cache
+      else
+        LLVM.withContext $ \ctx -> do
+          ptx   <- compilePTX dev ctx ast
+          cubin <- compileCUBIN dev cache ptx
+          return cubin
+
+  return $! ObjectR config cubin
 
 
 -- | Compile the LLVM module to PTX assembly. This is done either by the
@@ -123,38 +138,46 @@ compilePTX dev ctx ast = do
   return ptx
 
 
--- | Compile the given PTX assembly to a CUBIN file (SASS object code). This
--- requires writing the assembly into file on disk, calling 'ptxas' (or 'nvcc')
--- to compile to an object file, and reading back the result. The advantage of
--- this is that there will be no additional work once the module is loaded into
--- memory (i.e. this all would have happened indirectly when calling
--- CUDA.loadData).
+-- | Compile the given PTX assembly to a CUBIN file (SASS object code). The
+-- compiled code will be stored at the given FilePath.
 --
--- TODO: It looks like ptxas will accept input from stdin when the input
--- filename is '-'. I don't know if this is officially supported though. The
--- output is always written to a file, so we can't do this entirely in-memory.
--- Once we have on-disk caching set up change this to stream in the PTX and
--- write the CUBIN directly to the final cache location.
---
-compileCUBIN :: CUDA.DeviceProperties -> ByteString -> IO ByteString
-compileCUBIN dev ptx =
-  withSystemTempFile "meep.ptx"   $ \ptxFile   ptxHandle   ->
-  withSystemTempFile "morp.cubin" $ \cubinFile cubinHandle -> do
-    _verbose      <- Debug.queryFlag Debug.verbose
-    _debug        <- Debug.queryFlag Debug.debug_cc
-    --
-    let verboseFlag       = if _verbose then [ "-v" ]              else []
-        debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
-        arch              = printf "-arch=sm_%d%d" m n
-        CUDA.Compute m n  = CUDA.computeCapability dev
-        flags             = ptxFile : "-o" : cubinFile : arch : verboseFlag ++ debugFlag
+compileCUBIN :: CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
+compileCUBIN dev sass ptx = do
+  _verbose  <- Debug.queryFlag Debug.verbose
+  _debug    <- Debug.queryFlag Debug.debug_cc
+  --
+  let verboseFlag       = if _verbose then [ "-v" ]              else []
+      debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
+      arch              = printf "-arch=sm_%d%d" m n
+      CUDA.Compute m n  = CUDA.computeCapability dev
+      flags             = "-" : "-o" : sass : arch : verboseFlag ++ debugFlag
+      --
+      cp = (proc "ptxas" flags)
+            { std_in  = CreatePipe
+            , std_out = NoStream
+            , std_err = CreatePipe
+            }
 
-    -- Save the PTX code to file
-    B.hPut ptxHandle ptx
-    hClose ptxHandle
+  -- Invoke the 'ptxas' executable (which must be on the PATH) to compile the
+  -- PTX into SASS. The output is written directly to the final cache location.
+  --
+  withCreateProcess cp $ \(Just inh) Nothing (Just errh) ph -> do
 
-    -- Compile the PTX to SASS; requires that 'ptxas' is available on the PATH
-    (ex, _, info) <- readProcessWithExitCode "ptxas" flags []
+    -- fork off a thread to start consuming stderr
+    info <- hGetContents errh
+    withForkWait (evaluate (rnf info)) $ \waitErr -> do
+
+      -- write the PTX to the input handle
+      -- closing the handle performs an implicit flush, thus may trigger SIGPIPE
+      ignoreSIGPIPE $ B.hPut inh ptx
+      ignoreSIGPIPE $ hClose inh
+
+      -- wait on the output
+      waitErr
+      hClose errh
+
+    -- wait on the process
+    ex <- waitForProcess ph
     case ex of
       ExitFailure r -> $internalError "compile" (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
       ExitSuccess   -> return ()
@@ -163,8 +186,36 @@ compileCUBIN dev ptx =
       unless (null info) $
         Debug.traceIO Debug.dump_cc (printf "ptx: compiled entry function(s)\n%s" info)
 
-    -- Read back the results
-    B.hGetContents cubinHandle
+  -- Read back the results
+  B.readFile sass
+
+
+-- | Fork a thread while doing something else, but kill it if there's an
+-- exception.
+--
+-- This is important because we want to kill the thread that is holding the
+-- Handle lock, because when we clean up the process we try to close that
+-- handle, which could otherwise deadlock.
+--
+-- Stolen from the 'process' package.
+--
+withForkWait :: IO () -> (IO () -> IO a) -> IO a
+withForkWait async body = do
+  waitVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
+  mask $ \restore -> do
+    tid <- forkIO $ try (restore async) >>= putMVar waitVar
+    let wait = takeMVar waitVar >>= either throwIO return
+    restore (body wait) `onException` killThread tid
+
+ignoreSIGPIPE :: IO () -> IO ()
+ignoreSIGPIPE =
+  handle $ \e ->
+    case e of
+      IOError{..} | ResourceVanished <- ioe_type
+                  , Just ioe         <- ioe_errno
+                  , Errno ioe == ePIPE
+                  -> return ()
+      _ -> throwIO e
 
 
 -- Compile and optimise the module to PTX using the (closed source) NVVM
