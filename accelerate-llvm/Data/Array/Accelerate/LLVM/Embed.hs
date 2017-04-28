@@ -32,13 +32,13 @@ import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
 
 import Language.Haskell.TH                                          ( Q, TExp )
-import qualified Language.Haskell.TH.Syntax                         as TH
 #if MIN_VERSION_containers(0,5,9)
 import qualified Data.IntMap.Internal                               as IM
 #elif MIN_VERSION_containers(0,5,8)
 import qualified Data.IntMap.Base                                   as IM
 #else
 import qualified Data.IntMap                                        as IM
+import qualified Language.Haskell.TH.Syntax                         as TH
 #endif
 
 
