@@ -45,6 +45,7 @@ class Persistent arch where
 -- | Return the unique cache file path corresponding to a given accelerate
 -- computation.
 --
+{-# INLINEABLE cacheOfOpenAcc #-}
 cacheOfOpenAcc
     :: Persistent arch
     => DelayedOpenAcc aenv a
@@ -67,6 +68,7 @@ cacheOfOpenAcc acc = do
 
 -- | Remove the cache directory
 --
+{-# INLINEABLE removeCacheDirectory #-}
 removeCacheDirectory :: Persistent arch => LLVM arch ()
 removeCacheDirectory = do
   appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
