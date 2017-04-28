@@ -19,7 +19,6 @@ extra-deps:
 - 'base-orphans-0.4.4'
 - 'Cabal-1.24.2.0'
 - 'chaselev-deque-0.5.0.5'
-- 'containers-0.5.10.2'
 - 'cuda-0.7.5.3'
 - 'libffi-0.1'
 - 'llvm-hs-4.0.1.0'
