@@ -36,6 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
+import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -46,6 +47,8 @@ import Control.Monad.Except                                         ( runExceptT
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.Maybe
+import System.Directory
+import qualified Data.ByteString                                    as B
 
 
 instance Compile Native where
@@ -60,6 +63,7 @@ instance Intrinsic Native
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
 compile acc aenv = do
   target  <- gets llvmTarget
+  cache   <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
@@ -69,19 +73,27 @@ compile acc aenv = do
       --
       runExcept     = either ($internalError "compileForNativeTarget") return <=< runExceptT
 
-  -- Lower the generated LLVM and produce an object file.
+  -- Lower the generated LLVM and produce an object file. If a cached version is
+  -- available, that is returned instead.
   --
-  liftIO .
-    withContext                           $ \ctx     ->
-    runExcept $ withModuleFromAST ctx ast $ \mdl     ->
-    runExcept $ withNativeTargetMachine   $ \machine ->
-      withTargetLibraryInfo triple        $ \libinfo -> do
-        optimiseModule datalayout (Just machine) (Just libinfo) mdl
+  obj <- liftIO $ do
+    yes <- doesFileExist cache
+    if yes
+      then B.readFile cache
+      else
+        withContext                           $ \ctx     ->
+        runExcept $ withModuleFromAST ctx ast $ \mdl     ->
+        runExcept $ withNativeTargetMachine   $ \machine ->
+          withTargetLibraryInfo triple        $ \libinfo -> do
+            optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
-        Debug.when Debug.verbose $ do
-          Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
-          Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
+            Debug.when Debug.verbose $ do
+              Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
+              Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
 
-        obj    <- runExcept (moduleObject machine mdl)
-        return $! ObjectR obj
+            obj <- runExcept (moduleObject machine mdl)
+            B.writeFile cache obj
+            return obj
+
+  return $! ObjectR obj
 

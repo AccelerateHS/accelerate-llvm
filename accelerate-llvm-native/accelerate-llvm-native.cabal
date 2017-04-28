@@ -124,6 +124,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
     Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Compile.Cache
     Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
     Data.Array.Accelerate.LLVM.Native.Link
@@ -136,6 +137,8 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 
+    Paths_accelerate_llvm_native
+
   build-depends:
           base                          >= 4.7 && < 4.10
         , accelerate                    == 1.0.*
@@ -145,6 +148,7 @@ Library
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
         , file-embed                    >= 0.0.8
+        , filepath                      >= 1.0
         , libffi                        >= 0.1
         , llvm-hs                       >= 3.9
         , llvm-hs-pure                  >= 3.9
