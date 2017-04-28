@@ -26,6 +26,7 @@ extra-deps:
 - 'llvm-hs-pure-4.0.0.0'
 - 'mtl-2.2.1'
 - 'nvvm-0.7.5.2'
+- 'process-1.4.3.0'
 - 'semigroups-0.18.1'
 - 'th-lift-instances-0.1.11'
 - 'transformers-0.4.3.0'
