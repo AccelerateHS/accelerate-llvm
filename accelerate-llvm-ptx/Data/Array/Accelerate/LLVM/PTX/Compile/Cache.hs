@@ -30,7 +30,9 @@ instance Persistent PTX where
   targetCacheTemplate = do
     dev <- gets ptxDeviceProperties
     let Compute m n = computeCapability dev
-        isa         = ptxISAVersion m n
     --
-    return $ "accelerate-llvm-ptx-" ++ showVersion version </> isa </> "morp.sass"
+    return $ "accelerate-llvm-ptx-" ++ showVersion version
+         </> ptxTargetTriple
+         </> ptxISAVersion m n
+         </> "morp.sass"
 
