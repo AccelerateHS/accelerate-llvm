@@ -65,6 +65,12 @@ nativeDataLayout
   $ fmap (either ($internalError "nativeDataLayout") id)
   $ runExceptT (withNativeTargetMachine getTargetMachineDataLayout)
 
+-- | String that describes the host CPU
+--
+{-# NOINLINE nativeCPUName #-}
+nativeCPUName :: String
+nativeCPUName = unsafePerformIO $ getHostCPUName
+
 
 -- | Bracket the creation and destruction of a target machine for the native
 -- backend running on this host.

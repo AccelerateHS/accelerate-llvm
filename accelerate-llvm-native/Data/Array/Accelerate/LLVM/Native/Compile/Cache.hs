@@ -18,20 +18,16 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Cache (
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target
 
-import LLVM.Target
-
 import Data.Version
 import System.FilePath
-import System.IO.Unsafe
 
 import Paths_accelerate_llvm_native
 
 
 instance Persistent Native where
   targetCacheTemplate =
-    return $ "accelerate-llvm-native-" ++ showVersion version </> hostCPUName </> "meep.o"
-
-{-# NOINLINE hostCPUName #-}
-hostCPUName :: String
-hostCPUName = unsafePerformIO $ getHostCPUName
+    return $ "accelerate-llvm-native-" ++ showVersion version
+         </> nativeTargetTriple
+         </> nativeCPUName
+         </> "meep.o"
 
