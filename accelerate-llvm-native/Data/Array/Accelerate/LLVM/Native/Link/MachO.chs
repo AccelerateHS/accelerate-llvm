@@ -128,8 +128,12 @@ loadSegment :: ByteString -> Vector Symbol -> LoadSegment -> IO Segment
 loadSegment obj symtab seg@LoadSegment{..} = do
   let
       pagesize    = fromIntegral c_getpagesize
-      seg_vmsize' = (seg_vmsize + 15) .&. (complement 15) -- round up to multiple of 16
-      segsize     = seg_vmsize' + (V.length symtab * 16)  -- jump entries are 16 bytes each (x86_64)
+
+      -- round up to next multiple of given alignment
+      pad align n = (n + align - 1) .&. (complement (align - 1))
+
+      seg_vmsize' = pad 16 seg_vmsize                                   -- align jump islands to 16 bytes
+      segsize     = pad pagesize (seg_vmsize' + (V.length symtab * 16)) -- jump entries are 16 bytes each (x86_64)
   --
   seg_fp  <- mallocPlainForeignPtrAlignedBytes segsize pagesize
   _       <- withForeignPtr seg_fp $ \seg_p -> do

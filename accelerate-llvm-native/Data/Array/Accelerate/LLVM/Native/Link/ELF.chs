@@ -136,8 +136,8 @@ loadSegment obj strtab secs symtab relocs = do
       -- The section at index `i` should place its data beginning at page boundary
       -- offset given by offsets!i.
       --
-      vmsize      = vmsize' + (V.length symtab * 16)  -- sections + jump tables
-      vmsize'     = V.last offsets                    -- bytes required to store all sections
+      vmsize'     = V.last offsets                                  -- bytes required to store all sections
+      vmsize      = pad pagesize (vmsize' + (V.length symtab * 16)) -- sections + jump tables
   --
   seg_fp  <- mallocPlainForeignPtrAlignedBytes vmsize pagesize
   funtab  <- withForeignPtr seg_fp $ \seg_p -> do
