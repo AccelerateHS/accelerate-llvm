@@ -71,9 +71,9 @@ maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 
--- extra-source-files:
---     ../README.md
---     ../CHANGELOG.md
+extra-source-files:
+    CHANGELOG.md
+    README.md
 
 
 -- Configuration flags
