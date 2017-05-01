@@ -96,6 +96,12 @@ loadObject obj =
 -- 32-bits (+-2GB). If we need to go outside of this range than we must do so
 -- via the jump islands.
 --
+-- NOTE: This puts all the sections into a single block of memory. Technically
+-- this is incorrect because we then have both text and data sections together,
+-- meaning that data sections are marked as execute when they really shouldn't
+-- be. These would need to live in different pages in order to be mprotect-ed
+-- properly.
+--
 loadSegment
     :: ByteString
     -> ByteString

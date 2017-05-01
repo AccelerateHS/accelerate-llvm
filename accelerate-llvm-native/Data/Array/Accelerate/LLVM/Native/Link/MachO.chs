@@ -124,6 +124,12 @@ loadSegments obj symtab lcs = do
 -- to 32-bit (+-2GB). If we need to go outside of this range then we must do so
 -- via the jump islands.
 --
+-- NOTE: This puts all the sections into a single block of memory. Technically
+-- this is incorrect because we then have both text and data sections together,
+-- meaning that data sections are marked as execute when they really shouldn't
+-- be. These would need to live in different pages in order to be mprotect-ed
+-- properly.
+--
 loadSegment :: ByteString -> Vector Symbol -> LoadSegment -> IO Segment
 loadSegment obj symtab seg@LoadSegment{..} = do
   let
