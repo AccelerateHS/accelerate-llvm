@@ -110,14 +110,14 @@ simpleOp
     -> Stream
     -> sh
     -> LLVM PTX (Array sh e)
-simpleOp exe gamma aenv stream sh = do
-  let kernel  = case ptxKernel exe of
+simpleOp PTXR{..} gamma aenv stream sh = do
+  let kernel  = case ptxKernel of
                   k:_ -> k
                   _   -> $internalError "simpleOp" "no kernels found"
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 (size sh)) out
   return out
 
 simpleNamed
@@ -129,13 +129,13 @@ simpleNamed
     -> Stream
     -> sh
     -> LLVM PTX (Array sh e)
-simpleNamed fun exe gamma aenv stream sh = do
+simpleNamed fun exe@PTXR{..} gamma aenv stream sh = do
   let kernel  = fromMaybe ($internalError "simpleNamed" ("not found: " ++ fun))
               $ lookupKernel fun exe
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -204,7 +204,7 @@ foldAllOp
     -> Stream
     -> DIM1
     -> LLVM PTX (Scalar e)
-foldAllOp exe gamma aenv stream (Z :. n) = do
+foldAllOp exe@PTXR{..} gamma aenv stream (Z :. n) = do
   ptx <- gets llvmTarget
   let
       err     = $internalError "foldAll" "kernel not found"
@@ -216,7 +216,7 @@ foldAllOp exe gamma aenv stream (Z :. n) = do
     then do
       -- The array is small enough that we can compute it in a single step
       out   <- allocateRemote Z
-      liftIO $ executeOp ptx ks gamma aenv stream (IE 0 n) out
+      liftIO $ executeOp ptx ks ptxModule gamma aenv stream (IE 0 n) out
       return out
 
     else do
@@ -230,12 +230,12 @@ foldAllOp exe gamma aenv stream (Z :. n) = do
             | otherwise = do
                 let s = m `multipleOf` kernelThreadBlockSize km2
                 out   <- allocateRemote (Z :. s)
-                liftIO $ executeOp ptx km2 gamma aenv stream (IE 0 s) (tmp, out)
+                liftIO $ executeOp ptx km2 ptxModule gamma aenv stream (IE 0 s) (tmp, out)
                 rec out
       --
       let s = n `multipleOf` kernelThreadBlockSize km1
       tmp   <- allocateRemote (Z :. s)
-      liftIO $ executeOp ptx km1 gamma aenv stream (IE 0 s) tmp
+      liftIO $ executeOp ptx km1 ptxModule gamma aenv stream (IE 0 s) tmp
       rec tmp
 
 
@@ -247,7 +247,7 @@ foldDimOp
     -> Stream
     -> (sh :. Int)
     -> LLVM PTX (Array sh e)
-foldDimOp exe gamma aenv stream (sh :. sz) = do
+foldDimOp exe@PTXR{..} gamma aenv stream (sh :. sz) = do
   let
       kernel  = fromMaybe ($internalError "foldDim" "kernel not found")
               $ if sz > 0
@@ -256,7 +256,7 @@ foldDimOp exe gamma aenv stream (sh :. sz) = do
   --
   out <- allocateRemote sh
   ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
+  liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 (size sh)) out
   return out
 
 
@@ -269,7 +269,7 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM PTX (Array (sh :. Int) e)
-foldSegOp exe gamma aenv stream (sh :. sz) (Z :. ss) = do
+foldSegOp exe@PTXR{..} gamma aenv stream (sh :. sz) (Z :. ss) = do
   let n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
       m       = size sh * n
       foldseg = if (sz`quot`ss) < (2 * kernelThreadBlockSize foldseg_cta)
@@ -284,7 +284,7 @@ foldSegOp exe gamma aenv stream (sh :. sz) (Z :. ss) = do
   out <- allocateRemote (sh :. n)
   ptx <- gets llvmTarget
   liftIO $ do
-    executeOp ptx foldseg gamma aenv stream (IE 0 m) out
+    executeOp ptx foldseg ptxModule gamma aenv stream (IE 0 m) out
   return out
 
 
@@ -340,7 +340,7 @@ scanAllOp
     -> Int                    -- input size
     -> Int                    -- output size
     -> LLVM PTX (Vector e)
-scanAllOp exe gamma aenv stream n m = do
+scanAllOp exe@PTXR{..} gamma aenv stream n m = do
   let
       err = $internalError "scanAllOp" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
@@ -357,13 +357,13 @@ scanAllOp exe gamma aenv stream n m = do
   -- which can be computed by a single thread block will require no
   -- additional work.
   tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+  liftIO $ executeOp ptx k1 ptxModule gamma aenv stream (IE 0 s) (tmp, out)
 
   -- Step 2: Multi-block reductions need to compute the per-block prefix,
   -- then apply those values to the partial results.
   when (s > 1) $ do
-    liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
+    liftIO $ executeOp ptx k2 ptxModule gamma aenv stream (IE 0 s)     tmp
+    liftIO $ executeOp ptx k3 ptxModule gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
 
   return out
 
@@ -377,14 +377,14 @@ scanDimOp
     -> sh
     -> Int
     -> LLVM PTX (Array (sh:.Int) e)
-scanDimOp exe gamma aenv stream sz m = do
+scanDimOp exe@PTXR{..} gamma aenv stream sz m = do
   let
       kernel = fromMaybe ($internalError "scanDimOp" "kernel not found")
              $ lookupKernel "scan" exe
   --
   ptx <- gets llvmTarget
   out <- allocateRemote (sz :. m)
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) out
+  liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 (size sz)) out
   return out
 
 
@@ -426,7 +426,7 @@ scan'AllOp
     -> Stream
     -> DIM1
     -> LLVM PTX (Vector e, Scalar e)
-scan'AllOp exe gamma aenv stream (Z :. n) = do
+scan'AllOp exe@PTXR{..} gamma aenv stream (Z :. n) = do
   let
       err = $internalError "scan'AllOp" "kernel not found"
       k1  = fromMaybe err (lookupKernel "scanP1" exe)
@@ -442,7 +442,7 @@ scan'AllOp exe gamma aenv stream (Z :. n) = do
 
   -- Step 1: independent thread-block-wide scans. Each block stores its partial
   -- sum to a temporary array.
-  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+  liftIO $ executeOp ptx k1 ptxModule gamma aenv stream (IE 0 s) (tmp, out)
 
   -- If this was a small array that was processed by a single thread block then
   -- we are done, otherwise compute the per-block prefix and apply those values
@@ -452,8 +452,8 @@ scan'AllOp exe gamma aenv stream (Z :. n) = do
            Array _ ad -> return (out, Array () ad)
     else do
       sum <- allocateRemote Z
-      liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
-      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
+      liftIO $ executeOp ptx k2 ptxModule gamma aenv stream (IE 0 s)     (tmp, sum)
+      liftIO $ executeOp ptx k3 ptxModule gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
       return (out, sum)
 
 
@@ -465,14 +465,14 @@ scan'DimOp
     -> Stream
     -> sh :. Int
     -> LLVM PTX (Array (sh:.Int) e, Array sh e)
-scan'DimOp exe gamma aenv stream sh@(sz :. _) = do
+scan'DimOp exe@PTXR{..} gamma aenv stream sh@(sz :. _) = do
   let kernel = fromMaybe ($internalError "scan'DimOp" "kernel not found")
              $ lookupKernel "scan" exe
   --
   ptx <- gets llvmTarget
   out <- allocateRemote sh
   sum <- allocateRemote sz
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sz)) (out,sum)
+  liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 (size sz)) (out,sum)
   return (out,sum)
 
 
@@ -486,10 +486,10 @@ permuteOp
     -> sh
     -> Array sh' e
     -> LLVM PTX (Array sh' e)
-permuteOp exe gamma aenv stream inplace shIn dfs = do
+permuteOp PTXR{..} gamma aenv stream inplace shIn dfs = do
   let n       = size shIn
       m       = size (shape dfs)
-      kernel  = case ptxKernel exe of
+      kernel  = case ptxKernel of
                   k:_ -> k
                   _   -> $internalError "permute" "no kernels found"
   --
@@ -499,11 +499,11 @@ permuteOp exe gamma aenv stream inplace shIn dfs = do
            else cloneArrayAsync stream dfs
   --
   case kernelName kernel of
-    "permute_rmw"   -> liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) out
+    "permute_rmw"   -> liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 n) out
     "permute_mutex" -> do
       barrier@(Array _ ad) <- allocateRemote (Z :. m) :: LLVM PTX (Vector Word32)
       memsetArrayAsync stream m 0 ad
-      liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) (out, barrier)
+      liftIO $ executeOp ptx kernel ptxModule gamma aenv stream (IE 0 n) (out, barrier)
     _               -> $internalError "permute" "unexpected kernel image"
   --
   return out
@@ -551,8 +551,8 @@ i32 = fromIntegral
 -- | Retrieve the named kernel
 --
 lookupKernel :: String -> ExecutableR PTX -> Maybe Kernel
-lookupKernel name exe =
-  find (\k -> kernelName k == name) (ptxKernel exe)
+lookupKernel name PTXR{..} =
+  find (\k -> kernelName k == name) ptxKernel
 
 
 -- Execute the function implementing this kernel.
@@ -561,24 +561,26 @@ executeOp
     :: Marshalable args
     => PTX
     -> Kernel
+    -> ObjectCode
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Range
     -> args
     -> IO ()
-executeOp ptx@PTX{..} kernel@Kernel{..} gamma aenv stream r args =
+executeOp ptx@PTX{..} kernel@Kernel{..} oc gamma aenv stream r args =
   runExecutable fillP kernelName defaultPPT r $ \start end _ -> do
     argv <- marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
-    launch kernel stream (end-start) argv
+    launch kernel oc stream (end-start) argv
 
 
 -- Execute a device function with the given thread configuration and function
 -- parameters.
 --
-launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
-launch Kernel{..} stream n args =
+launch :: Kernel -> ObjectCode -> Stream -> Int -> [CUDA.FunParam] -> IO ()
+launch Kernel{..} oc stream n args =
   when (n > 0) $
+  withLifetime oc     $ \_  ->
   withLifetime stream $ \st ->
     Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args
