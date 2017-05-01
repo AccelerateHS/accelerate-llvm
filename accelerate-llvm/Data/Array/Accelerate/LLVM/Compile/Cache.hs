@@ -60,7 +60,7 @@ cacheOfOpenAcc acc = do
       (name, ext)   = splitExtensions file
       --
       cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base </> if dbg then "dbg" else "rel"
-      cachefile     = cachepath </> printf "%s%X" name uid <.> ext
+      cachefile     = cachepath </> printf "%s%016X" name uid <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
   return cachefile
