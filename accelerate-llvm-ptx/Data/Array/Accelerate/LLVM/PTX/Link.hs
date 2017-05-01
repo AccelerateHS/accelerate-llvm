@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
-  ExecutableR(..), Kernel(..),
+  ExecutableR(..), Kernel(..), ObjectCode,
 
 ) where
 
@@ -43,7 +43,7 @@ import Prelude                                                      as P
 
 instance Link PTX where
   data ExecutableR PTX = PTXR { ptxKernel :: ![Kernel]
-                              , ptxModule :: {-# UNPACK #-} !(Lifetime CUDA.Module)
+                              , ptxModule :: {-# UNPACK #-} !ObjectCode
                               }
   linkForTarget = link
 
@@ -56,6 +56,8 @@ data Kernel = Kernel
   , kernelThreadBlocks          :: (Int -> Int)
   , kernelName                  :: String
   }
+
+type ObjectCode = Lifetime CUDA.Module
 
 
 -- | Load the generated object code into the current CUDA context.
