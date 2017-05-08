@@ -131,6 +131,7 @@ pokeArrayAsync !stream !n !ad = do
     nonblocking stream $
       transfer "pokeArray" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
   liftIO (touchLifetime stream)
+  liftIO (Debug.didCopyBytesToRemote (fromIntegral bytes))
 
 
 {-# INLINEABLE pokeArrayR #-}
@@ -163,6 +164,7 @@ pokeArrayAsyncR !stream !from !to !ad = do
       transfer "pokeArray" bytes (Just st) $
         CUDA.pokeArrayAsync n (src `CUDA.plusHostPtr` offset) (dst `CUDA.plusDevPtr` offset) (Just st)
   liftIO (touchLifetime stream)
+  liftIO (Debug.didCopyBytesToRemote (fromIntegral bytes))
 
 
 -- | Read a single element from an array at a given row-major index
@@ -179,6 +181,7 @@ indexArray !ad !i =
   bracket (CUDA.mallocHostArray [] 1) CUDA.freeHost $ \dst     -> do
     let !st = unsafeGetValue stream
     message $ "indexArray: " ++ showBytes (sizeOf (undefined::a))
+    Debug.didCopyBytesFromRemote (fromIntegral (sizeOf (undefined::a)))
     CUDA.peekArrayAsync 1 (src `CUDA.advanceDevPtr` i) dst (Just st)
     CUDA.block st
     touchLifetime stream
@@ -213,6 +216,7 @@ peekArrayAsync !stream !n !ad = do
     nonblocking stream $
       transfer "peekArray" bytes (Just st)  $ CUDA.peekArrayAsync n src dst (Just st)
   liftIO (touchLifetime stream)
+  liftIO (Debug.didCopyBytesFromRemote (fromIntegral bytes))
 
 {-# INLINEABLE peekArrayR #-}
 peekArrayR
@@ -244,6 +248,7 @@ peekArrayAsyncR !stream !from !to !ad = do
       transfer "peekArray" bytes (Just st) $
         CUDA.peekArrayAsync n (src `CUDA.plusDevPtr` offset) (dst `CUDA.plusHostPtr` offset) (Just st)
   liftIO (touchLifetime stream)
+  liftIO (Debug.didCopyBytesFromRemote (fromIntegral bytes))
 
 
 -- | Copy data between arrays in the same context
