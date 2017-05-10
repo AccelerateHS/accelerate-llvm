@@ -9,12 +9,11 @@ packages:
 - 'accelerate-llvm-ptx'
 
 - location:
-    git:    https://github.com/tmcdonell/accelerate.git
-    commit: 710f2391964ed735e040d4b308fa7d7ef6e8bbb0
+    git:    https://github.com/AccelerateHS/accelerate.git
+    commit: f13c4b549b89aa11388b5f85ec69c7d6cabe5916
   extra-dep: true
 
 extra-deps:
-# - 'accelerate-1.0.0.0'
 - 'Cabal-1.24.2.0'
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.3'
