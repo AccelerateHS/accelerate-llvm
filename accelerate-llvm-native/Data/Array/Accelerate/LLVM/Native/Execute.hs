@@ -488,8 +488,8 @@ executeOp
     -> args
     -> IO ()
 executeOp ppt exe ((name, f), oc) gamma aenv r args =
-  runExecutable exe name ppt r $ \start end _tid ->
   withLifetime oc              $ \_              ->
+  runExecutable exe name ppt r $ \start end _tid ->
   monitorProcTime              $
     callFFI f retVoid =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
 
