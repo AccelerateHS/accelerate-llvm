@@ -75,7 +75,7 @@ category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 -- -------------------
 
 Flag debug
-  Default:              True
+  Default:              False
   Description:
     Enable debug tracing message flags. Note that 'debug' must be enabled in the
     base 'accelerate' package as well. See the 'accelerate' package for usage
@@ -86,11 +86,11 @@ Flag bounds-checks
   Description:          Enable bounds checking
 
 Flag unsafe-checks
-  Default:              True
+  Default:              False
   Description:          Enable bounds checking in unsafe operations
 
 Flag internal-checks
-  Default:              True
+  Default:              False
   Description:          Enable internal consistency checks
 
 
