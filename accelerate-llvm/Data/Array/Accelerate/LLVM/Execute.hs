@@ -538,7 +538,9 @@ executeOpenSeq
   -> AvalR arch aenv
   -> StreamR arch
   -> LLVM arch arrs
-executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
+executeOpenSeq mi _ma i s aenv stream
+  | Just Refl <- eqT :: Maybe (index :~: (Int,Int))
+  = executeSeq' BaseEnv s
   where
     sequence' []     = return []
     sequence' (x:xs) = do
@@ -546,7 +548,7 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
       xs' <- unsafeInterleave (sequence' xs)
       return (x':xs')
 
-    executeSeq' :: forall aenv'. Extend (Producer index (ExecOpenAcc arch)) aenv aenv' -> PreOpenSeq index (ExecOpenAcc arch) aenv' arrs -> LLVM arch arrs
+    executeSeq' :: forall aenv'. Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv' -> PreOpenSeq (Int,Int) (ExecOpenAcc arch) aenv' arrs -> LLVM arch arrs
     executeSeq' prods s = do
       index             <- executeExp (initialIndex (Const mi)) Aempty stream
       (ext, Just aenv') <- evalSources (indexSize index) prods
@@ -554,7 +556,7 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
         Producer (Pull src) s -> executeSeq' (PushEnv prods (Pull src)) s
         Producer (ProduceAccum l f a) (Consumer (Last a' d)) -> (last <$>) $
           join $ go i
-            <$> pure (schedule index)
+            <$> pure (chunked index)
             <*> sequenceA (executeExp <$> l <*> pure aenv' <*> pure stream)
             <*> pure (executeOpenAfun2 f)
             <*> async (executeOpenAcc a aenv')
@@ -564,7 +566,7 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
             <*> pure (Just aenv')
         Producer (ProduceAccum l f a) (Reify ty a') -> (concatMap (divide ty) <$>) $
           join $ go i
-            <$> pure (schedule index)
+            <$> pure (chunked index)
             <*> sequenceA (executeExp <$> l <*> pure aenv' <*> pure stream)
             <*> pure (executeOpenAfun2 f)
             <*> async (executeOpenAcc a aenv')
@@ -576,13 +578,13 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
       where
         go :: forall arrs a b. Arrays arrs
            => Maybe Int
-           -> Schedule index
+           -> Schedule (Int,Int)
            -> Maybe Int
-           -> (AvalR arch aenv' -> AsyncR arch (Scalar index) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
+           -> (AvalR arch aenv' -> AsyncR arch (Scalar (Int,Int)) -> AsyncR arch b -> StreamR arch -> LLVM arch (a, b))
            -> AsyncR arch b
            -> [arrs]
            -> (AvalR arch (aenv', a) -> LLVM arch arrs)
-           -> Extend (Producer index (ExecOpenAcc arch)) aenv aenv'
+           -> Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv'
            -> Maybe (AvalR arch aenv')
            -> LLVM arch [arrs]
         go (Just 0) _     _ _ _ a _      _   _            = return a
@@ -599,24 +601,16 @@ executeOpenSeq mi _ma i s aenv stream = executeSeq' BaseEnv s
                 a''           <- unwrap (Apush aenv' (AsyncR event a'))
                 a'''          <- useLocal a''
                 rest          <- unsafeInterleave $ do
-                  let sched' = next sched t
+                  let sched' = nextChunked sched t
                   (ext', maenv) <- evalSources (indexSize (index sched')) ext
                   go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv
                 return (a''' : rest)
               else
                 return a
 
-    schedule :: SeqIndex index => index -> Schedule index
-    schedule | Just Refl <- eqT :: Maybe (index :~: Int)
-             = sequential
-             | Just Refl <- eqT :: Maybe (index :~: (Int,Int))
-             = doubleSizeChunked
-             | otherwise
-             = $internalError "executeOpenSeq" "Unknown sequence index type"
-
     evalSources :: Int
-                -> Extend (Producer index (ExecOpenAcc arch)) aenv aenv'
-                -> LLVM arch (Extend (Producer index (ExecOpenAcc arch)) aenv aenv', Maybe (AvalR arch aenv'))
+                -> Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv'
+                -> LLVM arch (Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv', Maybe (AvalR arch aenv'))
     evalSources n (PushEnv ext (Pull (Function f a))) = do
       (ext', aenv) <- evalSources n ext
       let (stop,b,a')  = f n a
