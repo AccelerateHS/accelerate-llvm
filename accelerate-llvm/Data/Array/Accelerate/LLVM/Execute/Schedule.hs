@@ -43,7 +43,8 @@ nextChunked Schedule{..} _
   = Schedule (s+n',n) Nothing Maintain
 nextChunked Schedule{..} time
   = case prevCost of
-      Nothing -> Schedule (s+n,2*n) (Just timePerElement) Increase
+      Nothing | n == 1    -> Schedule (s+n,2*n) (Just timePerElement) Increase
+              | otherwise -> Schedule (s+n,n) (Just timePerElement) Maintain
       Just c  ->
         let change = computeChange c
         in Schedule (s+n, applyChange change n) (Just timePerElement) change

@@ -44,9 +44,12 @@ import Data.Array.Accelerate.LLVM.State
 
 -- standard library
 import Data.IntMap                                              ( IntMap )
+import Data.IORef                                               ( IORef, newIORef )
 import Data.Monoid                                              hiding ( Last )
 import Data.Traversable                                         ( mapM, sequenceA )
 import Control.Applicative                                      hiding ( Const )
+import Control.Monad                                            ( join )
+import Control.Monad.Trans                                      ( liftIO )
 import Prelude                                                  hiding ( exp, unzip, sequence, mapM )
 
 
@@ -65,19 +68,27 @@ class Foreign arch => Compile arch where
 -- each node directly.
 --
 data ExecOpenAcc arch aenv a where
-  ExecAcc  :: ExecutableR arch
-           -> Gamma aenv
-           -> PreOpenAcc (ExecOpenAcc arch) aenv a
-           -> ExecOpenAcc arch aenv a
+  ExecAcc    :: ExecutableR arch
+             -> Gamma aenv
+             -> PreOpenAcc (ExecOpenAcc arch) aenv a
+             -> ExecOpenAcc arch aenv a
 
-  EmbedAcc :: (Shape sh, Elt e)
-           => PreExp (ExecOpenAcc arch) aenv sh
-           -> ExecOpenAcc arch aenv (Array sh e)
+  EmbedAcc   :: (Shape sh, Elt e)
+             => PreExp (ExecOpenAcc arch) aenv sh
+             -> ExecOpenAcc arch aenv (Array sh e)
 
-  UnzipAcc :: (Elt t, Elt e)
-           => TupleIdx (TupleRepr t) e
-           -> Idx aenv (Array sh t)
-           -> ExecOpenAcc arch aenv (Array sh e)
+  UnzipAcc   :: (Elt t, Elt e)
+             => TupleIdx (TupleRepr t) e
+             -> Idx aenv (Array sh t)
+             -> ExecOpenAcc arch aenv (Array sh e)
+
+  CollectAcc :: SeqIndex index
+             => IORef (Maybe Int) -- Previously learnt chunk size
+             -> ExecExp arch aenv Int
+             -> Maybe (ExecExp arch aenv Int)
+             -> Maybe (ExecExp arch aenv Int)
+             -> PreOpenSeq index (ExecOpenAcc arch) aenv a
+             -> ExecOpenAcc arch aenv a
 
 
 -- An annotated AST suitable for execution
@@ -170,7 +181,7 @@ compileOpenAcc = traverseAcc
         Subarray i s arr        -> node =<< liftA3 Subarray             <$> travE i <*> travE s <*> pure (pure arr)
 
         -- Sequences
-        Collect l u i s         -> node =<< liftA4 Collect              <$> travE l <*> fmap sequenceA (mapM travE u) <*> fmap sequenceA (mapM travE i) <*> fmap pure (compileOpenSeq s)
+        Collect l u i s         -> join $ collect <$> travE l <*> fmap sequenceA (mapM travE u) <*> fmap sequenceA (mapM travE i) <*> compileOpenSeq s
 
         -- Index space transforms
         Reshape s a             -> node =<< liftA2 Reshape              <$> travE s <*> travA a
@@ -246,6 +257,16 @@ compileOpenAcc = traverseAcc
         wrap :: (IntMap (Idx' aenv'), PreOpenAcc (ExecOpenAcc arch) aenv' arrs')
              -> LLVM arch (IntMap (Idx' aenv'), ExecOpenAcc arch aenv' arrs')
         wrap = return . liftA (ExecAcc noKernel mempty)
+
+        collect :: SeqIndex index
+                => (IntMap (Idx' aenv), PreOpenExp (ExecOpenAcc arch) () aenv Int)
+                -> (IntMap (Idx' aenv), Maybe (PreOpenExp (ExecOpenAcc arch) () aenv Int))
+                -> (IntMap (Idx' aenv), Maybe (PreOpenExp (ExecOpenAcc arch) () aenv Int))
+                -> PreOpenSeq index (ExecOpenAcc arch) aenv arrs
+                -> LLVM arch (ExecOpenAcc arch aenv arrs)
+        collect l u i s = do
+          l' <- liftIO $ newIORef Nothing
+          return $! CollectAcc l' (snd l) (snd u) (snd i) s
 
         -- Unzips of manifest array data can be done in constant time without
         -- executing any array programs. We split them out here into a separate

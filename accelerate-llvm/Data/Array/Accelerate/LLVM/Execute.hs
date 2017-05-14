@@ -52,9 +52,12 @@ import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Execute.Schedule
 
 -- library
+import Control.Arrow                                            ( first )
 import Control.Monad                                            ( join )
 import Control.Monad.Trans                                      ( liftIO )
 import Control.Applicative                                      hiding ( Const )
+import Data.IORef                                               ( readIORef, writeIORef )
+import Data.Maybe                                               ( fromMaybe )
 import Data.Traversable                                         ( sequenceA, mapM )
 import Data.Typeable                                            ( eqT )
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1, mapM )
@@ -297,12 +300,6 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Acond p t e                 -> acond t e =<< travE p
     Awhile p f a                -> awhile p f =<< travA a
 
-    -- Sequence computation
-    Collect l u i s             -> do l' <- travE l
-                                      u' <- mapM travE u
-                                      i' <- mapM travE i
-                                      executeOpenSeq l' u' i' s aenv stream
-
     -- Foreign function
     Aforeign asm _ a            -> foreignA asm =<< travA a
 
@@ -333,6 +330,9 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     Slice{}                     -> fusionError
     ZipWith{}                   -> fusionError
 
+    -- Sequence computations
+    Collect{}                   -> $internalError "execute" "sequence computation not compiled"
+
   where
     fusionError :: error
     fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
@@ -352,6 +352,7 @@ executeOpenAcc (ExecAcc kernel gamma pacc) aenv stream =
     -- get the extent of an embedded array
     extent :: Shape sh => ExecOpenAcc arch aenv (Array sh e) -> LLVM arch sh
     extent ExecAcc{}       = $internalError "executeOpenAcc" "expected delayed array"
+    extent CollectAcc{}    = $internalError "executeOpenAcc" "expected delayed array"
     extent (EmbedAcc sh)   = travE sh
     extent (UnzipAcc _ ix) = let AsyncR _ a = aprj ix aenv
                              in  return $ shape a
@@ -410,6 +411,16 @@ executeOpenAcc (UnzipAcc tup v) aenv stream = do
         go ZeroTupIdx      (PairTuple _ t) (AD_Pair _ x)
           | Just Refl <- matchTupleType t (eltType (undefined::e)) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
+
+executeOpenAcc (CollectAcc lref l u i s) aenv stream = do
+  l' <- fromMaybe <$> travE l <*> liftIO (readIORef lref)
+  u' <- mapM travE u
+  i' <- mapM travE i
+  (r, l'') <- executeOpenSeq l' u' i' s aenv stream
+  liftIO $ writeIORef lref (Just l'')
+  return r
+  where
+    travE exp = executeExp exp aenv stream
 
 
 -- Scalar expression evaluation
@@ -527,7 +538,7 @@ executeSeq
   -> LLVM arch arrs
 executeSeq (StreamSeq binds s) = do
   aenv <- executeExtend binds Aempty
-  get =<< async (executeOpenSeq 1 Nothing Nothing s aenv)
+  liftA fst . get =<< async (executeOpenSeq 1 Nothing Nothing s aenv)
 
 executeOpenSeq
   :: forall arch index aenv arrs. (Execute arch, SeqIndex index)
@@ -537,7 +548,7 @@ executeOpenSeq
   -> PreOpenSeq index (ExecOpenAcc arch) aenv arrs
   -> AvalR arch aenv
   -> StreamR arch
-  -> LLVM arch arrs
+  -> LLVM arch (arrs, Int)
 executeOpenSeq mi _ma i s aenv stream
   | Just Refl <- eqT :: Maybe (index :~: (Int,Int))
   = executeSeq' BaseEnv s
@@ -548,13 +559,15 @@ executeOpenSeq mi _ma i s aenv stream
       xs' <- unsafeInterleave (sequence' xs)
       return (x':xs')
 
-    executeSeq' :: forall aenv'. Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv' -> PreOpenSeq (Int,Int) (ExecOpenAcc arch) aenv' arrs -> LLVM arch arrs
+    executeSeq' :: forall aenv'. Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv'
+                -> PreOpenSeq (Int,Int) (ExecOpenAcc arch) aenv' arrs
+                -> LLVM arch (arrs, Int)
     executeSeq' prods s = do
       index             <- executeExp (initialIndex (Const mi)) Aempty stream
       (ext, Just aenv') <- evalSources (indexSize index) prods
       case s of
         Producer (Pull src) s -> executeSeq' (PushEnv prods (Pull src)) s
-        Producer (ProduceAccum l f a) (Consumer (Last a' d)) -> (last <$>) $
+        Producer (ProduceAccum l f a) (Consumer (Last a' d)) -> (first last <$>) $
           join $ go i
             <$> pure (chunked index)
             <*> sequenceA (executeExp <$> l <*> pure aenv' <*> pure stream)
@@ -564,7 +577,7 @@ executeOpenSeq mi _ma i s aenv stream
             <*> pure (\aenv' -> executeOpenAcc a' aenv' stream)
             <*> pure ext
             <*> pure (Just aenv')
-        Producer (ProduceAccum l f a) (Reify ty a') -> (concatMap (divide ty) <$>) $
+        Producer (ProduceAccum l f a) (Reify ty a') -> (first (concatMap (divide ty)) <$>) $
           join $ go i
             <$> pure (chunked index)
             <*> sequenceA (executeExp <$> l <*> pure aenv' <*> pure stream)
@@ -586,9 +599,9 @@ executeOpenSeq mi _ma i s aenv stream
            -> (AvalR arch (aenv', a) -> LLVM arch arrs)
            -> Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv'
            -> Maybe (AvalR arch aenv')
-           -> LLVM arch [arrs]
-        go (Just 0) _     _ _ _ a _      _   _            = return a
-        go _        _     _ _ _ a _      _   Nothing      = return a
+           -> LLVM arch ([arrs], Int)
+        go (Just 0) sched _ _ _ a _      _   _            = return (a, snd (index sched))
+        go _        sched _ _ _ a _      _   Nothing      = return (a, snd (index sched))
         go i        sched l f s a unwrap ext (Just aenv') = do
           index' <- async (\_ -> newRemote Z (const (index sched)))
           if maybe True (contains' (index sched)) l
@@ -600,13 +613,13 @@ executeOpenSeq mi _ma i s aenv stream
                 --
                 a''           <- unwrap (Apush aenv' (AsyncR event a'))
                 a'''          <- useLocal a''
-                rest          <- unsafeInterleave $ do
+                (rest, sz)    <- unsafeInterleave $ do
                   let sched' = nextChunked sched t
                   (ext', maenv) <- evalSources (indexSize (index sched')) ext
                   go (subtract 1 <$> i) sched' l f (AsyncR event s') [] unwrap ext' maenv
-                return (a''' : rest)
+                return (a''' : rest, sz)
               else
-                return a
+                return (a, snd (index sched))
 
     evalSources :: Int
                 -> Extend (Producer (Int,Int) (ExecOpenAcc arch)) aenv aenv'
@@ -622,6 +635,9 @@ executeOpenSeq mi _ma i s aenv stream
       = return (BaseEnv, Just aenv)
     evalSources _ _
       = $internalError "evalSeq" "AST is at wrong stage"
+
+executeOpenSeq _ _ _ _ _ _ =  $internalError "executeOpenSeq"
+                                             "Sequence computations must be vectorised"
 
 
 executeExtend :: Execute arch
