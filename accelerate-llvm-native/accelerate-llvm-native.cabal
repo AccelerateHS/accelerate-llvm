@@ -138,8 +138,8 @@ Library
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
         , libffi                        >= 0.1
-        , llvm-hs                       >= 3.9
-        , llvm-hs-pure                  >= 3.9
+        , llvm-hs                       == 4.0.*
+        , llvm-hs-pure                  == 4.0.*
         , mtl                           >= 2.2.1
         , time                          >= 1.4
 

@@ -155,8 +155,8 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 3.9
-        , llvm-hs-pure                  >= 3.9
+        , llvm-hs                       == 4.0.*
+        , llvm-hs-pure                  == 4.0.*
         , mtl                           >= 2.2.1
         , pretty                        >= 1.1
         , time                          >= 1.4

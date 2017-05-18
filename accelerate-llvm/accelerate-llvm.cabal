@@ -174,8 +174,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , fclabels                      >= 2.0
-        , llvm-hs                       >= 3.9
-        , llvm-hs-pure                  >= 3.9
+        , llvm-hs                       == 4.0.*
+        , llvm-hs-pure                  == 4.0.*
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , unordered-containers          >= 0.2

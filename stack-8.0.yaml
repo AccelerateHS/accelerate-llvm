@@ -18,7 +18,7 @@ extra-deps:
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.3'
 - 'libffi-0.1'
-- 'llvm-hs-4.0.0.0'
+- 'llvm-hs-4.0.1.0'
 - 'llvm-hs-pure-4.0.0.0'
 - 'nvvm-0.7.5.1'
 - 'unique-0'
