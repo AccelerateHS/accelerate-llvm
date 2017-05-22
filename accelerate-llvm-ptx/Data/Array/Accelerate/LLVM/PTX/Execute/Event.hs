@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Event
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -56,7 +56,7 @@ create = do
 
 create' :: LLVM PTX Event.Event
 create' = do
-  PTX{..} <- gets llvmTarget
+  PTX{ptxMemoryTable} <- gets llvmTarget
   me      <- attempt "create/new" (liftIO . catchOOM $ Event.create [Event.DisableTiming])
              `orElse` do
                Remote.reclaim ptxMemoryTable
