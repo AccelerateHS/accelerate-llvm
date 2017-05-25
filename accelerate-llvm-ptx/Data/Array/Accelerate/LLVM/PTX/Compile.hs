@@ -18,7 +18,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  ExecutableR(..), Kernel(..),
+  ExecutableR(..), Kernel(..), ObjectCode,
 
 ) where
 
@@ -74,7 +74,7 @@ import Prelude                                                      as P
 
 instance Compile PTX where
   data ExecutableR PTX = PTXR { ptxKernel :: ![Kernel]
-                              , ptxModule :: {-# UNPACK #-} !(Lifetime CUDA.Module)
+                              , ptxModule :: {-# UNPACK #-} !ObjectCode
                               }
   compileForTarget     = compileForPTX
 
@@ -87,6 +87,9 @@ data Kernel = Kernel {
   , kernelThreadBlocks          :: (Int -> Int)
   , kernelName                  :: String
   }
+
+type ObjectCode = Lifetime CUDA.Module
+
 
 -- | Compile a given module for the NVPTX backend. This produces a CUDA module
 -- as well as a list of the kernel functions in the module, together with some

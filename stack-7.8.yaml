@@ -8,13 +8,8 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
-# extra-deps:
-- location:
-    git:    https://github.com/AccelerateHS/accelerate.git
-    commit: a250e2b82b1730016bb018277b5e6205d6d229fb
-  extra-dep: true
-
 extra-deps:
+- 'accelerate-1.0.0.0'
 - 'atomic-primops-0.8.0.2'
 - 'base-orphans-0.4.4'
 - 'Cabal-1.24.2.0'
