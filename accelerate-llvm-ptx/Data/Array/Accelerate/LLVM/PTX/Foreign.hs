@@ -21,7 +21,8 @@ module Data.Array.Accelerate.LLVM.PTX.Foreign (
 
   -- useful re-exports
   LLVM,
-  PTX,
+  PTX(..),
+  Context(..),
   liftIO,
   withDevicePtr,
   module Data.Array.Accelerate.LLVM.PTX.Array.Data,
@@ -37,8 +38,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Array.Prim
+import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
-import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 import Control.Monad.State
 import Data.Typeable
