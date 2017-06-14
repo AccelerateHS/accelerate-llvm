@@ -21,16 +21,14 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Link (
 ) where
 
 -- llvm-hs
-import LLVM.Context
-import qualified LLVM.Module                                        as LLVM
-
 import LLVM.AST                                                     as AST
 import LLVM.AST.Global                                              as G
 import LLVM.AST.Linkage
 
--- accelerate
-import Data.Array.Accelerate.Error
+import LLVM.Context
+import qualified LLVM.Module                                        as LLVM
 
+-- accelerate
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
@@ -40,6 +38,7 @@ import Foreign.CUDA.Analysis
 -- standard library
 import Control.Monad.Except
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.HashSet                                                 ( HashSet )
 import Data.List
 import Data.Maybe
@@ -78,13 +77,13 @@ withLibdeviceNVPTX
     -> IO a
 withLibdeviceNVPTX dev ctx ast next =
   case Set.null externs of
-    True        -> runError $ LLVM.withModuleFromAST ctx ast next
-    False       ->
-      runError $ LLVM.withModuleFromAST ctx ast                          $ \mdl  ->
-      runError $ LLVM.withModuleFromAST ctx nvvmReflect                  $ \refl ->
-      runError $ LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
-        runError $ linkModules mdl refl
-        runError $ linkModules mdl libd
+    True  -> LLVM.withModuleFromAST ctx ast next
+    False ->
+      LLVM.withModuleFromAST ctx ast                          $ \mdl  ->
+      LLVM.withModuleFromAST ctx nvvmReflect                  $ \refl ->
+      LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
+        linkModules mdl refl
+        linkModules mdl libd
         Debug.traceIO Debug.dump_cc msg
         next mdl
   where
@@ -96,10 +95,10 @@ withLibdeviceNVPTX dev ctx ast next =
                                    }
     externs     = analyse ast
     arch        = computeCapability dev
-    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
-
     msg         = printf "cc: linking with libdevice: %s"
-                $ intercalate ", " (Set.toList externs)
+                $ intercalate ", "
+                $ map show
+                $ Set.toList externs
 
 
 -- | Link LLVM modules by copying parts of the second argument into the first.
@@ -107,7 +106,7 @@ withLibdeviceNVPTX dev ctx ast next =
 linkModules
     :: LLVM.Module            -- module into which to link (destination: contains all symbols)
     -> LLVM.Module            -- module to copy into the other (this is destroyed in the process)
-    -> ExceptT String IO ()
+    -> IO ()
 linkModules = LLVM.linkModules
 
 
@@ -129,7 +128,7 @@ withLibdeviceNVVM
     -> ([(String, ByteString)] -> LLVM.Module -> IO a)
     -> IO a
 withLibdeviceNVVM dev ctx ast next =
-  runError $ LLVM.withModuleFromAST ctx ast $ \mdl -> do
+  LLVM.withModuleFromAST ctx ast $ \mdl -> do
     when withlib $ Debug.traceIO Debug.dump_cc msg
     next lib mdl
   where
@@ -139,10 +138,10 @@ withLibdeviceNVVM dev ctx ast next =
         | otherwise     = []
 
     arch        = computeCapability dev
-    runError    = either ($internalError "withLibdeviceNVPTX") return <=< runExceptT
-
     msg         = printf "cc: linking with libdevice: %s"
-                $ intercalate ", " (Set.toList externs)
+                $ intercalate ", "
+                $ map show
+                $ Set.toList externs
 
 
 -- | Analyse the LLVM AST module and determine if any of the external
@@ -150,12 +149,12 @@ withLibdeviceNVVM dev ctx ast next =
 -- functions is returned, and will be used when determining which functions from
 -- libdevice to internalise.
 --
-analyse :: Module -> HashSet String
+analyse :: Module -> HashSet ShortByteString
 analyse Module{..} =
   let intrinsic (GlobalDefinition Function{..})
         | null basicBlocks
         , Name n        <- name
-        , "__nv_"       <- take 5 n
+        , "__nv_"       <- take 5 (show n)
         = Just n
 
       intrinsic _
@@ -168,7 +167,7 @@ analyse Module{..} =
 -- unused definitions can be removed as dead code. Be careful to leave any
 -- declarations as external.
 --
-internalise :: HashSet String -> Module -> Module
+internalise :: HashSet ShortByteString -> Module -> Module
 internalise externals Module{..} =
   let internal (GlobalDefinition Function{..})
         | Name n <- name

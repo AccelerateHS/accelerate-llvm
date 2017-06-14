@@ -10,22 +10,25 @@ packages:
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: 43551340bf08fb8b1d297a1a3852e970adb28050
+    commit: be851212c1f5c26e948b85c5e428207c78bdae16
   extra-dep: true
 
 extra-deps:
 # - 'accelerate-1.0.0.0'
 - 'atomic-primops-0.8.0.2'
+- 'attoparsec-0.13.1.0'
 - 'base-orphans-0.4.4'
 - 'Cabal-1.24.2.0'
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.7.5.3'
+- 'fail-4.9.0.0'
 - 'libffi-0.1'
-- 'llvm-hs-4.0.1.0'
-- 'llvm-hs-pure-4.0.0.0'
+- 'llvm-hs-4.1.0.0'
+- 'llvm-hs-pure-4.1.0.0'
 - 'mtl-2.2.1'
 - 'nvvm-0.7.5.1'
 - 'semigroups-0.18.1'
+- 'th-lift-instances-0.1.11'
 - 'transformers-0.4.3.0'
 - 'transformers-compat-0.4.0.4'
 - 'unique-0'

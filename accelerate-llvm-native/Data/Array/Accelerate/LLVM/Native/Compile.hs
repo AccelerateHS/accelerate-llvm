@@ -28,7 +28,6 @@ import LLVM.Target
 import LLVM.ExecutionEngine
 
 -- accelerate
-import Data.Array.Accelerate.Error                                  ( internalError )
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -47,9 +46,9 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- standard library
-import Control.Monad.Except                                         ( runExceptT )
 import Control.Monad.State
 import Data.Maybe
+import qualified Data.ByteString.Short                              as B
 
 
 instance Compile Native where
@@ -68,22 +67,22 @@ compileForNativeTarget acc aenv = do
   -- Generate code for this Acc operation
   --
   let ast        = unModule (llvmOfOpenAcc target acc aenv)
-      triple     = fromMaybe "" (moduleTargetTriple ast)
+      triple     = fromMaybe B.empty (moduleTargetTriple ast)
       datalayout = moduleDataLayout ast
 
   -- Lower the generated LLVM to an executable function(s)
   --
   mdl <- liftIO .
-    compileModule                         $ \k       ->
-    withContext                           $ \ctx     ->
-    runExcept $ withModuleFromAST ctx ast $ \mdl     ->
-    runExcept $ withNativeTargetMachine   $ \machine ->
+    compileModule             $ \k       ->
+    withContext               $ \ctx     ->
+    withModuleFromAST ctx ast $ \mdl     ->
+    withNativeTargetMachine   $ \machine ->
       withTargetLibraryInfo triple        $ \libinfo -> do
         optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
         Debug.when Debug.verbose $ do
-          Debug.traceIO Debug.dump_cc  =<< moduleLLVMAssembly mdl
-          Debug.traceIO Debug.dump_asm =<< runExcept (moduleTargetAssembly machine mdl)
+          Debug.traceIO Debug.dump_cc  . show =<< moduleLLVMAssembly mdl
+          Debug.traceIO Debug.dump_asm . show =<< moduleTargetAssembly machine mdl
 
         withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
           withModuleInEngine mcjit mdl       $ \exe   -> do
@@ -92,8 +91,6 @@ compileForNativeTarget acc aenv = do
   return $ NativeR mdl
 
   where
-    runExcept   = either ($internalError "compileForNativeTarget") return <=< runExceptT
-
     opt         = Just 3        -- optimisation level
     model       = Nothing       -- code model?
     ptrelim     = Nothing       -- True to disable frame pointer elimination

@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.Native.Foreign (
 
   -- useful re-exports
   LLVM,
-  Native,
+  Native(..),
   liftIO,
   module Data.Array.Accelerate.LLVM.Native.Array.Data,
 
