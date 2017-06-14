@@ -421,35 +421,35 @@ instance Downcast (NumType a) L.Type where
   downcast (FloatingNumType t) = downcast t
 
 instance Downcast (IntegralType a) L.Type where
-  downcast (TypeInt     _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
-  downcast (TypeInt8    _) = L.IntegerType 8
-  downcast (TypeInt16   _) = L.IntegerType 16
-  downcast (TypeInt32   _) = L.IntegerType 32
-  downcast (TypeInt64   _) = L.IntegerType 64
-  downcast (TypeWord    _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
-  downcast (TypeWord8   _) = L.IntegerType 8
-  downcast (TypeWord16  _) = L.IntegerType 16
-  downcast (TypeWord32  _) = L.IntegerType 32
-  downcast (TypeWord64  _) = L.IntegerType 64
-  downcast (TypeCShort  _) = L.IntegerType 16
-  downcast (TypeCUShort _) = L.IntegerType 16
-  downcast (TypeCInt    _) = L.IntegerType 32
-  downcast (TypeCUInt   _) = L.IntegerType 32
-  downcast (TypeCLong   _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CLong)) |] )
-  downcast (TypeCULong  _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CULong)) |] )
-  downcast (TypeCLLong  _) = L.IntegerType 64
-  downcast (TypeCULLong _) = L.IntegerType 64
+  downcast TypeInt{}     = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
+  downcast TypeInt8{}    = L.IntegerType 8
+  downcast TypeInt16{}   = L.IntegerType 16
+  downcast TypeInt32{}   = L.IntegerType 32
+  downcast TypeInt64{}   = L.IntegerType 64
+  downcast TypeWord{}    = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
+  downcast TypeWord8{}   = L.IntegerType 8
+  downcast TypeWord16{}  = L.IntegerType 16
+  downcast TypeWord32{}  = L.IntegerType 32
+  downcast TypeWord64{}  = L.IntegerType 64
+  downcast TypeCShort{}  = L.IntegerType 16
+  downcast TypeCUShort{} = L.IntegerType 16
+  downcast TypeCInt{}    = L.IntegerType 32
+  downcast TypeCUInt{}   = L.IntegerType 32
+  downcast TypeCLong{}   = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CLong)) |] )
+  downcast TypeCULong{}  = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CULong)) |] )
+  downcast TypeCLLong{}  = L.IntegerType 64
+  downcast TypeCULLong{} = L.IntegerType 64
 
 instance Downcast (FloatingType a) L.Type where
-  downcast (TypeFloat   _) = L.FloatingPointType 32 L.IEEE
-  downcast (TypeDouble  _) = L.FloatingPointType 64 L.IEEE
-  downcast (TypeCFloat  _) = L.FloatingPointType 32 L.IEEE
-  downcast (TypeCDouble _) = L.FloatingPointType 64 L.IEEE
+  downcast TypeFloat{}   = L.FloatingPointType L.FloatFP
+  downcast TypeDouble{}  = L.FloatingPointType L.DoubleFP
+  downcast TypeCFloat{}  = L.FloatingPointType L.FloatFP
+  downcast TypeCDouble{} = L.FloatingPointType L.DoubleFP
 
 instance Downcast (NonNumType a) L.Type where
-  downcast (TypeBool   _) = L.IntegerType 1
-  downcast (TypeChar   _) = L.IntegerType 32
-  downcast (TypeCChar  _) = L.IntegerType 8
-  downcast (TypeCSChar _) = L.IntegerType 8
-  downcast (TypeCUChar _) = L.IntegerType 8
+  downcast TypeBool{}   = L.IntegerType 1
+  downcast TypeChar{}   = L.IntegerType 32
+  downcast TypeCChar{}  = L.IntegerType 8
+  downcast TypeCSChar{} = L.IntegerType 8
+  downcast TypeCUChar{} = L.IntegerType 8
 

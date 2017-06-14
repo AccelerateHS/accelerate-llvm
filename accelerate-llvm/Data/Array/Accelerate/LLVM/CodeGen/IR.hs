@@ -27,6 +27,8 @@ import LLVM.AST.Type.Representation
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 
+import qualified Data.ByteString.Short                              as B
+
 
 -- | The datatype 'IR' represents the LLVM IR producing a value of type 'a'.
 -- Note that the operands comprising this value are stored in representation
@@ -154,7 +156,7 @@ class IROP dict where
   ir' :: dict a -> Operand a -> Operands a
 
 instance IROP Type where
-  op VoidType     _  = LocalReference VoidType (Name []) -- TLM: ???
+  op VoidType     _  = LocalReference VoidType (Name B.empty) -- TLM: ???
   op (PrimType t) x  = op t x
 
   ir VoidType     _  = IR OP_Unit
@@ -163,7 +165,7 @@ instance IROP Type where
   ir' VoidType     _ = OP_Unit
   ir' (PrimType t) x = ir' t x
 
-  op' VoidType     _ = LocalReference VoidType (Name [])  -- TLM: ???
+  op' VoidType     _ = LocalReference VoidType (Name B.empty)  -- TLM: ???
   op' (PrimType t) x = op' t x
 
 instance IROP PrimType where

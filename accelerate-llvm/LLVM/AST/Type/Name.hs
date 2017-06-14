@@ -15,9 +15,8 @@ module LLVM.AST.Type.Name
   where
 
 import Data.Data
-import Data.Word
 import Data.String
-import Prelude
+import Data.ByteString.Short                                        ( ShortByteString )
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM
@@ -46,12 +45,12 @@ import Prelude
 --
 type role Name representational
 data Name a
-  = Name String         -- ^ a string name
-  | UnName Word         -- ^ a number for a nameless thing
+  = Name   {-# UNPACK #-} !ShortByteString    -- ^ a string name
+  | UnName {-# UNPACK #-} !Word               -- ^ a number for a nameless thing
   deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 instance IsString (Name a) where
-  fromString = Name
+  fromString = Name . fromString
 
 
 -- TLM: 'Name' is used a lot over the place, to refer to things like variables
@@ -64,9 +63,9 @@ instance IsString (Name a) where
 --      unsatisfactory... )
 --
 
-data Label = Label String
+data Label = Label {-# UNPACK #-} !ShortByteString
   deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 instance IsString Label where
-  fromString = Label
+  fromString = Label . fromString
 
