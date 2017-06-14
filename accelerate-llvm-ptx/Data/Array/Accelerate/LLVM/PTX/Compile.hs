@@ -57,6 +57,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
+import Foreign.CUDA.Path
 import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.NVVM                                       as NVVM
 
@@ -75,6 +76,7 @@ import Foreign.Storable
 import GHC.IO.Exception                                             ( IOErrorType(..), IOException(..) )
 import System.Directory
 import System.Exit
+import System.FilePath
 import System.IO
 import System.Process
 import Text.Printf                                                  ( printf )
@@ -152,7 +154,7 @@ compileCUBIN dev sass ptx = do
       CUDA.Compute m n  = CUDA.computeCapability dev
       flags             = "-" : "-o" : sass : arch : verboseFlag ++ debugFlag
       --
-      cp = (proc "ptxas" flags)
+      cp = (proc (cudaBinPath </> "ptxas") flags)
             { std_in  = CreatePipe
             , std_out = NoStream
             , std_err = CreatePipe
