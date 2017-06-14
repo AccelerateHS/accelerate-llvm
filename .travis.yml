@@ -65,6 +65,15 @@ matrix:
             - *apt_packages
             - cabal-install-1.24
 
+    - env: GHC=8.2.0 CABAL=2.0 LLVM=4.0.0
+      compiler: "GHC 8.2"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-2.0
+
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
     #   addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, ghc-head, cabal-install-head, happy-1.19.5, alex-3.1.7 ] }}
@@ -86,6 +95,7 @@ before_install:
   #     esac
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
+  - travis_retry stack install c2hs
 
 install:
   - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
