@@ -32,7 +32,7 @@ selectBestDevice :: IO (Device, DeviceProperties)
 selectBestDevice = do
   dev   <- mapM CUDA.device . enumFromTo 0 . subtract 1 =<< CUDA.count
   prop  <- mapM CUDA.props dev
-  return . head . sortBy (flip cmp `on` snd) $ zip dev prop
+  return . minimumBy (flip cmp `on` snd) $ zip dev prop
   where
     compute     = computeCapability
     flops d     = multiProcessorCount d * coresPerMultiProcessor d * clockRate d

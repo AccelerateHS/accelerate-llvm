@@ -112,7 +112,7 @@ libdeviceBitcode (Compute m n) = do
   base  <- runIO $ libdevicePath
   files <- runIO $ getDirectoryContents base
   --
-  let name  = maybe err id . listToMaybe . sortBy (flip compare) $ filter best files
+  let name  = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
       path  = base </> name
   --
   bc    <- embedFile path
