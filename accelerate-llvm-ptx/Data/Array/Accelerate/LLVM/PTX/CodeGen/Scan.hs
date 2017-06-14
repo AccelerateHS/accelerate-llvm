@@ -1216,7 +1216,7 @@ scanBlockSMem
     -> CodeGen (IR e)
 scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
   where
-    int32 :: Integral a => a -> IR (Int32)
+    int32 :: Integral a => a -> IR Int32
     int32 = lift . P.fromIntegral
 
     -- Temporary storage required for each warp

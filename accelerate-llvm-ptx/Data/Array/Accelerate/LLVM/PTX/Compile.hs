@@ -135,7 +135,7 @@ compilePTX dev ctx ast = do
 #else
   ptx <- withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
 #endif
-  Debug.when (Debug.dump_asm) $ Debug.traceIO Debug.verbose (B8.unpack ptx)
+  Debug.when Debug.dump_asm $ Debug.traceIO Debug.verbose (B8.unpack ptx)
   return ptx
 
 

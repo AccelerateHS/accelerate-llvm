@@ -165,7 +165,7 @@ internalise externals Module{..} =
         | Name n <- name
         , not (Set.member n externals)          -- we don't call this function directly; and
         , not (null basicBlocks)                -- it is not an external declaration
-        = GlobalDefinition (Function { linkage=Internal, .. })
+        = GlobalDefinition Function { linkage=Internal, .. }
 
       internal x
         = x
