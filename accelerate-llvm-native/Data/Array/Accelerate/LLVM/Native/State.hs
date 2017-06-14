@@ -37,6 +37,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
+import Data.ByteString.Short                                    ( ShortByteString )
 
 import GHC.Conc
 
@@ -131,10 +132,10 @@ defaultTarget = unsafePerformIO $ do
 -- ---------
 
 {-# INLINE timed #-}
-timed :: String -> IO a -> IO a
+timed :: ShortByteString -> IO a -> IO a
 timed name f = Debug.timed Debug.dump_exec (elapsed name) f
 
 {-# INLINE elapsed #-}
-elapsed :: String -> Double -> Double -> String
-elapsed name x y = printf "exec: %s %s" name (Debug.elapsedP x y)
+elapsed :: ShortByteString -> Double -> Double -> String
+elapsed name x y = printf "exec: %s %s" (show name) (Debug.elapsedP x y)
 

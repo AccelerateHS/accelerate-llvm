@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Module (
 -- accelerate
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
-import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- library
 import Control.Exception
@@ -32,6 +32,7 @@ import Data.List
 import Foreign.LibFFI
 import Foreign.Ptr
 import Text.Printf
+import Data.ByteString.Short                                        ( ShortByteString )
 
 
 -- | An encapsulation of the callable functions resulting from compiling
@@ -40,7 +41,7 @@ import Text.Printf
 data Module         = Module {-# UNPACK #-} !(Lifetime FunctionTable)
 
 data FunctionTable  = FunctionTable { functionTable :: [Function] }
-type Function       = (String, FunPtr ())
+type Function       = (ShortByteString, FunPtr ())
 
 instance Show Module where
   showsPrec p (Module m)
@@ -49,7 +50,7 @@ instance Show Module where
 instance Show FunctionTable where
   showsPrec _ f
     = showString "<<"
-    . showString (intercalate "," [ n | (n,_) <- functionTable f ])
+    . showString (intercalate "," [ show n | (n,_) <- functionTable f ])
     . showString ">>"
 
 
@@ -62,14 +63,14 @@ instance Show FunctionTable where
 {-# INLINEABLE execute #-}
 execute
     :: Module
-    -> String
-    -> ((String, [Arg] -> IO ()) -> IO a)
+    -> ShortByteString
+    -> ((ShortByteString, [Arg] -> IO ()) -> IO a)
     -> IO a
 execute mdl@(Module ft) name k =
   withLifetime ft $ \FunctionTable{..} ->
     case lookup name functionTable of
       Just f  -> k (name, \argv -> callFFI f retVoid argv)
-      Nothing -> $internalError "execute" (printf "function '%s' not found in module: %s\n" name (show mdl))
+      Nothing -> $internalError "execute" (printf "function '%s' not found in module: %s\n" (show name) (show mdl))
 
 
 -- | Execute the 'main' function of a module, which is just the first function
@@ -78,7 +79,7 @@ execute mdl@(Module ft) name k =
 {-# INLINEABLE executeMain #-}
 executeMain
     :: Module
-    -> ((String, [Arg] -> IO ()) -> IO a)
+    -> ((ShortByteString, [Arg] -> IO ()) -> IO a)
     -> IO a
 executeMain (Module ft) k =
   withLifetime ft $ \FunctionTable{..} ->
@@ -89,7 +90,7 @@ executeMain (Module ft) k =
 
 -- | Display the global (external) symbol table for this module.
 --
-nm :: Module -> IO [String]
+nm :: Module -> IO [ShortByteString]
 nm (Module ft) =
   withLifetime ft $ \FunctionTable{..} ->
     return $ map fst functionTable

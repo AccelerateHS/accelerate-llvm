@@ -133,13 +133,14 @@ Library
           base                          >= 4.7 && < 4.10
         , accelerate                    == 1.0.*
         , accelerate-llvm               == 1.0.*
+        , bytestring                    >= 0.10
         , containers                    >= 0.5 && < 0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
         , libffi                        >= 0.1
-        , llvm-hs                       == 4.0.*
-        , llvm-hs-pure                  == 4.0.*
+        , llvm-hs                       == 4.1.*
+        , llvm-hs-pure                  == 4.1.*
         , mtl                           >= 2.2.1
         , time                          >= 1.4
 
