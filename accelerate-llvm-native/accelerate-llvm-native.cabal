@@ -185,7 +185,7 @@ Library
         , cereal                        >= 0.4
         , ghc-prim
         , unix                          >= 2.7
-        , vector                        >= 0.10
+        , vector                        >= 0.11
 
     build-tools:
           c2hs                          >= 0.25
@@ -199,7 +199,7 @@ Library
         , cereal                        >= 0.4
         , ghc-prim
         , unix                          >= 2.7
-        , vector                        >= 0.10
+        , vector                        >= 0.11
 
     build-tools:
           c2hs                          >= 0.25

@@ -659,6 +659,17 @@ foreign import ccall unsafe "mprotect"
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
 
+#if __GLASGOW_HASKELL <= 708
+-- Fill a given number of bytes in memory. Added in base-4.8.0.0.
+--
+fillBytes :: Ptr a -> Word8 -> Int -> IO ()
+fillBytes dest char size = do
+  _ <- memset dest (fromIntegral char) (fromIntegral size)
+  return ()
+
+foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO (Ptr a)
+#endif
+
 
 -- Debug
 -- -----
@@ -670,5 +681,4 @@ trace msg = Debug.trace Debug.dump_ld ("ld: " ++ msg)
 {-# INLINE message #-}
 message :: Monad m => String -> m ()
 message msg = trace msg (return ())
-
 
