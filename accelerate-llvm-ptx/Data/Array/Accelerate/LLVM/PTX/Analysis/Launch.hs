@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 -- Copyright   : [2008..2017] Manuel M T Chakravarty, Gabriele Keller
