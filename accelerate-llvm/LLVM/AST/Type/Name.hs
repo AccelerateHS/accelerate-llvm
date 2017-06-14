@@ -14,9 +14,10 @@
 module LLVM.AST.Type.Name
   where
 
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Data
 import Data.String
-import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Word
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM
