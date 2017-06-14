@@ -10,7 +10,7 @@ packages:
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: f13c4b549b89aa11388b5f85ec69c7d6cabe5916
+    commit: be851212c1f5c26e948b85c5e428207c78bdae16
   extra-dep: true
 
 - location:
