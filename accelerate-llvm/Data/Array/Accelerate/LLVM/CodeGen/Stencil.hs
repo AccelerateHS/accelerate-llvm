@@ -235,12 +235,9 @@ bounded bndy arr@IRArray{..} ix =
               else return (bool False)
         go (SingleTuple t) sz iz
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-          = if A.lt t (IR iz) (int 0)
+          = if A.lt t (IR iz) (int 0) `A.lor` A.gte t (IR iz) (IR sz)
               then return (bool False)
-              else
-                if A.gte t (IR iz) (IR sz)
-                  then return (bool False)
-                  else return (bool True)
+              else return (bool True)
           --
           | otherwise
           = $internalError "bound" "expected shape with Int components"
