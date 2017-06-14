@@ -5,7 +5,7 @@
 # Caches the 'stack' build directory to speed subsequent compilations.
 #
 language: generic
-dist: precise
+dist: trusty
 
 cache:
   directories:
