@@ -16,17 +16,19 @@ module LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Operand
 import qualified LLVM.AST.Operand                         as LLVM
 
+import Data.ByteString.Short                              ( ShortByteString )
 
--- | <http://llvm.org/docs/LangRef.html#metadata>
+
+-- | Metadata does not have a type, and is not a value.
 --
--- Metadata does not have a type, and is not a value.
+-- <http://llvm.org/docs/LangRef.html#metadata>
 --
 data MetadataNode
   = MetadataNode [Maybe Metadata]
   | MetadataNodeReference LLVM.MetadataNodeID
 
 data Metadata where
-  MetadataStringOperand :: String -> Metadata
+  MetadataStringOperand :: {-# UNPACK #-} !ShortByteString -> Metadata
   MetadataOperand       :: Operand a -> Metadata
   MetadataNodeOperand   :: MetadataNode -> Metadata
 

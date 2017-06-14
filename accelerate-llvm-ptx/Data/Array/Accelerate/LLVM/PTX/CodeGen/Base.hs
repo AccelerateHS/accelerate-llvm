@@ -82,6 +82,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 -- standard library
 import Control.Applicative
 import Control.Monad                                                ( void )
+import Data.String
 import Text.Printf
 import Prelude                                                      as P
 
@@ -242,7 +243,7 @@ atomicAdd_f t addr val =
           _ -> $internalError "atomicAdd" "unexpected operand type"
 
       t_ret = PrimType (ScalarPrimType t_val)
-      fun   = Label $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
+      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
   in
   void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret fun))) [NoUnwind]
 

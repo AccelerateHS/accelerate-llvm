@@ -49,6 +49,7 @@ import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Data.Word                                                    ( Word8 )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
@@ -118,7 +119,7 @@ simpleOp NativeR{..} gamma aenv () sh = do
 
 simpleNamed
     :: (Shape sh, Elt e)
-    => String
+    => ShortByteString
     -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -488,7 +489,7 @@ executeOp
     :: Marshalable args
     => Int
     -> Executable
-    -> (String, [Arg] -> IO ())
+    -> (ShortByteString, [Arg] -> IO ())
     -> Gamma aenv
     -> Aval aenv
     -> Range
