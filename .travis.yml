@@ -87,11 +87,13 @@ before_install:
   - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
+  - travis_retry stack install c2hs
 
 install:
   - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
+  - c2hs --version
   - llc --version; true
   - opt --version; true
   - |
