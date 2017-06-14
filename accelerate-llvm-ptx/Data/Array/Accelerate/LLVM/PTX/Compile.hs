@@ -1,7 +1,6 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -26,16 +25,17 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 import LLVM.AST                                                     hiding ( Module )
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.Analysis                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
 import qualified LLVM.Module                                        as LLVM
 import qualified LLVM.PassManager                                   as LLVM
 import qualified LLVM.Target                                        as LLVM
 import qualified LLVM.Internal.Module                               as LLVM.Internal
 import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
+#ifdef ACCELERATE_INTERNAL_CHECKS
+import qualified LLVM.Analysis                                      as LLVM
+#endif
 
 -- accelerate
-import Data.Array.Accelerate.Error                                  ( internalError )
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
@@ -68,6 +68,7 @@ import qualified Foreign.NVVM                                       as NVVM
 import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
 import Data.Word
 import Foreign.ForeignPtr
@@ -89,13 +90,13 @@ instance Compile PTX where
   compileForTarget     = compileForPTX
 
 
-data Kernel = Kernel {
-    kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
+data Kernel = Kernel
+  { kernelName                  :: {-# UNPACK #-} !ShortByteString
+  , kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
   , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
   , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
   , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
   , kernelThreadBlocks          :: (Int -> Int)
-  , kernelName                  :: String
   }
 
 type ObjectCode = Lifetime CUDA.Module
@@ -122,7 +123,8 @@ compileForPTX acc aenv = do
     addFinalizer ptx' $ do
       Debug.traceIO Debug.dump_gc
         $ printf "gc: unload module: %s"
-        $ intercalate "," (P.map kernelName funs)
+        $ intercalate ","
+        $ P.map (show . kernelName) funs
       withContext (ptxContext target) (CUDA.unload ptx)
     return $! PTXR funs ptx'
 
@@ -192,28 +194,26 @@ compileModuleNVVM dev name libdevice mdl = do
 
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: CUDA.DeviceProperties -> String -> LLVM.Module -> IO CUDA.Module
+compileModuleNVPTX :: CUDA.DeviceProperties -> ShortByteString -> LLVM.Module -> IO CUDA.Module
 compileModuleNVPTX dev name mdl =
   withPTXTargetMachine dev $ \nvptx -> do
 
     -- Run the standard optimisation pass
     --
-    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
-        runError e = either ($internalError "compileModuleNVPTX") id `fmap` runExceptT e
-
+    let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
     LLVM.withPassManager pss $ \pm -> do
 #ifdef ACCELERATE_INTERNAL_CHECKS
-      runError $ LLVM.verify mdl
+      LLVM.verify mdl
 #endif
       b1      <- LLVM.runPassManager pm mdl
 
       -- debug printout
       Debug.when Debug.dump_cc $ do
         Debug.traceIO Debug.dump_cc $ printf "llvm: optimisation did work? %s" (show b1)
-        Debug.traceIO Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
+        Debug.traceIO Debug.verbose . B8.unpack =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
-      ptx <- runError (moduleTargetAssembly nvptx mdl)
+      ptx <- moduleTargetAssembly nvptx mdl
 
       -- Link into a new CUDA module in the current context
       linkPTX name ptx
@@ -222,7 +222,7 @@ compileModuleNVPTX dev name mdl =
 
 -- | Produce target specific assembly as a 'ByteString'.
 --
-moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
+moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> IO ByteString
 moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Internal.FFI.codeGenFileTypeAssembly tm m
   where
     -- Ensure that the ByteString is NULL-terminated, so that it can be passed
@@ -230,7 +230,7 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
     -- string is not NULL-terminated but the last character is a whitespace
     -- character (there are usually a few blank lines at the end).
     --
-    unsafe0 :: ByteString -> ExceptT String IO ByteString
+    unsafe0 :: ByteString -> IO ByteString
     unsafe0 bs@(B.PS fp s l) =
       liftIO . withForeignPtr fp $ \p -> do
         let p' :: Ptr Word8
@@ -246,7 +246,7 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
 -- | Load the given CUDA PTX into a new module that is linked into the current
 -- context.
 --
-linkPTX :: String -> ByteString -> IO CUDA.Module
+linkPTX :: ShortByteString -> ByteString -> IO CUDA.Module
 linkPTX name ptx = do
   _verbose      <- Debug.queryFlag Debug.verbose
   _debug        <- Debug.queryFlag Debug.debug_cc
@@ -262,7 +262,7 @@ linkPTX name ptx = do
 
   Debug.traceIO Debug.dump_asm $
     printf "ptx: compiled entry function \"%s\" in %s"
-           name
+           (show name)
            (Debug.showFFloatSIBase (Just 2) 1000 (CUDA.jitTime jit / 1000) "s")
 
   Debug.when Debug.verbose $
@@ -279,11 +279,11 @@ linkPTX name ptx = do
 --
 linkFunction
     :: CUDA.Module                      -- the compiled module
-    -> String                           -- __global__ entry function name
+    -> ShortByteString                  -- __global__ entry function name
     -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
 linkFunction mdl name configure = do
-  f     <- CUDA.getFun mdl name
+  f     <- CUDA.getFun mdl (show name)
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes
@@ -295,7 +295,7 @@ linkFunction mdl name configure = do
 
       msg1, msg2 :: String
       msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
-                      name regs (ssmem + dsmem) lmem cmem
+                      (show name) regs (ssmem + dsmem) lmem cmem
 
       msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
                       (CUDA.occupancy100 occ)
@@ -304,7 +304,7 @@ linkFunction mdl name configure = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel f occ dsmem cta grid name
+  return $ Kernel name f occ dsmem cta grid
 
 
 {--

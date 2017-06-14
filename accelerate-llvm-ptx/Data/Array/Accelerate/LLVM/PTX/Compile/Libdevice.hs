@@ -43,17 +43,18 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Foreign.CUDA.Analysis
 
 -- standard library
-import Control.Monad.Except
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.HashMap.Strict                                          ( HashMap )
 import Data.List
 import Data.Maybe
+import Data.Monoid
 import System.Directory
 import System.FilePath
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.ByteString                                    as B
-import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Short                              as BS
 import qualified Data.HashMap.Strict                                as HashMap
 
 
@@ -95,7 +96,7 @@ nvvmReflectPass_mdl :: AST.Module
 nvvmReflectPass_mdl =
   AST.Module
     { moduleName            = "nvvm-reflect"
-    , moduleSourceFileName  = []
+    , moduleSourceFileName  = BS.empty
     , moduleDataLayout      = targetDataLayout (undefined::PTX)
     , moduleTargetTriple    = targetTriple (undefined::PTX)
     , moduleDefinitions     = [GlobalDefinition $ functionDefaults
@@ -111,10 +112,9 @@ nvvmReflectPass_mdl =
 nvvmReflectPass_bc :: (String, ByteString)
 nvvmReflectPass_bc = (name,) . unsafePerformIO $ do
   withContext $ \ctx -> do
-    runError  $ withModuleFromAST ctx nvvmReflectPass_mdl (return . B8.pack <=< moduleLLVMAssembly)
+    withModuleFromAST ctx nvvmReflectPass_mdl moduleLLVMAssembly
   where
     name     = "__nvvm_reflect"
-    runError = either ($internalError "nvvmReflectPass") return <=< runExceptT
 
 
 -- libdevice
@@ -198,9 +198,7 @@ libdeviceModule arch = do
   --      fully apply this function that can be lifted out to a CAF and only
   --      executed once per program execution.
   --
-  withContext $ \ctx ->
-    either ($internalError "libdeviceModule") id `fmap`
-    runExceptT (withModuleFromBitcode ctx bc moduleAST)
+  withContext $ \ctx -> withModuleFromBitcode ctx bc moduleAST
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name
@@ -247,9 +245,9 @@ instance Intrinsic PTX where
 -- named consistently based on the standard mathematical functions they
 -- implement, with the "__nv_" prefix stripped.
 --
-libdeviceIndex :: HashMap String Label
+libdeviceIndex :: HashMap ShortByteString Label
 libdeviceIndex =
-  let nv base   = (base, Label $ "__nv_" ++ base)
+  let nv base   = (base, Label $ "__nv_" <> base)
   in
   HashMap.fromList $ map nv
     [ "abs"
