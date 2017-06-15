@@ -715,7 +715,7 @@ foreign import ccall unsafe "mprotect"
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
 
-#if __GLASGOW_HASKELL <= 708
+#if __GLASGOW_HASKELL__ <= 708
 -- Fill a given number of bytes in memory. Added in base-4.8.0.0.
 --
 fillBytes :: Ptr a -> Word8 -> Int -> IO ()
