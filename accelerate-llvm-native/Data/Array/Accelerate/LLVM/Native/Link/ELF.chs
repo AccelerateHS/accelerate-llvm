@@ -183,8 +183,8 @@ makeJumpIsland jump_p symbolnum Symbol{..} = do
 #ifdef x86_64_HOST_ARCH
   when (sym_binding == Global && sym_section == 0) $ do
     let
-        target  = jump_p `plusPtr` (symbolnum * 16) :: Ptr Word64
-        instr   = target `plusPtr` 8                :: Ptr Word8
+        target  = jump_p `plusPtr` (symbolnum * 16) :: Ptr Word64   -- addr
+        instr   = target `plusPtr` 8                :: Ptr Word8    -- jumpIsland
     --
     poke target sym_value
     pokeArray instr [ 0xFF, 0x25, 0xF2, 0xFF, 0xFF, 0xFF ]  -- jmp *-14(%rip)
@@ -241,17 +241,14 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
     symval :: Word64
     symval =
       case sym_binding of
-        Local   -> castPtrToWord64 (seg_p `plusPtr` (sec_offset V.! sym_section))
+        Local   -> castPtrToWord64 (seg_p `plusPtr` (sec_offset V.! sym_section + fromIntegral sym_value))
         Global  -> sym_value
         Weak    -> $internalError "processRelocation" "unhandled weak symbol"
 
     Symbol{..} = symtab V.! r_symbol
 
     relocate :: Int64 -> IO ()
-    relocate x = do
-      let p' = castPtr pc :: Ptr Word32
-      base <- peek p'
-      poke p' (fromIntegral x + base)
+    relocate x = poke (castPtr pc :: Ptr Word32) (fromIntegral x)
 
 #else
 precessRelocation =
