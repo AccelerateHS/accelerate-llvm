@@ -223,8 +223,6 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
         then do
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               offset' = fromIntegral jump' + r_addend - fromIntegral pc'
-          --
-          -- message (printf "relocating %s via jump table" (B8.unpack sym_name))
           relocate offset'
         else
           relocate offset
@@ -232,6 +230,26 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
     R_X86_64_PC64 ->
       let offset = fromIntegral symval + r_addend - fromIntegral pc' in
       relocate offset
+
+    R_X86_64_32   ->
+      let value = symval + fromIntegral r_addend in
+      if  value >= 0x7fffffff
+        then do
+          let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
+              value'  = fromIntegral jump' + r_addend
+          relocate value'
+        else
+          relocate (fromIntegral value)
+
+    R_X86_64_32S  ->
+      let value = fromIntegral symval + r_addend in
+      if  value >= 0x7fffffff || value < -0x80000000
+        then do
+          let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
+              value'  = fromIntegral jump' + r_addend
+          relocate value'
+        else
+          relocate value
 
   where
     pc :: Ptr Word8
@@ -394,6 +412,8 @@ data Relocation = Relocation
     , R_X86_64_64   as R_X86_64_64        -- direct 64-bit
     , R_X86_64_PC32 as R_X86_64_PC32      -- PC relative 32-bit signed
     , R_X86_64_PC64 as R_X86_64_PC64      -- PC relative 64-bit
+    , R_X86_64_32   as R_X86_64_32        -- direct 32-bit zero extended
+    , R_X86_64_32S  as R_X86_64_32S       -- direct 32-bit sign extended
     -- ... many more relocation types
     }
     deriving (Eq, Show)
