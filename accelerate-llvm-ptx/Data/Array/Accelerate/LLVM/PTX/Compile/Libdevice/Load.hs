@@ -35,7 +35,6 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( ) -- GHC#1
 import Foreign.CUDA.Analysis
 
 -- standard library
-import Control.Monad.Except
 import Data.ByteString                                              ( ByteString )
 import System.IO.Unsafe
 
@@ -124,6 +123,5 @@ libdeviceModule arch = do
       bc = libdevice arch
   --
   withContext $ \ctx ->
-    either ($internalError "libdeviceModule") id `fmap`
-    runExceptT (withModuleFromBitcode ctx bc moduleAST)
+    withModuleFromBitcode ctx bc moduleAST
 

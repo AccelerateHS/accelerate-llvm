@@ -16,6 +16,7 @@ import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
 
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Array.Accelerate.Lifetime
 
 
@@ -23,12 +24,12 @@ import Data.Array.Accelerate.Lifetime
 -- the target address space containing the corresponding executable code.
 --
 data FunctionTable  = FunctionTable { functionTable :: [Function] }
-type Function       = (String, FunPtr ())
+type Function       = (ShortByteString, FunPtr ())
 
 instance Show FunctionTable where
   showsPrec _ f
     = showString "<<"
-    . showString (intercalate "," [ n | (n,_) <- functionTable f ])
+    . showString (intercalate "," [ show n | (n,_) <- functionTable f ])
     . showString ">>"
 
 -- | Object code consists of memory in the target address space.

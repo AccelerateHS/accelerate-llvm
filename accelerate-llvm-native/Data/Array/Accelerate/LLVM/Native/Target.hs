@@ -1,6 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Target
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -24,13 +21,12 @@ import LLVM.Target                                                  hiding ( Tar
 import LLVM.AST.DataLayout                                          ( DataLayout )
 
 -- accelerate
-import Data.Array.Accelerate.Error                                  ( internalError )
-
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
 import Control.Parallel.Meta                                        ( Executable )
 
 -- standard library
-import Control.Monad.Except
+import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import System.IO.Unsafe
 
 
@@ -50,7 +46,7 @@ instance Target Native where
 -- | String that describes the native target
 --
 {-# NOINLINE nativeTargetTriple #-}
-nativeTargetTriple :: String
+nativeTargetTriple :: ShortByteString
 nativeTargetTriple = unsafePerformIO $
     -- A target triple suitable for loading code into the current process
     getProcessTargetTriple
@@ -62,13 +58,12 @@ nativeTargetTriple = unsafePerformIO $
 nativeDataLayout :: DataLayout
 nativeDataLayout
   = unsafePerformIO
-  $ fmap (either ($internalError "nativeDataLayout") id)
-  $ runExceptT (withNativeTargetMachine getTargetMachineDataLayout)
+  $ withNativeTargetMachine getTargetMachineDataLayout
 
 -- | String that describes the host CPU
 --
 {-# NOINLINE nativeCPUName #-}
-nativeCPUName :: String
+nativeCPUName :: ByteString
 nativeCPUName = unsafePerformIO $ getHostCPUName
 
 
@@ -77,6 +72,6 @@ nativeCPUName = unsafePerformIO $ getHostCPUName
 --
 withNativeTargetMachine
     :: (TargetMachine -> IO a)
-    -> ExceptT String IO a
+    -> IO a
 withNativeTargetMachine = withHostTargetMachine
 

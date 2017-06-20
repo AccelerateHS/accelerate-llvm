@@ -49,6 +49,7 @@ import Text.Printf
 import qualified Data.ByteString                          as B
 import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
+import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
@@ -167,7 +168,7 @@ loadSegment obj strtab secs symtab relocs = do
               -- Resolve external symbols defined in the sections into function pointers
               let extern Symbol{..}   = sym_binding == Global && sym_type == Func
                   resolve Symbol{..}  =
-                    let name  = B8.unpack sym_name
+                    let name  = BS.toShort sym_name
                         addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
                     in
                     (name, addr)

@@ -50,6 +50,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import qualified LLVM.AST.Global                                    as LLVM
 
+import Data.Monoid
+import Data.String
+import Text.Printf
 import qualified Data.IntMap                                        as IM
 
 
@@ -69,14 +72,14 @@ global t x = ir t (ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)
 -- | Names of array data components
 --
 arrayName :: Name (Array sh e) -> Int -> Name e'        -- for the i-th component of the ArrayData
-arrayName (Name n)   i = Name (n ++ ".ad" ++ show i)
-arrayName (UnName n) i = arrayName (Name (show n)) i
+arrayName (Name n)   i = Name (n <> fromString (printf ".ad%d" i))
+arrayName (UnName n) i = arrayName (fromString (show n)) i
 
 -- | Names of shape components
 --
 shapeName :: Name (Array sh e) -> Int -> Name sh'       -- for the i-th component of the shape structure
-shapeName (Name n)   i = Name (n ++ ".sh" ++ show i)
-shapeName (UnName n) i = shapeName (Name (show n)) i
+shapeName (Name n)   i = Name (n <> fromString (printf ".sh%d" i))
+shapeName (UnName n) i = shapeName (fromString (show n)) i
 
 -- | Names of array data elements
 --

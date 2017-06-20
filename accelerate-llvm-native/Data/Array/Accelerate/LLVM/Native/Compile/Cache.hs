@@ -27,7 +27,7 @@ import Paths_accelerate_llvm_native
 instance Persistent Native where
   targetCacheTemplate =
     return $ "accelerate-llvm-native-" ++ showVersion version
-         </> nativeTargetTriple
-         </> nativeCPUName
+         </> show nativeTargetTriple
+         </> show nativeCPUName
          </> "meep.o"
 

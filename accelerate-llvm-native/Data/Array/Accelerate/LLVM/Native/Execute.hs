@@ -51,9 +51,10 @@ import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 -- library
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( find )
-import Data.Word                                                    ( Word8 )
 import Data.Maybe                                                   ( fromMaybe )
+import Data.Word                                                    ( Word8 )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Prelude                                            as P
 
@@ -124,7 +125,7 @@ simpleOp NativeR{..} gamma aenv () sh = do
 
 simpleNamed
     :: (Shape sh, Elt e)
-    => String
+    => ShortByteString
     -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -465,12 +466,12 @@ stencil2Op kernel gamma aenv stream arr brr =
 -- Skeleton execution
 -- ------------------
 
-(!#) :: ExecutableR Native -> String -> (Function, ObjectCode)
+(!#) :: ExecutableR Native -> ShortByteString -> (Function, ObjectCode)
 (!#) exe name
-  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ name))
+  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ show name))
   $ lookupFunction name exe
 
-lookupFunction :: String -> ExecutableR Native -> Maybe (Function, ObjectCode)
+lookupFunction :: ShortByteString -> ExecutableR Native -> Maybe (Function, ObjectCode)
 lookupFunction name NativeR{..} = do
   f <- find (\(n,_) -> n == name) (functionTable nativeExecutable)
   return (f, nativeObjectCode)

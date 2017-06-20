@@ -37,6 +37,7 @@ import Control.Monad.State
 import Data.List                                                    ( intercalate )
 import Foreign.Ptr
 import Text.Printf                                                  ( printf )
+import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P
 
@@ -49,12 +50,12 @@ instance Link PTX where
 
 
 data Kernel = Kernel
-  { kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
+  { kernelName                  :: {-# UNPACK #-} !ShortByteString
+  , kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
   , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
   , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
   , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
   , kernelThreadBlocks          :: (Int -> Int)
-  , kernelName                  :: String
   }
 
 type ObjectCode = Lifetime CUDA.Module
@@ -78,7 +79,9 @@ link (ObjectR nm obj) = do
     addFinalizer mdl' $ do
       Debug.traceIO Debug.dump_gc
         $ printf "gc: unload module: %s"
-        $ intercalate "," (P.map kernelName kernels)
+        $ intercalate ","
+        $ P.map show
+        $ P.map kernelName kernels
       withContext (ptxContext target) (CUDA.unload mdl)
 
     return $! PTXR kernels mdl'
@@ -91,11 +94,11 @@ link (ObjectR nm obj) = do
 --
 linkFunction
     :: CUDA.Module                      -- the compiled module
-    -> String                           -- __global__ entry function name
+    -> ShortByteString                  -- __global__ entry function name
     -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
 linkFunction mdl name configure = do
-  f     <- CUDA.getFun mdl name
+  f     <- CUDA.getFun mdl (show name)
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes
@@ -107,7 +110,7 @@ linkFunction mdl name configure = do
 
       msg1, msg2 :: String
       msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
-                      name regs (ssmem + dsmem) lmem cmem
+                      (show name) regs (ssmem + dsmem) lmem cmem
 
       msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
                       (CUDA.occupancy100 occ)
@@ -116,7 +119,7 @@ linkFunction mdl name configure = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel f occ dsmem cta grid name
+  return $ Kernel name f occ dsmem cta grid
 
 
 {--

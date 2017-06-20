@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic
@@ -17,7 +18,9 @@ import LLVM.AST.Type.Name                                           ( Label(..) 
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.PTX.Target
 
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.HashMap.Strict                                          ( HashMap )
+import Data.Monoid
 import qualified Data.HashMap.Strict                                as HashMap
 
 
@@ -28,9 +31,9 @@ instance Intrinsic PTX where
 -- named consistently based on the standard mathematical functions they
 -- implement, with the "__nv_" prefix stripped.
 --
-libdeviceIndex :: HashMap String Label
+libdeviceIndex :: HashMap ShortByteString Label
 libdeviceIndex =
-  let nv base   = (base, Label $ "__nv_" ++ base)
+  let nv base   = (base, Label $ "__nv_" <> base)
   in
   HashMap.fromList $ map nv
     [ "abs"

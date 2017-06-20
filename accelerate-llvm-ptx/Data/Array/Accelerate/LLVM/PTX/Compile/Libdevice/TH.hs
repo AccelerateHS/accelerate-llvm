@@ -1,4 +1,5 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 -- Copyright   : [2017] Trevor L. McDonell
@@ -31,8 +32,6 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 import Foreign.CUDA.Analysis
 
-import Control.Monad
-import Control.Monad.Except
 import Data.FileEmbed
 import Data.List
 import Data.Maybe
@@ -40,7 +39,7 @@ import Language.Haskell.TH                                          hiding ( Nam
 import System.Directory
 import System.FilePath
 import Text.Printf
-import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Short                              as BS
 
 
 -- This is a hacky module that can be linked against in order to provide the
@@ -68,7 +67,7 @@ nvvmReflectModule :: AST.Module
 nvvmReflectModule =
   AST.Module
     { AST.moduleName            = "nvvm-reflect"
-    , AST.moduleSourceFileName  = []
+    , AST.moduleSourceFileName  = BS.empty
     , AST.moduleDataLayout      = targetDataLayout (undefined::PTX)
     , AST.moduleTargetTriple    = targetTriple (undefined::PTX)
     , AST.moduleDefinitions     = [AST.GlobalDefinition $ AST.G.functionDefaults
@@ -85,11 +84,10 @@ nvvmReflectModule =
 --
 nvvmReflectBitcode :: AST.Module -> Q Exp -- (String, ByteString)
 nvvmReflectBitcode mdl = do
-  let name     = "__nvvm_reflect"
-      runError = either ($internalError "nvvmReflectPass") return <=< runExceptT
+  let name = "__nvvm_reflect"
   --
   bs <- runIO $ LLVM.withContext $ \ctx -> do
-                  runError  $ LLVM.withModuleFromAST ctx mdl (return . B8.pack <=< LLVM.moduleLLVMAssembly)
+                  LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly
   be <- bsToExp bs
   return $ TupE [ LitE (StringL name), be ]
 

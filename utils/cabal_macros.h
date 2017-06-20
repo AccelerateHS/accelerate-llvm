@@ -7,15 +7,15 @@
 
 /* LLVM-4.0 */
 #if 1
-/* package llvm-hs-4.0.0.0 */
-#define VERSION_llvm_hs "4.0.0.0"
+/* package llvm-hs-4.1.0.0 */
+#define VERSION_llvm_hs "4.1.0.0"
 #define MIN_VERSION_llvm_hs(major1,major2,minor) (\
   (major1) <  4 || \
   (major1) == 4 && (major2) <  0 || \
   (major1) == 4 && (major2) == 0 && (minor) <= 0)
 
-/* package llvm-hs-pure-4.0.0.0 */
-#define VERSION_llvm_hs_pure "4.0.0.0"
+/* package llvm-hs-pure-4.1.0.0 */
+#define VERSION_llvm_hs_pure "4.1.0.0"
 #define MIN_VERSION_llvm_hs_pure(major1,major2,minor) (\
   (major1) <  4 || \
   (major1) == 4 && (major2) <  0 || \

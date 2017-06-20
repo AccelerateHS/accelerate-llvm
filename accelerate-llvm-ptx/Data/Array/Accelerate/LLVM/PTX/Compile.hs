@@ -67,6 +67,7 @@ import Control.Exception
 import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Word
 import Foreign.C
 import Foreign.ForeignPtr
@@ -87,7 +88,7 @@ import Prelude                                                      as P
 
 
 instance Compile PTX where
-  data ObjectR PTX = ObjectR { ptxConfig :: ![(String, LaunchConfig)]
+  data ObjectR PTX = ObjectR { ptxConfig :: ![(ShortByteString, LaunchConfig)]
                              , ptxObject :: {-# UNPACK #-} !ByteString
                              }
   compileForTarget = compile
@@ -248,7 +249,7 @@ compileModuleNVVM dev name libdevice mdl = do
   Debug.when Debug.dump_cc   $ do
     Debug.when Debug.verbose $ do
       ll <- LLVM.moduleLLVMAssembly mdl -- TLM: unfortunate to do the lowering twice in debug mode
-      Debug.traceIO Debug.verbose ll
+      Debug.traceIO Debug.verbose (B8.unpack ll)
 
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
@@ -270,27 +271,25 @@ compileModuleNVPTX dev mdl =
 
     -- Run the standard optimisation pass
     --
-    let pss        = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
-        runError e = either ($internalError "compileModuleNVPTX") id `fmap` runExceptT e
-
+    let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
     LLVM.withPassManager pss $ \pm -> do
 #ifdef ACCELERATE_INTERNAL_CHECKS
-      runError $ LLVM.verify mdl
+      LLVM.verify mdl
 #endif
       b1      <- LLVM.runPassManager pm mdl
 
       -- debug printout
       Debug.when Debug.dump_cc $ do
         Debug.traceIO Debug.dump_cc $ printf "llvm: optimisation did work? %s" (show b1)
-        Debug.traceIO Debug.verbose =<< LLVM.moduleLLVMAssembly mdl
+        Debug.traceIO Debug.verbose . B8.unpack =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
-      runError (moduleTargetAssembly nvptx mdl)
+      moduleTargetAssembly nvptx mdl
 
 
 -- | Produce target specific assembly as a 'ByteString'.
 --
-moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> ExceptT String IO ByteString
+moduleTargetAssembly :: LLVM.TargetMachine -> LLVM.Module -> IO ByteString
 moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Internal.FFI.codeGenFileTypeAssembly tm m
   where
     -- Ensure that the ByteString is NULL-terminated, so that it can be passed
@@ -298,7 +297,7 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
     -- string is not NULL-terminated but the last character is a whitespace
     -- character (there are usually a few blank lines at the end).
     --
-    unsafe0 :: ByteString -> ExceptT String IO ByteString
+    unsafe0 :: ByteString -> IO ByteString
     unsafe0 bs@(B.PS fp s l) =
       liftIO . withForeignPtr fp $ \p -> do
         let p' :: Ptr Word8

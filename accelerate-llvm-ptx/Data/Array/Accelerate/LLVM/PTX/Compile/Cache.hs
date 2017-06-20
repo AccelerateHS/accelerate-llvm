@@ -32,7 +32,7 @@ instance Persistent PTX where
     let Compute m n = computeCapability dev
     --
     return $ "accelerate-llvm-ptx-" ++ showVersion version
-         </> ptxTargetTriple
-         </> ptxISAVersion m n
+         </> show ptxTargetTriple
+         </> show (ptxISAVersion m n)
          </> "morp.sass"
 

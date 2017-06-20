@@ -31,14 +31,20 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
 
+import Data.ByteString.Short                                        ( ShortByteString )
+import GHC.Ptr                                                      ( Ptr(..) )
 import Language.Haskell.TH                                          ( Q, TExp )
+import System.IO.Unsafe
+import qualified Data.ByteString.Short.Internal                     as BS
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
+
 #if MIN_VERSION_containers(0,5,9)
 import qualified Data.IntMap.Internal                               as IM
 #elif MIN_VERSION_containers(0,5,8)
 import qualified Data.IntMap.Base                                   as IM
 #else
 import qualified Data.IntMap                                        as IM
-import qualified Language.Haskell.TH.Syntax                         as TH
 #endif
 
 
@@ -97,7 +103,17 @@ embedOpenAcc = liftA
           TH.unsafeTExpCoerce (return $ TH.ListE im')
 #endif
     liftV :: (Label, Idx' aenv) -> Q (TExp (Label, Idx' aenv))
-    liftV (Label n, Idx' ix) = [|| (Label n, Idx' $$(liftIdx ix)) ||]
+    liftV (Label n, Idx' ix) = [|| (Label $$(liftSBS n), Idx' $$(liftIdx ix)) ||]
+
+    -- O(n) at runtime to copy from the Addr# to the ByteArray#. We should
+    -- be able to do this without copying, but I don't think the definition of
+    -- ByteArray# is exported (or it is deeply magical).
+    liftSBS :: ShortByteString -> Q (TExp ShortByteString)
+    liftSBS bs =
+      let bytes = BS.unpack bs
+          len   = BS.length bs
+      in
+      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
 
 {-# INLINEABLE liftPreOpenAfun #-}

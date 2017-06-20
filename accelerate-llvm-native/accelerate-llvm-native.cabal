@@ -79,7 +79,7 @@ extra-source-files:
 -- -------------------
 
 Flag debug
-  Default:              True
+  Default:              False
   Description:
     Enable debug tracing message flags. Note that 'debug' must be enabled in the
     base 'accelerate' package as well. See the 'accelerate' package for usage
@@ -90,11 +90,11 @@ Flag bounds-checks
   Description:          Enable bounds checking
 
 Flag unsafe-checks
-  Default:              True
+  Default:              False
   Description:          Enable bounds checking in unsafe operations
 
 Flag internal-checks
-  Default:              True
+  Default:              False
   Description:          Enable internal consistency checks
 
 
@@ -140,9 +140,10 @@ Library
     Paths_accelerate_llvm_native
 
   build-depends:
-          base                          >= 4.7 && < 4.10
+          base                          >= 4.7 && < 4.11
         , accelerate                    == 1.0.*
         , accelerate-llvm               == 1.0.*
+        , bytestring                    >= 0.10.4
         , containers                    >= 0.5 && < 0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
@@ -150,8 +151,8 @@ Library
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , libffi                        >= 0.1
-        , llvm-hs                       >= 3.9
-        , llvm-hs-pure                  >= 3.9
+        , llvm-hs                       == 4.1.*
+        , llvm-hs-pure                  == 4.1.*
         , mtl                           >= 2.2.1
         , template-haskell
         , time                          >= 1.4

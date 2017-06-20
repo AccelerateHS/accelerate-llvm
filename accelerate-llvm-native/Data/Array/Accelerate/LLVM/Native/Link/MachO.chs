@@ -48,6 +48,7 @@ import Text.Printf
 import qualified Data.ByteString                          as B
 import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
+import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
@@ -95,7 +96,7 @@ loadSegments obj symtab lcs = do
   let extern Symbol{..}   = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
-            name          = B8.unpack sym_name
+            name          = BS.toShort sym_name
             addr          = castPtrToFunPtr (unsafeForeignPtrToPtr fp `plusPtr` fromIntegral sym_value)
         in
         (name, addr)
