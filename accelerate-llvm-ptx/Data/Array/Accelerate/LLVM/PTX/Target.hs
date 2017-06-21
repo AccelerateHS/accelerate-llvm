@@ -40,6 +40,7 @@ import Control.Parallel.Meta                                        ( Executable
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
+import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
@@ -66,6 +67,7 @@ import qualified Data.Set                                           as Set
 data PTX = PTX {
     ptxContext                  :: {-# UNPACK #-} !Context
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
+  , ptxKernelTable              :: {-# UNPACK #-} !KernelTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
   , fillP                       :: {-# UNPACK #-} !Executable
   }

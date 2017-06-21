@@ -147,6 +147,8 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 
     Data.Array.Accelerate.LLVM.PTX.Link
+    Data.Array.Accelerate.LLVM.PTX.Link.Cache
+    Data.Array.Accelerate.LLVM.PTX.Link.Object
 
     Data.Array.Accelerate.LLVM.PTX.Execute.Environment
     Data.Array.Accelerate.LLVM.PTX.Execute.Event

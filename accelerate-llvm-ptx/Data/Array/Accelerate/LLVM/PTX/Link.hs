@@ -1,4 +1,5 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Link
@@ -13,7 +14,8 @@
 module Data.Array.Accelerate.LLVM.PTX.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
-  ExecutableR(..), Kernel(..), ObjectCode,
+  ExecutableR(..), FunctionTable(..), Kernel(..), ObjectCode,
+  withExecutable,
 
 ) where
 
@@ -25,6 +27,8 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
+import Data.Array.Accelerate.LLVM.PTX.Link.Cache
+import Data.Array.Accelerate.LLVM.PTX.Link.Object
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
@@ -36,55 +40,46 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 import Control.Monad.State
 import Data.ByteString.Internal                                     ( w2c )
 import Data.ByteString.Short                                        ( ShortByteString, unpack )
-import Data.List                                                    ( intercalate )
 import Foreign.Ptr
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Unsafe                             as B
-import Prelude                                                      as P
+import Prelude                                                      as P hiding ( lookup )
 
 
 instance Link PTX where
-  data ExecutableR PTX = PTXR { ptxKernel :: ![Kernel]
-                              , ptxModule :: {-# UNPACK #-} !ObjectCode
+  data ExecutableR PTX = PTXR { ptxExecutable :: {-# UNPACK #-} !(Lifetime FunctionTable)
                               }
   linkForTarget = link
-
-
-data Kernel = Kernel
-  { kernelName                  :: {-# UNPACK #-} !ShortByteString
-  , kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
-  , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
-  , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
-  , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
-  , kernelThreadBlocks          :: (Int -> Int)
-  }
-
-type ObjectCode = Lifetime CUDA.Module
 
 
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
-link (ObjectR nm obj) = do
+link (ObjectR cfg uid obj) = do
   target <- gets llvmTarget
-  liftIO $ do
-    -- Load the SASS object code into the current CUDA context
-    jit     <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
-    let mdl  = CUDA.jitModule jit
+  cache  <- gets ptxKernelTable
+  funs   <- liftIO $ do
+    mr <- lookup uid cache
+    case mr of
+      Just f  -> return f
+      Nothing -> do
+        -- Load the SASS object code into the current CUDA context
+        jit <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
+        let mdl = CUDA.jitModule jit
 
-    -- Extract the kernel functions
-    kernels <- mapM (uncurry (linkFunction mdl)) nm
-    mdl'    <- newLifetime mdl
+        -- Extract the kernel functions
+        nm  <- FunctionTable `fmap` mapM (uncurry (linkFunction mdl)) cfg
+        oc  <- newLifetime mdl
 
-    -- Finalise the module by unloading it from the CUDA context
-    addFinalizer mdl' $ do
-      Debug.traceIO Debug.dump_gc
-        $ printf "gc: unload module: %s"
-        $ intercalate ","
-        $ P.map (P.map w2c . unpack . kernelName) kernels
-      withContext (ptxContext target) (CUDA.unload mdl)
+        -- Finalise the module by unloading it from the CUDA context
+        addFinalizer oc $ do
+          Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
+          withContext (ptxContext target) (CUDA.unload mdl)
 
-    return $! PTXR kernels mdl'
+        -- Insert into the global kernel cache
+        insert uid nm oc cache
+  --
+  return $! PTXR funs
 
 
 -- | Extract the named function from the module and package into a Kernel
@@ -120,6 +115,15 @@ linkFunction mdl name configure = do
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
   return $ Kernel name f occ dsmem cta grid
+
+
+-- | Execute some operation with the supplied executable functions
+--
+withExecutable :: ExecutableR PTX -> (FunctionTable -> LLVM PTX b) -> LLVM PTX b
+withExecutable PTXR{..} f = do
+  r <- f (unsafeGetValue ptxExecutable)
+  liftIO $ touchLifetime ptxExecutable
+  return r
 
 
 {--

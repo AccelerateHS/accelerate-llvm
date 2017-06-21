@@ -78,6 +78,7 @@ import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
+import System.IO.Unsafe
 import System.Process
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
@@ -89,7 +90,8 @@ import Prelude                                                      as P
 
 instance Compile PTX where
   data ObjectR PTX = ObjectR { ptxConfig :: ![(ShortByteString, LaunchConfig)]
-                             , ptxObject :: {-# UNPACK #-} !ByteString
+                             , objId     :: {-# UNPACK #-} !Int
+                             , objData   :: {- LAZY -} ByteString
                              }
   compileForTarget = compile
 
@@ -101,8 +103,8 @@ instance Compile PTX where
 --
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
 compile acc aenv = do
-  target <- gets llvmTarget
-  cache  <- cacheOfOpenAcc acc
+  target            <- gets llvmTarget
+  (uid, cacheFile)  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
@@ -110,19 +112,23 @@ compile acc aenv = do
       dev           = ptxDeviceProperties target
       config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
-  -- Lower the generated LLVM into a CUBIN object code
+  -- Lower the generated LLVM into a CUBIN object code.
   --
-  cubin <- liftIO $ do
-    yes <- doesFileExist cache
+  -- The 'objData' field is lazily evaluated since the object code might have
+  -- already been loaded into the current context from a different function, in
+  -- which case it will be found by the linker cache.
+  --
+  cubin <- liftIO . unsafeInterleaveIO $ do
+    yes <- doesFileExist cacheFile
     if yes
-      then B.readFile cache
+      then B.readFile cacheFile
       else
         LLVM.withContext $ \ctx -> do
           ptx   <- compilePTX dev ctx ast
-          cubin <- compileCUBIN dev cache ptx
+          cubin <- compileCUBIN dev cacheFile ptx
           return cubin
 
-  return $! ObjectR config cubin
+  return $! ObjectR config uid cubin
 
 
 -- | Compile the LLVM module to PTX assembly. This is done either by the
