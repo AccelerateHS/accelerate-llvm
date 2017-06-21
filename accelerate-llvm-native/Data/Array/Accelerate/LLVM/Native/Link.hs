@@ -15,8 +15,8 @@
 module Data.Array.Accelerate.LLVM.Native.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
+  module Data.Array.Accelerate.LLVM.Native.Link,
   ExecutableR(..), FunctionTable(..), Function, ObjectCode,
-  withExecutable,
 
 ) where
 
