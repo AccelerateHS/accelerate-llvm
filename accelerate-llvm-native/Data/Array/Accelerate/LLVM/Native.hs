@@ -119,13 +119,11 @@ run' target a = execute
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
-{-# INLINE run1 #-}
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target (thread gang).
 --
-{-# INLINE run1With #-}
 run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
 run1With = runNWith
 
@@ -168,13 +166,11 @@ run1With = runNWith
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
-{-# INLINE runN #-}
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target (thread gang).
 --
-{-# INLINE runNWith #-}
 runNWith :: Afunction f => Native -> f -> AfunctionR f
 runNWith target f = exec
   where
