@@ -30,7 +30,7 @@ import qualified Control.Parallel.Meta.Resource.Backoff         as Backoff
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Target
-
+import qualified Data.Array.Accelerate.LLVM.Native.Link.Cache   as LC
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- library
@@ -58,7 +58,8 @@ createTarget
     -> IO Native
 createTarget caps parallelIO = do
   gang   <- forkGangOn caps
-  return $! Native (length caps) (sequentialIO gang) (parallelIO gang)
+  linker <- LC.new
+  return $! Native (length caps) linker (sequentialIO gang) (parallelIO gang)
 
 
 -- | The strategy for balancing work amongst the available worker threads.

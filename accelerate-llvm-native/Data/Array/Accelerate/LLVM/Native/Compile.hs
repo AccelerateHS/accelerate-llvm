@@ -15,8 +15,7 @@
 module Data.Array.Accelerate.LLVM.Native.Compile (
 
   module Data.Array.Accelerate.LLVM.Compile,
-  module Data.Array.Accelerate.LLVM.Native.Compile.Module,
-  ExecutableR(..),
+  ObjectR(..),
 
 ) where
 
@@ -25,7 +24,6 @@ import LLVM.AST                                                     hiding ( Mod
 import LLVM.Module                                                  as LLVM hiding ( Module )
 import LLVM.Context
 import LLVM.Target
-import LLVM.ExecutionEngine
 
 -- accelerate
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
@@ -34,65 +32,72 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( unModule )
-
-import Data.Array.Accelerate.LLVM.Native.Compile.Link
-import Data.Array.Accelerate.LLVM.Native.Compile.Module
-import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
+import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
+import Data.Array.Accelerate.LLVM.Native.Compile.Cache
+import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- standard library
 import Control.Monad.State
+import Data.ByteString                                              ( ByteString )
 import Data.Maybe
-import qualified Data.ByteString.Short                              as B
+import System.Directory
+import System.IO.Unsafe
+import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Short                              as BS
 
 
 instance Compile Native where
-  data ExecutableR Native = NativeR { executableR :: Module }
-  compileForTarget        = compileForNativeTarget
+  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !Int
+                                , objData :: {- LAZY -} ByteString
+                                }
+  compileForTarget    = compile
 
 instance Intrinsic Native
 
 
--- Compile an Accelerate expression for the native CPU target.
+-- | Compile an Accelerate expression to object code
 --
-compileForNativeTarget :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ExecutableR Native)
-compileForNativeTarget acc aenv = do
-  target <- gets llvmTarget
+compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
+compile acc aenv = do
+  target            <- gets llvmTarget
+  (uid, cacheFile)  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
-  let ast        = unModule (llvmOfOpenAcc target acc aenv)
-      triple     = fromMaybe B.empty (moduleTargetTriple ast)
-      datalayout = moduleDataLayout ast
+  let Module ast _  = llvmOfOpenAcc target acc aenv
+      triple        = fromMaybe BS.empty (moduleTargetTriple ast)
+      datalayout    = moduleDataLayout ast
 
-  -- Lower the generated LLVM to an executable function(s)
+  -- Lower the generated LLVM and produce an object file.
   --
-  mdl <- liftIO .
-    compileModule             $ \k       ->
-    withContext               $ \ctx     ->
-    withModuleFromAST ctx ast $ \mdl     ->
-    withNativeTargetMachine   $ \machine ->
-      withTargetLibraryInfo triple        $ \libinfo -> do
-        optimiseModule datalayout (Just machine) (Just libinfo) mdl
+  -- The 'objData' field is only lazy evaluated since the object code might
+  -- already have been loaded into memory from a different function, in which
+  -- case it will be found in the linker cache.
+  --
+  obj <- liftIO . unsafeInterleaveIO $ do
+    yes <- doesFileExist cacheFile
+    if yes
+      then B.readFile cacheFile
+      else
+        withContext                  $ \ctx     ->
+        withModuleFromAST ctx ast    $ \mdl     ->
+        withNativeTargetMachine      $ \machine ->
+        withTargetLibraryInfo triple $ \libinfo -> do
+          optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
-        Debug.when Debug.verbose $ do
-          Debug.traceIO Debug.dump_cc  . show =<< moduleLLVMAssembly mdl
-          Debug.traceIO Debug.dump_asm . show =<< moduleTargetAssembly machine mdl
+          Debug.when Debug.verbose $ do
+            Debug.traceIO Debug.dump_cc  . B8.unpack =<< moduleLLVMAssembly mdl
+            Debug.traceIO Debug.dump_asm . B8.unpack =<< moduleTargetAssembly machine mdl
 
-        withMCJIT ctx opt model ptrelim fast $ \mcjit -> do
-          withModuleInEngine mcjit mdl       $ \exe   -> do
-            k =<< getGlobalFunctions ast exe
+          obj <- moduleObject machine mdl
+          B.writeFile cacheFile obj
+          return obj
 
-  return $ NativeR mdl
-
-  where
-    opt         = Just 3        -- optimisation level
-    model       = Nothing       -- code model?
-    ptrelim     = Nothing       -- True to disable frame pointer elimination
-    fast        = Just True     -- True to enable fast instruction selection
+  return $! ObjectR uid obj
 

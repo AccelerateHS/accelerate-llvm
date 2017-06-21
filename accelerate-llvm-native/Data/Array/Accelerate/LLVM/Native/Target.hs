@@ -21,10 +21,12 @@ import LLVM.Target                                                  hiding ( Tar
 import LLVM.AST.DataLayout                                          ( DataLayout )
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
 import Control.Parallel.Meta                                        ( Executable )
 
 -- standard library
+import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import System.IO.Unsafe
 
@@ -33,6 +35,7 @@ import System.IO.Unsafe
 --
 data Native = Native {
     gangSize    :: {-# UNPACK #-} !Int
+  , linkCache   :: {-# UNPACK #-} !LinkCache
   , fillS       :: {-# UNPACK #-} !Executable
   , fillP       :: {-# UNPACK #-} !Executable
   }
@@ -58,6 +61,12 @@ nativeDataLayout :: DataLayout
 nativeDataLayout
   = unsafePerformIO
   $ withNativeTargetMachine getTargetMachineDataLayout
+
+-- | String that describes the host CPU
+--
+{-# NOINLINE nativeCPUName #-}
+nativeCPUName :: ByteString
+nativeCPUName = unsafePerformIO $ getHostCPUName
 
 
 -- | Bracket the creation and destruction of a target machine for the native

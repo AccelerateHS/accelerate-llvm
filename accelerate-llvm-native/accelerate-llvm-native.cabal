@@ -70,6 +70,10 @@ maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 
+extra-source-files:
+    CHANGELOG.md
+    README.md
+
 
 -- Configuration flags
 -- -------------------
@@ -109,11 +113,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.State
     Data.Array.Accelerate.LLVM.Native.Target
 
-    Data.Array.Accelerate.LLVM.Native.Compile
-    Data.Array.Accelerate.LLVM.Native.Compile.Module
-    Data.Array.Accelerate.LLVM.Native.Compile.Link
-    Data.Array.Accelerate.LLVM.Native.Compile.Optimise
-
     Data.Array.Accelerate.LLVM.Native.CodeGen
     Data.Array.Accelerate.LLVM.Native.CodeGen.Base
     Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
@@ -124,10 +123,22 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 
+    Data.Array.Accelerate.LLVM.Native.Compile
+    Data.Array.Accelerate.LLVM.Native.Compile.Cache
+    Data.Array.Accelerate.LLVM.Native.Compile.Optimise
+
+    Data.Array.Accelerate.LLVM.Native.Link
+    Data.Array.Accelerate.LLVM.Native.Link.Cache
+    Data.Array.Accelerate.LLVM.Native.Link.Object
+
+    Data.Array.Accelerate.LLVM.Native.Embed
+
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+
+    Paths_accelerate_llvm_native
 
   build-depends:
           base                          >= 4.7 && < 4.11
@@ -138,10 +149,13 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
+        , file-embed                    >= 0.0.8
+        , filepath                      >= 1.0
         , libffi                        >= 0.1
         , llvm-hs                       == 4.1.*
         , llvm-hs-pure                  == 4.1.*
         , mtl                           >= 2.2.1
+        , template-haskell
         , time                          >= 1.4
 
   default-language:
@@ -163,6 +177,41 @@ Library
 
   if flag(internal-checks)
     cpp-options:                -DACCELERATE_INTERNAL_CHECKS
+
+  if os(darwin)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.MachO
+
+    build-depends:
+          bytestring                    >= 0.10
+        , cereal                        >= 0.4
+        , ghc-prim
+        , unix                          >= 2.7
+        , vector                        >= 0.11
+
+    build-tools:
+          c2hs                          >= 0.25
+
+  if os(linux)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.ELF
+
+    build-depends:
+          bytestring                    >= 0.10
+        , cereal                        >= 0.4
+        , ghc-prim
+        , unix                          >= 2.7
+        , vector                        >= 0.11
+
+    build-tools:
+          c2hs                          >= 0.25
+
+  if os(windows)
+    other-modules:
+      Data.Array.Accelerate.LLVM.Native.Link.COFF
+
+    build-depends:
+          bytestring                    >= 0.10
 
 
 source-repository head

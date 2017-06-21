@@ -1,5 +1,4 @@
-{-# LANGUAGE BangPatterns    #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta.Resource.SMP

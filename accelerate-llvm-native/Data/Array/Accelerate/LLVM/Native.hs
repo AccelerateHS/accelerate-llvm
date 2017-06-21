@@ -45,6 +45,9 @@ module Data.Array.Accelerate.LLVM.Native (
   Native, Strategy,
   createTarget, balancedParIO, unbalancedParIO,
 
+  -- -- * Ahead-of-time compilation
+  -- run1Q,
+
 ) where
 
 -- accelerate
@@ -54,15 +57,16 @@ import Data.Array.Accelerate.Async
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
-import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
+import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
-import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun, ExecOpenAfun )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
+import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
@@ -107,20 +111,19 @@ run' target a = execute
     execute     = do
       dumpGraph acc
       evalNative target $ do
-        exec <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
-        res  <- phase "execute" elapsedP (executeAcc exec)
+        build <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
+        exec  <- phase "link"    elapsedS (linkAcc build)
+        res   <- phase "execute" elapsedP (executeAcc exec)
         return res
 
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
-{-# INLINE run1 #-}
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target (thread gang).
 --
-{-# INLINE run1With #-}
 run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
 run1With = runNWith
 
@@ -163,20 +166,21 @@ run1With = runNWith
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
-{-# INLINE runN #-}
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target (thread gang).
 --
-{-# INLINE runNWith #-}
 runNWith :: Afunction f => Native -> f -> AfunctionR f
 runNWith target f = exec
   where
     !acc  = convertAfunWith (config target) f
     !afun = unsafePerformIO $ do
               dumpGraph acc
-              phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
+              evalNative target $ do
+                build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+                link  <- phase "link"    elapsedS (linkAfun build)
+                return link
     !exec = go afun (return Aempty)
 
     go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
@@ -214,8 +218,10 @@ runNAsyncWith target f = runAsync' target afun (return Aempty)
     !acc  = convertAfunWith (config target) f
     !afun = unsafePerformIO $ do
               dumpGraph acc
-              phase "compile" elapsedS (evalNative target (compileAfun acc)) >>= dumpStats
-
+              evalNative target $ do
+                build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+                link  <- phase "link"    elapsedS (linkAfun build)
+                return link
 
 class RunAsync f where
   type RunAsyncR f
@@ -250,6 +256,28 @@ streamWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> [a] -> [b]
 streamWith target f arrs = map go arrs
   where
     !go = run1With target f
+
+
+-- run1Q
+--     :: (Arrays a, Arrays b)
+--     => (Acc a -> Acc b)
+--     -> Q (TExp (a -> b))
+-- run1Q f = do
+--   go <- run1'Q defaultTarget f
+--   [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
+
+-- run1'Q
+--     :: (Arrays a, Arrays b)
+--     => Native
+--     -> (Acc a -> Acc b)
+--     -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
+-- run1'Q target f = do
+--   let acc = convertAfunWith (config target) f
+--   afun <- TH.runIO $ do
+--             dumpGraph acc
+--             evalNative target $
+--               phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+--   [|| \using target a -> using $ evalNative target (executeAfun $$(embedAfun afun) a) ||]
 
 
 -- How the Accelerate program should be evaluated.

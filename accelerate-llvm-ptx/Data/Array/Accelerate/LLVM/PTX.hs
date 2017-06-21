@@ -60,6 +60,7 @@ import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) 
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment           ( Aval )
+import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.State
@@ -121,21 +122,20 @@ runAsyncWith target a = asyncBound execute
       dumpGraph acc
       evalPTX target $ do
         acc `seq` dumpSimplStats
-        exec <- phase "compile" (compileAcc acc)
-        res  <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+        build <- phase "compile" (compileAcc acc)
+        exec  <- phase "link"    (linkAcc build)
+        res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
         return res
 
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
-{-# INLINE run1 #-}
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
 run1 = run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target rather than using the
 -- default, automatically selected device.
 --
-{-# INLINE run1With #-}
 run1With :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> a -> b
 run1With = runNWith
 
@@ -178,20 +178,21 @@ run1With = runNWith
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
-{-# INLINE runN #-}
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target device.
 --
-{-# INLINE runNWith #-}
 runNWith :: Afunction f => PTX -> f -> AfunctionR f
 runNWith target f = exec
   where
     !acc  = convertAfunWith config f
     !afun = unsafePerformIO $ do
               dumpGraph acc
-              phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
+              evalPTX target $ do
+                build <- phase "compile" (compileAfun acc) >>= dumpStats
+                link  <- phase "link"    (linkAfun build)
+                return link
     !exec = go afun (return Aempty)
 
     go :: ExecOpenAfun PTX aenv t -> LLVM PTX (Aval aenv) -> t
@@ -230,8 +231,10 @@ runNAsyncWith target f = runAsync' target afun (return Aempty)
     !acc  = convertAfunWith config f
     !afun = unsafePerformIO $ do
               dumpGraph acc
-              phase "compile" (evalPTX target (compileAfun acc)) >>= dumpStats
-
+              evalPTX target $ do
+                build <- phase "compile" (compileAfun acc) >>= dumpStats
+                exec  <- phase "link"    (linkAfun build)
+                return exec
 
 class RunAsync f where
   type RunAsyncR f

@@ -18,8 +18,8 @@ module Data.Array.Accelerate.LLVM.State
 -- library
 import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
-import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
+import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
 import Prelude
 

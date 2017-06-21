@@ -2,5 +2,13 @@
 
 # Load up GHCi with an appropriate environment
 #
-stack exec ghci -- -j +RTS -N -A64M -n2M -RTS $@
+DISTDIR=$(stack path --dist-dir)
+stack exec ghci -- \
+  -fno-ghci-sandbox \
+  -j +RTS -N -A64M -n2m -RTS \
+  -iaccelerate-llvm/${DISTDIR}/build/autogen \
+  -iaccelerate-llvm-native/${DISTDIR}/build \
+  -iaccelerate-llvm-native/${DISTDIR}/build/autogen \
+  -iaccelerate-llvm-ptx/${DISTDIR}/build/autogen \
+  $@
 

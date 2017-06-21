@@ -11,7 +11,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
 ENV PATH /root/.cabal/bin:/root/.local/bin:${PATH}
-ENV LD_LIBRARY_PATH /usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH /usr/local/cuda/lib64:/usr/local/cuda/nvvm/lib64:${LD_LIBRARY_PATH}
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/libcuda.so.1
 
 RUN apt-get update \
@@ -48,25 +48,28 @@ RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
  && apt-get install -y llvm-4.0-dev
 
 # Setup stack
-RUN stack --resolver=${LTS_SLUG} setup
+RUN stack --no-terminal --resolver=${LTS_SLUG} setup
+RUN stack --no-terminal install c2hs
 
 # Copy over just the cabal and stack file and install dependencies
 WORKDIR /opt/accelerate-llvm
+COPY ./README.md /opt/accelerate-llvm/README.md
+COPY ./LICENSE /opt/accelerate-llvm/LICENSE
 COPY ./stack-8.0.yaml /opt/accelerate-llvm/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal /opt/accelerate-llvm/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal /opt/accelerate-llvm/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal /opt/accelerate-llvm/accelerate-llvm-ptx/
-RUN stack build --only-dependencies
+RUN stack --no-terminal build --only-dependencies
 
 # Copy over the actual source files and build
 COPY ./accelerate-llvm /opt/accelerate-llvm/accelerate-llvm
-RUN stack build accelerate-llvm
+RUN stack --no-terminal build accelerate-llvm
 
 COPY ./accelerate-llvm-native /opt/accelerate-llvm/accelerate-llvm-native
-RUN stack build accelerate-llvm-native
+RUN stack --no-terminal build accelerate-llvm-native
 
 COPY ./accelerate-llvm-ptx /opt/accelerate-llvm/accelerate-llvm-ptx
-RUN stack build accelerate-llvm-ptx
+RUN stack --no-terminal build accelerate-llvm-ptx
 
 COPY ./utils/ghci /opt/accelerate-llvm/
 CMD ["bash"]

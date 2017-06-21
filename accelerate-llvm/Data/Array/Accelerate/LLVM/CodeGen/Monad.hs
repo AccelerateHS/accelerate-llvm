@@ -40,7 +40,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State.Strict
+import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Function
 import Data.HashMap.Strict                                          ( HashMap )

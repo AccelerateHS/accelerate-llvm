@@ -214,9 +214,7 @@ runParIO resource gang (IE inf sup) action =
             -- make sure all the work queues are exhausted before exiting.
             _             -> do
               done <- exhausted workers
-              if done
-                 then return ()
-                 else loop
+              unless done loop
 
     when (end > start) $ pushL (workpool me) (IE start end)
     loop

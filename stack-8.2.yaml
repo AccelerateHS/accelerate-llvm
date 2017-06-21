@@ -49,6 +49,11 @@ packages:
   extra-dep: true
 
 - location:
+    git:    https://github.com/tmcdonell/cuda.git
+    commit: 1bff17152088384b71a439b01ec993a54e2618c9
+  extra-dep: true
+
+- location:
     git:    https://github.com/rrnewton/haskell-lockfree.git
     commit: 7ac36d701caa759a9f9defd418d8959f4e9c6ef0
   extra-dep: true
@@ -63,7 +68,7 @@ extra-deps:
 - 'base-orphans-0.6'
 - 'c2hs-0.28.2'
 - 'chaselev-deque-0.5.0.5'
-- 'cuda-0.7.5.3'
+# - 'cuda-0.7.5.3'
 - 'data-default-class-0.1.2.0'
 - 'dlist-0.8.0.2'
 - 'exceptions-0.8.3'
@@ -91,6 +96,9 @@ extra-deps:
 - 'utf8-string-1.0.1.1'
 - 'vector-0.12.0.1'
 - 'vector-th-unbox-0.2.1.6'
+- 'cereal-0.5.4.0'
+- 'file-embed-0.0.10'
+- 'nvvm-0.7.5.2'
 
 # Override default flag values for local packages and extra-deps
 flags:
@@ -100,6 +108,10 @@ flags:
     debug: false
     ekg: false
     internal-checks: false
+
+# Extra global and per-package GHC options
+ghc-options:
+  '*': -fdiagnostics-color=always
 
 # Extra package databases containing global packages
 extra-package-dbs: []
