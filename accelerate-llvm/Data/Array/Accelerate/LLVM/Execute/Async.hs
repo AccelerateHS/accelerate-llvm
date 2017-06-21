@@ -68,11 +68,13 @@ class Async arch where
 
 -- | Wait for an asynchronous operation to complete, then return it.
 --
+{-# INLINEABLE get #-}
 get :: Async arch => AsyncR arch a -> LLVM arch a
 get (AsyncR e a) = block e >> return a
 
 -- | Execute the given operation asynchronously in a new execution stream.
 --
+{-# INLINEABLE async #-}
 async :: Async arch
       => (StreamR arch -> LLVM arch a)
       -> LLVM arch (AsyncR arch a)
