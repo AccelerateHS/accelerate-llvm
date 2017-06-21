@@ -11,7 +11,7 @@
 module Data.Array.Accelerate.LLVM.Native.Link.Cache (
 
   LinkCache,
-  LC.new, LC.lookup, LC.insert,
+  LC.new, LC.dlsym,
 
 ) where
 

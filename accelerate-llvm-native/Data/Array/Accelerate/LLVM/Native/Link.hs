@@ -55,16 +55,8 @@ instance Link Native where
 --
 link :: ObjectR Native -> LLVM Native (ExecutableR Native)
 link (ObjectR uid obj) = do
-  cache <- gets linkCache
-  funs  <- liftIO $ do
-    mr <- lookup uid cache
-    case mr of
-      Just f -> return f
-      Nothing -> do
-        (nm, vm) <- loadObject obj
-        funtab   <- insert uid nm vm cache
-        return funtab
-  --
+  cache  <- gets linkCache
+  funs   <- liftIO $ dlsym uid cache (loadObject obj)
   return $! NativeR funs
 
 

@@ -58,26 +58,21 @@ link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
 link (ObjectR cfg uid obj) = do
   target <- gets llvmTarget
   cache  <- gets ptxKernelTable
-  funs   <- liftIO $ do
-    mr <- lookup uid cache
-    case mr of
-      Just f  -> return f
-      Nothing -> do
-        -- Load the SASS object code into the current CUDA context
-        jit <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
-        let mdl = CUDA.jitModule jit
+  funs   <- liftIO $ dlsym uid cache $ do
+    -- Load the SASS object code into the current CUDA context
+    jit <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
+    let mdl = CUDA.jitModule jit
 
-        -- Extract the kernel functions
-        nm  <- FunctionTable `fmap` mapM (uncurry (linkFunction mdl)) cfg
-        oc  <- newLifetime mdl
+    -- Extract the kernel functions
+    nm  <- FunctionTable `fmap` mapM (uncurry (linkFunction mdl)) cfg
+    oc  <- newLifetime mdl
 
-        -- Finalise the module by unloading it from the CUDA context
-        addFinalizer oc $ do
-          Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
-          withContext (ptxContext target) (CUDA.unload mdl)
+    -- Finalise the module by unloading it from the CUDA context
+    addFinalizer oc $ do
+      Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
+      withContext (ptxContext target) (CUDA.unload mdl)
 
-        -- Insert into the global kernel cache
-        insert uid nm oc cache
+    return (nm, oc)
   --
   return $! PTXR funs
 

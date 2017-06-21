@@ -11,7 +11,7 @@
 module Data.Array.Accelerate.LLVM.PTX.Link.Cache (
 
   KernelTable,
-  LC.new, LC.lookup, LC.insert,
+  LC.new, LC.dlsym,
 
 ) where
 
