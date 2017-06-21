@@ -34,10 +34,11 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
 import Control.Monad.State
+import Data.ByteString.Internal                                     ( w2c )
+import Data.ByteString.Short                                        ( ShortByteString, unpack )
 import Data.List                                                    ( intercalate )
 import Foreign.Ptr
 import Text.Printf                                                  ( printf )
-import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P
 
@@ -80,8 +81,7 @@ link (ObjectR nm obj) = do
       Debug.traceIO Debug.dump_gc
         $ printf "gc: unload module: %s"
         $ intercalate ","
-        $ P.map show
-        $ P.map kernelName kernels
+        $ P.map (P.map w2c . unpack . kernelName) kernels
       withContext (ptxContext target) (CUDA.unload mdl)
 
     return $! PTXR kernels mdl'
@@ -98,7 +98,7 @@ linkFunction
     -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
 linkFunction mdl name configure = do
-  f     <- CUDA.getFun mdl (show name)
+  f     <- CUDA.getFun mdl (map w2c (unpack name))
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes

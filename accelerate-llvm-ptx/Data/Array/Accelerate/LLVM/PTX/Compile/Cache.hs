@@ -22,6 +22,9 @@ import Control.Monad.State
 import Data.Version
 import Foreign.CUDA.Analysis
 import System.FilePath
+import Data.ByteString.Internal                                     ( w2c )
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Short                              as BS
 
 import Paths_accelerate_llvm_ptx
 
@@ -32,7 +35,7 @@ instance Persistent PTX where
     let Compute m n = computeCapability dev
     --
     return $ "accelerate-llvm-ptx-" ++ showVersion version
-         </> show ptxTargetTriple
-         </> show (ptxISAVersion m n)
+         </> map w2c (BS.unpack ptxTargetTriple)
+         </> B8.unpack (ptxISAVersion m n)
          </> "morp.sass"
 

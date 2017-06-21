@@ -16,7 +16,8 @@ import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
 
-import Data.ByteString.Short                                        ( ShortByteString )
+import Data.ByteString.Internal                                     ( w2c )
+import Data.ByteString.Short                                        ( ShortByteString, unpack )
 import Data.Array.Accelerate.Lifetime
 
 
@@ -29,7 +30,7 @@ type Function       = (ShortByteString, FunPtr ())
 instance Show FunctionTable where
   showsPrec _ f
     = showString "<<"
-    . showString (intercalate "," [ show n | (n,_) <- functionTable f ])
+    . showString (intercalate "," [ map w2c (unpack n) | (n,_) <- functionTable f ])
     . showString ">>"
 
 -- | Object code consists of memory in the target address space.
