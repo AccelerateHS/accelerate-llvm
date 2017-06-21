@@ -49,7 +49,7 @@ class Persistent arch where
 cacheOfOpenAcc
     :: Persistent arch
     => DelayedOpenAcc aenv a
-    -> LLVM arch FilePath
+    -> LLVM arch (Int, FilePath)
 cacheOfOpenAcc acc = do
   dbg       <- liftIO $ queryFlag debug_cc
   appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
@@ -63,7 +63,7 @@ cacheOfOpenAcc acc = do
       cachefile     = cachepath </> printf "%s%016X" name uid <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
-  return cachefile
+  return (uid, cachefile)
 
 
 -- | Remove the cache directory

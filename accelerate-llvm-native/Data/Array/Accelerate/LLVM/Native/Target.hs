@@ -21,6 +21,7 @@ import LLVM.Target                                                  hiding ( Tar
 import LLVM.AST.DataLayout                                          ( DataLayout )
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
 import Control.Parallel.Meta                                        ( Executable )
 
@@ -34,6 +35,7 @@ import System.IO.Unsafe
 --
 data Native = Native {
     gangSize    :: {-# UNPACK #-} !Int
+  , linkCache   :: {-# UNPACK #-} !LinkCache
   , fillS       :: {-# UNPACK #-} !Executable
   , fillP       :: {-# UNPACK #-} !Executable
   }

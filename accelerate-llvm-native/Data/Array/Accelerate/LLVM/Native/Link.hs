@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP          #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE CPP             #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link
@@ -14,18 +15,22 @@
 module Data.Array.Accelerate.LLVM.Native.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
-  module Data.Array.Accelerate.LLVM.Native.Link,
   ExecutableR(..), FunctionTable(..), Function, ObjectCode,
+  withExecutable,
 
 ) where
 
+import Data.Array.Accelerate.Lifetime
+
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
+import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Compile
 
 import Data.Array.Accelerate.LLVM.Native.Link.Object
+import Data.Array.Accelerate.LLVM.Native.Link.Cache
 #if   defined(darwin_HOST_OS)
 import Data.Array.Accelerate.LLVM.Native.Link.MachO
 #elif defined(linux_HOST_OS)
@@ -37,19 +42,37 @@ import Data.Array.Accelerate.LLVM.Native.Link.COFF
 #endif
 
 import Control.Monad.State
+import Prelude                                                      hiding ( lookup )
 
 
 instance Link Native where
-  data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !FunctionTable
-                                    , nativeObjectCode :: {-# UNPACK #-} !ObjectCode
+  data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !(Lifetime FunctionTable)
                                     }
-  linkForTarget = liftIO . link
+  linkForTarget = link
 
 
 -- | Load the generated object file into the target address space
 --
-link :: ObjectR Native -> IO (ExecutableR Native)
-link (ObjectR obj) = do
-  (nm, vm)  <- loadObject obj
-  return    $! NativeR nm vm
+link :: ObjectR Native -> LLVM Native (ExecutableR Native)
+link (ObjectR uid obj) = do
+  cache <- gets linkCache
+  funs  <- liftIO $ do
+    mr <- lookup uid cache
+    case mr of
+      Just f -> return f
+      Nothing -> do
+        (nm, vm) <- loadObject obj
+        funtab   <- insert uid nm vm cache
+        return funtab
+  --
+  return $! NativeR funs
+
+
+-- | Execute some operation with the supplied executable functions
+--
+withExecutable :: ExecutableR Native -> (FunctionTable -> LLVM Native b) -> LLVM Native b
+withExecutable NativeR{..} f = do
+  r <- f (unsafeGetValue nativeExecutable)
+  liftIO $ touchLifetime nativeExecutable
+  return r
 

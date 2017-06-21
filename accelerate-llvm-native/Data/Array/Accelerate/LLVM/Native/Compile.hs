@@ -46,13 +46,16 @@ import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.Maybe
 import System.Directory
+import System.IO.Unsafe
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Short                              as BS
 
 
 instance Compile Native where
-  data ObjectR Native = ObjectR {-# UNPACK #-} !ByteString
+  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !Int
+                                , objData :: {- LAZY -} ByteString
+                                }
   compileForTarget    = compile
 
 instance Intrinsic Native
@@ -62,8 +65,8 @@ instance Intrinsic Native
 --
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
 compile acc aenv = do
-  target  <- gets llvmTarget
-  cache   <- cacheOfOpenAcc acc
+  target            <- gets llvmTarget
+  (uid, cacheFile)  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
@@ -71,13 +74,16 @@ compile acc aenv = do
       triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
 
-  -- Lower the generated LLVM and produce an object file. If a cached version is
-  -- available, that is returned instead.
+  -- Lower the generated LLVM and produce an object file.
   --
-  obj <- liftIO $ do
-    yes <- doesFileExist cache
+  -- The 'objData' field is only lazy evaluated since the object code might
+  -- already have been loaded into memory from a different function, in which
+  -- case it will be found in the linker cache.
+  --
+  obj <- liftIO . unsafeInterleaveIO $ do
+    yes <- doesFileExist cacheFile
     if yes
-      then B.readFile cache
+      then B.readFile cacheFile
       else
         withContext                  $ \ctx     ->
         withModuleFromAST ctx ast    $ \mdl     ->
@@ -90,8 +96,8 @@ compile acc aenv = do
             Debug.traceIO Debug.dump_asm . B8.unpack =<< moduleTargetAssembly machine mdl
 
           obj <- moduleObject machine mdl
-          B.writeFile cache obj
+          B.writeFile cacheFile obj
           return obj
 
-  return $! ObjectR obj
+  return $! ObjectR uid obj
 

@@ -144,6 +144,7 @@ Library
     Data.Array.Accelerate.LLVM.Execute.Marshal
     Data.Array.Accelerate.LLVM.Foreign
     Data.Array.Accelerate.LLVM.Link
+    Data.Array.Accelerate.LLVM.Link.Cache
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
     Data.Array.Accelerate.LLVM.Util

@@ -36,12 +36,12 @@ instance Embed Native where
 
 
 embed :: ObjectR Native -> Q (TExp (ExecutableR Native))
-embed (ObjectR obj) = do
+embed (ObjectR uid obj) = do
   name <- TH.newName "__acc_native_obj"
   TH.addTopDecls =<< sequence
     [ TH.pragInlD name TH.NoInline TH.FunLike TH.AllPhases
     , TH.sigD name [t| ExecutableR Native |]
-    , TH.valD (TH.varP name) (TH.normalB [| unsafePerformIO $ link (ObjectR $(bsToExp obj)) |]) []
+    , TH.valD (TH.varP name) (TH.normalB [| unsafePerformIO $ link (ObjectR uid $(bsToExp obj)) |]) []
     ]
   TH.unsafeTExpCoerce (TH.varE name)
 
