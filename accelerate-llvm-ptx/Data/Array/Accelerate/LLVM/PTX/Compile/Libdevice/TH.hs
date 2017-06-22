@@ -33,10 +33,11 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Foreign.CUDA.Path
 import Foreign.CUDA.Analysis
 
+import Data.ByteString                                              ( ByteString )
 import Data.FileEmbed
 import Data.List
 import Data.Maybe
-import Language.Haskell.TH                                          hiding ( Name )
+import Language.Haskell.TH.Syntax                                   hiding ( Name )
 import System.Directory
 import System.FilePath
 import Text.Printf
@@ -83,14 +84,14 @@ nvvmReflectModule =
 
 -- Lower the given NVVM Reflect module into bitcode.
 --
-nvvmReflectBitcode :: AST.Module -> Q Exp -- (String, ByteString)
+nvvmReflectBitcode :: AST.Module -> Q (TExp (String, ByteString))
 nvvmReflectBitcode mdl = do
   let name = "__nvvm_reflect"
   --
   bs <- runIO $ LLVM.withContext $ \ctx -> do
                   LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly
   be <- bsToExp bs
-  return $ TupE [ LitE (StringL name), be ]
+  return . TExp $ TupE [ LitE (StringL name), be ]
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name
@@ -102,7 +103,7 @@ nvvmReflectBitcode mdl = do
 -- search the libdevice PATH for all files of the appropriate compute capability
 -- and load the "most recent" (by sort order).
 --
-libdeviceBitcode :: Compute -> Q Exp -- (String, ByteString)
+libdeviceBitcode :: Compute -> Q (TExp (String, ByteString))
 libdeviceBitcode (Compute m n) = do
   let arch    = printf "libdevice.compute_%d%d" m n
       err     = $internalError "libdevice" (printf "not found: %s.YY.bc" arch)
@@ -115,7 +116,7 @@ libdeviceBitcode (Compute m n) = do
       path  = base </> name
   --
   bc    <- embedFile path
-  return $ TupE [ LitE (StringL name), bc ]
+  return . TExp $ TupE [ LitE (StringL name), bc ]
 
 
 -- Determine the location of the libdevice bitcode libraries. We search for the

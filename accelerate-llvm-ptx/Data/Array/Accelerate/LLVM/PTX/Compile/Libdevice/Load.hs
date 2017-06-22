@@ -49,7 +49,7 @@ instance NVVMReflect AST.Module where
   nvvmReflect = nvvmReflectModule
 
 instance NVVMReflect (String, ByteString) where
-  nvvmReflect = $( nvvmReflectBitcode nvvmReflectModule )
+  nvvmReflect = $$( nvvmReflectBitcode nvvmReflectModule )
 
 
 -- libdevice
@@ -101,10 +101,10 @@ libdevice_50_mdl = unsafePerformIO $ libdeviceModule (Compute 5 0)
 -- Load the libdevice bitcode files as raw binary data.
 --
 libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (String,ByteString)
-libdevice_20_bc = $( libdeviceBitcode (Compute 2 0) )
-libdevice_30_bc = $( libdeviceBitcode (Compute 3 0) )
-libdevice_35_bc = $( libdeviceBitcode (Compute 3 5) )
-libdevice_50_bc = $( libdeviceBitcode (Compute 5 0) )
+libdevice_20_bc = $$( libdeviceBitcode (Compute 2 0) )
+libdevice_30_bc = $$( libdeviceBitcode (Compute 3 0) )
+libdevice_35_bc = $$( libdeviceBitcode (Compute 3 5) )
+libdevice_50_bc = $$( libdeviceBitcode (Compute 5 0) )
 
 
 -- Load the libdevice bitcode file for the given compute architecture, and raise
