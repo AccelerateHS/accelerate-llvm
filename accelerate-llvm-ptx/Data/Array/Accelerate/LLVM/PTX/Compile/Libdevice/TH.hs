@@ -30,6 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.PTX.Target
 
+import Foreign.CUDA.Path
 import Foreign.CUDA.Analysis
 
 import Data.FileEmbed
@@ -103,11 +104,11 @@ nvvmReflectBitcode mdl = do
 --
 libdeviceBitcode :: Compute -> Q Exp -- (String, ByteString)
 libdeviceBitcode (Compute m n) = do
-  let arch       = printf "libdevice.compute_%d%d" m n
-      err        = $internalError "libdevice" (printf "not found: %s.YY.bc" arch)
-      best f     = arch `isPrefixOf` f && takeExtension f == ".bc"
+  let arch    = printf "libdevice.compute_%d%d" m n
+      err     = $internalError "libdevice" (printf "not found: %s.YY.bc" arch)
+      best f  = arch `isPrefixOf` f && takeExtension f == ".bc"
+      base    = cudaInstallPath </> "nvvm" </> "libdevice"
   --
-  base  <- runIO $ libdevicePath
   files <- runIO $ getDirectoryContents base
   --
   let name  = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
@@ -121,14 +122,14 @@ libdeviceBitcode (Compute m n) = do
 -- location of the 'nvcc' executable in the PATH. From that, we assume the
 -- location of the libdevice bitcode files.
 --
-libdevicePath :: IO FilePath
-libdevicePath = do
-  nvcc  <- fromMaybe (error "could not find 'nvcc' in PATH") `fmap` findExecutable "nvcc"
-  --
-  let ccvn = reverse (splitPath nvcc)
-      dir  = "libdevice" : "nvvm" : drop 2 ccvn
-  --
-  return (joinPath (reverse dir))
+-- libdevicePath :: IO FilePath
+-- libdevicepath = do
+--   nvcc  <- fromMaybe (error "could not find 'nvcc' in PATH") `fmap` findExecutable "nvcc"
+--   --
+--   let ccvn = reverse (splitPath nvcc)
+--       dir  = "libdevice" : "nvvm" : drop 2 ccvn
+--   --
+--   return (joinPath (reverse dir))
 
 
 -- With these instances it is possible to also write TH function to raise the
