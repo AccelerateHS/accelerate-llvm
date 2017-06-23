@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Link.Cache
 -- Copyright   : [2017] Trevor L. McDonell
