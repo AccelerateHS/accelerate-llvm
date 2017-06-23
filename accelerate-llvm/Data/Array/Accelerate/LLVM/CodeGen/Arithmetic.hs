@@ -386,7 +386,14 @@ isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
 isNaN f (op f -> x) = do
   let p = ScalarPrimType (NumScalarType (FloatingNumType f))
       t = type'
-  name <- intrinsic "isnan"
+  name <- intrinsic
+        $ case f of
+            TypeFloat{}   -> "isnanf"
+            TypeCFloat{}  -> "isnanf"
+            TypeDouble{}  -> "isnand"
+            TypeCDouble{} -> "isnand"
+  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
+  return r
   r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
