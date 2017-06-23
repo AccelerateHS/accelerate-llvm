@@ -394,6 +394,17 @@ isNaN f (op f -> x) = do
             TypeCDouble{} -> "isnand"
   r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
+
+isInfinite :: FloatingType a -> IR a -> CodeGen (IR Bool)
+isInfinite f (op f -> x) = do
+  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = type'
+  name <- intrinsic
+        $ case f of
+            TypeFloat{}   -> "isinff"
+            TypeCFloat{}  -> "isinff"
+            TypeDouble{}  -> "isinfd"
+            TypeCDouble{} -> "isinfd"
   r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
 

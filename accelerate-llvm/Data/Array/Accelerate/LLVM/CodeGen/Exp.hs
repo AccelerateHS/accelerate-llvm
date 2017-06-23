@@ -343,6 +343,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         PrimFloor ta tb           -> A.floor ta tb           =<< cvtE x
         PrimCeiling ta tb         -> A.ceiling ta tb         =<< cvtE x
         PrimIsNaN t               -> A.isNaN t               =<< cvtE x
+        PrimIsInfinite t          -> A.isInfinite t          =<< cvtE x
         PrimLt t                  -> A.uncurry (A.lt t)      =<< cvtE x
         PrimGt t                  -> A.uncurry (A.gt t)      =<< cvtE x
         PrimLtEq t                -> A.uncurry (A.lte t)     =<< cvtE x
