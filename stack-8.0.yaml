@@ -6,6 +6,7 @@ resolver: lts-8.0
 packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
+- 'accelerate-llvm-plugin'
 - 'accelerate-llvm-ptx'
 
 - location:

@@ -6,6 +6,7 @@ resolver: lts-6.30
 packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
+- 'accelerate-llvm-plugin'
 - 'accelerate-llvm-ptx'
 
 - location:

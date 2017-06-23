@@ -41,6 +41,7 @@ setup-info:
 packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
+- 'accelerate-llvm-plugin'
 - 'accelerate-llvm-ptx'
 
 - location:
@@ -99,6 +100,7 @@ extra-deps:
 - 'cereal-0.5.4.0'
 - 'file-embed-0.0.10'
 - 'nvvm-0.7.5.2'
+- 'ghc-paths-0.1.0.9'
 
 # Override default flag values for local packages and extra-deps
 flags:
