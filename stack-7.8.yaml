@@ -11,7 +11,7 @@ packages:
 
 - location:
     git:    https://github.com/AccelerateHS/accelerate.git
-    commit: be851212c1f5c26e948b85c5e428207c78bdae16
+    commit: af7137f1c9aabc95d23ef2f480ec55d4b53e95b7
   extra-dep: true
 
 - location:
@@ -45,7 +45,7 @@ flags:
   accelerate:
     unsafe-checks: false
     bounds-checks: true
-    debug: false
+    debug: true
     ekg: false
     internal-checks: false
   accelerate-llvm:

@@ -11,7 +11,6 @@ Policy (PVP)](https://pvp.haskell.org)
  * support for GHC-8.2
 
 ### Changed
- * generalise `run1*` to polyvariadic `runN*`
  * internal restructuring of compile/link phases
 
 ### Removed

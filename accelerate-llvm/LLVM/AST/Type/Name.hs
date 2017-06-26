@@ -18,6 +18,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.Data
 import Data.String
 import Data.Word
+import Prelude
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM
