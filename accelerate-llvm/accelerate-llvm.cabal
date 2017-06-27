@@ -190,7 +190,7 @@ Library
         , exceptions                    >= 0.6
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
-        , llvm-hs                       == 4.1.*
+        , llvm-hs                       >= 4.1 && < 4.3
         , llvm-hs-pure                  == 4.1.*
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
