@@ -81,8 +81,9 @@ compile acc aenv = do
   -- case it will be found in the linker cache.
   --
   obj <- liftIO . unsafeInterleaveIO $ do
-    yes <- doesFileExist cacheFile
-    if yes
+    exists <- doesFileExist cacheFile
+    recomp <- Debug.queryFlag Debug.force_recomp
+    if exists && not (fromMaybe False recomp)
       then B.readFile cacheFile
       else
         withContext                  $ \ctx     ->
