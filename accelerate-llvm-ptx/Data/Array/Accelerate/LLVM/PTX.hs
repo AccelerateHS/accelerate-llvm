@@ -82,6 +82,12 @@ import Text.Printf
 
 -- | Compile and run a complete embedded array program.
 --
+-- The result is copied back to the host only once the arrays are demanded (or
+-- the result is forced to normal form). For results consisting of multiple
+-- components (a tuple of arrays or array of tuples) this applies per primitive
+-- array. Evaluating the result of 'run' to WHNF will initiate the computation,
+-- but does not copy the results back from the device.
+--
 -- Note that it is recommended that you use 'run1' whenever possible.
 --
 run :: Arrays a => Acc a -> a
@@ -175,6 +181,12 @@ run1With = runNWith
 -- that the compilation steps only happen once, not on the second and subsequent
 -- invocations of 'simulate'. Note that this typically relies on GHC knowing
 -- that it can lift out the function returned by 'runN' and reuse it.
+--
+-- As with 'run', the resulting array(s) are only copied back to the host once
+-- they are actually demanded (forced to normal form). Thus, splitting a program
+-- into multiple 'runN' steps does not imply transferring intermediate
+-- computations back and forth between host and device. However note that
+-- Accelerate is not able to optimise (fuse) across separate 'runN' invocations.
 --
 -- See the programs in the 'accelerate-examples' package for examples.
 --
