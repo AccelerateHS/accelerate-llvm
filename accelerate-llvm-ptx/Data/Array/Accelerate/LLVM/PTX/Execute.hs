@@ -577,14 +577,14 @@ launch Kernel{..} stream n args =
     Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args
   where
-    cta         = (kernelThreadBlockSize, 1, 1)
-    grid        = (kernelThreadBlocks n, 1, 1)
-    smem        = kernelSharedMemBytes
+    cta   = (kernelThreadBlockSize, 1, 1)
+    grid  = (kernelThreadBlocks n, 1, 1)
+    smem  = kernelSharedMemBytes
 
     -- Debugging/monitoring support
-    query       = if Debug.monitoringIsEnabled
-                    then return True
-                    else Debug.queryFlag Debug.dump_exec
+    query = if Debug.monitoringIsEnabled
+              then return True
+              else Debug.queryFlag Debug.dump_exec
 
     fst3 (x,_,_)      = x
     msg wall cpu gpu  = do

@@ -171,7 +171,8 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                                   0 -> return (A.pair u v)
                                   _ -> do q <- A.quot integralType s ss
                                           a <- A.mul numType q sz
-                                          A.pair <$> A.add numType u a <*> A.add numType v a
+                                          A.pair <$> A.add numType u a
+                                                 <*> A.add numType v a
 
       void $
         if A.eq scalarType inf sup
