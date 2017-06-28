@@ -196,7 +196,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
             -- those threads die and will not participate in the computation of
             -- _any_ further segment. I'm not sure if this is a CUDA oddity
             -- (e.g. we must have all threads convergent on __syncthreads) or
-            -- a bug in NVPTX.
+            -- a bug in NVPTX / ptxas.
             --
             bd <- blockDim
             i0 <- A.add numType inf tid
@@ -228,17 +228,20 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
-                               x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                               reduceBlockSMem dev combine Nothing x'
+                               x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                               y <- reduceBlockSMem dev combine Nothing x
+                               return y
 
-                             -- Not all threads are valid.
-                             else
-                             if A.lt scalarType i' sup
-                               then do
-                                 x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                                 reduceBlockSMem dev combine (Just v') x'
-                               else
-                                 return r
+                             -- Not all threads are valid. Note that we still
+                             -- have all threads enter the reduction procedure
+                             -- to avoid thread divergence on synchronisation
+                             -- points, similar to the above NOTE.
+                             else do
+                               x <- if A.lt scalarType i' sup
+                                      then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                      else return r
+                               y <- reduceBlockSMem dev combine (Just v') x
+                               return y
 
                      -- first thread incorporates the result from the previous
                      -- iteration
@@ -428,13 +431,11 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                               return y
 
                             else do
-                              if A.lt scalarType i' sup
-                                then do
-                                  x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                                  y <- reduceWarpSMem dev combine smem (Just v') x
-                                  return y
-                                else
-                                  return r
+                              x <- if A.lt scalarType i' sup
+                                     then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                     else return r
+                              y <- reduceWarpSMem dev combine smem (Just v') x
+                              return y
 
                     -- The first lane incorporates the result from the previous
                     -- iteration

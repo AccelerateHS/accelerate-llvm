@@ -365,25 +365,27 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
           __syncthreads
 
           -- Threads cooperatively reduce this stripe of the input
-          i     <- A.add numType offset tid
-          i'    <- A.fromIntegral integralType numType i
-          valid <- A.sub numType to offset
-          r'    <- if A.gte scalarType valid bd
-                      -- All threads of the block are valid, so we can avoid
-                      -- bounds checks.
-                      then do
-                        x <- app1 delayedLinearIndex i'
-                        reduceBlockSMem dev combine Nothing x
+          i   <- A.add numType offset tid
+          v'  <- A.sub numType to offset
+          r'  <- if A.gte scalarType v' bd
+                   -- All threads of the block are valid, so we can avoid
+                   -- bounds checks.
+                   then do
+                     x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                     y <- reduceBlockSMem dev combine Nothing x
+                     return y
 
-                      -- Otherwise we require bounds checks when reading the
-                      -- input and during the reduction.
-                      else
-                      if A.lt scalarType i to
-                        then do
-                          x <- app1 delayedLinearIndex i'
-                          reduceBlockSMem dev combine (Just valid) x
-                        else
-                          return r
+                   -- Otherwise, we require bounds checks when reading the input
+                   -- and during the reduction. Note that even though only the
+                   -- valid threads will contribute useful work in the
+                   -- reduction, we must still have all threads enter the
+                   -- reduction procedure to avoid synchronisation divergence.
+                   else do
+                     x <- if A.lt scalarType i to
+                            then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                            else return r
+                     y <- reduceBlockSMem dev combine (Just v') x
+                     return y
 
           if A.eq scalarType tid (lift 0)
             then app2 combine r r'
