@@ -38,8 +38,7 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
 import Control.Monad.State
-import Data.ByteString.Internal                                     ( w2c )
-import Data.ByteString.Short                                        ( ShortByteString, unpack )
+import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Foreign.Ptr
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Unsafe                             as B
@@ -88,7 +87,7 @@ linkFunction
     -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
 linkFunction mdl name configure = do
-  f     <- CUDA.getFun mdl (map w2c (unpack name))
+  f     <- CUDA.getFun mdl (unpack name)
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes
@@ -100,7 +99,7 @@ linkFunction mdl name configure = do
 
       msg1, msg2 :: String
       msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
-                      (show name) regs (ssmem + dsmem) lmem cmem
+                      (unpack name) regs (ssmem + dsmem) lmem cmem
 
       msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
                       (CUDA.occupancy100 occ)

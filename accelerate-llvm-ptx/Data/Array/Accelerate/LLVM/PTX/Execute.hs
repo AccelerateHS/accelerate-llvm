@@ -54,7 +54,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 -- library
 import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets, liftIO )
-import Data.ByteString.Short                                    ( ShortByteString )
+import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import Data.Int                                                 ( Int32 )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
@@ -541,7 +541,7 @@ i32 = fromIntegral
 --
 (!#) :: FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ show name))
+  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ unpack name))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
@@ -591,5 +591,5 @@ launch Kernel{..} stream n args =
       Debug.addProcessorTime Debug.PTX gpu
       Debug.traceIO Debug.dump_exec $
         printf "exec: %s <<< %d, %d, %d >>> %s"
-               (show kernelName) (fst3 grid) (fst3 cta) smem (Debug.elapsed wall cpu gpu)
+               (unpack kernelName) (fst3 grid) (fst3 cta) smem (Debug.elapsed wall cpu gpu)
 
