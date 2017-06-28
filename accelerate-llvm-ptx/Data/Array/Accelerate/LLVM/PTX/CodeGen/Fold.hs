@@ -154,8 +154,8 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -205,8 +205,8 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM1" (paramGang ++ paramTmp ++ paramEnv) $ do
@@ -259,8 +259,8 @@ mkFoldAllM2 dev aenv combine mseed =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
@@ -324,8 +324,8 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "fold" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -436,7 +436,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
 
     -- Temporary storage required for each warp
     bytes           = sizeOf (eltType (undefined::e))
-    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
 
     -- Step 1: Reduction in every warp
     --

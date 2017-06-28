@@ -110,8 +110,8 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
       dsmem n                   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldSeg_block" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -284,12 +284,12 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       config                    = launchConfig dev (CUDA.decWarp dev) dsmem grid
       dsmem n                   = warps * (2 + per_warp_elems) * bytes
         where
-          warps = n `div` ws
+          warps = n `P.quot` ws
       --
-      grid n m                  = multipleOf n (m `div` ws)
+      grid n m                  = multipleOf n (m `P.quot` ws)
       --
       per_warp_bytes            = per_warp_elems * bytes
-      per_warp_elems            = ws + (ws `div` 2)
+      per_warp_elems            = ws + (ws `P.quot` 2)
       ws                        = CUDA.warpSize dev
       bytes                     = sizeOf (eltType (undefined :: e))
 
