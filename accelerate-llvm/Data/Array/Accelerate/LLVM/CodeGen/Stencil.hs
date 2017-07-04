@@ -103,7 +103,7 @@ stencilAccess bndy arr = goR stencil (bounded bndy arr)
     -- Recursive cases. Note that because the stencil pattern is defined with
     -- a cons ordering, whereas shapes (indices) are defined as a snoc list,
     -- when we recurse on the stencil structure we must manipulate the
-    -- _innermost_ index component
+    -- _left-most_ index component
     --
     goR (StencilRtup3 s1 s2 s3) rf ix =
       let (i, ix') = uncons ix
@@ -274,7 +274,7 @@ tup9 (IR a) (IR b) (IR c) (IR d) (IR e) (IR f) (IR g) (IR h) (IR i) =
   IR $ OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g) h) i
 
 
--- Add an _innermost_ dimension to a shape
+-- Add a _left-most_ dimension to a shape
 --
 cons :: forall sh. Shape sh => IR Int -> IR sh -> IR (sh :. Int)
 cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
@@ -289,7 +289,7 @@ cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
       = $internalError "cons" "expected shape with Int components"
 
 
--- Remove the _innermost_ dimension to a shape, and return the remainder
+-- Remove the _left-most_ index to a shape, and return the remainder
 --
 uncons :: forall sh. Shape sh => IR (sh :. Int) -> (IR Int, IR sh)
 uncons (IR extent) = let (ix, extent') = go (eltType (undefined::(sh :. Int))) extent
