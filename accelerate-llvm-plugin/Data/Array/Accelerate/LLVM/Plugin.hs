@@ -20,6 +20,7 @@ import Linker
 import SysTools
 
 import Control.Monad
+import Data.List
 import Data.IORef
 import Data.Array.Accelerate.LLVM.Plugin.Annotation
 
@@ -43,7 +44,7 @@ install args rest = do
 
 pass :: Bool -> ModGuts -> CoreM ModGuts
 pass interactive guts = do
-  paths   <- concat <$> mapM (objectPaths guts) (mg_binds guts)
+  paths   <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
   objects <- return $ map (FileOption []) paths
 
   when (not (null paths)) $
