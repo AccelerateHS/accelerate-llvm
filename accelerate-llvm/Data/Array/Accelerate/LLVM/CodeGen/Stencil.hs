@@ -19,9 +19,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Stencil
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencilAccess )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), PreBoundary(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                        hiding ( bound )
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 
@@ -42,7 +42,7 @@ import Prelude
 --
 stencilAccess
     :: Stencil sh e stencil
-    => Boundary (IR e)
+    => IRBoundary arch aenv (Array sh e)
     -> IRArray (Array sh e)
     -> IR sh
     -> CodeGen (IR stencil)
@@ -162,18 +162,21 @@ stencilAccess bndy arr = goR stencil (bounded bndy arr)
 --
 bounded
     :: (Shape sh, Elt e)
-    => Boundary (IR e)
+    => IRBoundary arch aenv (Array sh e)
     -> IRArray (Array sh e)
     -> IR sh
     -> CodeGen (IR e)
 bounded bndy arr@IRArray{..} ix =
   case bndy of
-    Constant v ->
+    IRConstant v ->
       if inside irArrayShape ix
-        then do i <- intOfIndex irArrayShape ix
-                readArray arr i
+        then readArray arr =<< intOfIndex irArrayShape ix
         else return v
-    _          -> do
+    IRFunction f ->
+      if inside irArrayShape ix
+        then readArray arr =<< intOfIndex irArrayShape ix
+        else app1 f ix
+    _            -> do
       ix' <- bound irArrayShape ix
       i   <- intOfIndex irArrayShape ix'
       readArray arr i
@@ -199,22 +202,22 @@ bounded bndy arr@IRArray{..} ix =
                IR i' <- if A.lt t (IR iz) (int 0)
                           then
                             case bndy of
-                              Clamp      -> return (int 0)
-                              Mirror     -> A.negate numType (IR iz)
-                              Wrap       -> A.add    numType (IR sz) (IR iz)
-                              Constant _ -> $internalError "bound" "unexpected boundary condition"
+                              IRClamp  -> return (int 0)
+                              IRMirror -> A.negate numType (IR iz)
+                              IRWrap   -> A.add    numType (IR sz) (IR iz)
+                              _        -> $internalError "bound" "unexpected boundary condition"
                           else
                             if A.gte t (IR iz) (IR sz)
                               then
                                 case bndy of
-                                  Clamp      -> A.sub numType (IR sz) (int 1)
-                                  Mirror     -> do
+                                  IRClamp  -> A.sub numType (IR sz) (int 1)
+                                  IRWrap   -> A.sub numType (IR iz) (IR sz)
+                                  IRMirror -> do
                                     a <- A.add numType (IR sz) (int 2)
                                     b <- A.sub numType (IR iz) a
                                     c <- A.sub numType (IR sz) b
                                     return c
-                                  Wrap       -> A.sub numType (IR iz) (IR sz)
-                                  Constant _ -> $internalError "bound" "unexpected boundary condition"
+                                  _        -> $internalError "bound" "unexpected boundary condition"
                               else
                                 return (IR iz)
                return i'
