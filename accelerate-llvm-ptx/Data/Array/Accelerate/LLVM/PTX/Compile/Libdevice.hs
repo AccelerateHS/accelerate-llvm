@@ -38,12 +38,13 @@ import Foreign.CUDA.Analysis
 -- standard library
 import Control.Monad
 import Data.ByteString                                              ( ByteString )
-import Data.ByteString.Short                                        ( ShortByteString, unpack )
-import Data.ByteString.Internal                                     ( w2c )
+import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import Data.HashSet                                                 ( HashSet )
 import Data.List
 import Data.Maybe
 import Text.Printf
+import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.ByteString.Short.Extra                        as BS
 import qualified Data.HashSet                                       as Set
 
 
@@ -99,7 +100,7 @@ withLibdeviceNVPTX dev ctx ast next =
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", "
-                $ map (map w2c . unpack)
+                $ map S8.unpack
                 $ Set.toList externs
 
 
@@ -134,7 +135,7 @@ withLibdeviceNVVM dev ctx ast next =
 
     msg         = printf "cc: linking with libdevice: %s"
                 $ intercalate ", "
-                $ map (map w2c . unpack)
+                $ map S8.unpack
                 $ Set.toList externs
 
 
@@ -148,7 +149,7 @@ analyse Module{..} =
   let intrinsic (GlobalDefinition Function{..})
         | null basicBlocks
         , Name n        <- name
-        , "__nv_"       <- take 5 . map w2c $ unpack n
+        , "__nv_"       <- BS.take 5 n
         = Just n
 
       intrinsic _

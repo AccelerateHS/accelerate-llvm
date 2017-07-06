@@ -110,8 +110,8 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
       dsmem n                   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldSeg_block" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -171,7 +171,8 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                                   0 -> return (A.pair u v)
                                   _ -> do q <- A.quot integralType s ss
                                           a <- A.mul numType q sz
-                                          A.pair <$> A.add numType u a <*> A.add numType v a
+                                          A.pair <$> A.add numType u a
+                                                 <*> A.add numType v a
 
       void $
         if A.eq scalarType inf sup
@@ -195,7 +196,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
             -- those threads die and will not participate in the computation of
             -- _any_ further segment. I'm not sure if this is a CUDA oddity
             -- (e.g. we must have all threads convergent on __syncthreads) or
-            -- a bug in NVPTX.
+            -- a bug in NVPTX / ptxas.
             --
             bd <- blockDim
             i0 <- A.add numType inf tid
@@ -227,17 +228,20 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
-                               x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                               reduceBlockSMem dev combine Nothing x'
+                               x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                               y <- reduceBlockSMem dev combine Nothing x
+                               return y
 
-                             -- Not all threads are valid.
-                             else
-                             if A.lt scalarType i' sup
-                               then do
-                                 x' <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                                 reduceBlockSMem dev combine (Just v') x'
-                               else
-                                 return r
+                             -- Not all threads are valid. Note that we still
+                             -- have all threads enter the reduction procedure
+                             -- to avoid thread divergence on synchronisation
+                             -- points, similar to the above NOTE.
+                             else do
+                               x <- if A.lt scalarType i' sup
+                                      then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                      else return r
+                               y <- reduceBlockSMem dev combine (Just v') x
+                               return y
 
                      -- first thread incorporates the result from the previous
                      -- iteration
@@ -284,12 +288,12 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       config                    = launchConfig dev (CUDA.decWarp dev) dsmem grid
       dsmem n                   = warps * (2 + per_warp_elems) * bytes
         where
-          warps = n `div` ws
+          warps = n `P.quot` ws
       --
-      grid n m                  = multipleOf n (m `div` ws)
+      grid n m                  = multipleOf n (m `P.quot` ws)
       --
       per_warp_bytes            = per_warp_elems * bytes
-      per_warp_elems            = ws + (ws `div` 2)
+      per_warp_elems            = ws + (ws `P.quot` 2)
       ws                        = CUDA.warpSize dev
       bytes                     = sizeOf (eltType (undefined :: e))
 
@@ -427,13 +431,11 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                               return y
 
                             else do
-                              if A.lt scalarType i' sup
-                                then do
-                                  x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
-                                  y <- reduceWarpSMem dev combine smem (Just v') x
-                                  return y
-                                else
-                                  return r
+                              x <- if A.lt scalarType i' sup
+                                     then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                     else return r
+                              y <- reduceWarpSMem dev combine smem (Just v') x
+                              return y
 
                     -- The first lane incorporates the result from the previous
                     -- iteration

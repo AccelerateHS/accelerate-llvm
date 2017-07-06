@@ -284,7 +284,7 @@ staticSharedMem n = do
       declare $ LLVM.globalVariableDefaults
         { LLVM.addrSpace = sharedMemAddrSpace
         , LLVM.type'     = LLVM.ArrayType n (downcast t)
-        , LLVM.linkage   = LLVM.Internal
+        , LLVM.linkage   = LLVM.External
         , LLVM.name      = downcast nm
         , LLVM.alignment = 4 `P.max` P.fromIntegral (sizeOf tt)
         }

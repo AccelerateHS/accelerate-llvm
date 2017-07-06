@@ -37,7 +37,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Monoid
 import System.IO.Unsafe
 import Text.Printf
-import Data.ByteString.Short                                    ( ShortByteString )
+import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 
 import GHC.Conc
 
@@ -138,5 +138,5 @@ timed name f = Debug.timed Debug.dump_exec (elapsed name) f
 
 {-# INLINE elapsed #-}
 elapsed :: ShortByteString -> Double -> Double -> String
-elapsed name x y = printf "exec: %s %s" (show name) (Debug.elapsedP x y)
+elapsed name x y = printf "exec: %s %s" (unpack name) (Debug.elapsedP x y)
 

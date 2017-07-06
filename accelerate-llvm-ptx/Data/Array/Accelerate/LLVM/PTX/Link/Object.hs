@@ -12,8 +12,7 @@ module Data.Array.Accelerate.LLVM.PTX.Link.Object
   where
 
 import Data.Array.Accelerate.Lifetime
-import Data.ByteString.Internal                                     ( w2c )
-import Data.ByteString.Short                                        ( ShortByteString, unpack )
+import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List
 import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
@@ -35,7 +34,7 @@ data Kernel         = Kernel
 instance Show FunctionTable where
   showsPrec _ f
     = showString "<<"
-    . showString (intercalate "," [ map w2c (unpack (kernelName k)) | k <- functionTable f ])
+    . showString (intercalate "," [ unpack (kernelName k) | k <- functionTable f ])
     . showString ">>"
 
 -- | Object code consists of executable code in the device address space

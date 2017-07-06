@@ -260,8 +260,8 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
@@ -371,8 +371,8 @@ mkScanAllP2 dir dev aenv combine =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
@@ -552,8 +552,8 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
@@ -660,8 +660,8 @@ mkScan'AllP2 dir dev aenv combine =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scanP2" (paramGang ++ paramTmp ++ paramSum ++ paramEnv) $ do
@@ -834,8 +834,8 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scan" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -1024,8 +1024,8 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "scan" (paramGang ++ paramOut ++ paramSum ++ paramEnv) $ do
@@ -1220,7 +1220,7 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
     int32 = lift . P.fromIntegral
 
     -- Temporary storage required for each warp
-    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
     warp_smem_bytes = warp_smem_elems  * sizeOf (eltType (undefined::e))
 
     -- Step 1: Scan in every warp
@@ -1304,7 +1304,7 @@ scanWarpSMem dir dev combine smem = scan 0
 
     -- Number of steps required to scan warp
     steps     = P.floor (log2 (P.fromIntegral (CUDA.warpSize dev)))
-    halfWarp  = P.fromIntegral (CUDA.warpSize dev `div` 2)
+    halfWarp  = P.fromIntegral (CUDA.warpSize dev `P.quot` 2)
 
     -- Unfold the scan as a recursive code generation function
     scan :: Int -> IR e -> CodeGen (IR e)

@@ -20,9 +20,8 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 import Data.Version
 import System.FilePath
-import Data.ByteString.Internal                                     ( w2c )
 import qualified Data.ByteString.Char8                              as B8
-import qualified Data.ByteString.Short                              as BS
+import qualified Data.ByteString.Short.Char8                        as S8
 
 import Paths_accelerate_llvm_native
 
@@ -30,7 +29,7 @@ import Paths_accelerate_llvm_native
 instance Persistent Native where
   targetCacheTemplate =
     return $ "accelerate-llvm-native-" ++ showVersion version
-         </> map w2c (BS.unpack nativeTargetTriple)
+         </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
          </> "meep.o"
 

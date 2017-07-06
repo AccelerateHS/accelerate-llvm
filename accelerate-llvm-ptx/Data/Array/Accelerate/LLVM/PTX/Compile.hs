@@ -68,6 +68,7 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Maybe
 import Data.Word
 import Foreign.C
 import Foreign.ForeignPtr
@@ -119,8 +120,9 @@ compile acc aenv = do
   -- which case it will be found by the linker cache.
   --
   cubin <- liftIO . unsafeInterleaveIO $ do
-    yes <- doesFileExist cacheFile
-    if yes
+    exists <- doesFileExist cacheFile
+    recomp <- Debug.queryFlag Debug.force_recomp
+    if exists && not (fromMaybe False recomp)
       then B.readFile cacheFile
       else
         LLVM.withContext $ \ctx -> do

@@ -55,6 +55,7 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Word                                                    ( Word8 )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
+import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Prelude                                            as P
 
 import Foreign.C
@@ -464,7 +465,7 @@ stencil2Op kernel gamma aenv stream arr brr =
 
 (!#) :: FunctionTable -> ShortByteString -> Function
 (!#) exe name
-  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ show name))
+  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ S8.unpack name))
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> FunctionTable -> Maybe Function
