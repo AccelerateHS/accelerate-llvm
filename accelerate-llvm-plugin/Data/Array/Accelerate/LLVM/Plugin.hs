@@ -19,6 +19,7 @@ import GhcPlugins
 import Linker
 import SysTools
 
+import Control.Monad
 import Data.IORef
 import Data.Array.Accelerate.LLVM.Plugin.Annotation
 
@@ -45,7 +46,8 @@ pass interactive guts = do
   paths   <- concat <$> mapM (objectPaths guts) (mg_binds guts)
   objects <- return $ map (FileOption []) paths
 
-  debugTraceMsg $ vcat $ map text $ "Data.Array.Accelerate.LLVM.Plugin linking with:" : paths
+  when (not (null paths)) $
+    debugTraceMsg $ vcat $ map text $ "Data.Array.Accelerate.LLVM.Plugin linking with:" : paths
 
   -- We need to pass the extra object files along differently depending on
   -- whether we are in interactive (ghci) or normal mode.
