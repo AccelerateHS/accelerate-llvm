@@ -53,7 +53,7 @@ import qualified Data.ByteString.Short                              as BS
 
 
 instance Compile Native where
-  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !Int
+  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !UID
                                 , objData :: {- LAZY -} ByteString
                                 }
   compileForTarget    = compile

@@ -91,7 +91,7 @@ import Prelude                                                      as P
 
 instance Compile PTX where
   data ObjectR PTX = ObjectR { ptxConfig :: ![(ShortByteString, LaunchConfig)]
-                             , objId     :: {-# UNPACK #-} !Int
+                             , objId     :: {-# UNPACK #-} !UID
                              , objData   :: {- LAZY -} ByteString
                              }
   compileForTarget = compile
