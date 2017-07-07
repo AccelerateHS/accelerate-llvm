@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
@@ -45,8 +46,8 @@ module Data.Array.Accelerate.LLVM.Native (
   Native, Strategy,
   createTarget, balancedParIO, unbalancedParIO,
 
-  -- -- * Ahead-of-time compilation
-  -- run1Q,
+  -- * Ahead-of-time compilation
+  runQ,
 
 ) where
 
@@ -61,6 +62,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..)
 import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedAfun )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
@@ -74,6 +76,8 @@ import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -258,26 +262,67 @@ streamWith target f arrs = map go arrs
     !go = run1With target f
 
 
--- run1Q
---     :: (Arrays a, Arrays b)
---     => (Acc a -> Acc b)
---     -> Q (TExp (a -> b))
--- run1Q f = do
---   go <- run1'Q defaultTarget f
---   [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
-
--- run1'Q
---     :: (Arrays a, Arrays b)
---     => Native
---     -> (Acc a -> Acc b)
---     -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
--- run1'Q target f = do
---   let acc = convertAfunWith (config target) f
---   afun <- TH.runIO $ do
---             dumpGraph acc
---             evalNative target $
---               phase "compile" elapsedS (compileAfun acc) >>= dumpStats
---   [|| \using target a -> using $ evalNative target (executeAfun $$(embedAfun afun) a) ||]
+-- | Ahead-of-time compilation for an embedded array program.
+--
+-- This function will generate, compile, and link into the final executable,
+-- code to execute the given Accelerate computation /at Haskell compile time/.
+-- This eliminates any runtime overhead associated with the other @run*@
+-- operations.
+--
+-- Since the Accelerate program will be generated at Haskell compile time,
+-- construction of the Accelerate program, in particular via meta-programming,
+-- will be limited to operations available to that phase. Also note that any
+-- arrays which are embedded into the program via 'Data.Array.Accelerate.use'
+-- will be stored as part of the final executable.
+--
+-- In order to link the final program together, the
+-- <http://hackage.haskell.org/package/accelerate-llvm-plugin accelerate-llvm-plugin>
+-- GHC plugin must be run over any modules using this function, for example by
+-- adding the following pragma to the top of the file:
+--
+-- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Plugin #-}
+--
+-- To load the file in interactive mode (ghci), you will also need to specify
+-- the option:
+--
+-- > -fplugin-opt=Data.Array.Accelerate.LLVM.Plugin:interactive
+--
+-- The wrapper script @ghc-accelerate@ (part of the @accelerate-llvm-plugin@
+-- package) can be used in place of the regular @ghc@ program, and will insert
+-- the above options for you as necessary.
+--
+-- [/Note:/]
+--
+-- Due to <https://ghc.haskell.org/trac/ghc/ticket/13587 GHC#13587>, this
+-- currently must be as an /untyped/ splice, which can unfortunately cause later
+-- problems due to the heavy use of types in the internal representation. Please
+-- add a comment to the above ticket if you would like to see this fixed.
+--
+-- The correct type of this function is similar to that of 'runN':
+--
+-- > runQ :: Afunction f => f -> Q (TExp (AfunctionR f))
+--
+runQ :: Afunction f => f -> TH.ExpQ
+runQ f = do
+  afun <- TH.runIO $ do
+            let acc = convertAfunWith (config defaultTarget) f
+            --
+            dumpGraph acc
+            evalNative defaultTarget $
+              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+  [| let
+          go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
+          go (Alam l) k = \arrs ->
+            let k' = do aenv       <- k
+                        AsyncR _ a <- E.async (useRemoteAsync arrs)
+                        return (aenv `Apush` a)
+            in go l k'
+          go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative defaultTarget $ do
+            aenv   <- k
+            E.get =<< E.async (executeOpenAcc b aenv)
+      in
+      go $(TH.unTypeQ (embedAfun defaultTarget afun)) (return Aempty)
+   |]
 
 
 -- How the Accelerate program should be evaluated.

@@ -149,7 +149,6 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , fclabels                      >= 2.0
-        , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , libffi                        >= 0.1
         , llvm-hs                       >= 4.1 && < 4.3
