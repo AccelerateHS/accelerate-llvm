@@ -56,7 +56,8 @@ class Embed arch where
   -- executable representation.
   --
   embedForTarget
-      :: ObjectR arch
+      :: arch
+      -> ObjectR arch
       -> Q (TExp (ExecutableR arch))
 
 
@@ -66,28 +67,31 @@ class Embed arch where
 {-# INLINEABLE embedAfun #-}
 embedAfun
     :: Embed arch
-    => CompiledAfun arch f
+    => arch
+    -> CompiledAfun arch f
     -> Q (TExp (ExecAfun arch f))
 embedAfun = embedOpenAfun
 
 {-# INLINEABLE embedOpenAfun #-}
 embedOpenAfun
     :: Embed arch
-    => CompiledOpenAfun arch aenv f
+    => arch
+    -> CompiledOpenAfun arch aenv f
     -> Q (TExp (ExecOpenAfun arch aenv f))
-embedOpenAfun (Alam l)  = [|| Alam $$(embedOpenAfun l) ||]
-embedOpenAfun (Abody b) = [|| Abody $$(embedOpenAcc b) ||]
+embedOpenAfun arch (Alam l)  = [|| Alam $$(embedOpenAfun arch l) ||]
+embedOpenAfun arch (Abody b) = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE embedOpenAcc #-}
 embedOpenAcc
     :: forall arch _aenv _arrs. Embed arch
-    => CompiledOpenAcc arch _aenv _arrs
+    => arch
+    -> CompiledOpenAcc arch _aenv _arrs
     -> Q (TExp (ExecOpenAcc arch _aenv _arrs))
-embedOpenAcc = liftA
+embedOpenAcc arch = liftA
   where
     liftA :: CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
-    liftA (PlainAcc pacc)          = [|| EvalAcc $$(liftPreOpenAccCommand pacc) ||]
-    liftA (BuildAcc aenv obj pacc) = [|| ExecAcc $$(liftGamma aenv) $$(embedForTarget obj) $$(liftPreOpenAccSkeleton pacc) ||]
+    liftA (PlainAcc pacc)          = [|| EvalAcc $$(liftPreOpenAccCommand arch pacc) ||]
+    liftA (BuildAcc aenv obj pacc) = [|| ExecAcc $$(liftGamma aenv) $$(embedForTarget arch obj) $$(liftPreOpenAccSkeleton arch pacc) ||]
 
     liftGamma :: Gamma aenv -> Q (TExp (Gamma aenv))
 #if MIN_VERSION_containers(0,5,8)
@@ -120,26 +124,28 @@ embedOpenAcc = liftA
 {-# INLINEABLE liftPreOpenAfun #-}
 liftPreOpenAfun
     :: Embed arch
-    => PreOpenAfun (CompiledOpenAcc arch) aenv t
+    => arch
+    -> PreOpenAfun (CompiledOpenAcc arch) aenv t
     -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv t))
-liftPreOpenAfun (Alam f)  = [|| Alam  $$(liftPreOpenAfun f) ||]
-liftPreOpenAfun (Abody b) = [|| Abody $$(embedOpenAcc b) ||]
+liftPreOpenAfun arch (Alam f)  = [|| Alam  $$(liftPreOpenAfun arch f) ||]
+liftPreOpenAfun arch (Abody b) = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE liftPreOpenAccCommand #-}
 liftPreOpenAccCommand
     :: forall arch aenv a. Embed arch
-    => PreOpenAccCommand (CompiledOpenAcc arch) aenv a
+    => arch
+    -> PreOpenAccCommand (CompiledOpenAcc arch) aenv a
     -> Q (TExp (PreOpenAccCommand (ExecOpenAcc arch) aenv a))
-liftPreOpenAccCommand pacc =
+liftPreOpenAccCommand arch pacc =
   let
       liftA :: CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
-      liftA = embedOpenAcc
+      liftA = embedOpenAcc arch
 
       liftE :: PreOpenExp (CompiledOpenAcc arch) env aenv t -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv t))
-      liftE = liftPreOpenExp
+      liftE = liftPreOpenExp arch
 
       liftAF :: PreOpenAfun (CompiledOpenAcc arch) aenv f -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv f))
-      liftAF = liftPreOpenAfun
+      liftAF = liftPreOpenAfun arch
 
       liftAtuple :: Atuple (CompiledOpenAcc arch aenv) t -> Q (TExp (Atuple (ExecOpenAcc arch aenv) t))
       liftAtuple NilAtup          = [|| NilAtup ||]
@@ -162,15 +168,16 @@ liftPreOpenAccCommand pacc =
 {-# INLINEABLE liftPreOpenAccSkeleton #-}
 liftPreOpenAccSkeleton
     :: forall arch aenv a. Embed arch
-    => PreOpenAccSkeleton (CompiledOpenAcc arch) aenv a
+    => arch
+    -> PreOpenAccSkeleton (CompiledOpenAcc arch) aenv a
     -> Q (TExp (PreOpenAccSkeleton (ExecOpenAcc arch) aenv a))
-liftPreOpenAccSkeleton pacc =
+liftPreOpenAccSkeleton arch pacc =
   let
       liftA :: CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
-      liftA = embedOpenAcc
+      liftA = embedOpenAcc arch
 
       liftE :: PreOpenExp (CompiledOpenAcc arch) env aenv t -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv t))
-      liftE = liftPreOpenExp
+      liftE = liftPreOpenExp arch
   in
   case pacc of
     Map sh            -> [|| Map $$(liftE sh) ||]
@@ -194,35 +201,37 @@ liftPreOpenAccSkeleton pacc =
 {-# INLINEABLE liftPreOpenFun #-}
 liftPreOpenFun
     :: Embed arch
-    => PreOpenFun (CompiledOpenAcc arch) env aenv t
+    => arch
+    -> PreOpenFun (CompiledOpenAcc arch) env aenv t
     -> Q (TExp (PreOpenFun (ExecOpenAcc arch) env aenv t))
-liftPreOpenFun (Lam f)  = [|| Lam  $$(liftPreOpenFun f) ||]
-liftPreOpenFun (Body b) = [|| Body $$(liftPreOpenExp b) ||]
+liftPreOpenFun arch (Lam f)  = [|| Lam  $$(liftPreOpenFun arch f) ||]
+liftPreOpenFun arch (Body b) = [|| Body $$(liftPreOpenExp arch b) ||]
 
 {-# INLINEABLE liftPreOpenExp #-}
 liftPreOpenExp
     :: forall arch env aenv t. Embed arch
-    => PreOpenExp (CompiledOpenAcc arch) env aenv t
+    => arch
+    -> PreOpenExp (CompiledOpenAcc arch) env aenv t
     -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv t))
-liftPreOpenExp pexp =
+liftPreOpenExp arch pexp =
   let
       liftA :: CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
-      liftA = embedOpenAcc
+      liftA = embedOpenAcc arch
 
       liftE :: PreOpenExp (CompiledOpenAcc arch) env aenv e -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv e))
-      liftE = liftPreOpenExp
+      liftE = liftPreOpenExp arch
 
       liftF :: PreOpenFun (CompiledOpenAcc arch) env aenv f -> Q (TExp (PreOpenFun (ExecOpenAcc arch) env aenv f))
-      liftF = liftPreOpenFun
+      liftF = liftPreOpenFun arch
 
       liftT :: Tuple (PreOpenExp (CompiledOpenAcc arch) env aenv) e -> Q (TExp (Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) e))
       liftT NilTup          = [|| NilTup ||]
       liftT (SnocTup tup e) = [|| SnocTup $$(liftT tup) $$(liftE e) ||]
   in
   case pexp of
-    Let bnd body              -> [|| Let $$(liftPreOpenExp bnd) $$(liftPreOpenExp body) ||]
+    Let bnd body              -> [|| Let $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
     Var ix                    -> [|| Var $$(liftIdx ix) ||]
-    Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun f) $$(liftE x) ||]
+    Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
     Const c                   -> [|| Const $$(liftConst (eltType (undefined::t)) c) ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
     Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
