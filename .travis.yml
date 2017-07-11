@@ -38,15 +38,6 @@ addons:
 
 matrix:
   include:
-    - env: GHC=7.8.4 CABAL=1.18 LLVM=4.0.0 CUDA=8.0.61-1
-      compiler: "GHC 7.8"
-      addons:
-        apt:
-          sources: *apt_sources
-          packages:
-            - *apt_packages
-            - cabal-install-1.18
-
     - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0 CUDA=8.0.61-1
       compiler: "GHC 7.10"
       addons:
