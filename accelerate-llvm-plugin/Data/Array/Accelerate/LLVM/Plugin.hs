@@ -19,9 +19,11 @@ import GhcPlugins
 import Linker
 import SysTools
 
+import Control.Applicative
 import Control.Monad
-import Data.List
 import Data.IORef
+import Data.List
+
 import Data.Array.Accelerate.LLVM.Plugin.Annotation
 
 
@@ -58,7 +60,11 @@ pass interactive guts = do
       let dyn_flags = hsc_dflags hsc_env
           ld_inputs = ldInputs dyn_flags
       liftIO $ linkCmdLineLibs
+#if __GLASGOW_HASKELL__ < 800
+             $                        dyn_flags { ldInputs = ld_inputs ++ objects }
+#else
              $ hsc_env { hsc_dflags = dyn_flags { ldInputs = ld_inputs ++ objects }}
+#endif
 
     else do
       dyn_flags   <- getDynFlags
@@ -70,7 +76,9 @@ pass interactive guts = do
                  GnuGold   opts -> GnuGold   (opts ++ objects)
                  DarwinLD  opts -> DarwinLD  (opts ++ objects)
                  SolarisLD opts -> SolarisLD (opts ++ objects)
+#if __GLASGOW_HASKELL__ >= 800
                  AixLD     opts -> AixLD     (opts ++ objects)
+#endif
                  UnknownLD      -> UnknownLD  -- no linking performed?
 
   return guts
