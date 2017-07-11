@@ -426,12 +426,12 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
 
     else liftIO $ do
       -- parallel permutation
-      case lookupFunction "permuteP_rmw" nativeExecutable of
+      case lookupFunction "permutePrmw" nativeExecutable of
         Just f  -> executeOp defaultLargePPT fillP f gamma aenv (IE 0 n) out
         Nothing -> do
           barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
           memset (ptrsOfArrayData adb) 0 m
-          executeOp defaultLargePPT fillP (nativeExecutable !# "permuteP_mutex") gamma aenv (IE 0 n) (out, barrier)
+          executeOp defaultLargePPT fillP (nativeExecutable !# "permutePmutex") gamma aenv (IE 0 n) (out, barrier)
 
   return out
 

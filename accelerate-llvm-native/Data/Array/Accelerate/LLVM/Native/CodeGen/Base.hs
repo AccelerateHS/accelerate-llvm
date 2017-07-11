@@ -28,6 +28,11 @@ import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
+import Control.Monad.State
+import Data.Monoid
+import Data.String
+import Text.Printf
+
 
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
@@ -74,12 +79,13 @@ makeOpenAcc name param kernel = do
 makeKernel :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel Native aenv a)
 makeKernel name param kernel = do
   _    <- kernel
+  tag  <- gets uuid
   code <- createBlocks
   return $ Kernel
     { kernelMetadata = KM_Native ()
     , unKernel       = LLVM.functionDefaults
                      { LLVM.returnType  = LLVM.VoidType
-                     , LLVM.name        = downcast name
+                     , LLVM.name        = downcast (name <> fromString (printf "_%016x" tag))
                      , LLVM.parameters  = (param, False)
                      , LLVM.basicBlocks = code
                      }

@@ -96,7 +96,7 @@ loadSegments obj symtab lcs = do
   let extern Symbol{..}   = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
-            name          = BS.toShort sym_name
+            name          = BS.toShort (B8.takeWhile (/= '_') sym_name)
             addr          = castPtrToFunPtr (unsafeForeignPtrToPtr fp `plusPtr` fromIntegral sym_value)
         in
         (name, addr)
