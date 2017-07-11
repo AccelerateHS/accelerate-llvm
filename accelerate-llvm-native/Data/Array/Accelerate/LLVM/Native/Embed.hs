@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
@@ -50,7 +51,7 @@ instance Embed Native where
 -- returned ExecutableR references the new FFI declarations.
 --
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
-embed target (ObjectR uid nms _) = do
+embed target (ObjectR uid nms !_) = do
   objFile <- TH.runIO (evalNative target (cacheOfUID uid))
   funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS fn), $$(makeFFI fn objFile) ) ||]
   --
