@@ -109,7 +109,7 @@ compile acc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target acc aenv
+  let Module ast md = llvmOfOpenAcc target uid acc aenv
       dev           = ptxDeviceProperties target
       config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 

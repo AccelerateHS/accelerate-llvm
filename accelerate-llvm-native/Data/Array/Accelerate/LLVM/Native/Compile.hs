@@ -73,7 +73,7 @@ compile acc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target acc aenv
+  let Module ast md = llvmOfOpenAcc target uid acc aenv
       triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
       nms           = [ f | Name f <- Map.keys md ]
