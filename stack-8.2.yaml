@@ -45,8 +45,8 @@ packages:
 - 'accelerate-llvm-ptx'
 
 - location:
-    git:    https://github.com/AccelerateHS/accelerate.git
-    commit: c3d36140bb98137949673699946c3eef70ad8e51
+    git:    https://github.com/tmcdonell/accelerate.git
+    commit: 4edb2ab8ef784b64c34156c257f1c0ef5c2f6ccb
   extra-dep: true
 
 - location:
