@@ -54,7 +54,7 @@ instance Link Native where
 -- | Load the generated object file into the target address space
 --
 link :: ObjectR Native -> LLVM Native (ExecutableR Native)
-link (ObjectR uid obj) = do
+link (ObjectR uid _ obj) = do
   cache  <- gets linkCache
   funs   <- liftIO $ dlsym uid cache (loadObject obj)
   return $! NativeR funs

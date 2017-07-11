@@ -32,7 +32,6 @@ import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
-import Data.Array.Accelerate.LLVM.Native.Link.MachO
 
 import Control.Monad
 import Foreign.Ptr
@@ -51,10 +50,9 @@ instance Embed Native where
 -- returned ExecutableR references the new FFI declarations.
 --
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
-embed target (ObjectR uid obj) = do
+embed target (ObjectR uid nms _) = do
   objFile <- TH.runIO (evalNative target (cacheOfUID uid))
-  syms    <- TH.runIO nameList
-  funtab  <- forM syms $ \fn -> return [|| ( $$(liftSBS fn), $$(makeFFI fn objFile) ) ||]
+  funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS fn), $$(makeFFI fn objFile) ) ||]
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where
@@ -67,11 +65,6 @@ embed target (ObjectR uid obj) = do
           len   = BS.length bs
       in
       [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
-
-    nameList :: IO [ShortByteString]
-    nameList = do
-      (ft, _) <- loadObject obj
-      return  $! map fst (functionTable ft)
 
     makeFFI :: ShortByteString -> FilePath -> Q (TExp (FunPtr ()))
     makeFFI (S8.unpack -> fn) objFile = do
