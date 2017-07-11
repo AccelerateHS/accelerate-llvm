@@ -54,7 +54,7 @@ instance Link PTX where
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
-link (ObjectR cfg uid obj) = do
+link (ObjectR uid cfg obj) = do
   target <- gets llvmTarget
   cache  <- gets ptxKernelTable
   funs   <- liftIO $ dlsym uid cache $ do
