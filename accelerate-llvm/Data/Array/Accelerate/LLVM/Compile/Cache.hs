@@ -39,7 +39,7 @@ import Paths_accelerate_llvm
 class Persistent arch where
   -- | Specify a filename template which can be used to cache files for a given
   -- backend. This should also include something to distinguish this
-  -- particular backend/target from another; examples:
+  -- particular backend/target from another.
   --
   targetCacheTemplate :: LLVM arch FilePath
 
