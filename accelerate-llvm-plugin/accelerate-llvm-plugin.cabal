@@ -28,7 +28,7 @@ library
     Data.Array.Accelerate.LLVM.Plugin.Annotation
 
   build-depends:
-          base                          >= 4.7 && < 4.11
+          base                          >= 4.8 && < 4.11
         , ghc
 
   default-language:
@@ -39,7 +39,7 @@ executable ghc-accelerate
     Main.hs
 
   build-depends:
-          base                          >= 4.7 && < 4.11
+          base                          >= 4.8 && < 4.11
         , ghc-paths
         , process                       >= 1.2
 
