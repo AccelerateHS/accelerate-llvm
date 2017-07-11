@@ -34,7 +34,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
-import Data.Array.Accelerate.LLVM.Native.CodeGen
+import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
@@ -76,7 +76,7 @@ compile acc aenv = do
   let Module ast md = llvmOfOpenAcc target acc aenv
       triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
-      nms           = [ f | (Name f, KM_Native ()) <- Map.toList md ]
+      nms           = [ f | Name f <- Map.keys md ]
 
   -- Lower the generated LLVM and produce an object file.
   --
