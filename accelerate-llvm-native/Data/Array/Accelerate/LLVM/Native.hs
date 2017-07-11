@@ -294,13 +294,13 @@ streamWith target f arrs = map go arrs
 -- [/Note:/]
 --
 -- Due to <https://ghc.haskell.org/trac/ghc/ticket/13587 GHC#13587>, this
--- currently must be as an /untyped/ splice, which can unfortunately cause later
--- problems due to the heavy use of types in the internal representation. Please
--- add a comment to the above ticket if you would like to see this fixed.
+-- currently must be as an /untyped/ splice.
 --
 -- The correct type of this function is similar to that of 'runN':
 --
 -- > runQ :: Afunction f => f -> Q (TExp (AfunctionR f))
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
 --
 runQ :: Afunction f => f -> TH.ExpQ
 runQ f = do
