@@ -12,17 +12,27 @@ module Data.ByteString.Short.Char8 (
 
   ShortByteString,
   unpack,
+  takeWhile,
 
 ) where
 
 import Data.ByteString.Short                                        ( ShortByteString )
-import Prelude                                                      as P
+import Prelude                                                      as P hiding ( takeWhile )
 import qualified Data.ByteString.Internal                           as BI
 import qualified Data.ByteString.Short                              as BS
+import qualified Data.ByteString.Short.Extra                        as BS
 
 
 -- | /O(n)/ Convert a 'ShortByteString' into a list.
 --
+{-# INLINEABLE unpack #-}
 unpack :: ShortByteString -> [Char]
 unpack = P.map BI.w2c . BS.unpack
+
+-- | 'takeWhile', applied to a predicate @p@ and a ShortByteString @xs@, returns
+-- the longest prefix (possibly empty) of @xs@ of elements that satisfy @p@.
+--
+{-# INLINEABLE takeWhile #-}
+takeWhile :: (Char -> Bool) -> ShortByteString -> ShortByteString
+takeWhile f = BS.takeWhile (f . BI.w2c)
 
