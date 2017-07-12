@@ -314,9 +314,9 @@ runQ f = do
                  evalNative defaultTarget $
                    phase "compile" elapsedS (compileAfun acc) >>= dumpStats
 
+  -- generate a lambda function with the correct number of arguments and apply
+  -- directly to the body expression.
   let
-      -- generate a lambda function with the correct number of arguments and
-      -- apply directly to the body expression.
       go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
       go (Alam lam) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
@@ -329,27 +329,9 @@ runQ f = do
             eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
         in
         TH.lamE (reverse xs) [| unsafePerformIO . phase "execute" elapsedP . evalNative defaultTarget $
-                                  $(TH.doE (reverse (eval : stmts)))
-                              |]
+                                  $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
-
-{--
-  -- Analogous to 'runNWith'.
-  [| let
-          go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
-          go (Alam l) k = \arrs ->
-            let k' = do aenv       <- k
-                        AsyncR _ a <- E.async (useRemoteAsync arrs)
-                        return (aenv `Apush` a)
-            in go l k'
-          go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative defaultTarget $ do
-            aenv   <- k
-            E.get =<< E.async (executeOpenAcc b aenv)
-      in
-      go $(TH.unTypeQ (embedAfun defaultTarget afun)) (return Aempty)
-   |]
---}
 
 
 -- How the Accelerate program should be evaluated.
