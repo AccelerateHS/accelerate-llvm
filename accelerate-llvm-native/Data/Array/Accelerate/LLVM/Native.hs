@@ -61,8 +61,8 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
 import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
-import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
-import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedAfun )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
@@ -73,6 +73,7 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
 -- standard library
+import Data.Typeable
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
@@ -304,12 +305,37 @@ streamWith target f arrs = map go arrs
 --
 runQ :: Afunction f => f -> TH.ExpQ
 runQ f = do
-  afun <- TH.runIO $ do
-            let acc = convertAfunWith (config defaultTarget) f
-            --
-            dumpGraph acc
-            evalNative defaultTarget $
-              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+  -- XXX: The reification of segmented operations (in particular, foldSeg) will
+  --      depend on the gang size at _compile_ time.
+  --
+  afun  <- let acc = convertAfunWith (config defaultTarget) f
+           in  TH.runIO $ do
+                 dumpGraph acc
+                 evalNative defaultTarget $
+                   phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+
+  let
+      -- generate a lambda function with the correct number of arguments and
+      -- apply directly to the body expression.
+      go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lam) xs as stmts = do
+        x <- TH.newName "x" -- lambda bound variable
+        a <- TH.newName "a" -- local array name
+        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (useRemoteAsync $(TH.varE x)) |]
+        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+
+      go (Abody body) xs as stmts =
+        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
+            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
+        in
+        TH.lamE (reverse xs) [| unsafePerformIO . phase "execute" elapsedP . evalNative defaultTarget $
+                                  $(TH.doE (reverse (eval : stmts)))
+                              |]
+  --
+  go afun [] [] []
+
+{--
+  -- Analogous to 'runNWith'.
   [| let
           go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
           go (Alam l) k = \arrs ->
@@ -323,6 +349,7 @@ runQ f = do
       in
       go $(TH.unTypeQ (embedAfun defaultTarget afun)) (return Aempty)
    |]
+--}
 
 
 -- How the Accelerate program should be evaluated.

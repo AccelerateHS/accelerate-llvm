@@ -46,9 +46,9 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 instance Embed Native where
   embedForTarget = embed
 
--- At the given object code to the set of files to link the executable with, and
--- generate FFI declarations to access the external functions of that file. The
--- returned ExecutableR references the new FFI declarations.
+-- Add the given object code to the set of files to link the executable with,
+-- and generate FFI declarations to access the external functions of that file.
+-- The returned ExecutableR references the new FFI declarations.
 --
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do

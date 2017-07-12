@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Embed (
 
   Embed(..),
   embedAfun, embedOpenAfun,
+  embedOpenAcc,
 
 ) where
 
