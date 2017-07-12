@@ -21,10 +21,6 @@ module Data.Array.Accelerate.LLVM.PTX.Analysis.Launch (
 import Foreign.CUDA.Analysis                            as CUDA
 
 
--- Kernel annotation for the PTX backend consists of the launch configuration
---
--- data instance KernelAnn PTX = ANN_PTX LaunchConfig
-
 -- | Given information about the resource usage of the compiled kernel,
 -- determine the optimum launch parameters.
 --
