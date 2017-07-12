@@ -14,7 +14,6 @@ module Data.Array.Accelerate.LLVM.PTX.Link.Object
 import Data.Array.Accelerate.Lifetime
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List
-import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 
@@ -25,7 +24,6 @@ data FunctionTable  = FunctionTable { functionTable :: [Kernel] }
 data Kernel         = Kernel
   { kernelName                  :: {-# UNPACK #-} !ShortByteString
   , kernelFun                   :: {-# UNPACK #-} !CUDA.Fun
-  , kernelOccupancy             :: {-# UNPACK #-} !CUDA.Occupancy
   , kernelSharedMemBytes        :: {-# UNPACK #-} !Int
   , kernelThreadBlockSize       :: {-# UNPACK #-} !Int
   , kernelThreadBlocks          :: (Int -> Int)

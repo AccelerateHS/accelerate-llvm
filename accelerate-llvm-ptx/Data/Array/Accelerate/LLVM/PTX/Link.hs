@@ -108,7 +108,7 @@ linkFunction mdl name configure = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel name f occ dsmem cta grid
+  return $ Kernel name f dsmem cta grid
 
 
 -- | Execute some operation with the supplied executable functions
