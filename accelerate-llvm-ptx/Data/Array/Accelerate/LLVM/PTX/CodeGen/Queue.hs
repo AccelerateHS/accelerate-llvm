@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -108,7 +109,7 @@ mkQueueInit
 mkQueueInit dev =
   let
       (start, _end, paramGang)  = gangParam
-      config                    = launchConfig dev [1] (\_ -> 0) (\_ _ -> 1)
+      config                    = launchConfig dev [1] (\_ -> 0) (\_ _ -> 1) [|| \_ _ -> 1 ||]
   in
   makeOpenAccWith config "qinit" paramGang $ do
     (queue,_) <- globalWorkQueue
