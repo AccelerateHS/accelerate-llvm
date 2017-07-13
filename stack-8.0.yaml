@@ -10,7 +10,7 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: 0216f1afef4460b672235c81a8e6f954efb650e3
+    commit: 75b48553724c9e48dacbde2ee693cde7d066a6db
   extra-dep: true
 
 - location:

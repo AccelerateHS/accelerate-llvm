@@ -22,13 +22,12 @@ module Data.Array.Accelerate.LLVM.CodeGen.Skeleton (
 import Prelude                                                  hiding ( id )
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil, stencilAccess )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), PreBoundary(..), prj, stencil )
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Stencil
@@ -166,7 +165,7 @@ class Skeleton arch where
                 => arch
                 -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
-                -> Boundary (IR a)
+                -> IRBoundary arch aenv (Array sh a)
                 -> IRManifest arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
@@ -174,9 +173,9 @@ class Skeleton arch where
                 => arch
                 -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
-                -> Boundary (IR a)
+                -> IRBoundary arch aenv (Array sh a)
                 -> IRManifest arch aenv (Array sh a)
-                -> Boundary (IR b)
+                -> IRBoundary arch aenv (Array sh b)
                 -> IRManifest arch aenv (Array sh b)
                 -> CodeGen (IROpenAcc arch aenv (Array sh c))
 
@@ -236,7 +235,7 @@ defaultStencil1
     => arch
     -> Gamma aenv
     -> IRFun1 arch aenv (stencil -> b)
-    -> Boundary (IR a)
+    -> IRBoundary arch aenv (Array sh a)
     -> IRManifest arch aenv (Array sh a)
     -> CodeGen (IROpenAcc arch aenv (Array sh b))
 defaultStencil1 arch aenv f boundary (IRManifest v)
@@ -250,9 +249,9 @@ defaultStencil2
     => arch
     -> Gamma aenv
     -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
-    -> Boundary (IR a)
+    -> IRBoundary arch aenv (Array sh a)
     -> IRManifest arch aenv (Array sh a)
-    -> Boundary (IR b)
+    -> IRBoundary arch aenv (Array sh b)
     -> IRManifest arch aenv (Array sh b)
     -> CodeGen (IROpenAcc arch aenv (Array sh c))
 defaultStencil2 arch aenv f boundary1 (IRManifest v1) boundary2 (IRManifest v2)
