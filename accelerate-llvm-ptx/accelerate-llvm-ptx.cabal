@@ -150,6 +150,8 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Link.Cache
     Data.Array.Accelerate.LLVM.PTX.Link.Object
 
+    Data.Array.Accelerate.LLVM.PTX.Embed
+
     Data.Array.Accelerate.LLVM.PTX.Execute.Environment
     Data.Array.Accelerate.LLVM.PTX.Execute.Event
     Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
