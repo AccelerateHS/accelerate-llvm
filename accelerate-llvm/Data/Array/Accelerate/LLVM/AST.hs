@@ -18,9 +18,9 @@ module Data.Array.Accelerate.LLVM.AST (
   PreOpenAccCommand(..),
   PreOpenAccSkeleton(..),
 
-  PreOpenAfun(..),
-  PreOpenExp(..),
-  PreOpenFun(..),
+  PreAfun, PreOpenAfun(..),
+  PreFun,  PreOpenFun(..),
+  PreExp,  PreOpenExp(..),
   Idx(..), Val(..), prj,
 
 ) where
@@ -28,7 +28,7 @@ module Data.Array.Accelerate.LLVM.AST (
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), Val(..), PreExp, prj )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), Val(..), PreAfun, PreFun, PreExp, prj )
 
 
 -- | Non-computational array program operations, parameterised over array

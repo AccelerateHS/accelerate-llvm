@@ -90,8 +90,8 @@ import Prelude                                                      as P
 
 
 instance Compile PTX where
-  data ObjectR PTX = ObjectR { ptxConfig :: ![(ShortByteString, LaunchConfig)]
-                             , objId     :: {-# UNPACK #-} !Int
+  data ObjectR PTX = ObjectR { objId     :: {-# UNPACK #-} !UID
+                             , ptxConfig :: ![(ShortByteString, LaunchConfig)]
                              , objData   :: {- LAZY -} ByteString
                              }
   compileForTarget = compile
@@ -109,7 +109,7 @@ compile acc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target acc aenv
+  let Module ast md = llvmOfOpenAcc target uid acc aenv
       dev           = ptxDeviceProperties target
       config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
@@ -130,7 +130,7 @@ compile acc aenv = do
           cubin <- compileCUBIN dev cacheFile ptx
           return cubin
 
-  return $! ObjectR config uid cubin
+  return $! ObjectR uid config cubin
 
 
 -- | Compile the LLVM module to PTX assembly. This is done either by the

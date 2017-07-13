@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -106,7 +107,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.decWarp dev) dsmem const
+      config                    = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
       dsmem n                   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -285,12 +286,13 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.decWarp dev) dsmem grid
+      config                    = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
       dsmem n                   = warps * (2 + per_warp_elems) * bytes
         where
           warps = n `P.quot` ws
       --
       grid n m                  = multipleOf n (m `P.quot` ws)
+      gridQ                     = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
       per_warp_bytes            = per_warp_elems * bytes
       per_warp_elems            = ws + (ws `P.quot` 2)

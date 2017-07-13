@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
@@ -45,8 +46,9 @@ module Data.Array.Accelerate.LLVM.Native (
   Native, Strategy,
   createTarget, balancedParIO, unbalancedParIO,
 
-  -- -- * Ahead-of-time compilation
-  -- run1Q,
+  -- * Ahead-of-time compilation
+  runQ,
+  runQAsync,
 
 ) where
 
@@ -60,7 +62,8 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
 import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
-import Data.Array.Accelerate.LLVM.Native.Compile                    ( compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
+import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
@@ -71,9 +74,12 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
 -- standard library
+import Data.Typeable
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
 
 
 -- Accelerate: LLVM backend for multicore CPUs
@@ -258,26 +264,95 @@ streamWith target f arrs = map go arrs
     !go = run1With target f
 
 
--- run1Q
---     :: (Arrays a, Arrays b)
---     => (Acc a -> Acc b)
---     -> Q (TExp (a -> b))
--- run1Q f = do
---   go <- run1'Q defaultTarget f
---   [|| \a -> $$(return go) unsafePerformIO defaultTarget a ||]
+-- | Ahead-of-time compilation for an embedded array program.
+--
+-- This function will generate, compile, and link into the final executable,
+-- code to execute the given Accelerate computation /at Haskell compile time/.
+-- This eliminates any runtime overhead associated with the other @run*@
+-- operations. The generated code will be optimised for the compiling
+-- architecture.
+--
+-- Since the Accelerate program will be generated at Haskell compile time,
+-- construction of the Accelerate program, in particular via meta-programming,
+-- will be limited to operations available to that phase. Also note that any
+-- arrays which are embedded into the program via 'Data.Array.Accelerate.use'
+-- will be stored as part of the final executable.
+--
+-- In order to link the final program together, the included GHC plugin must be
+-- run over any modules using this function, for example by adding the following
+-- pragma to the top of the file:
+--
+-- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin #-}
+--
+-- To load the file in interactive mode (ghci), you will also need to specify
+-- the option:
+--
+-- > -fplugin-opt=Data.Array.Accelerate.LLVM.Native.Plugin:interactive
+--
+-- The included wrapper script @ghc-accelerate@ can be used in place of the
+-- regular @ghc@ program, and will insert the above options for you as
+-- necessary.
+--
+-- [/Note:/]
+--
+-- Due to <https://ghc.haskell.org/trac/ghc/ticket/13587 GHC#13587>, this
+-- currently must be as an /untyped/ splice.
+--
+-- The correct type of this function is similar to that of 'runN':
+--
+-- > runQ :: Afunction f => f -> Q (TExp (AfunctionR f))
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
+--
+runQ :: Afunction f => f -> TH.ExpQ
+runQ = runQ' [| unsafePerformIO |]
 
--- run1'Q
---     :: (Arrays a, Arrays b)
---     => Native
---     -> (Acc a -> Acc b)
---     -> Q (TExp ((IO b -> c) -> Native -> (a -> c)))
--- run1'Q target f = do
---   let acc = convertAfunWith (config target) f
---   afun <- TH.runIO $ do
---             dumpGraph acc
---             evalNative target $
---               phase "compile" elapsedS (compileAfun acc) >>= dumpStats
---   [|| \using target a -> using $ evalNative target (executeAfun $$(embedAfun afun) a) ||]
+
+-- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp r)
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
+--
+runQAsync :: Afunction f => f -> TH.ExpQ
+runQAsync = runQ' [| async |]
+
+
+runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
+runQ' using f = do
+  -- Reification of the program for segmented folds depends on whether we are
+  -- executing in parallel or sequentially, where the parallel case requires
+  -- some extra work to convert the segments descriptor into a segment offset
+  -- array. Also do this conversion, so that the program can be run both in
+  -- parallel as well as sequentially (albeit with some additional work that
+  -- could have been avoided).
+  --
+  afun  <- let acc = convertAfunWith (phases { convertOffsetOfSegment = True }) f
+           in  TH.runIO $ do
+                 dumpGraph acc
+                 evalNative (defaultTarget { segmentOffset = True }) $
+                   phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+
+  -- generate a lambda function with the correct number of arguments and apply
+  -- directly to the body expression.
+  let
+      go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lam) xs as stmts = do
+        x <- TH.newName "x" -- lambda bound variable
+        a <- TH.newName "a" -- local array name
+        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (useRemoteAsync $(TH.varE x)) |]
+        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+
+      go (Abody body) xs as stmts =
+        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
+            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
+        in
+        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative (defaultTarget { segmentOffset = True }) $
+                                  $(TH.doE (reverse (eval : stmts))) |]
+  --
+  go afun [] [] []
 
 
 -- How the Accelerate program should be evaluated.
@@ -286,7 +361,7 @@ streamWith target f arrs = map go arrs
 --
 config :: Native -> Phase
 config target = phases
-  { convertOffsetOfSegment = gangSize target > 1
+  { convertOffsetOfSegment = segmentOffset target
   }
 
 

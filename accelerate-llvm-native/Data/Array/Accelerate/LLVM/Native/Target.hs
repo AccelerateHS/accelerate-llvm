@@ -33,11 +33,12 @@ import System.IO.Unsafe
 
 -- | Native machine code JIT execution target
 --
-data Native = Native {
-    gangSize    :: {-# UNPACK #-} !Int
-  , linkCache   :: {-# UNPACK #-} !LinkCache
-  , fillS       :: {-# UNPACK #-} !Executable
-  , fillP       :: {-# UNPACK #-} !Executable
+data Native = Native
+  { gangSize      :: {-# UNPACK #-} !Int
+  , linkCache     :: {-# UNPACK #-} !LinkCache
+  , fillS         :: {-# UNPACK #-} !Executable
+  , fillP         :: {-# UNPACK #-} !Executable
+  , segmentOffset :: !Bool
   }
 
 instance Target Native where

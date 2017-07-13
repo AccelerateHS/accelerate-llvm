@@ -71,3 +71,7 @@ data Label = Label {-# UNPACK #-} !ShortByteString
 instance IsString Label where
   fromString = Label . fromString
 
+instance Monoid Label where
+  mempty                      = Label mempty
+  mappend (Label x) (Label y) = Label (mappend x y)
+

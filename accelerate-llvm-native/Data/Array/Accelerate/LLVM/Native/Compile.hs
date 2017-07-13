@@ -44,16 +44,19 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 -- standard library
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
 import System.Directory
 import System.IO.Unsafe
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Short                              as BS
+import qualified Data.Map                                           as Map
 
 
 instance Compile Native where
-  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !Int
+  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !UID
+                                , objSyms :: ![ShortByteString]
                                 , objData :: {- LAZY -} ByteString
                                 }
   compileForTarget    = compile
@@ -70,9 +73,10 @@ compile acc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast _  = llvmOfOpenAcc target acc aenv
+  let Module ast md = llvmOfOpenAcc target uid acc aenv
       triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
+      nms           = [ f | Name f <- Map.keys md ]
 
   -- Lower the generated LLVM and produce an object file.
   --
@@ -100,5 +104,5 @@ compile acc aenv = do
           B.writeFile cacheFile obj
           return obj
 
-  return $! ObjectR uid obj
+  return $! ObjectR uid nms obj
 

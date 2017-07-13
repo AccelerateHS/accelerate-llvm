@@ -53,11 +53,12 @@ import Prelude                                                      hiding ( map
 llvmOfOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => arch
+    -> Int
     -> DelayedOpenAcc aenv arrs
     -> Gamma aenv
     -> Module arch aenv arrs
-llvmOfOpenAcc _    Delayed{}       _    = $internalError "llvmOfOpenAcc" "expected manifest array"
-llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
+llvmOfOpenAcc _    _    Delayed{}      _    = $internalError "llvmOfOpenAcc" "expected manifest array"
+llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM uid $
   case pacc of
     -- Producers
     Map f a                 -> map arch aenv (travF1 f) (travD a)

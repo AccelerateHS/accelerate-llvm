@@ -168,7 +168,7 @@ loadSegment obj strtab secs symtab relocs = do
               -- Resolve external symbols defined in the sections into function pointers
               let extern Symbol{..}   = sym_binding == Global && sym_type == Func
                   resolve Symbol{..}  =
-                    let name  = BS.toShort sym_name
+                    let name  = BS.toShort (B8.takeWhile (/= '_') sym_name)
                         addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
                     in
                     (name, addr)

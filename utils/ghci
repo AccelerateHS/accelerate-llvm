@@ -3,7 +3,8 @@
 # Load up GHCi with an appropriate environment
 #
 DISTDIR=$(stack path --dist-dir)
-stack exec ghci -- \
+stack exec ghc-accelerate -- \
+  --interactive \
   -j +RTS -N -A64M -n2m -RTS \
   -iaccelerate-llvm/${DISTDIR}/build/autogen \
   -iaccelerate-llvm-native/${DISTDIR}/build \

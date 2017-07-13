@@ -262,13 +262,13 @@ foldSegOp
 foldSegOp exe gamma aenv () (sh :. _) (Z :. ss) = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let
-      ncpu               = gangSize
-      kernel | ncpu == 1 = "foldSegS"
-             | otherwise = "foldSegP"
-      n      | ncpu == 1 = ss
-             | otherwise = ss - 1   -- segments array has been 'scanl (+) 0'`ed
-      ppt                = n        -- for 1D distribute evenly over threads; otherwise
-  --                                -- compute all segments on an innermost dimension
+      kernel | segmentOffset  = "foldSegP"
+             | otherwise      = "foldSegS"
+      n      | segmentOffset  = ss - 1            -- segments array has been 'scanl (+) 0'`ed
+             | otherwise      = ss
+      ppt    | rank sh == 0   = defaultLargePPT   -- work-steal over the single dimension
+             | otherwise      = n                 -- a thread computes all segments along an index
+  --
   liftIO $ do
     out <- allocateArray (sh :. n)
     executeOp ppt fillP (nativeExecutable !# kernel) gamma aenv (IE 0 (size (sh :. n))) out
@@ -426,12 +426,12 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
 
     else liftIO $ do
       -- parallel permutation
-      case lookupFunction "permuteP_rmw" nativeExecutable of
+      case lookupFunction "permutePrmw" nativeExecutable of
         Just f  -> executeOp defaultLargePPT fillP f gamma aenv (IE 0 n) out
         Nothing -> do
           barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
           memset (ptrsOfArrayData adb) 0 m
-          executeOp defaultLargePPT fillP (nativeExecutable !# "permuteP_mutex") gamma aenv (IE 0 n) (out, barrier)
+          executeOp defaultLargePPT fillP (nativeExecutable !# "permutePmutex") gamma aenv (IE 0 n) (out, barrier)
 
   return out
 

@@ -16,6 +16,7 @@ module Data.Array.Accelerate.LLVM.PTX.Link (
   module Data.Array.Accelerate.LLVM.Link,
   ExecutableR(..), FunctionTable(..), Kernel(..), ObjectCode,
   withExecutable,
+  linkFunctionQ,
 
 ) where
 
@@ -40,6 +41,7 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 import Control.Monad.State
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Foreign.Ptr
+import Language.Haskell.TH
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P hiding ( lookup )
@@ -54,7 +56,7 @@ instance Link PTX where
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
-link (ObjectR cfg uid obj) = do
+link (ObjectR uid cfg obj) = do
   target <- gets llvmTarget
   cache  <- gets ptxKernelTable
   funs   <- liftIO $ dlsym uid cache $ do
@@ -86,7 +88,15 @@ linkFunction
     -> ShortByteString                  -- __global__ entry function name
     -> LaunchConfig                     -- launch configuration for this global function
     -> IO Kernel
-linkFunction mdl name configure = do
+linkFunction mdl name configure =
+  fst `fmap` linkFunctionQ mdl name configure
+
+linkFunctionQ
+    :: CUDA.Module
+    -> ShortByteString
+    -> LaunchConfig
+    -> IO (Kernel, Q (TExp (Int -> Int)))
+linkFunctionQ mdl name configure = do
   f     <- CUDA.getFun mdl (unpack name)
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
@@ -95,7 +105,7 @@ linkFunction mdl name configure = do
   maxt  <- CUDA.requires f CUDA.MaxKernelThreadsPerBlock
 
   let
-      (occ, cta, grid, dsmem) = configure maxt regs ssmem
+      (occ, cta, grid, dsmem, gridQ) = configure maxt regs ssmem
 
       msg1, msg2 :: String
       msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
@@ -108,7 +118,7 @@ linkFunction mdl name configure = do
                       (CUDA.activeThreadBlocks occ)
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
-  return $ Kernel name f occ dsmem cta grid
+  return (Kernel name f dsmem cta grid, gridQ)
 
 
 -- | Execute some operation with the supplied executable functions

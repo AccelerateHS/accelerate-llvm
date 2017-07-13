@@ -41,6 +41,10 @@ module Data.Array.Accelerate.LLVM.PTX (
   -- * Execution targets
   PTX, createTargetForDevice, createTargetFromContext,
 
+  -- * Ahead-of-time compilation
+  runQ,
+  runQAsync,
+
   -- * Controlling host-side allocation
   registerPinnedAllocator, registerPinnedAllocatorWith,
 
@@ -58,6 +62,7 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
 import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.PTX.Compile
+import Data.Array.Accelerate.LLVM.PTX.Embed                         ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment           ( Aval )
 import Data.Array.Accelerate.LLVM.PTX.Link
@@ -71,10 +76,13 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Async       as E
 import Foreign.CUDA.Driver                                          as CUDA ( CUDAException, mallocHostForeignPtr )
 
 -- standard library
+import Data.Typeable
 import Control.Exception
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
 
 
 -- Accelerate: LLVM backend for NVIDIA GPUs
@@ -282,6 +290,72 @@ streamWith :: (Arrays a, Arrays b) => PTX -> (Acc a -> Acc b) -> [a] -> [b]
 streamWith target f arrs = map go arrs
   where
     !go = run1With target f
+
+
+-- | Ahead-of-time compilation for an embedded array program.
+--
+-- This function will generate, compile, and link into the final executable,
+-- code to execute the given Accelerate computation /at Haskell compile time/.
+-- This eliminates any runtime overhead associated with the other @run*@
+-- operations. The generated code will be compiled for the current (default) GPU
+-- architecture.
+--
+-- Since the Accelerate program will be generated at Haskell compile time,
+-- construction of the Accelerate program, in particular via meta-programming,
+-- will be limited to operations available to that phase. Also note that any
+-- arrays which are embedded into the program via 'Data.Array.Accelerate.use'
+-- will be stored as part of the final executable.
+--
+-- [/Note:/]
+--
+-- Due to <https://ghc.haskell.org/trac/ghc/ticket/13587 GHC#13587>, this
+-- currently must be as an /untyped/ splice.
+--
+-- The correct type of this function is similar to that of 'runN':
+--
+-- > runQ :: Afunction f => f -> Q (TExp (AfunctionR f))
+--
+-- Since 1.1.0.0.
+--
+runQ :: Afunction f => f -> TH.ExpQ
+runQ = runQ' [| unsafePerformIO |]
+
+
+-- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp r)
+--
+-- Since 1.1.0.0.
+--
+runQAsync :: Afunction f => f -> TH.ExpQ
+runQAsync = runQ' [| async |]
+
+
+runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
+runQ' using f = do
+  afun  <- let acc = convertAfunWith config f
+           in  TH.runIO $ do
+                 dumpGraph acc
+                 evalPTX defaultTarget $
+                   phase "compile" (compileAfun acc) >>= dumpStats
+  let
+      go :: Typeable aenv => CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lam) xs as stmts = do
+        x <- TH.newName "x" -- lambda bound variable
+        a <- TH.newName "a" -- local array name
+        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (AD.useRemoteAsync $(TH.varE x)) |]
+        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+
+      go (Abody body) xs as stmts =
+        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
+            eval = TH.noBindS [| AD.copyToHostLazy =<< E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
+        in
+        TH.lamE (reverse xs) [| $using . phase "execute" . evalPTX defaultTarget $
+                                  $(TH.doE (reverse (eval : stmts))) |]
+  --
+  go afun [] [] []
 
 
 -- How the Accelerate program should be evaluated.

@@ -11,8 +11,10 @@
 
 module Data.Array.Accelerate.LLVM.Compile.Cache (
 
-  Persistent(..),
-  cacheOfOpenAcc, removeCacheDirectory,
+  Persistent(..), UID,
+  cacheOfUID,
+  cacheOfOpenAcc,
+  removeCacheDirectory,
 
 ) where
 
@@ -37,9 +39,14 @@ import Paths_accelerate_llvm
 class Persistent arch where
   -- | Specify a filename template which can be used to cache files for a given
   -- backend. This should also include something to distinguish this
-  -- particular backend/target from another; examples:
+  -- particular backend/target from another.
   --
   targetCacheTemplate :: LLVM arch FilePath
+
+
+-- | Unique identifier for an accelerate computation
+--
+type UID = Int
 
 
 -- | Return the unique cache file path corresponding to a given accelerate
@@ -49,13 +56,26 @@ class Persistent arch where
 cacheOfOpenAcc
     :: Persistent arch
     => DelayedOpenAcc aenv a
-    -> LLVM arch (Int, FilePath)
+    -> LLVM arch (UID, FilePath)
 cacheOfOpenAcc acc = do
+  let uid = hashDelayedOpenAcc acc
+  cacheFile <- cacheOfUID uid
+  return (uid, cacheFile)
+
+
+-- | Return the unique cache file path corresponding to the unique identifier of
+-- an accelerate computation.
+--
+{-# INLINEABLE cacheOfUID #-}
+cacheOfUID
+    :: Persistent arch
+    => UID
+    -> LLVM arch FilePath
+cacheOfUID uid = do
   dbg       <- liftIO $ queryFlag debug_cc
   appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
   template  <- targetCacheTemplate
   let
-      uid           = hashDelayedOpenAcc acc
       (base, file)  = splitFileName template
       (name, ext)   = splitExtensions file
       --
@@ -63,7 +83,7 @@ cacheOfOpenAcc acc = do
       cachefile     = cachepath </> printf "%s%016X" name uid <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
-  return (uid, cachefile)
+  return cachefile
 
 
 -- | Remove the cache directory
