@@ -4,6 +4,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -256,7 +257,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -366,8 +367,9 @@ mkScanAllP2 dir dev aenv combine =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid
+      config                    = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
       grid _ _                  = 1
+      gridQ                     = [|| \_ _ -> 1 ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -455,7 +457,7 @@ mkScanAllP3 dir dev aenv combine mseed =
       stride                    = local           scalarType ("ix.stride" :: Name Int32)
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int32)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const
+      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
   makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
 
@@ -548,7 +550,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -655,8 +657,9 @@ mkScan'AllP2 dir dev aenv combine =
       (arrSum, paramSum)        = mutableArray ("sum" :: Name (Scalar e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid
+      config                    = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
       grid _ _                  = 1
+      gridQ                     = [|| \_ _ -> 1 ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -749,7 +752,7 @@ mkScan'AllP3 dir dev aenv combine =
       stride                    = local           scalarType ("ix.stride" :: Name Int32)
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int32)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const
+      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
   makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
 
@@ -830,7 +833,7 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -1020,7 +1023,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
       (arrSum, paramSum)        = mutableArray ("sum" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev

@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -150,7 +151,7 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -201,7 +202,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -255,7 +256,7 @@ mkFoldAllM2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
@@ -320,7 +321,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev

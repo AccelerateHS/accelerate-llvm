@@ -11,6 +11,7 @@
 module Data.ByteString.Short.Char8 (
 
   ShortByteString,
+  pack,
   unpack,
   takeWhile,
 
@@ -28,6 +29,12 @@ import qualified Data.ByteString.Short.Extra                        as BS
 {-# INLINEABLE unpack #-}
 unpack :: ShortByteString -> [Char]
 unpack = P.map BI.w2c . BS.unpack
+
+-- | /O(n)/ Convert a 'String' into a 'ShortByteString'.
+--
+{-# INLINEABLE pack #-}
+pack :: String -> ShortByteString
+pack = BS.pack . P.map BI.c2w
 
 -- | 'takeWhile', applied to a predicate @p@ and a ShortByteString @xs@, returns
 -- the longest prefix (possibly empty) of @xs@ of elements that satisfy @p@.
