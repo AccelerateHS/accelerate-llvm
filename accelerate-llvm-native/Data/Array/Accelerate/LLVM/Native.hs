@@ -48,6 +48,7 @@ module Data.Array.Accelerate.LLVM.Native (
 
   -- * Ahead-of-time compilation
   runQ,
+  runQAsync,
 
 ) where
 
@@ -268,7 +269,8 @@ streamWith target f arrs = map go arrs
 -- This function will generate, compile, and link into the final executable,
 -- code to execute the given Accelerate computation /at Haskell compile time/.
 -- This eliminates any runtime overhead associated with the other @run*@
--- operations.
+-- operations. The generated code will be optimised for the compiling
+-- architecture.
 --
 -- Since the Accelerate program will be generated at Haskell compile time,
 -- construction of the Accelerate program, in particular via meta-programming,
@@ -304,7 +306,23 @@ streamWith target f arrs = map go arrs
 -- Since 1.1.0.0. Requires GHC-8.0.
 --
 runQ :: Afunction f => f -> TH.ExpQ
-runQ f = do
+runQ = runQ' [| unsafePerformIO |]
+
+
+-- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp r)
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
+--
+runQAsync :: Afunction f => f -> TH.ExpQ
+runQAsync = runQ' [| async |]
+
+
+runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
+runQ' using f = do
   -- XXX: The reification of segmented operations (in particular, foldSeg) will
   --      depend on the gang size at _compile_ time.
   --
@@ -328,7 +346,7 @@ runQ f = do
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
             eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
         in
-        TH.lamE (reverse xs) [| unsafePerformIO . phase "execute" elapsedP . evalNative defaultTarget $
+        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative defaultTarget $
                                   $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
