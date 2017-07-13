@@ -322,13 +322,17 @@ runQAsync = runQ' [| async |]
 
 runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
 runQ' using f = do
-  -- XXX: The reification of segmented operations (in particular, foldSeg) will
-  --      depend on the gang size at _compile_ time.
+  -- Reification of the program for segmented folds depends on whether we are
+  -- executing in parallel or sequentially, where the parallel case requires
+  -- some extra work to convert the segments descriptor into a segment offset
+  -- array. Also do this conversion, so that the program can be run both in
+  -- parallel as well as sequentially (albeit with some additional work that
+  -- could have been avoided).
   --
-  afun  <- let acc = convertAfunWith (config defaultTarget) f
+  afun  <- let acc = convertAfunWith (phases { convertOffsetOfSegment = True }) f
            in  TH.runIO $ do
                  dumpGraph acc
-                 evalNative defaultTarget $
+                 evalNative (defaultTarget { segmentOffset = True }) $
                    phase "compile" elapsedS (compileAfun acc) >>= dumpStats
 
   -- generate a lambda function with the correct number of arguments and apply
@@ -343,9 +347,9 @@ runQ' using f = do
 
       go (Abody body) xs as stmts =
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
-            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
+            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
         in
-        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative defaultTarget $
+        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative (defaultTarget { segmentOffset = True }) $
                                   $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
@@ -357,7 +361,7 @@ runQ' using f = do
 --
 config :: Native -> Phase
 config target = phases
-  { convertOffsetOfSegment = gangSize target > 1
+  { convertOffsetOfSegment = segmentOffset target
   }
 
 

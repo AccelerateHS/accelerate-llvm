@@ -57,9 +57,10 @@ createTarget
     -> Strategy           -- ^ Strategy to balance parallel workloads
     -> IO Native
 createTarget caps parallelIO = do
+  let size = length caps
   gang   <- forkGangOn caps
   linker <- LC.new
-  return $! Native (length caps) linker (sequentialIO gang) (parallelIO gang)
+  return $! Native size linker (sequentialIO gang) (parallelIO gang) (size > 1)
 
 
 -- | The strategy for balancing work amongst the available worker threads.
