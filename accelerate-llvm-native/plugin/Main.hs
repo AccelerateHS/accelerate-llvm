@@ -22,11 +22,11 @@ main = do
   let
       interactive = isJust $ find (`elem` ["-i", "--interactive"]) args
 
-      args' = [ "-plugin-package", "accelerate-llvm-plugin"
-              , "-fplugin=Data.Array.Accelerate.LLVM.Plugin"
+      args' = [ "-plugin-package", "accelerate-llvm-native"
+              , "-fplugin=Data.Array.Accelerate.LLVM.Native.Plugin"
               ]
            ++ when interactive
-              [ "-fplugin-opt=Data.Array.Accelerate.LLVM.Plugin:interactive"
+              [ "-fplugin-opt=Data.Array.Accelerate.LLVM.Native.Plugin:interactive"
               ]
            ++ args
   --

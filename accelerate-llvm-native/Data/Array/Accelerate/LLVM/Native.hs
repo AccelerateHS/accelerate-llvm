@@ -278,21 +278,20 @@ streamWith target f arrs = map go arrs
 -- arrays which are embedded into the program via 'Data.Array.Accelerate.use'
 -- will be stored as part of the final executable.
 --
--- In order to link the final program together, the
--- <http://hackage.haskell.org/package/accelerate-llvm-plugin accelerate-llvm-plugin>
--- GHC plugin must be run over any modules using this function, for example by
--- adding the following pragma to the top of the file:
+-- In order to link the final program together, the included GHC plugin must be
+-- run over any modules using this function, for example by adding the following
+-- pragma to the top of the file:
 --
--- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Plugin #-}
+-- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin #-}
 --
 -- To load the file in interactive mode (ghci), you will also need to specify
 -- the option:
 --
--- > -fplugin-opt=Data.Array.Accelerate.LLVM.Plugin:interactive
+-- > -fplugin-opt=Data.Array.Accelerate.LLVM.Native.Plugin:interactive
 --
--- The wrapper script @ghc-accelerate@ (part of the @accelerate-llvm-plugin@
--- package) can be used in place of the regular @ghc@ program, and will insert
--- the above options for you as necessary.
+-- The included wrapper script @ghc-accelerate@ can be used in place of the
+-- regular @ghc@ program, and will insert the above options for you as
+-- necessary.
 --
 -- [/Note:/]
 --
