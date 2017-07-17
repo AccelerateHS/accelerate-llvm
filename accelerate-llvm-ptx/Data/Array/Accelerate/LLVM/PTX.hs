@@ -38,12 +38,12 @@ module Data.Array.Accelerate.LLVM.PTX (
   run1Async, run1AsyncWith,
   runNAsync, runNAsyncWith,
 
-  -- * Execution targets
-  PTX, createTargetForDevice, createTargetFromContext,
-
   -- * Ahead-of-time compilation
   runQ,
   runQAsync,
+
+  -- * Execution targets
+  PTX, createTargetForDevice, createTargetFromContext,
 
   -- * Controlling host-side allocation
   registerPinnedAllocator, registerPinnedAllocatorWith,

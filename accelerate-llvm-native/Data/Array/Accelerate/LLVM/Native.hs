@@ -42,13 +42,13 @@ module Data.Array.Accelerate.LLVM.Native (
   run1Async, run1AsyncWith,
   runNAsync, runNAsyncWith,
 
-  -- * Execution targets
-  Native, Strategy,
-  createTarget, balancedParIO, unbalancedParIO,
-
   -- * Ahead-of-time compilation
   runQ,
   runQAsync,
+
+  -- * Execution targets
+  Native, Strategy,
+  createTarget, balancedParIO, unbalancedParIO,
 
 ) where
 
