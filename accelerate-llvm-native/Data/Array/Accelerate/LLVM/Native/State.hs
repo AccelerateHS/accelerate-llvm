@@ -34,10 +34,13 @@ import qualified Data.Array.Accelerate.LLVM.Native.Link.Cache   as LC
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 -- library
+import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
+import Data.Maybe
 import Data.Monoid
+import System.Environment
 import System.IO.Unsafe
 import Text.Printf
-import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
+import Text.Read
 
 import GHC.Conc
 
@@ -110,7 +113,8 @@ balancedParIO retries gang =
 --
 
 -- | Initialise the gang of threads that will be used to execute computations.
--- This spawns one worker on each capability, which can be set via +RTS -Nn.
+-- This spawns one worker for each available processor, or as specified by the
+-- value of the environment variable @ACCELERATE_LLVM_NATIVE_THREADS@.
 --
 -- This globally shared thread gang is auto-initialised on startup and shared by
 -- all computations (unless the user chooses to 'run' with a different gang).
@@ -124,8 +128,22 @@ balancedParIO retries gang =
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: Native
 defaultTarget = unsafePerformIO $ do
-  Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d CPUs" numCapabilities)
-  case numCapabilities of
+  nproc <- getNumProcessors
+  ncaps <- getNumCapabilities
+  menv  <- (readMaybe =<<) <$> lookupEnv "ACCELERATE_LLVM_NATIVE_THREADS"
+
+  let nthreads = fromMaybe nproc menv
+
+  -- Update the number of capabilities, but never set it lower than it already
+  -- is. This target will spawn a worker on each processor (as returned by
+  -- 'getNumProcessors', which includes SMT (hyperthreading) cores), but the
+  -- user may have requested more capabilities than this to handle, for example,
+  -- concurrent output.
+  --
+  setNumCapabilities (max ncaps nthreads)
+
+  Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d worker threads" nthreads)
+  case nthreads of
     1 -> createTarget [0]        sequentialIO
     n -> createTarget [0 .. n-1] (balancedParIO n)
 
