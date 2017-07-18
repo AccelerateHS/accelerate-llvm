@@ -11,10 +11,13 @@ Policy (PVP)](https://pvp.haskell.org)
  * support for GHC-8.2
  * caching of compilation results ([accelerate-llvm#17])
  * new runtime linker; this fixes the annoying "forkOS_entry: interrupted" error. Note that currently this only supports x86_64 macOS and linux
- * support for ahead-of-time compilation
+ * support for ahead-of-time compilation (`runQ` and `runQAsync`)
 
 ### Changed
  * generalise `run1*` to polyvariadic `runN*`
+ * programs run using all cores by default; the environment variable
+   `ACCELERATE_LLVM_NATIVE_THREADS` is used to set the number of worker threads
+   rather than `+RTS -N`
 
 ### Removed
  * ...

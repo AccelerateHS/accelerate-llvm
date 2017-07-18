@@ -10,7 +10,7 @@ Policy (PVP)](https://pvp.haskell.org)
 ### Added
  * support for GHC-8.2
  * caching of compilation results ([accelerate-llvm#17])
- * support for ahead-of-time compilation
+ * support for ahead-of-time compilation (`runQ` and `runQAsync`)
 
 ### Changed
  * generalise `run1*` to polyvariadic `runN*`
