@@ -278,13 +278,32 @@ streamWith target f arrs = map go arrs
 -- arrays which are embedded into the program via 'Data.Array.Accelerate.use'
 -- will be stored as part of the final executable.
 --
+-- Usage of this function in your program is similar to that of 'runN'. First,
+-- express your Accelerate program as a function of array terms:
+--
+-- > f :: (Arrays a, Arrays b, ... Arrays c) => Acc a -> Acc b -> ... -> Acc c
+--
+-- This function then returns a compiled version of @f@ as a Template Haskell
+-- splice, to be added into your program at Haskell compile time:
+--
+-- > {-# LANGUAGE TemplateHaskell #-}
+-- >
+-- > f' :: a -> b -> ... -> c
+-- > f' = $( runQ f )
+--
+-- Note that at the splice point the usage of @f@ must monomorphic; i.e. the
+-- types @a@, @b@ and @c@ must be at some known concrete type.
+--
 -- In order to link the final program together, the included GHC plugin must be
--- used when compiling and linking the program. Add the following option to your
--- projects .cabal file:
+-- used when compiling and linking the program. Add the following option to the
+-- .cabal file of your project:
 --
 -- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
 --
 -- Similarly, the plugin must also run when loading modules in @ghci@.
+--
+-- See the <https://github.com/tmcdonell/lulesh-accelerate lulesh-accelerate>
+-- project for an example.
 --
 -- [/Note:/]
 --
