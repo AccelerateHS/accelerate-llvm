@@ -322,6 +322,9 @@ runQ' using f = do
   -- parallel as well as sequentially (albeit with some additional work that
   -- could have been avoided).
   --
+  -- TLM: We could also just reify the program twice and select at runtime which
+  --      version to execute.
+  --
   afun  <- let acc = convertAfunWith (phases { convertOffsetOfSegment = True }) f
            in  TH.runIO $ do
                  dumpGraph acc
