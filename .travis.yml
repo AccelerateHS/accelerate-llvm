@@ -9,6 +9,7 @@ dist: trusty
 sudo: required
 
 cache:
+  timeout: 600
   directories:
     - $HOME/.stack
     - $HOME/llvm
