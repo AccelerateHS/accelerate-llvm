@@ -279,19 +279,12 @@ streamWith target f arrs = map go arrs
 -- will be stored as part of the final executable.
 --
 -- In order to link the final program together, the included GHC plugin must be
--- run over any modules using this function, for example by adding the following
--- pragma to the top of the file:
+-- used when compiling and linking the program. Add the following option to your
+-- projects .cabal file:
 --
--- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin #-}
+-- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
 --
--- To load the file in interactive mode (ghci), you will also need to specify
--- the option:
---
--- > -fplugin-opt=Data.Array.Accelerate.LLVM.Native.Plugin:interactive
---
--- The included wrapper script @ghc-accelerate@ can be used in place of the
--- regular @ghc@ program, and will insert the above options for you as
--- necessary.
+-- Similarly, the plugin must also run when loading modules in @ghci@.
 --
 -- [/Note:/]
 --

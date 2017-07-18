@@ -30,7 +30,7 @@ import Data.Array.Accelerate.LLVM.Embed
 import Data.Array.Accelerate.LLVM.Native.Compile
 import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Link
-import Data.Array.Accelerate.LLVM.Native.Plugin
+import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
