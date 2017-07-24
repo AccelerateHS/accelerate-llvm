@@ -21,6 +21,7 @@ module Control.Parallel.Meta.Worker (
 ) where
 
 -- accelerate
+import Data.IORef.Storable
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- standard library
@@ -28,7 +29,6 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
-import Data.IORef
 import Data.Range.Range
 import Data.Vector                                              ( Vector )
 import System.IO.Unsafe
@@ -77,7 +77,7 @@ data Worker = Worker {
   -- Work scheduling
   , workpool            :: {-# UNPACK #-} !(WSDeque Range)
   , consecutiveFailures :: {-# UNPACK #-} !(IORef Int)
-  , rngState            :: {-# UNPACK #-} !GenIO        -- don't unpack: too large?
+  , rngState            :: {-# UNPACK #-} !GenIO            -- TLM: don't unpack: too large?
 
   -- TODO: debug/work statistics
   }
@@ -102,13 +102,16 @@ data Req
 -- threadId the worker is spawned on, because we might have multiple work groups
 -- (i.e. for CPUs and GPUs)
 --
+-- TLM: This isn't a bottleneck, but it would have been better to use something
+-- like 'Data.Atomic' as in the base Accelerate package.
+--
 {-# NOINLINE uniqueSupply #-}
-uniqueSupply :: IORef Int
-uniqueSupply = unsafePerformIO $ newIORef 0
+uniqueSupply :: MVar Int
+uniqueSupply = unsafePerformIO $ newMVar 0
 
 -- Generate  a fresh identifier. Note that the bang pattern is important.
 freshId :: IO Int
-freshId = atomicModifyIORef uniqueSupply (\n -> let !n' = n+1 in (n', n))
+freshId = modifyMVar uniqueSupply (\n -> let !n' = n+1 in return (n', n))
 
 
 -- | Create a set of workers. This is a somewhat expensive function, so it is

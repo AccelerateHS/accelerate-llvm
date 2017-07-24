@@ -26,11 +26,11 @@ module Control.Parallel.Meta.Resource.Backoff (
 ) where
 
 import Control.Concurrent
-import Data.IORef
 import Text.Printf
 
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
+import Data.IORef.Storable
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
 import qualified Data.Array.Accelerate.Debug                    as Debug

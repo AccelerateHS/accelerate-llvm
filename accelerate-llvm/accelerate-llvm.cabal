@@ -172,6 +172,7 @@ Library
     Control.Parallel.Meta.Resource.Single
     Control.Parallel.Meta.Resource.SMP
     Control.Parallel.Meta.Trans.LBS
+    Data.IORef.Storable
     Data.Range.Range
 
     -- Extras

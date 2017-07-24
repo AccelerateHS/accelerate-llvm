@@ -26,15 +26,14 @@ module Control.Parallel.Meta.Resource.SMP (
 ) where
 
 -- accelerate
-import Data.Range.Range
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
-
+import Data.IORef.Storable
+import Data.Range.Range
 import qualified Data.Array.Accelerate.Debug            as Debug
 
 -- standard library
 import Data.Concurrent.Deque.Class
-import Data.IORef
 import System.Random.MWC
 import Text.Printf
 import qualified Data.Vector                            as V
@@ -76,7 +75,7 @@ mkWorkSearch retries = WorkSearch search
 
           loop 0      = do
             message myId "work search failed"
-            modifyIORef' (consecutiveFailures me) (+1)
+            modifyIORef (consecutiveFailures me) (+1)
             return Nothing
 
           loop n      = do
