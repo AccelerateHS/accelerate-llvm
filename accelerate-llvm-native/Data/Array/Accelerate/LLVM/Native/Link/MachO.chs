@@ -91,12 +91,17 @@ loadSegments obj symtab lcs = do
   segs  <- V.mapM (loadSegment obj symtab) lcs
 
   -- Resolve the external symbols defined in the sections of this object into
-  -- function pointers
+  -- function pointers.
+  --
+  -- Note that in order to support ahead-of-time compilation, the generated
+  -- functions are given unique names by appending with an underscore followed
+  -- by a 16-digit unique ID. The execution phase doesn't need to know about
+  -- this however, so un-mangle the name to the basic "map", "fold", etc.
   --
   let extern Symbol{..}   = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
-            name          = BS.toShort (B8.takeWhile (/= '_') sym_name)
+            name          = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
             addr          = castPtrToFunPtr (unsafeForeignPtrToPtr fp `plusPtr` fromIntegral sym_value)
         in
         (name, addr)

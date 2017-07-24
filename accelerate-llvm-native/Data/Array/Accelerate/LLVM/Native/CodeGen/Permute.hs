@@ -153,7 +153,7 @@ mkPermuteP_rmw aenv rmw update project IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "permutePrmw" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "permuteP_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
 
     sh <- delayedExtent
 
@@ -208,7 +208,7 @@ mkPermuteP_mutex aenv combine project IRDelayed{..} =
       (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "permutePmutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
 
     sh <- delayedExtent
 
