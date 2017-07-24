@@ -48,6 +48,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.Maybe
 import System.Directory
 import System.IO.Unsafe
+import Text.Printf
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Short                              as BS
@@ -88,7 +89,10 @@ compile acc aenv = do
     exists <- doesFileExist cacheFile
     recomp <- Debug.queryFlag Debug.force_recomp
     if exists && not (fromMaybe False recomp)
-      then B.readFile cacheFile
+      then do
+        Debug.traceIO Debug.dump_cc (printf "cc/cache: %016x" uid)
+        B.readFile cacheFile
+
       else
         withContext                  $ \ctx     ->
         withModuleFromAST ctx ast    $ \mdl     ->

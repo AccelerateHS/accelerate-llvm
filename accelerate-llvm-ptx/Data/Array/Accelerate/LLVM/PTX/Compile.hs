@@ -123,7 +123,10 @@ compile acc aenv = do
     exists <- doesFileExist cacheFile
     recomp <- Debug.queryFlag Debug.force_recomp
     if exists && not (fromMaybe False recomp)
-      then B.readFile cacheFile
+      then do
+        Debug.traceIO Debug.dump_cc (printf "cc/cache: %016x" uid)
+        B.readFile cacheFile
+
       else
         LLVM.withContext $ \ctx -> do
           ptx   <- compilePTX dev ctx ast
