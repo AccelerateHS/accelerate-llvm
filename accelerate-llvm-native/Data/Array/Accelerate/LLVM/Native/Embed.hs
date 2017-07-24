@@ -20,6 +20,7 @@ module Data.Array.Accelerate.LLVM.Native.Embed (
 ) where
 
 import Data.ByteString.Short.Char8                                  as S8
+import Data.ByteString.Short.Extra                                  as BS
 import Data.ByteString.Short.Internal                               as BS
 
 import Data.Array.Accelerate.Lifetime
@@ -53,7 +54,7 @@ instance Embed Native where
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do
   objFile <- TH.runIO (evalNative target (cacheOfUID uid))
-  funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (S8.takeWhile (/= '_') fn)), $$(makeFFI fn objFile) ) ||]
+  funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 17) fn)), $$(makeFFI fn objFile) ) ||]
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where
