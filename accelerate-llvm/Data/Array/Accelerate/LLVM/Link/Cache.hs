@@ -105,7 +105,7 @@ issue key fun (LinkCache var) = do
   ticket <- newLifetime fun
   addFinalizer ticket $
     let refcount (Entry c f o)
-          | c <= 1    = trace dump_ld (printf "ld: remove object code %016X" key) Nothing
+          | c <= 1    = trace dump_ld (printf "ld: remove object code %016x" key) Nothing
           | otherwise = Just (Entry (c-1) f o)
     in
     modifyMVar_ var $ \im -> return $! IM.update refcount key im
