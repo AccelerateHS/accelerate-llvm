@@ -57,7 +57,7 @@ import qualified Data.Map                                           as Map
 
 instance Compile Native where
   data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !UID
-                                , objSyms :: ![ShortByteString]
+                                , objSyms :: {- LAZY -} [ShortByteString]
                                 , objData :: {- LAZY -} ByteString
                                 }
   compileForTarget    = compile
