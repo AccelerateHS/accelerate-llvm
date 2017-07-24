@@ -29,6 +29,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Exp                       ( indexHead 
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
@@ -45,15 +46,16 @@ import Prelude                                                      as P
 --
 mkFoldSeg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFoldSeg aenv combine seed arr seg =
-  (+++) <$> mkFoldSegS aenv combine (Just seed) arr seg
-        <*> mkFoldSegP aenv combine (Just seed) arr seg
+mkFoldSeg uid aenv combine seed arr seg =
+  (+++) <$> mkFoldSegS uid aenv combine (Just seed) arr seg
+        <*> mkFoldSegP uid aenv combine (Just seed) arr seg
 
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
@@ -61,14 +63,15 @@ mkFoldSeg aenv combine seed arr seg =
 --
 mkFold1Seg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFold1Seg aenv combine arr seg =
-  (+++) <$> mkFoldSegS aenv combine Nothing arr seg
-        <*> mkFoldSegP aenv combine Nothing arr seg
+mkFold1Seg uid aenv combine arr seg =
+  (+++) <$> mkFoldSegS uid aenv combine Nothing arr seg
+        <*> mkFoldSegP uid aenv combine Nothing arr seg
 
 
 -- Segmented reduction where a single processor reduces the entire array. The
@@ -76,19 +79,20 @@ mkFold1Seg aenv combine arr seg =
 --
 mkFoldSegS
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>          Gamma            aenv
+    =>          UID
+    ->          Gamma            aenv
     ->          IRFun2    Native aenv (e -> e -> e)
     -> Maybe   (IRExp     Native aenv e)
     ->          IRDelayed Native aenv (Array (sh :. Int) e)
     ->          IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFoldSegS aenv combine mseed arr seg =
+mkFoldSegS uid aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "foldSegS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "foldSegS" (paramGang ++ paramOut ++ paramEnv) $ do
 
     -- Number of segments, useful only if reducing DIM2 and higher
     ss <- indexHead <$> delayedExtent seg
@@ -127,19 +131,20 @@ mkFoldSegS aenv combine mseed arr seg =
 --
 mkFoldSegP
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>          Gamma            aenv
+    =>          UID
+    ->          Gamma            aenv
     ->          IRFun2    Native aenv (e -> e -> e)
     -> Maybe   (IRExp     Native aenv e)
     ->          IRDelayed Native aenv (Array (sh :. Int) e)
     ->          IRDelayed Native aenv (Segments i)
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFoldSegP aenv combine mseed arr seg =
+mkFoldSegP uid aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "foldSegP" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "foldSegP" (paramGang ++ paramOut ++ paramEnv) $ do
 
     -- Number of segments and size of the innermost dimension. These are
     -- required if we are reducing a DIM2 or higher array, to properly compute

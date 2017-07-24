@@ -24,6 +24,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
@@ -73,17 +74,18 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- Apply the given unary function to each element of an array.
 --
 mkMap :: forall aenv sh a b. Elt b
-      => Gamma            aenv
+      => UID
+      -> Gamma            aenv
       -> IRFun1    Native aenv (a -> b)
       -> IRDelayed Native aenv (Array sh a)
       -> CodeGen (IROpenAcc Native aenv (Array sh b))
-mkMap aenv apply IRDelayed{..} =
+mkMap uid aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       xs <- app1 delayedLinearIndex i

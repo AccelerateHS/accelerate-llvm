@@ -36,9 +36,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   -- metadata
   addMetadata,
 
-  -- other
-  uuid,
-
 ) where
 
 -- standard library
@@ -99,7 +96,6 @@ data CodeGenState = CodeGenState
   , symbolTable         :: Map Label LLVM.Global                          -- global (external) function declarations
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
-  , uuid                :: {-# UNPACK #-} !Int                            -- some globally unique identifier
   , next                :: {-# UNPACK #-} !Word                           -- a name supply
   }
 
@@ -116,17 +112,15 @@ newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
 {-# INLINEABLE runLLVM #-}
 runLLVM
     :: forall arch aenv a. (Target arch, Intrinsic arch)
-    => Int
-    -> CodeGen (IROpenAcc arch aenv a)
+    => CodeGen (IROpenAcc arch aenv a)
     -> Module arch aenv a
-runLLVM uuid ll =
+runLLVM ll =
   let
       initialState      = CodeGenState
                             { blockChain        = initBlockChain
                             , symbolTable       = Map.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget (undefined::arch)
-                            , uuid              = uuid
                             , next              = 0
                             }
 

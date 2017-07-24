@@ -41,6 +41,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Foreign
 
 -- standard library
@@ -53,33 +54,33 @@ import Prelude                                                      hiding ( map
 llvmOfOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => arch
-    -> Int
+    -> UID
     -> DelayedOpenAcc aenv arrs
     -> Gamma aenv
     -> Module arch aenv arrs
 llvmOfOpenAcc _    _    Delayed{}      _    = $internalError "llvmOfOpenAcc" "expected manifest array"
-llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM uid $
+llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
   case pacc of
     -- Producers
-    Map f a                 -> map arch aenv (travF1 f) (travD a)
-    Generate _ f            -> generate arch aenv (travF1 f)
-    Transform _ p f a       -> transform arch aenv (travF1 p) (travF1 f) (travD a)
-    Backpermute _ p a       -> backpermute arch aenv (travF1 p) (travD a)
+    Map f a                 -> map arch uid aenv (travF1 f) (travD a)
+    Generate _ f            -> generate arch uid aenv (travF1 f)
+    Transform _ p f a       -> transform arch uid aenv (travF1 p) (travF1 f) (travD a)
+    Backpermute _ p a       -> backpermute arch uid aenv (travF1 p) (travD a)
 
     -- Consumers
-    Fold f z a              -> fold arch aenv (travF2 f) (travE z) (travD a)
-    Fold1 f a               -> fold1 arch aenv (travF2 f) (travD a)
-    FoldSeg f z a s         -> foldSeg arch aenv (travF2 f) (travE z) (travD a) (travD s)
-    Fold1Seg f a s          -> fold1Seg arch aenv (travF2 f) (travD a) (travD s)
-    Scanl f z a             -> scanl arch aenv (travF2 f) (travE z) (travD a)
-    Scanl' f z a            -> scanl' arch aenv (travF2 f) (travE z) (travD a)
-    Scanl1 f a              -> scanl1 arch aenv (travF2 f) (travD a)
-    Scanr f z a             -> scanr arch aenv (travF2 f) (travE z) (travD a)
-    Scanr' f z a            -> scanr' arch aenv (travF2 f) (travE z) (travD a)
-    Scanr1 f a              -> scanr1 arch aenv (travF2 f) (travD a)
-    Permute f _ p a         -> permute arch aenv (travPF f) (travF1 p) (travD a)
-    Stencil f b a           -> stencil arch aenv (travF1 f) (travB b) (travM a)
-    Stencil2 f b1 a1 b2 a2  -> stencil2 arch aenv (travF2 f) (travB b1) (travM a1) (travB b2) (travM a2)
+    Fold f z a              -> fold arch uid aenv (travF2 f) (travE z) (travD a)
+    Fold1 f a               -> fold1 arch uid aenv (travF2 f) (travD a)
+    FoldSeg f z a s         -> foldSeg arch uid aenv (travF2 f) (travE z) (travD a) (travD s)
+    Fold1Seg f a s          -> fold1Seg arch uid aenv (travF2 f) (travD a) (travD s)
+    Scanl f z a             -> scanl arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanl' f z a            -> scanl' arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanl1 f a              -> scanl1 arch uid aenv (travF2 f) (travD a)
+    Scanr f z a             -> scanr arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanr' f z a            -> scanr' arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanr1 f a              -> scanr1 arch uid aenv (travF2 f) (travD a)
+    Permute f _ p a         -> permute arch uid aenv (travPF f) (travF1 p) (travD a)
+    Stencil f b a           -> stencil arch uid aenv (travF1 f) (travB b) (travM a)
+    Stencil2 f b1 a1 b2 a2  -> stencil2 arch uid aenv (travF2 f) (travB b1) (travM a1) (travB b2) (travM a2)
 
     -- Non-computation forms: sadness
     Alet{}                  -> unexpectedError

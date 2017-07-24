@@ -33,6 +33,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR                        ( IR )
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
@@ -58,21 +59,22 @@ data Direction = L | R
 --
 mkScanl
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanl aenv combine seed arr
+mkScanl uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = foldr1 (+++) <$> sequence [ mkScanS L aenv combine (Just seed) arr
-                              , mkScanP L aenv combine (Just seed) arr
-                              , mkScanFill aenv seed
+  = foldr1 (+++) <$> sequence [ mkScanS L uid aenv combine (Just seed) arr
+                              , mkScanP L uid aenv combine (Just seed) arr
+                              , mkScanFill uid aenv seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScanS L aenv combine (Just seed) arr
-          <*> mkScanFill aenv seed
+  = (+++) <$> mkScanS L uid aenv combine (Just seed) arr
+          <*> mkScanFill uid aenv seed
 
 
 -- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
@@ -85,17 +87,18 @@ mkScanl aenv combine seed arr
 --
 mkScanl1
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanl1 aenv combine arr
+mkScanl1 uid aenv combine arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScanS L aenv combine Nothing arr
-          <*> mkScanP L aenv combine Nothing arr
+  = (+++) <$> mkScanS L uid aenv combine Nothing arr
+          <*> mkScanP L uid aenv combine Nothing arr
   --
   | otherwise
-  = mkScanS L aenv combine Nothing arr
+  = mkScanS L uid aenv combine Nothing arr
 
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
@@ -108,21 +111,22 @@ mkScanl1 aenv combine arr
 --
 mkScanl'
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
-mkScanl' aenv combine seed arr
+mkScanl' uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = foldr1 (+++) <$> sequence [ mkScan'S L aenv combine seed arr
-                              , mkScan'P L aenv combine seed arr
-                              , mkScan'Fill aenv seed
+  = foldr1 (+++) <$> sequence [ mkScan'S L uid aenv combine seed arr
+                              , mkScan'P L uid aenv combine seed arr
+                              , mkScan'Fill uid aenv seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'S L aenv combine seed arr
-          <*> mkScan'Fill aenv seed
+  = (+++) <$> mkScan'S L uid aenv combine seed arr
+          <*> mkScan'Fill uid aenv seed
 
 
 -- 'Data.List.scanr' style right-to-left exclusive scan, but with the
@@ -135,21 +139,22 @@ mkScanl' aenv combine seed arr
 --
 mkScanr
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanr aenv combine seed arr
+mkScanr uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = foldr1 (+++) <$> sequence [ mkScanS R aenv combine (Just seed) arr
-                              , mkScanP R aenv combine (Just seed) arr
-                              , mkScanFill aenv seed
+  = foldr1 (+++) <$> sequence [ mkScanS R uid aenv combine (Just seed) arr
+                              , mkScanP R uid aenv combine (Just seed) arr
+                              , mkScanFill uid aenv seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScanS R aenv combine (Just seed) arr
-          <*> mkScanFill aenv seed
+  = (+++) <$> mkScanS R uid aenv combine (Just seed) arr
+          <*> mkScanFill uid aenv seed
 
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
@@ -162,17 +167,18 @@ mkScanr aenv combine seed arr
 --
 mkScanr1
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanr1 aenv combine arr
+mkScanr1 uid aenv combine arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkScanS R aenv combine Nothing arr
-          <*> mkScanP R aenv combine Nothing arr
+  = (+++) <$> mkScanS R uid aenv combine Nothing arr
+          <*> mkScanP R uid aenv combine Nothing arr
   --
   | otherwise
-  = mkScanS R aenv combine Nothing arr
+  = mkScanS R uid aenv combine Nothing arr
 
 
 -- Variant of 'scanr' where the final result is returned in a separate array.
@@ -185,21 +191,22 @@ mkScanr1 aenv combine arr
 --
 mkScanr'
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
-mkScanr' aenv combine seed arr
+mkScanr' uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = foldr1 (+++) <$> sequence [ mkScan'S R aenv combine seed arr
-                              , mkScan'P R aenv combine seed arr
-                              , mkScan'Fill aenv seed
+  = foldr1 (+++) <$> sequence [ mkScan'S R uid aenv combine seed arr
+                              , mkScan'P R uid aenv combine seed arr
+                              , mkScan'Fill uid aenv seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'S R aenv combine seed arr
-          <*> mkScan'Fill aenv seed
+  = (+++) <$> mkScan'S R uid aenv combine seed arr
+          <*> mkScan'Fill uid aenv seed
 
 
 -- If the innermost dimension of an exclusive scan is empty, then we just fill
@@ -207,19 +214,21 @@ mkScanr' aenv combine seed arr
 --
 mkScanFill
     :: (Shape sh, Elt e)
-    => Gamma aenv
+    => UID
+    -> Gamma aenv
     -> IRExp Native aenv e
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkScanFill aenv seed =
-  mkGenerate aenv (IRFun1 (const seed))
+mkScanFill uid aenv seed =
+  mkGenerate uid aenv (IRFun1 (const seed))
 
 mkScan'Fill
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
+    => UID
+    -> Gamma aenv
     -> IRExp Native aenv e
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
-mkScan'Fill aenv seed =
-  Safe.coerce <$> (mkScanFill aenv seed :: CodeGen (IROpenAcc Native aenv (Array sh e)))
+mkScan'Fill uid aenv seed =
+  Safe.coerce <$> (mkScanFill uid aenv seed :: CodeGen (IROpenAcc Native aenv (Array sh e)))
 
 
 -- A single thread sequentially scans along an entire innermost dimension. For
@@ -232,12 +241,13 @@ mkScan'Fill aenv seed =
 mkScanS
     :: forall aenv sh e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanS dir aenv combine mseed IRDelayed{..} =
+mkScanS dir uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
@@ -247,7 +257,7 @@ mkScanS dir aenv combine mseed IRDelayed{..} =
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
   in
-  makeOpenAcc "scanS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "scanS" (paramGang ++ paramOut ++ paramEnv) $ do
 
     sz    <- indexHead <$> delayedExtent
     szp1  <- A.add numType sz (lift 1)
@@ -308,12 +318,13 @@ mkScanS dir aenv combine mseed IRDelayed{..} =
 mkScan'S
     :: forall aenv sh e. (Shape sh, Elt e)
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> IRExp Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
-mkScan'S dir aenv combine seed IRDelayed{..} =
+mkScan'S dir uid aenv combine seed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
@@ -324,7 +335,7 @@ mkScan'S dir aenv combine seed IRDelayed{..} =
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
   in
-  makeOpenAcc "scanS" (paramGang ++ paramOut ++ paramSum ++ paramEnv) $ do
+  makeOpenAcc uid "scanS" (paramGang ++ paramOut ++ paramSum ++ paramEnv) $ do
 
     sz    <- indexHead <$> delayedExtent
     szm1  <- A.sub numType sz (lift 1)
@@ -374,15 +385,16 @@ mkScan'S dir aenv combine seed IRDelayed{..} =
 mkScanP
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
-mkScanP dir aenv combine mseed arr =
-  foldr1 (+++) <$> sequence [ mkScanP1 dir aenv combine mseed arr
-                            , mkScanP2 dir aenv combine
-                            , mkScanP3 dir aenv combine mseed
+mkScanP dir uid aenv combine mseed arr =
+  foldr1 (+++) <$> sequence [ mkScanP1 dir uid aenv combine mseed arr
+                            , mkScanP2 dir uid aenv combine
+                            , mkScanP3 dir uid aenv combine mseed
                             ]
 
 -- Parallel scan, step 1.
@@ -394,12 +406,13 @@ mkScanP dir aenv combine mseed arr =
 mkScanP1
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
-mkScanP1 dir aenv combine mseed IRDelayed{..} =
+mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
   let
       (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
@@ -418,7 +431,7 @@ mkScanP1 dir aenv combine mseed IRDelayed{..} =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
     len <- indexHead <$> delayedExtent
 
@@ -494,10 +507,11 @@ mkScanP1 dir aenv combine mseed IRDelayed{..} =
 mkScanP2
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
-mkScanP2 dir aenv combine =
+mkScanP2 dir uid aenv combine =
   let
       (start, end, paramGang)   = gangParam
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
@@ -511,7 +525,7 @@ mkScanP2 dir aenv combine =
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
   in
-  makeOpenAcc "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
 
     i0 <- case dir of
             L -> return start
@@ -545,11 +559,12 @@ mkScanP2 dir aenv combine =
 mkScanP3
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> CodeGen (IROpenAcc Native aenv (Vector e))
-mkScanP3 dir aenv combine mseed =
+mkScanP3 dir uid aenv combine mseed =
   let
       (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
@@ -566,7 +581,7 @@ mkScanP3 dir aenv combine mseed =
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
   in
-  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- Determine which chunk will be carrying in values for. Compute appropriate
     -- start and end indices.
@@ -601,15 +616,16 @@ mkScanP3 dir aenv combine mseed =
 mkScan'P
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> IRExp Native aenv e
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
-mkScan'P dir aenv combine seed arr =
-  foldr1 (+++) <$> sequence [ mkScan'P1 dir aenv combine seed arr
-                            , mkScan'P2 dir aenv combine
-                            , mkScan'P3 dir aenv combine
+mkScan'P dir uid aenv combine seed arr =
+  foldr1 (+++) <$> sequence [ mkScan'P1 dir uid aenv combine seed arr
+                            , mkScan'P2 dir uid aenv combine
+                            , mkScan'P3 dir uid aenv combine
                             ]
 
 -- Parallel scan', step 1
@@ -621,12 +637,13 @@ mkScan'P dir aenv combine seed arr =
 mkScan'P1
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> IRExp Native aenv e
     -> IRDelayed Native aenv (Vector e)
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
-mkScan'P1 dir aenv combine seed IRDelayed{..} =
+mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
   let
       (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
@@ -646,7 +663,7 @@ mkScan'P1 dir aenv combine seed IRDelayed{..} =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- Compute the start and end indices for this non-empty chunk of the input.
     --
@@ -707,10 +724,11 @@ mkScan'P1 dir aenv combine seed IRDelayed{..} =
 mkScan'P2
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
-mkScan'P2 dir aenv combine =
+mkScan'P2 dir uid aenv combine =
   let
       (start, end, paramGang)   = gangParam
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
@@ -725,7 +743,7 @@ mkScan'P2 dir aenv combine =
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
   in
-  makeOpenAcc "scanP2" (paramGang ++ paramSum ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP2" (paramGang ++ paramSum ++ paramTmp ++ paramEnv) $ do
 
     i0 <- case dir of
             L -> return start
@@ -761,10 +779,11 @@ mkScan'P2 dir aenv combine =
 mkScan'P3
     :: forall aenv e. Elt e
     => Direction
+    -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
-mkScan'P3 dir aenv combine =
+mkScan'P3 dir uid aenv combine =
   let
       (chunk, _, paramGang)     = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
@@ -781,7 +800,7 @@ mkScan'P3 dir aenv combine =
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
   in
-  makeOpenAcc "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- Determine which chunk we will be carrying in the values of, and compute
     -- the appropriate start and end indices
