@@ -414,7 +414,7 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
       in  build xs (k Seq.|> k', d Seq.>< d')
 
     meta :: Int                                         -- number of metadata node definitions so far
-         -> (ShortByteString, Seq [Maybe Metadata])              -- current assoc of the metadata map
+         -> (ShortByteString, Seq [Maybe Metadata])     -- current assoc of the metadata map
          -> (LLVM.Definition, Seq LLVM.Definition)
     meta n (key, vals)
       = let node i      = LLVM.MetadataNodeID (fromIntegral (i+n))
