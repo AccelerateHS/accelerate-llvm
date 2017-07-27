@@ -47,7 +47,7 @@ extra-deps:
 - 'integer-logarithms-1.0.1'
 - 'language-c-0.6.1'
 - 'libffi-0.1'
-- 'llvm-hs-4.1.0.0'
+- 'llvm-hs-4.2.0'
 - 'llvm-hs-pure-4.1.0.0'
 - 'math-functions-0.2.1.0'
 - 'mtl-2.2.1'
