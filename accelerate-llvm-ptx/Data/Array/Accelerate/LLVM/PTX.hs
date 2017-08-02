@@ -39,8 +39,8 @@ module Data.Array.Accelerate.LLVM.PTX (
   runNAsync, runNAsyncWith,
 
   -- * Ahead-of-time compilation
-  runQ,
-  runQAsync,
+  runQ, runQWith,
+  runQAsync, runQAsyncWith,
 
   -- * Execution targets
   PTX, createTargetForDevice, createTargetFromContext,
@@ -337,7 +337,23 @@ streamWith target f arrs = map go arrs
 -- Since 1.1.0.0.
 --
 runQ :: Afunction f => f -> TH.ExpQ
-runQ = runQ' [| unsafePerformIO |]
+runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
+
+-- | Ahead-of-time analogue of 'runNWith'. See 'runQ' for more information.
+--
+-- /NOTE:/ The supplied (at runtime) target must be compatible with the
+-- architure that this function was compiled for (the 'defaultTarget' of the
+-- compiling machine). Running on a device with the same compute capability is
+-- best, but this should also be forward compatible to newer architectures.
+--
+-- The correct type of this function is:
+--
+-- > runQWith :: Afunction f => f -> Q (TExp (PTX -> AfunctionR f))
+--
+runQWith :: Afunction f => f -> TH.ExpQ
+runQWith f = do
+  target <- TH.newName "target"
+  TH.lamE [TH.varP target] (runQ' [| unsafePerformIO |] (TH.varE target) f)
 
 
 -- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
@@ -349,11 +365,22 @@ runQ = runQ' [| unsafePerformIO |]
 -- Since 1.1.0.0.
 --
 runQAsync :: Afunction f => f -> TH.ExpQ
-runQAsync = runQ' [| async |]
+runQAsync = runQ' [| async |] [| defaultTarget |]
+
+-- | Ahead-of-time analogue of 'runNAsyncWith'. See 'runQWith' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp (PTX -> r))
+--
+runQAsyncWith :: Afunction f => f -> TH.ExpQ
+runQAsyncWith f = do
+  target <- TH.newName "target"
+  TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
 
 
-runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
-runQ' using f = do
+runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQ' using target f = do
   afun  <- let acc = convertAfunWith config f
            in  TH.runIO $ do
                  dumpGraph acc
@@ -371,7 +398,7 @@ runQ' using f = do
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
             eval = TH.noBindS [| AD.copyToHostLazy =<< E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
         in
-        TH.lamE (reverse xs) [| $using . phase "execute" . evalPTX defaultTarget $
+        TH.lamE (reverse xs) [| $using . phase "execute" . evalPTX $target $
                                   $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
