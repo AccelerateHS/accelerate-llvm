@@ -43,8 +43,8 @@ module Data.Array.Accelerate.LLVM.Native (
   runNAsync, runNAsyncWith,
 
   -- * Ahead-of-time compilation
-  runQ,
-  runQAsync,
+  runQ, runQWith,
+  runQAsync, runQAsyncWith,
 
   -- * Execution targets
   Native, Strategy,
@@ -317,7 +317,20 @@ streamWith target f arrs = map go arrs
 -- Since 1.1.0.0. Requires GHC-8.0.
 --
 runQ :: Afunction f => f -> TH.ExpQ
-runQ = runQ' [| unsafePerformIO |]
+runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
+
+-- | Ahead-of-time analogue of 'runNWith'. See 'runQ' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQWith :: Afunction f => f -> Q (TExp (Native -> AfunctionR f))
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
+--
+runQWith :: Afunction f => f -> TH.ExpQ
+runQWith f = do
+  target <- TH.newName "target"
+  TH.lamE [TH.varP target] (runQ' [| unsafePerformIO |] (TH.varE target) f)
 
 
 -- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
@@ -329,11 +342,24 @@ runQ = runQ' [| unsafePerformIO |]
 -- Since 1.1.0.0. Requires GHC-8.0.
 --
 runQAsync :: Afunction f => f -> TH.ExpQ
-runQAsync = runQ' [| async |]
+runQAsync = runQ' [| async |] [| defaultTarget |]
+
+-- | Ahead-of-time analogue of 'runNAsyncWith'. See 'runQ' for more information.
+--
+-- The correct type of this function is:
+--
+-- > runQAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp (Native -> r))
+--
+-- Since 1.1.0.0. Requires GHC-8.0.
+--
+runQAsyncWith :: Afunction f => f -> TH.ExpQ
+runQAsyncWith f = do
+  target <- TH.newName "target"
+  TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
 
 
-runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
-runQ' using f = do
+runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQ' using target f = do
   -- Reification of the program for segmented folds depends on whether we are
   -- executing in parallel or sequentially, where the parallel case requires
   -- some extra work to convert the segments descriptor into a segment offset
@@ -364,7 +390,7 @@ runQ' using f = do
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
             eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
         in
-        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative (defaultTarget { segmentOffset = True }) $
+        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) $
                                   $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
