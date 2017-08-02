@@ -2,7 +2,6 @@
 # vim: nospell
 
 resolver: ghc-8.2
-allow-newer: true # atomic-primops
 
 packages:
 - 'accelerate-llvm'
@@ -19,17 +18,10 @@ packages:
     commit: 1bff17152088384b71a439b01ec993a54e2618c9
   extra-dep: true
 
-- location:
-    git:    https://github.com/rrnewton/haskell-lockfree.git
-    commit: 7ac36d701caa759a9f9defd418d8959f4e9c6ef0
-  extra-dep: true
-  subdirs:
-    - 'atomic-primops'
-
 extra-deps:
 - 'abstract-deque-0.3'
 - 'accelerate-1.0.0.0'
-# - 'atomic-primops-0.8.0.4'  # requires allow-newer
+- 'atomic-primops-0.8.1'
 - 'attoparsec-0.13.1.0'
 - 'base-orphans-0.6'
 - 'c2hs-0.28.2'
