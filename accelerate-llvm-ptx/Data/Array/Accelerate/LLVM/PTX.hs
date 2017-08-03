@@ -96,7 +96,7 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 -- array. Evaluating the result of 'run' to WHNF will initiate the computation,
 -- but does not copy the results back from the device.
 --
--- Note that it is recommended that you use 'run1' whenever possible.
+-- /NOTE:/ it is recommended to use 'runN' or 'runQ' whenever possible.
 --
 run :: Arrays a => Acc a -> a
 run = runWith defaultTarget
@@ -197,6 +197,9 @@ run1With = runNWith
 -- Accelerate is not able to optimise (fuse) across separate 'runN' invocations.
 --
 -- See the programs in the 'accelerate-examples' package for examples.
+--
+-- See also 'runQ', which compiles the Accelerate program at _Haskell_ compile
+-- time, thus eliminating the runtime overhead altogether.
 --
 runN :: Afunction f => f -> AfunctionR f
 runN = runNWith defaultTarget
@@ -334,7 +337,7 @@ streamWith target f arrs = map go arrs
 --
 -- > runQ :: Afunction f => f -> Q (TExp (AfunctionR f))
 --
--- Since 1.1.0.0.
+-- @since 1.1.0.0
 --
 runQ :: Afunction f => f -> TH.ExpQ
 runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
@@ -342,13 +345,15 @@ runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
 -- | Ahead-of-time analogue of 'runNWith'. See 'runQ' for more information.
 --
 -- /NOTE:/ The supplied (at runtime) target must be compatible with the
--- architure that this function was compiled for (the 'defaultTarget' of the
+-- architecture that this function was compiled for (the 'defaultTarget' of the
 -- compiling machine). Running on a device with the same compute capability is
 -- best, but this should also be forward compatible to newer architectures.
 --
 -- The correct type of this function is:
 --
 -- > runQWith :: Afunction f => f -> Q (TExp (PTX -> AfunctionR f))
+--
+-- @since 1.1.0.0
 --
 runQWith :: Afunction f => f -> TH.ExpQ
 runQWith f = do
@@ -362,7 +367,7 @@ runQWith f = do
 --
 -- > runQAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp r)
 --
--- Since 1.1.0.0.
+-- @since 1.1.0.0
 --
 runQAsync :: Afunction f => f -> TH.ExpQ
 runQAsync = runQ' [| async |] [| defaultTarget |]
@@ -372,6 +377,8 @@ runQAsync = runQ' [| async |] [| defaultTarget |]
 -- The correct type of this function is:
 --
 -- > runQAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> Q (TExp (PTX -> r))
+--
+-- @since 1.1.0.0
 --
 runQAsyncWith :: Afunction f => f -> TH.ExpQ
 runQAsyncWith f = do
