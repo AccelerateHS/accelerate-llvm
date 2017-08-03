@@ -5,7 +5,7 @@ LABEL maintainer "Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>"
 
 ARG GHC_VERSION=8.0.2
 ARG CABAL_VERSION=1.24
-ARG LTS_SLUG=lts-8.0
+ARG LTS_SLUG=lts-9.0
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV LANG C.UTF-8
@@ -59,7 +59,7 @@ COPY ./stack-8.0.yaml /opt/accelerate-llvm/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal /opt/accelerate-llvm/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal /opt/accelerate-llvm/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal /opt/accelerate-llvm/accelerate-llvm-ptx/
-RUN stack --no-terminal build --only-dependencies
+RUN stack --no-terminal build --only-snapshot
 
 # Copy over the actual source files and build
 COPY ./accelerate-llvm /opt/accelerate-llvm/accelerate-llvm
