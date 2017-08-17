@@ -10,17 +10,22 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: 1daff6959b6ec30cf1e13a087d576e3b2403585b
+    commit: aee5f0232e2cfdcf030e2a7ca0570e9ced017d63
   extra-dep: true
 
 - location:
     git:    https://github.com/tmcdonell/cuda.git
-    commit: 1bff17152088384b71a439b01ec993a54e2618c9
+    commit: c39da756025d7a6fd9fb3fd368736ee05ced5df2
   extra-dep: true
 
-extra-deps:
-# - 'cuda-0.7.5.3'
-- 'nvvm-0.7.5.2'
+- location:
+    git:    https://github.com/tmcdonell/nvvm.git
+    commit: 632323e2a7c3c75bb07a3edb35de47273dc4cd07
+  extra-dep: true
+
+extra-deps: []
+# - 'cuda-0.8.0.0'
+# - 'nvvm-0.8.0.0'
 
 # Override default flag values for local packages and extra-deps
 flags:

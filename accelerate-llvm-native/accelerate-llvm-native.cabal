@@ -1,10 +1,10 @@
 name:                   accelerate-llvm-native
-version:                1.0.0.0
+version:                1.1.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC == 7.8.*
+tested-with:            GHC >= 7.10
 build-type:             Simple
 
-synopsis:               Accelerate backend generating LLVM
+synopsis:               Accelerate backend for multicore CPUs
 description:
     This library implements a backend for the /Accelerate/ language which
     generates LLVM-IR targeting multicore CPUs. For further information, refer
@@ -145,8 +145,8 @@ Library
 
   build-depends:
           base                          >= 4.7 && < 4.11
-        , accelerate                    == 1.0.*
-        , accelerate-llvm               == 1.0.*
+        , accelerate                    == 1.1.*
+        , accelerate-llvm               == 1.1.*
         , bytestring                    >= 0.10.4
         , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.6
@@ -224,7 +224,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.0.0.0
+  tag:                  1.1.0.0
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell

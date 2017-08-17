@@ -1,10 +1,10 @@
 name:                   accelerate-llvm
-version:                1.0.0.0
+version:                1.1.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC == 7.8.*
+tested-with:            GHC >= 7.10
 build-type:             Simple
 
-synopsis:               Accelerate backend generating LLVM
+synopsis:               Accelerate backend component generating LLVM IR
 description:
     This library implements direct LLVM IR generation for the /Accelerate/
     language. For further information, refer to the main
@@ -185,7 +185,7 @@ Library
   build-depends:
           base                          >= 4.7 && < 4.11
         , abstract-deque                >= 0.3
-        , accelerate                    == 1.0.*
+        , accelerate                    == 1.1.*
         , bytestring                    >= 0.10.4
         , containers                    >= 0.5
         , data-default-class            >= 0.0.1
@@ -234,7 +234,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.0.0.0
+  tag:                  1.1.0.0
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell
