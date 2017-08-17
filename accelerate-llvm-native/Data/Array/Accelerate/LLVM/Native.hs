@@ -17,8 +17,9 @@
 -- This module implements a backend for the /Accelerate/ language targeting
 -- multicore CPUs. Expressions are on-line translated into LLVM code, which is
 -- just-in-time executed in parallel over the available CPUs. Functions are
--- automatically parallel, provided you specify '+RTS -Nwhatever' on the command
--- line when running the program.
+-- automatically parallelised over all available cores, unless you set the
+-- environment variable 'ACCELERATE_LLVM_NATIVE_THREADS=N', in which case 'N'
+-- threads will be used.
 --
 -- Programs must be compiled with '-threaded', otherwise you will get a "Blocked
 -- indefinitely on MVar" error.
