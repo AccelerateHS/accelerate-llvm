@@ -165,8 +165,8 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go ZeroTupIdx (PairTuple _ t) (OP_Pair _ v)
           | Just Refl <- matchTupleType t (eltType (undefined :: e))
           = v
-        go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _)      = go ix t tup
-        go _ _ _                                                = $internalError "prjT" "inconsistent valuation"
+        go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _) = go ix t tup
+        go _ _ _                                           = $internalError "prjT" "inconsistent valuation"
 
     cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (IR t)
     cvtT tup = IR <$> go (eltType (undefined::t)) tup
@@ -182,7 +182,9 @@ llvmOfOpenExp arch top env aenv = cvtE top
           = do a'    <- go ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
-        go _ _ = $internalError "cvtT" "impossible evaluation"
+        go _ _ = $internalError "cvtT"
+               $ unlines [ "impossible evaluation"
+                         , "  possible solution: ensure that the 'EltRepr' and 'ProdRepr' instances of your data type are consistent." ]
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
     linearIndex (IRManifest v) ix =
