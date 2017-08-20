@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.ByteString.Short.Char8
 -- Copyright   : [2017] Trevor L. McDonell

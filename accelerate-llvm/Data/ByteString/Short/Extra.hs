@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns  #-}
 {-# LANGUAGE MagicHash     #-}
 {-# LANGUAGE UnboxedTuples #-}
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.ByteString.Short.Extra
 -- Copyright   : [2017] Trevor L. McDonell

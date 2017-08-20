@@ -1,3 +1,4 @@
+{-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.IORef.Storable
 -- Copyright   : [2017] Trevor L. McDonell
