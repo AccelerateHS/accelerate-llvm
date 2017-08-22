@@ -1,7 +1,5 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin
 -- Copyright   : [2017] Trevor L. McDonell
@@ -30,14 +28,10 @@ import SysTools
 import Control.Monad
 import Data.IORef
 import Data.List
-import Data.Serialize
-import System.Directory
-import System.FilePath
-import qualified Data.ByteString                                    as B
 import qualified Data.Map                                           as Map
 
-import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
 
 plugin :: Plugin
@@ -100,19 +94,20 @@ pass guts = do
     -- objects required to build the entire project.
     --
     _ -> liftIO $ do
-      let omp     = objectMapPath dynFlags </> "accelerate-llvm-native-ld-tmp"
-          handle  = either ($internalError "plugin" "unable to read cache file") id
 
-      exists  <- doesFileExist omp
-      objMap  <- if not exists
-                   then return (Map.singleton this paths)
-                   else do
-                     f <- B.readFile omp
-                     return $ Map.insert this paths (handle (decode f))
-      B.writeFile omp (encode objMap)
-
-      let allPaths  = nub (concat (Map.elems objMap))
+      -- Read the object file index and update (we may have added or removed
+      -- objects for the given module)
+      --
+      let buildInfo = mkBuildInfoFileName (objectMapPath dynFlags)
+      abi <- readBuildInfo buildInfo
+      --
+      let abi'      = if null paths
+                        then Map.delete this       abi
+                        else Map.insert this paths abi
+          allPaths  = nub (concat (Map.elems abi'))
           allObjs   = map optionOfPath allPaths
+      --
+      writeBuildInfo buildInfo abi'
 
       -- Make sure the linker flags are up-to-date.
       --
@@ -151,26 +146,4 @@ objectMapPath DynFlags{..}
 
 optionOfPath :: FilePath -> Option
 optionOfPath = FileOption []
-
-
-instance Serialize Module where
-  put (Module p n) = put p >> put n
-  get = do
-    p <- get
-    n <- get
-    return (Module p n)
-
-#if __GLASGOW_HASKELL__ < 800
-instance Serialize PackageKey where
-  put p = put (packageKeyString p)
-  get = stringToPackageKey <$> get
-#else
-instance Serialize UnitId where
-  put u = put (unitIdString u)
-  get   = stringToUnitId <$> get
-#endif
-
-instance Serialize ModuleName where
-  put m = put (moduleNameString m)
-  get   = mkModuleName <$> get
 

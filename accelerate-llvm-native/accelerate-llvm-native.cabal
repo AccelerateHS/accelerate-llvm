@@ -134,12 +134,13 @@ Library
 
     Data.Array.Accelerate.LLVM.Native.Embed
 
-    Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
-
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+
+    Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+    Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
     Paths_accelerate_llvm_native
 
