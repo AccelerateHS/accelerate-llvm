@@ -23,26 +23,11 @@ packages:
     commit: 632323e2a7c3c75bb07a3edb35de47273dc4cd07
   extra-dep: true
 
-extra-deps: []
-# - 'cuda-0.8.0.0'
-# - 'nvvm-0.8.0.0'
+extra-deps:
+- 'Cabal-2.0.0.2'
 
 # Override default flag values for local packages and extra-deps
-flags:
-  accelerate:
-    unsafe-checks: false
-    bounds-checks: true
-    debug: true
-    ekg: false
-    internal-checks: false
-  accelerate-llvm:
-    debug: true
-    chase-lev: true
-  accelerate-llvm-native:
-    debug: true
-  accelerate-llvm-ptx:
-    debug: true
-    nvvm: false
+flags: {}
 
 # Extra package databases containing global packages
 extra-package-dbs: []
