@@ -106,6 +106,7 @@ Library
     Data.Array.Accelerate.LLVM.Native
     Data.Array.Accelerate.LLVM.Native.Plugin
     Data.Array.Accelerate.LLVM.Native.Foreign
+    Data.Array.Accelerate.LLVM.Native.Distribution.Simple
 
   other-modules:
     Data.Array.Accelerate.LLVM.Native.Array.Data
@@ -134,12 +135,17 @@ Library
 
     Data.Array.Accelerate.LLVM.Native.Embed
 
-    Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
-
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+
+    Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+    Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
+
+    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.Build
+    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC
+    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC.Internal
 
     Paths_accelerate_llvm_native
 
@@ -148,6 +154,7 @@ Library
         , accelerate                    == 1.1.*
         , accelerate-llvm               == 1.1.*
         , bytestring                    >= 0.10.4
+        , Cabal                         >= 2.0
         , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.6
         , directory                     >= 1.0

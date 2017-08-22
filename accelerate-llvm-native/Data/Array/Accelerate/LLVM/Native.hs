@@ -306,6 +306,25 @@ streamWith target f arrs = map go arrs
 --
 -- Similarly, the plugin must also run when loading modules in @ghci@.
 --
+-- Additionally, when building a _library_ with Cabal which utilises 'runQ', you
+-- will need to use the following custom build @Setup.hs@ to ensure that the
+-- library is linked together properly:
+--
+-- > import Data.Array.Accelerate.LLVM.Native.Distribution.Simple
+-- > main = defaultMain
+--
+-- And in the .cabal file:
+--
+-- > build-type: Custom
+-- > custom-setup
+-- >   setup-depends:
+-- >       base
+-- >     , Cabal
+-- >     , accelerate-llvm-native
+--
+-- The custom @Setup.hs@ is only required when building a library with Cabal.
+-- Building executables with cabal requires only the GHC plugin.
+--
 -- See the <https://github.com/tmcdonell/lulesh-accelerate lulesh-accelerate>
 -- project for an example.
 --

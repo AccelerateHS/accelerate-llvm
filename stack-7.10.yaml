@@ -24,32 +24,16 @@ packages:
   extra-dep: true
 
 extra-deps:
-- 'Cabal-1.24.2.0'
+- 'Cabal-2.0.0.2'
 - 'chaselev-deque-0.5.0.5'
-# - 'cuda-0.8.0.0'
 - 'libffi-0.1'
 - 'llvm-hs-4.2.0'
 - 'llvm-hs-pure-4.1.0.0'
-# - 'nvvm-0.8.0.0'
 - 'process-1.4.3.0'
 - 'unique-0'
 
 # Override default flag values for local packages and extra-deps
 flags:
-  accelerate:
-    unsafe-checks: false
-    bounds-checks: true
-    debug: true
-    ekg: false
-    internal-checks: false
-  accelerate-llvm:
-    debug: true
-    chase-lev: true
-  accelerate-llvm-native:
-    debug: true
-  accelerate-llvm-ptx:
-    debug: true
-    nvvm: false
   llvm-hs-pure:
     semigroups: true
   llvm-hs:
