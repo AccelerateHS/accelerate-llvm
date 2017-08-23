@@ -23,6 +23,14 @@ packages:
     commit: 632323e2a7c3c75bb07a3edb35de47273dc4cd07
   extra-dep: true
 
+- location:
+    git:    https://github.com/llvm-hs/llvm-hs.git
+    commit: 1fa109468efdf23bdd2c223dae516ff9af9fa6d7
+  extra-dep: true
+  subdirs:
+    - 'llvm-hs'
+    - 'llvm-hs-pure'
+
 extra-deps:
 - 'abstract-deque-0.3'
 - 'atomic-primops-0.8.1'
@@ -42,8 +50,8 @@ extra-deps:
 - 'integer-logarithms-1.0.1'
 - 'language-c-0.6.1'
 - 'libffi-0.1'
-- 'llvm-hs-4.2.0'
-- 'llvm-hs-pure-4.1.0.0'
+# - 'llvm-hs-4.2.0'
+# - 'llvm-hs-pure-4.1.0.0'
 - 'math-functions-0.2.1.0'
 - 'mtl-2.2.1'
 - 'mwc-random-0.13.6.0'
