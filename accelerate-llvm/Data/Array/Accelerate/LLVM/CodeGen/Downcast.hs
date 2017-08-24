@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -222,7 +223,11 @@ instance Downcast Volatility Bool where
 
 instance Downcast Synchronisation L.SynchronizationScope where
   downcast SingleThread = L.SingleThread
+#if MIN_VERSION_llvm_hs_pure(5,0,0)
+  downcast CrossThread  = L.System
+#else
   downcast CrossThread  = L.CrossThread
+#endif
 
 instance Downcast MemoryOrdering L.MemoryOrdering where
   downcast Unordered              = L.Unordered
