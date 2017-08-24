@@ -31,5 +31,5 @@ import Data.ByteString                                    ( ByteString )
 --
 loadObject :: ByteString -> IO (FunctionTable, ObjectCode)
 loadObject _obj =
-  $internalError "loadObject" "not implemented yet"
+  $internalError "loadObject" "not implemented yet: https://github.com/AccelerateHS/accelerate/issues/395"
 
