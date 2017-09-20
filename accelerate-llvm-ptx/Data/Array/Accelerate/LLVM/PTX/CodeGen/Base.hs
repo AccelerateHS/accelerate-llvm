@@ -55,6 +55,7 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 import qualified LLVM.AST.Global                                    as LLVM
+import qualified LLVM.AST.Constant                                  as LLVM hiding ( type' )
 import qualified LLVM.AST.Linkage                                   as LLVM
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
@@ -391,9 +392,9 @@ makeKernel config name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
   addMetadata "nvvm.annotations"
-    [ Just . MetadataOperand       $ ConstantOperand (GlobalReference VoidType (Name l))
-    , Just . MetadataStringOperand $ "kernel"
-    , Just . MetadataOperand       $ scalar scalarType (1::Int)
+    [ Just . MetadataConstantOperand $ LLVM.GlobalReference (LLVM.PointerType (LLVM.FunctionType LLVM.VoidType [ t | LLVM.Parameter t _ _ <- param ] False) (AddrSpace 0)) (LLVM.Name l)
+    , Just . MetadataStringOperand   $ "kernel"
+    , Just . MetadataConstantOperand $ LLVM.Int 32 1
     ]
   return $ Kernel
     { kernelMetadata = KM_PTX config
