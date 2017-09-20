@@ -314,7 +314,7 @@ initialiseDynamicSharedMemory = do
     , LLVM.name      = LLVM.Name "__shared__"
     , LLVM.alignment = 4
     }
-  return $ ConstantOperand $ GlobalReference type' "__shared__"
+  return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayType 0 scalarType) sharedMemAddrSpace)) "__shared__"
 
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
