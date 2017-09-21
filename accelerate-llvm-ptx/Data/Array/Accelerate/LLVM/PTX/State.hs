@@ -21,13 +21,14 @@ module Data.Array.Accelerate.LLVM.PTX.State (
 -- accelerate
 import Data.Array.Accelerate.Error
 
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
+import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table     as MT
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as ST
+import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as ST
+import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache      as LC
 
 import Data.Range.Range                                         ( Range(..) )
 import Control.Parallel.Meta                                    ( Executable(..) )
@@ -60,8 +61,9 @@ createTargetForDevice
 createTargetForDevice dev prp flags = do
   ctx    <- CT.new dev prp flags
   mt     <- MT.new ctx
+  lc     <- LC.new
   st     <- ST.new ctx
-  return $! PTX ctx mt st simpleIO
+  return $! PTX ctx mt lc st simpleIO
 
 
 -- | Create a PTX execute target for the given device context
@@ -74,8 +76,9 @@ createTargetFromContext ctx' = do
   prp    <- CUDA.props dev
   ctx    <- CT.raw dev prp ctx'
   mt     <- MT.new ctx
+  lc     <- LC.new
   st     <- ST.new ctx
-  return $! PTX ctx mt st simpleIO
+  return $! PTX ctx mt lc st simpleIO
 
 
 {-# INLINE simpleIO #-}

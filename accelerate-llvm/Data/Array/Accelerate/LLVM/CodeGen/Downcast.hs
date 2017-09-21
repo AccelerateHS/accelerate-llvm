@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
@@ -46,6 +47,7 @@ import LLVM.AST.Type.Terminator
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
 
 import qualified LLVM.AST.Attribute                                 as L
+import qualified LLVM.AST.AddrSpace                                 as L
 import qualified LLVM.AST.CallingConvention                         as L
 import qualified LLVM.AST.Constant                                  as LC
 import qualified LLVM.AST.Float                                     as L
@@ -222,7 +224,11 @@ instance Downcast Volatility Bool where
 
 instance Downcast Synchronisation L.SynchronizationScope where
   downcast SingleThread = L.SingleThread
+#if MIN_VERSION_llvm_hs_pure(5,0,0)
+  downcast CrossThread  = L.System
+#else
   downcast CrossThread  = L.CrossThread
+#endif
 
 instance Downcast MemoryOrdering L.MemoryOrdering where
   downcast Unordered              = L.Unordered
@@ -303,9 +309,9 @@ instance Downcast Metadata L.Operand where
   downcast = L.MetadataOperand . downcast
 
 instance Downcast Metadata L.Metadata where
-  downcast (MetadataStringOperand s) = L.MDString s
-  downcast (MetadataNodeOperand n)   = L.MDNode (downcast n)
-  downcast (MetadataOperand o)       = L.MDValue (downcast o)
+  downcast (MetadataStringOperand s)   = L.MDString s
+  downcast (MetadataConstantOperand o) = L.MDValue (L.ConstantOperand o)
+  downcast (MetadataNodeOperand n)     = L.MDNode (downcast n)
 
 instance Downcast MetadataNode L.MetadataNode where
   downcast (MetadataNode n)          = L.MetadataNode (downcast n)
@@ -349,7 +355,7 @@ instance Downcast (GlobalFunction args t) L.CallableOperand where
                              in  (downcast t : t', r, n)
 
           (args, result, name)  = trav f
-          ty                    = L.FunctionType result args False
+          ty                    = L.PointerType (L.FunctionType result args False) (L.AddrSpace 0)
       in
       Right (L.ConstantOperand (LC.GlobalReference ty name))
 
@@ -421,35 +427,35 @@ instance Downcast (NumType a) L.Type where
   downcast (FloatingNumType t) = downcast t
 
 instance Downcast (IntegralType a) L.Type where
-  downcast (TypeInt     _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
-  downcast (TypeInt8    _) = L.IntegerType 8
-  downcast (TypeInt16   _) = L.IntegerType 16
-  downcast (TypeInt32   _) = L.IntegerType 32
-  downcast (TypeInt64   _) = L.IntegerType 64
-  downcast (TypeWord    _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
-  downcast (TypeWord8   _) = L.IntegerType 8
-  downcast (TypeWord16  _) = L.IntegerType 16
-  downcast (TypeWord32  _) = L.IntegerType 32
-  downcast (TypeWord64  _) = L.IntegerType 64
-  downcast (TypeCShort  _) = L.IntegerType 16
-  downcast (TypeCUShort _) = L.IntegerType 16
-  downcast (TypeCInt    _) = L.IntegerType 32
-  downcast (TypeCUInt   _) = L.IntegerType 32
-  downcast (TypeCLong   _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CLong)) |] )
-  downcast (TypeCULong  _) = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CULong)) |] )
-  downcast (TypeCLLong  _) = L.IntegerType 64
-  downcast (TypeCULLong _) = L.IntegerType 64
+  downcast TypeInt{}     = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
+  downcast TypeInt8{}    = L.IntegerType 8
+  downcast TypeInt16{}   = L.IntegerType 16
+  downcast TypeInt32{}   = L.IntegerType 32
+  downcast TypeInt64{}   = L.IntegerType 64
+  downcast TypeWord{}    = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
+  downcast TypeWord8{}   = L.IntegerType 8
+  downcast TypeWord16{}  = L.IntegerType 16
+  downcast TypeWord32{}  = L.IntegerType 32
+  downcast TypeWord64{}  = L.IntegerType 64
+  downcast TypeCShort{}  = L.IntegerType 16
+  downcast TypeCUShort{} = L.IntegerType 16
+  downcast TypeCInt{}    = L.IntegerType 32
+  downcast TypeCUInt{}   = L.IntegerType 32
+  downcast TypeCLong{}   = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CLong)) |] )
+  downcast TypeCULong{}  = L.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: CULong)) |] )
+  downcast TypeCLLong{}  = L.IntegerType 64
+  downcast TypeCULLong{} = L.IntegerType 64
 
 instance Downcast (FloatingType a) L.Type where
-  downcast (TypeFloat   _) = L.FloatingPointType 32 L.IEEE
-  downcast (TypeDouble  _) = L.FloatingPointType 64 L.IEEE
-  downcast (TypeCFloat  _) = L.FloatingPointType 32 L.IEEE
-  downcast (TypeCDouble _) = L.FloatingPointType 64 L.IEEE
+  downcast TypeFloat{}   = L.FloatingPointType L.FloatFP
+  downcast TypeDouble{}  = L.FloatingPointType L.DoubleFP
+  downcast TypeCFloat{}  = L.FloatingPointType L.FloatFP
+  downcast TypeCDouble{} = L.FloatingPointType L.DoubleFP
 
 instance Downcast (NonNumType a) L.Type where
-  downcast (TypeBool   _) = L.IntegerType 1
-  downcast (TypeChar   _) = L.IntegerType 32
-  downcast (TypeCChar  _) = L.IntegerType 8
-  downcast (TypeCSChar _) = L.IntegerType 8
-  downcast (TypeCUChar _) = L.IntegerType 8
+  downcast TypeBool{}   = L.IntegerType 1
+  downcast TypeChar{}   = L.IntegerType 32
+  downcast TypeCChar{}  = L.IntegerType 8
+  downcast TypeCSChar{} = L.IntegerType 8
+  downcast TypeCUChar{} = L.IntegerType 8
 

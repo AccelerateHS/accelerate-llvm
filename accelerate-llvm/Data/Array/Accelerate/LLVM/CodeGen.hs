@@ -24,11 +24,10 @@ module Data.Array.Accelerate.LLVM.CodeGen (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencil )
-import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
+import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj, stencil )
+import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Target
 
@@ -42,10 +41,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Foreign
 
 -- standard library
-import Prelude                                                  hiding ( map, scanl, scanl1, scanr, scanr1 )
+import Prelude                                                      hiding ( map, scanl, scanl1, scanr, scanr1 )
 
 
 -- | Generate code for a given target architecture.
@@ -54,32 +54,33 @@ import Prelude                                                  hiding ( map, sc
 llvmOfOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => arch
+    -> UID
     -> DelayedOpenAcc aenv arrs
     -> Gamma aenv
     -> Module arch aenv arrs
-llvmOfOpenAcc _    Delayed{}       _    = $internalError "llvmOfOpenAcc" "expected manifest array"
-llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
+llvmOfOpenAcc _    _    Delayed{}      _    = $internalError "llvmOfOpenAcc" "expected manifest array"
+llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
   case pacc of
     -- Producers
-    Map f a                 -> map arch aenv (travF1 f) (travD a)
-    Generate _ f            -> generate arch aenv (travF1 f)
-    Transform _ p f a       -> transform arch aenv (travF1 p) (travF1 f) (travD a)
-    Backpermute _ p a       -> backpermute arch aenv (travF1 p) (travD a)
+    Map f a                 -> map arch uid aenv (travF1 f) (travD a)
+    Generate _ f            -> generate arch uid aenv (travF1 f)
+    Transform _ p f a       -> transform arch uid aenv (travF1 p) (travF1 f) (travD a)
+    Backpermute _ p a       -> backpermute arch uid aenv (travF1 p) (travD a)
 
     -- Consumers
-    Fold f z a              -> fold arch aenv (travF2 f) (travE z) (travD a)
-    Fold1 f a               -> fold1 arch aenv (travF2 f) (travD a)
-    FoldSeg f z a s         -> foldSeg arch aenv (travF2 f) (travE z) (travD a) (travD s)
-    Fold1Seg f a s          -> fold1Seg arch aenv (travF2 f) (travD a) (travD s)
-    Scanl f z a             -> scanl arch aenv (travF2 f) (travE z) (travD a)
-    Scanl' f z a            -> scanl' arch aenv (travF2 f) (travE z) (travD a)
-    Scanl1 f a              -> scanl1 arch aenv (travF2 f) (travD a)
-    Scanr f z a             -> scanr arch aenv (travF2 f) (travE z) (travD a)
-    Scanr' f z a            -> scanr' arch aenv (travF2 f) (travE z) (travD a)
-    Scanr1 f a              -> scanr1 arch aenv (travF2 f) (travD a)
-    Permute f _ p a         -> permute arch aenv (travPF f) (travF1 p) (travD a)
-    Stencil f b a           -> stencil arch aenv (travF1 f) (travB a b) (travM a)
-    Stencil2 f b1 a1 b2 a2  -> stencil2 arch aenv (travF2 f) (travB a1 b1) (travM a1) (travB a2 b2) (travM a2)
+    Fold f z a              -> fold arch uid aenv (travF2 f) (travE z) (travD a)
+    Fold1 f a               -> fold1 arch uid aenv (travF2 f) (travD a)
+    FoldSeg f z a s         -> foldSeg arch uid aenv (travF2 f) (travE z) (travD a) (travD s)
+    Fold1Seg f a s          -> fold1Seg arch uid aenv (travF2 f) (travD a) (travD s)
+    Scanl f z a             -> scanl arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanl' f z a            -> scanl' arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanl1 f a              -> scanl1 arch uid aenv (travF2 f) (travD a)
+    Scanr f z a             -> scanr arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanr' f z a            -> scanr' arch uid aenv (travF2 f) (travE z) (travD a)
+    Scanr1 f a              -> scanr1 arch uid aenv (travF2 f) (travD a)
+    Permute f _ p a         -> permute arch uid aenv (travPF f) (travF1 p) (travD a)
+    Stencil f b a           -> stencil arch uid aenv (travF1 f) (travB b) (travM a)
+    Stencil2 f b1 a1 b2 a2  -> stencil2 arch uid aenv (travF2 f) (travB b1) (travM a1) (travB b2) (travM a2)
 
     -- Non-computation forms: sadness
     Alet{}                  -> unexpectedError
@@ -121,16 +122,14 @@ llvmOfOpenAcc arch (Manifest pacc) aenv = runLLVM $
     travE :: DelayedExp aenv t -> IRExp arch aenv t
     travE e = llvmOfOpenExp arch e Empty aenv
 
-    travB :: forall sh e. Elt e
-          => DelayedOpenAcc aenv (Array sh e)
-          -> Boundary (EltRepr e)
-          -> Boundary (IR e)
-    travB _ Clamp        = Clamp
-    travB _ Mirror       = Mirror
-    travB _ Wrap         = Wrap
-    travB _ (Constant c)
-      = Constant
-      $ IR (constant (eltType (undefined::e)) c)
+    travB :: forall sh e.
+             PreBoundary DelayedOpenAcc aenv (Array sh e)
+          -> IRBoundary arch aenv (Array sh e)
+    travB Clamp        = IRClamp
+    travB Mirror       = IRMirror
+    travB Wrap         = IRWrap
+    travB (Constant c) = IRConstant $ IR (constant (eltType (undefined::e)) c)
+    travB (Function f) = IRFunction $ travF1 f
 
     -- sadness
     fusionError, unexpectedError :: error

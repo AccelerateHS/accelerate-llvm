@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -150,12 +151,12 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf
+      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -201,12 +202,12 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM1" (paramGang ++ paramTmp ++ paramEnv) $ do
@@ -255,12 +256,12 @@ mkFoldAllM2 dev aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "foldAllM2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
@@ -320,12 +321,12 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const
+      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n                    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
-          warps     = n `div` ws
-          per_warp  = ws + ws `div` 2
+          warps     = n `P.quot` ws
+          per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
   makeOpenAccWith config "fold" (paramGang ++ paramOut ++ paramEnv) $ do
@@ -365,25 +366,27 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
           __syncthreads
 
           -- Threads cooperatively reduce this stripe of the input
-          i     <- A.add numType offset tid
-          i'    <- A.fromIntegral integralType numType i
-          valid <- A.sub numType to offset
-          r'    <- if A.gte scalarType valid bd
-                      -- All threads of the block are valid, so we can avoid
-                      -- bounds checks.
-                      then do
-                        x <- app1 delayedLinearIndex i'
-                        reduceBlockSMem dev combine Nothing x
+          i   <- A.add numType offset tid
+          v'  <- A.sub numType to offset
+          r'  <- if A.gte scalarType v' bd
+                   -- All threads of the block are valid, so we can avoid
+                   -- bounds checks.
+                   then do
+                     x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                     y <- reduceBlockSMem dev combine Nothing x
+                     return y
 
-                      -- Otherwise we require bounds checks when reading the
-                      -- input and during the reduction.
-                      else
-                      if A.lt scalarType i to
-                        then do
-                          x <- app1 delayedLinearIndex i'
-                          reduceBlockSMem dev combine (Just valid) x
-                        else
-                          return r
+                   -- Otherwise, we require bounds checks when reading the input
+                   -- and during the reduction. Note that even though only the
+                   -- valid threads will contribute useful work in the
+                   -- reduction, we must still have all threads enter the
+                   -- reduction procedure to avoid synchronisation divergence.
+                   else do
+                     x <- if A.lt scalarType i to
+                            then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                            else return r
+                     y <- reduceBlockSMem dev combine (Just v') x
+                     return y
 
           if A.eq scalarType tid (lift 0)
             then app2 combine r r'
@@ -436,7 +439,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
 
     -- Temporary storage required for each warp
     bytes           = sizeOf (eltType (undefined::e))
-    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `div` 2)
+    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
 
     -- Step 1: Reduction in every warp
     --

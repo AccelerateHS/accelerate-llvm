@@ -23,6 +23,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
@@ -34,16 +35,17 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 --
 mkGenerate
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
+    => UID
+    -> Gamma aenv
     -> IRFun1 Native aenv (sh -> e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkGenerate aenv apply =
+mkGenerate uid aenv apply =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
       ix <- indexOfInt (irArrayShape arrOut) i  -- convert to multidimensional index

@@ -5,20 +5,26 @@
 # Caches the 'stack' build directory to speed subsequent compilations.
 #
 language: generic
-dist: precise
+dist: trusty
+sudo: required
 
 cache:
+  timeout: 600
   directories:
     - $HOME/.stack
     - $HOME/llvm
     - .stack-work/install
+
+before_cache:
+  # - rm -rf $(stack path --local-install-root)/bin
+  - rm -rf $(stack path --local-install-root)/doc
 
 addons:
   apt:
     sources: &apt_sources
       - hvr-ghc
       - ubuntu-toolchain-r-test
-      - llvm-toolchain-precise
+      - llvm-toolchain-trusty
       # - llvm-toolchain-precise-3.5
       # - llvm-toolchain-precise-3.6
       # - llvm-toolchain-precise-3.7
@@ -29,7 +35,6 @@ addons:
         key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
 
     packages: &apt_packages
-      - nvidia-cuda-toolkit
       - g++-4.8
       - libgmp-dev
       - happy-1.19.5
@@ -38,16 +43,7 @@ addons:
 
 matrix:
   include:
-    - env: GHC=7.8.4 CABAL=1.18 LLVM=4.0.0
-      compiler: "GHC 7.8"
-      addons:
-        apt:
-          sources: *apt_sources
-          packages:
-            - *apt_packages
-            - cabal-install-1.18
-
-    - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0
+    - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0 CUDA=8.0.61-1
       compiler: "GHC 7.10"
       addons:
         apt:
@@ -56,7 +52,7 @@ matrix:
             - *apt_packages
             - cabal-install-1.22
 
-    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0
+    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.0"
       addons:
         apt:
@@ -64,6 +60,15 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.24
+
+    - env: GHC=8.2.1 CABAL=2.0 LLVM=4.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.2"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-2.0
 
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
@@ -84,31 +89,34 @@ before_install:
   #     case ${LLVM} in
   #       3.5.*) source .travis/install-llvm-trusty.sh ;;
   #     esac
+  - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
+  - travis_retry stack install c2hs --fast --no-terminal
 
 install:
   - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
+  - c2hs --version
   - llc --version; true
   - opt --version; true
   - |
       if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install --only-dependencies
+        travis_retry cabal install --only-dependencies || exit 1
       else
-        travis_retry stack build --only-dependencies --no-terminal --no-haddock-deps
+        travis_retry stack build --only-dependencies --fast --no-terminal --no-haddock-deps || exit 1
       fi
 
 script:
   - |
       if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install
-        travis_retry cabal haddock
+        travis_retry cabal install || exit 1
+        travis_retry cabal haddock || exit 1
       else
-        travis_retry stack build accelerate-llvm        --no-terminal --haddock --no-haddock-deps
-        travis_retry stack build accelerate-llvm-native --no-terminal --haddock --no-haddock-deps
-        travis_retry stack build accelerate-llvm-ptx    --no-terminal --haddock --no-haddock-deps
+        travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps || exit 1
+        travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps || exit 1
+        travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps || exit 1
       fi
 
 after_success:

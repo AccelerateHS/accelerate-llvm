@@ -26,6 +26,7 @@ import Data.Array.Accelerate.Error
 
 -- standard library
 import Data.Maybe
+import Data.ByteString.Short                              ( ShortByteString )
 
 
 -- | Return function pointers to all of the global function definitions in the
@@ -35,7 +36,7 @@ getGlobalFunctions
     :: ExecutionEngine e f
     => Module
     -> ExecutableModule e
-    -> IO [(String, f)]
+    -> IO [(ShortByteString, f)]
 getGlobalFunctions ast exe
   = mapM (\f -> (f,) `fmap` link f)
   $ globalFunctions (moduleDefinitions ast)
@@ -47,7 +48,7 @@ getGlobalFunctions ast exe
 --
 -- TLM: move this somewhere it can be shared between Native/NVVM backend
 --
-globalFunctions :: [Definition] -> [String]
+globalFunctions :: [Definition] -> [ShortByteString]
 globalFunctions defs =
   [ n | GlobalDefinition Function{..} <- defs
       , not (null basicBlocks)

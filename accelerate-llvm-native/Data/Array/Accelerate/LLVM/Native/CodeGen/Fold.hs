@@ -30,6 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
@@ -47,19 +48,20 @@ import Prelude                                                      as P hiding 
 --
 mkFold
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkFold aenv f z acc
+mkFold uid aenv f z acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkFoldAll  aenv f (Just z) acc
-          <*> mkFoldFill aenv z
+  = (+++) <$> mkFoldAll  uid aenv f (Just z) acc
+          <*> mkFoldFill uid aenv z
 
   | otherwise
-  = (+++) <$> mkFoldDim  aenv f (Just z) acc
-          <*> mkFoldFill aenv z
+  = (+++) <$> mkFoldDim  uid aenv f (Just z) acc
+          <*> mkFoldFill uid aenv z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
@@ -67,16 +69,17 @@ mkFold aenv f z acc
 --
 mkFold1
     :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkFold1 aenv f acc
+mkFold1 uid aenv f acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = mkFoldAll aenv f Nothing acc
+  = mkFoldAll uid aenv f Nothing acc
 
   | otherwise
-  = mkFoldDim aenv f Nothing acc
+  = mkFoldDim uid aenv f Nothing acc
 
 
 -- Reduce a multidimensional (>1) array along the innermost dimension.
@@ -86,12 +89,13 @@ mkFold1 aenv f acc
 --
 mkFoldDim
   :: forall aenv sh e. (Shape sh, Elt e)
-  =>          Gamma            aenv
+  =>          UID
+  ->          Gamma            aenv
   ->          IRFun2    Native aenv (e -> e -> e)
   -> Maybe   (IRExp     Native aenv e)
   ->          IRDelayed Native aenv (Array (sh :. Int) e)
   -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkFoldDim aenv combine mseed IRDelayed{..} =
+mkFoldDim uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
@@ -100,7 +104,7 @@ mkFoldDim aenv combine mseed IRDelayed{..} =
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
       stride                    = local           scalarType ("ix.stride" :: Name Int)
   in
-  makeOpenAcc "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \seg -> do
       from <- mul numType seg  stride
@@ -139,15 +143,16 @@ mkFoldDim aenv combine mseed IRDelayed{..} =
 --
 mkFoldAll
     :: forall aenv e. Elt e
-    =>          Gamma            aenv                           -- ^ array environment
+    =>          UID
+    ->          Gamma            aenv                           -- ^ array environment
     ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
     -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed Native aenv (Vector e)                -- ^ input data
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
-mkFoldAll aenv combine mseed arr =
-  foldr1 (+++) <$> sequence [ mkFoldAllS  aenv combine mseed arr
-                            , mkFoldAllP1 aenv combine       arr
-                            , mkFoldAllP2 aenv combine mseed
+mkFoldAll uid aenv combine mseed arr =
+  foldr1 (+++) <$> sequence [ mkFoldAllS  uid aenv combine mseed arr
+                            , mkFoldAllP1 uid aenv combine       arr
+                            , mkFoldAllP2 uid aenv combine mseed
                             ]
 
 
@@ -155,19 +160,20 @@ mkFoldAll aenv combine mseed arr =
 --
 mkFoldAllS
     :: forall aenv e. Elt e
-    =>          Gamma            aenv                           -- ^ array environment
+    =>          UID
+    ->          Gamma            aenv                           -- ^ array environment
     ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
     -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
     ->          IRDelayed Native aenv (Vector e)                -- ^ input data
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
-mkFoldAllS aenv combine mseed IRDelayed{..} =
+mkFoldAllS uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
       (arrOut,  paramOut)       = mutableArray ("out" :: Name (Scalar e))
       zero                      = lift 0 :: IR Int
   in
-  makeOpenAcc "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
                            reduceFromTo  start end (app2 combine) z (app1 delayedLinearIndex)
@@ -182,11 +188,12 @@ mkFoldAllS aenv combine mseed IRDelayed{..} =
 --
 mkFoldAllP1
     :: forall aenv e. Elt e
-    =>          Gamma            aenv                           -- ^ array environment
+    =>          UID
+    ->          Gamma            aenv                           -- ^ array environment
     ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
     ->          IRDelayed Native aenv (Vector e)                -- ^ input data
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
-mkFoldAllP1 aenv combine IRDelayed{..} =
+mkFoldAllP1 uid aenv combine IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
@@ -196,7 +203,7 @@ mkFoldAllP1 aenv combine IRDelayed{..} =
       paramLength               = scalarParameter scalarType ("ix.length" :: Name Int)
       paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
   in
-  makeOpenAcc "foldAllP1" (paramGang ++ paramLength : paramStride : paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "foldAllP1" (paramGang ++ paramLength : paramStride : paramTmp ++ paramEnv) $ do
 
     -- A thread reduces a sequential (non-empty) stripe of the input and stores
     -- that value into a temporary array at a specific index. The size of the
@@ -224,11 +231,12 @@ mkFoldAllP1 aenv combine IRDelayed{..} =
 --
 mkFoldAllP2
     :: forall aenv e. Elt e
-    =>          Gamma            aenv                           -- ^ array environment
+    =>          UID
+    ->          Gamma            aenv                           -- ^ array environment
     ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
     -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
-mkFoldAllP2 aenv combine mseed =
+mkFoldAllP2 uid aenv combine mseed =
   let
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
@@ -236,7 +244,7 @@ mkFoldAllP2 aenv combine mseed =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
       zero                      = lift 0 :: IR Int
   in
-  makeOpenAcc "foldAllP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "foldAllP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
                            reduceFromTo  start end (app2 combine) z (readArray arrTmp)
@@ -250,11 +258,12 @@ mkFoldAllP2 aenv combine mseed =
 --
 mkFoldFill
     :: (Shape sh, Elt e)
-    => Gamma aenv
+    => UID
+    -> Gamma aenv
     -> IRExp Native aenv e
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkFoldFill aenv seed =
-  mkGenerate aenv (IRFun1 (const seed))
+mkFoldFill uid aenv seed =
+  mkGenerate uid aenv (IRFun1 (const seed))
 
 -- Reduction loops
 -- ---------------

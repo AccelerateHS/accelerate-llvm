@@ -19,9 +19,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Stencil
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj, stencilAccess )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), PreBoundary(..), prj )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                        hiding ( bound )
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 
@@ -42,7 +42,7 @@ import Prelude
 --
 stencilAccess
     :: Stencil sh e stencil
-    => Boundary (IR e)
+    => IRBoundary arch aenv (Array sh e)
     -> IRArray (Array sh e)
     -> IR sh
     -> CodeGen (IR stencil)
@@ -103,7 +103,7 @@ stencilAccess bndy arr = goR stencil (bounded bndy arr)
     -- Recursive cases. Note that because the stencil pattern is defined with
     -- a cons ordering, whereas shapes (indices) are defined as a snoc list,
     -- when we recurse on the stencil structure we must manipulate the
-    -- _innermost_ index component
+    -- _left-most_ index component
     --
     goR (StencilRtup3 s1 s2 s3) rf ix =
       let (i, ix') = uncons ix
@@ -162,18 +162,21 @@ stencilAccess bndy arr = goR stencil (bounded bndy arr)
 --
 bounded
     :: (Shape sh, Elt e)
-    => Boundary (IR e)
+    => IRBoundary arch aenv (Array sh e)
     -> IRArray (Array sh e)
     -> IR sh
     -> CodeGen (IR e)
 bounded bndy arr@IRArray{..} ix =
   case bndy of
-    Constant v ->
+    IRConstant v ->
       if inside irArrayShape ix
-        then do i <- intOfIndex irArrayShape ix
-                readArray arr i
+        then readArray arr =<< intOfIndex irArrayShape ix
         else return v
-    _          -> do
+    IRFunction f ->
+      if inside irArrayShape ix
+        then readArray arr =<< intOfIndex irArrayShape ix
+        else app1 f ix
+    _            -> do
       ix' <- bound irArrayShape ix
       i   <- intOfIndex irArrayShape ix'
       readArray arr i
@@ -199,22 +202,22 @@ bounded bndy arr@IRArray{..} ix =
                IR i' <- if A.lt t (IR iz) (int 0)
                           then
                             case bndy of
-                              Clamp      -> return (int 0)
-                              Mirror     -> A.negate numType (IR iz)
-                              Wrap       -> A.add    numType (IR sz) (IR iz)
-                              Constant _ -> $internalError "bound" "unexpected boundary condition"
+                              IRClamp  -> return (int 0)
+                              IRMirror -> A.negate numType (IR iz)
+                              IRWrap   -> A.add    numType (IR sz) (IR iz)
+                              _        -> $internalError "bound" "unexpected boundary condition"
                           else
                             if A.gte t (IR iz) (IR sz)
                               then
                                 case bndy of
-                                  Clamp      -> A.sub numType (IR sz) (int 1)
-                                  Mirror     -> do
+                                  IRClamp  -> A.sub numType (IR sz) (int 1)
+                                  IRWrap   -> A.sub numType (IR iz) (IR sz)
+                                  IRMirror -> do
                                     a <- A.add numType (IR sz) (int 2)
                                     b <- A.sub numType (IR iz) a
                                     c <- A.sub numType (IR sz) b
                                     return c
-                                  Wrap       -> A.sub numType (IR iz) (IR sz)
-                                  Constant _ -> $internalError "bound" "unexpected boundary condition"
+                                  _        -> $internalError "bound" "unexpected boundary condition"
                               else
                                 return (IR iz)
                return i'
@@ -235,12 +238,9 @@ bounded bndy arr@IRArray{..} ix =
               else return (bool False)
         go (SingleTuple t) sz iz
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-          = if A.lt t (IR iz) (int 0)
+          = if A.lt t (IR iz) (int 0) `A.lor` A.gte t (IR iz) (IR sz)
               then return (bool False)
-              else
-                if A.gte t (IR iz) (IR sz)
-                  then return (bool False)
-                  else return (bool True)
+              else return (bool True)
           --
           | otherwise
           = $internalError "bound" "expected shape with Int components"
@@ -277,7 +277,7 @@ tup9 (IR a) (IR b) (IR c) (IR d) (IR e) (IR f) (IR g) (IR h) (IR i) =
   IR $ OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g) h) i
 
 
--- Add an _innermost_ dimension to a shape
+-- Add a _left-most_ dimension to a shape
 --
 cons :: forall sh. Shape sh => IR Int -> IR sh -> IR (sh :. Int)
 cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
@@ -292,7 +292,7 @@ cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
       = $internalError "cons" "expected shape with Int components"
 
 
--- Remove the _innermost_ dimension to a shape, and return the remainder
+-- Remove the _left-most_ index to a shape, and return the remainder
 --
 uncons :: forall sh. Shape sh => IR (sh :. Int) -> (IR Int, IR sh)
 uncons (IR extent) = let (ix, extent') = go (eltType (undefined::(sh :. Int))) extent

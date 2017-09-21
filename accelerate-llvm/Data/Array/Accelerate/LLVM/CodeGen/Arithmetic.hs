@@ -19,15 +19,17 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                  ( Eq, Num, Either(..), ($), (++), (==), undefined, otherwise, flip, fromInteger )
+import Prelude                                                      ( Eq, Num, Either(..), ($), (==), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
-import Data.Bits                                                ( finiteBitSize )
+import Data.Bits                                                    ( finiteBitSize )
+import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Monoid
 import Data.String
+import Foreign.Storable                                             ( sizeOf )
 import Text.Printf
-import Foreign.Storable                                         ( sizeOf )
-import qualified Prelude                                        as P
-import qualified Data.Ord                                       as Ord
+import qualified Data.Ord                                           as Ord
+import qualified Prelude                                            as P
 
 -- accelerate
 import Data.Array.Accelerate.Error
@@ -269,7 +271,7 @@ rotateR t x i = do
 popCount :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 popCount i x
   | IntegralDict <- integralDict i
-  = do let ctpop = Label $ printf "llvm.ctpop.i%d" (finiteBitSize (undefined::a))
+  = do let ctpop = fromString $ printf "llvm.ctpop.i%d" (finiteBitSize (undefined::a))
            p     = ScalarPrimType (NumScalarType (IntegralNumType i))
            t     = PrimType p
        --
@@ -280,7 +282,7 @@ popCount i x
 countLeadingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 countLeadingZeros i x
   | IntegralDict <- integralDict i
-  = do let clz = Label $ printf "llvm.ctlz.i%d" (finiteBitSize (undefined::a))
+  = do let clz = fromString $ printf "llvm.ctlz.i%d" (finiteBitSize (undefined::a))
            p   = ScalarPrimType (NumScalarType (IntegralNumType i))
            t   = PrimType p
        --
@@ -291,7 +293,7 @@ countLeadingZeros i x
 countTrailingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 countTrailingZeros i x
   | IntegralDict <- integralDict i
-  = do let clz = Label $ printf "llvm.cttz.i%d" (finiteBitSize (undefined::a))
+  = do let clz = fromString $ printf "llvm.cttz.i%d" (finiteBitSize (undefined::a))
            p   = ScalarPrimType (NumScalarType (IntegralNumType i))
            t   = PrimType p
        --
@@ -384,7 +386,25 @@ isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
 isNaN f (op f -> x) = do
   let p = ScalarPrimType (NumScalarType (FloatingNumType f))
       t = type'
-  name <- intrinsic "isnan"
+  name <- intrinsic
+        $ case f of
+            TypeFloat{}   -> "isnanf"
+            TypeCFloat{}  -> "isnanf"
+            TypeDouble{}  -> "isnand"
+            TypeCDouble{} -> "isnand"
+  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
+  return r
+
+isInfinite :: FloatingType a -> IR a -> CodeGen (IR Bool)
+isInfinite f (op f -> x) = do
+  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
+      t = type'
+  name <- intrinsic
+        $ case f of
+            TypeFloat{}   -> "isinff"
+            TypeCFloat{}  -> "isinff"
+            TypeDouble{}  -> "isinfd"
+            TypeCDouble{} -> "isinfd"
   r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
   return r
 
@@ -653,7 +673,7 @@ unless test doit = do
 --
 -- TLM: We should really be able to construct functions of any arity.
 --
-mathf :: String -> FloatingType t -> IR t -> CodeGen (IR t)
+mathf :: ShortByteString -> FloatingType t -> IR t -> CodeGen (IR t)
 mathf n f (op f -> x) = do
   let s = ScalarPrimType (NumScalarType (FloatingNumType f))
       t = PrimType s
@@ -663,7 +683,7 @@ mathf n f (op f -> x) = do
   return r
 
 
-mathf2 :: String -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf2 :: ShortByteString -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
 mathf2 n f (op f -> x) (op f -> y) = do
   let s = ScalarPrimType (NumScalarType (FloatingNumType f))
       t = PrimType s
@@ -672,12 +692,12 @@ mathf2 n f (op f -> x) (op f -> y) = do
   r    <- call (Lam s x (Lam s y (Body t name))) [NoUnwind, ReadOnly]
   return r
 
-lm :: FloatingType t -> String -> CodeGen Label
+lm :: FloatingType t -> ShortByteString -> CodeGen Label
 lm t n
   = intrinsic
   $ case t of
-      TypeFloat{}   -> n++"f"
-      TypeCFloat{}  -> n++"f"
+      TypeFloat{}   -> n<>"f"
+      TypeCFloat{}  -> n<>"f"
       TypeDouble{}  -> n
       TypeCDouble{} -> n
 

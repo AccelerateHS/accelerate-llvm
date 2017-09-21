@@ -22,11 +22,16 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
+
+import Data.Monoid
+import Data.String
+import Text.Printf
 
 
 -- | Generate function parameters that will specify the first and last (linear)
@@ -63,9 +68,9 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 
 -- | Create a single kernel program
 --
-makeOpenAcc :: Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
-makeOpenAcc name param kernel = do
-  body  <- makeKernel name param kernel
+makeOpenAcc :: UID -> Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
+makeOpenAcc uid name param kernel = do
+  body  <- makeKernel (name <> fromString (printf "_%016x" uid)) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process

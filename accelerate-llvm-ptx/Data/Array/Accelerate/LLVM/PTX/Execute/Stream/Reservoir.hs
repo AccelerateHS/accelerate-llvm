@@ -42,7 +42,7 @@ type Reservoir = MVar (Seq Stream.Stream)
 --
 {-# INLINEABLE new #-}
 new :: Context -> IO Reservoir
-new _ctx = newMVar ( Seq.empty )
+new _ctx = newMVar Seq.empty
 
 
 -- | Retrieve an execution stream from the reservoir, if one is available.

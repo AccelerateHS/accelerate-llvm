@@ -23,6 +23,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic ()
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
@@ -30,17 +31,17 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
-  map           = mkMap
-  generate      = mkGenerate
-  fold          = mkFold
-  fold1         = mkFold1
-  foldSeg       = mkFoldSeg
-  fold1Seg      = mkFold1Seg
-  scanl         = mkScanl
-  scanl1        = mkScanl1
-  scanl'        = mkScanl'
-  scanr         = mkScanr
-  scanr1        = mkScanr1
-  scanr'        = mkScanr'
-  permute       = mkPermute
+  map ptx _       = mkMap ptx
+  generate ptx _  = mkGenerate ptx
+  fold ptx _      = mkFold ptx
+  fold1 ptx _     = mkFold1 ptx
+  foldSeg ptx _   = mkFoldSeg ptx
+  fold1Seg ptx _  = mkFold1Seg ptx
+  scanl ptx _     = mkScanl ptx
+  scanl1 ptx _    = mkScanl1 ptx
+  scanl' ptx _    = mkScanl' ptx
+  scanr ptx _     = mkScanr ptx
+  scanr1 ptx _    = mkScanr1 ptx
+  scanr' ptx _    = mkScanr' ptx
+  permute ptx _   = mkPermute ptx
 

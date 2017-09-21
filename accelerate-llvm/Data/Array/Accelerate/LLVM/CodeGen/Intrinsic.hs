@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
@@ -19,6 +20,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Intrinsic (
 import LLVM.AST.Type.Name
 
 -- libraries
+import Data.Monoid
+import Data.ByteString.Short                                    ( ShortByteString )
 import Data.HashMap.Strict                                      ( HashMap )
 import qualified Data.HashMap.Strict                            as HashMap
 
@@ -35,19 +38,26 @@ import qualified Data.HashMap.Strict                            as HashMap
 --   sqrt       -> llvm.sqrt.f64
 --
 class Intrinsic arch where
-  intrinsicForTarget :: arch -> HashMap String Label
+  intrinsicForTarget :: arch -> HashMap ShortByteString Label
   intrinsicForTarget _ = llvmIntrinsic
 
 
-llvmIntrinsic :: HashMap String Label
+llvmIntrinsic :: HashMap ShortByteString Label
 llvmIntrinsic =
   let floating base rest
-          = (base,        Label ("llvm." ++ base ++ ".f64"))
-          : (base ++ "f", Label ("llvm." ++ base ++ ".f32"))
-          : (base ++ "l", Label ("llvm." ++ base ++ ".f128"))
+          = (base,        Label ("llvm." <> base <> ".f64"))
+          : (base <> "f", Label ("llvm." <> base <> ".f32"))
+          : (base <> "l", Label ("llvm." <> base <> ".f128"))
           : rest
+
+      others
+          = ("isnanf", "isnan")
+          : ("isnand", "isnan")
+          : ("isinff", "isinf")
+          : ("isinfd", "isinf")
+          : []
   in
-  HashMap.fromList $ foldr floating []
+  HashMap.fromList $ foldr floating others
     [ "sqrt"
     , "powi"
     , "sin"

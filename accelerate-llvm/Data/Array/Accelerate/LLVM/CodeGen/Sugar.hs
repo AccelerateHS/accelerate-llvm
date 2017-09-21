@@ -18,6 +18,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
   IROpenExp, IROpenFun1(..), IROpenFun2(..),
   IROpenAcc(..), IRDelayed(..), IRManifest(..),
 
+  IRBoundary(..),
+
   IRArray(..),
 
 ) where
@@ -52,6 +54,17 @@ data IROpenFun1 arch env aenv t where
 data IROpenFun2 arch env aenv t where
   IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
+
+
+-- Stencil
+-- -------
+
+data IRBoundary arch aenv t where
+  IRClamp     :: IRBoundary arch aenv t
+  IRMirror    :: IRBoundary arch aenv t
+  IRWrap      :: IRBoundary arch aenv t
+  IRConstant  :: Elt e => IR e -> IRBoundary arch aenv (Array sh e)
+  IRFunction  :: (Shape sh, Elt e) => IRFun1 arch aenv (sh -> e) -> IRBoundary arch aenv (Array sh e)
 
 
 -- Arrays

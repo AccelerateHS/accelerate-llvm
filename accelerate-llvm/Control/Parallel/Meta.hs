@@ -22,13 +22,14 @@ module Control.Parallel.Meta (
 
 import Control.Monad
 import Control.Parallel.Meta.Worker
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Concurrent.Deque.Class
 import Data.Monoid
-import Data.Sequence                                            ( Seq )
-import Data.Range.Range                                         as R
-import qualified Data.Vector                                    as V
+import Data.Sequence                                                ( Seq )
+import Data.Range.Range                                             as R
+import qualified Data.Vector                                        as V
 
-import GHC.Base                                                 ( quotInt, remInt )
+import GHC.Base                                                     ( quotInt, remInt )
 
 
 -- | The 'Startup' component of a 'Resource' is a callback that implements
@@ -95,10 +96,10 @@ type Action = Int -> Int -> Int -> IO ()
 --
 data Executable = Executable {
     runExecutable
-        :: String       -- Function name
-        -> Int          -- Profitable parallelism threshold (PPT)
-        -> Range        -- The range to execute over
-        -> Action       -- The main function to execute
+        :: ShortByteString    -- Function name
+        -> Int                -- Profitable parallelism threshold (PPT)
+        -> Range              -- The range to execute over
+        -> Action             -- The main function to execute
         -> IO ()
   }
 
@@ -213,9 +214,7 @@ runParIO resource gang (IE inf sup) action =
             -- make sure all the work queues are exhausted before exiting.
             _             -> do
               done <- exhausted workers
-              if done
-                 then return ()
-                 else loop
+              unless done loop
 
     when (end > start) $ pushL (workpool me) (IE start end)
     loop

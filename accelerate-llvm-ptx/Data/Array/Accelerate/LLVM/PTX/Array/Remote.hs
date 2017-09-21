@@ -57,8 +57,9 @@ instance Remote.RemoteMemory (LLVM PTX) where
     | otherwise = liftIO $ do
         ep <- try (CUDA.mallocArray n)
         case ep of
-          Right p                     -> return (Just p)
-          Left (ExitCode OutOfMemory) -> return Nothing
+          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (fromIntegral n))
+                                            return (Just p)
+          Left (ExitCode OutOfMemory) -> do return Nothing
           Left e                      -> do message ("malloc failed with error: " ++ show e)
                                             throwIO e
 
@@ -67,7 +68,8 @@ instance Remote.RemoteMemory (LLVM PTX) where
         dst   = CUDA.HostPtr (ptrsOfArrayData ad)
     in
     blocking            $ \stream ->
-    withLifetime stream $ \st     ->
+    withLifetime stream $ \st     -> do
+      Debug.didCopyBytesFromRemote (fromIntegral bytes)
       transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
   pokeRemote n dst ad =
@@ -75,7 +77,8 @@ instance Remote.RemoteMemory (LLVM PTX) where
         src   = CUDA.HostPtr (ptrsOfArrayData ad)
     in
     blocking            $ \stream ->
-    withLifetime stream $ \st     ->
+    withLifetime stream $ \st     -> do
+      Debug.didCopyBytesToRemote (fromIntegral bytes)
       transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr _      = CUDA.castDevPtr

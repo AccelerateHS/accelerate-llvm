@@ -1,7 +1,8 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE EmptyDataDecls  #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE EmptyDataDecls    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -39,12 +40,15 @@ import Control.Parallel.Meta                                        ( Executable
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
+import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
-import Control.Monad.Except
+import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
+import Data.String
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                           as Map
@@ -63,6 +67,7 @@ import qualified Data.Set                                           as Set
 data PTX = PTX {
     ptxContext                  :: {-# UNPACK #-} !Context
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
+  , ptxKernelTable              :: {-# UNPACK #-} !KernelTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
   , fillP                       :: {-# UNPACK #-} !Executable
   }
@@ -99,15 +104,15 @@ ptxDataLayout :: DataLayout
 ptxDataLayout = DataLayout
   { endianness          = LittleEndian
   , mangling            = Nothing
-  , aggregateLayout     = AlignmentInfo 0 (Just 64)
+  , aggregateLayout     = AlignmentInfo 0 64
   , stackAlignment      = Nothing
   , pointerLayouts      = Map.fromList
-      [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize (Just wordSize))) ]
+      [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize wordSize)) ]
   , typeLayouts         = Map.fromList $
-      [ ((IntegerAlign, 1), AlignmentInfo 8 (Just 8)) ] ++
-      [ ((IntegerAlign, i), AlignmentInfo i (Just i)) | i <- [8,16,32,64]] ++
-      [ ((VectorAlign,  v), AlignmentInfo v (Just v)) | v <- [16,32,64,128]] ++
-      [ ((FloatAlign,   f), AlignmentInfo f (Just f)) | f <- [32,64] ]
+      [ ((IntegerAlign, 1), AlignmentInfo 8 8) ] ++
+      [ ((IntegerAlign, i), AlignmentInfo i i) | i <- [8,16,32,64]] ++
+      [ ((VectorAlign,  v), AlignmentInfo v v) | v <- [16,32,64,128]] ++
+      [ ((FloatAlign,   f), AlignmentInfo f f) | f <- [32,64] ]
   , nativeSizes         = Just $ Set.fromList [ 16,32,64 ]
   }
   where
@@ -116,7 +121,7 @@ ptxDataLayout = DataLayout
 
 -- | String that describes the target host.
 --
-ptxTargetTriple :: String
+ptxTargetTriple :: ShortByteString
 ptxTargetTriple =
   case bitSize (undefined::Int) of
     32  -> "nvptx-nvidia-cuda"
@@ -132,8 +137,8 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = ptxISAVersion m n
-      sm               = printf "sm_%d%d" m n
+      isa              = CPUFeature (ptxISAVersion m n)
+      sm               = fromString (printf "sm_%d%d" m n)
   in
   withTargetOptions $ \options -> do
     withTargetMachine
@@ -152,15 +157,15 @@ withPTXTargetMachine dev go =
 --
 --   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
 --
-ptxISAVersion :: Int -> Int -> CPUFeature
-ptxISAVersion 2 _ = CPUFeature "ptx40"
-ptxISAVersion 3 7 = CPUFeature "ptx41"
-ptxISAVersion 3 _ = CPUFeature "ptx40"
-ptxISAVersion 5 0 = CPUFeature "ptx40"
-ptxISAVersion 5 2 = CPUFeature "ptx41"
-ptxISAVersion 5 3 = CPUFeature "ptx42"
-ptxISAVersion 6 _ = CPUFeature "ptx50"
-ptxISAVersion _ _ = CPUFeature "ptx40"
+ptxISAVersion :: Int -> Int -> ByteString
+ptxISAVersion 2 _ = "ptx40"
+ptxISAVersion 3 7 = "ptx41"
+ptxISAVersion 3 _ = "ptx40"
+ptxISAVersion 5 0 = "ptx40"
+ptxISAVersion 5 2 = "ptx41"
+ptxISAVersion 5 3 = "ptx42"
+ptxISAVersion 6 _ = "ptx50"
+ptxISAVersion _ _ = "ptx40"
 
 
 -- | The NVPTX target for this host.
@@ -172,5 +177,5 @@ ptxISAVersion _ _ = CPUFeature "ptx40"
 ptxTarget :: LLVM.Target
 ptxTarget = unsafePerformIO $ do
   initializeAllTargets
-  either error fst `fmap` runExceptT (lookupTarget Nothing ptxTargetTriple)
+  fst `fmap` lookupTarget Nothing ptxTargetTriple
 

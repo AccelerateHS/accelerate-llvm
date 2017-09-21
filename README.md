@@ -2,6 +2,9 @@ An LLVM backend for the Accelerate Array Language
 =================================================
 
 [![Build Status](https://travis-ci.org/AccelerateHS/accelerate-llvm.svg)](https://travis-ci.org/AccelerateHS/accelerate-llvm)
+[![Hackage](https://img.shields.io/hackage/v/accelerate-llvm.svg)](https://hackage.haskell.org/package/accelerate-llvm)
+[![Docker Automated build](https://img.shields.io/docker/automated/tmcdonell/accelerate-llvm.svg)](https://hub.docker.com/r/tmcdonell/accelerate-llvm/)
+[![Docker status](https://images.microbadger.com/badges/image/tmcdonell/accelerate-llvm.svg)](https://microbadger.com/images/tmcdonell/accelerate-llvm)
 
 This package compiles Accelerate code to LLVM IR, and executes that code on
 multicore CPUs as well as NVIDIA GPUs. This avoids the need to go through `nvcc`
@@ -15,6 +18,7 @@ features as well as report (or fix!) bugs on the [issue tracker][Issues].
 
 
  * [Dependencies](#dependencies)
+ * [Docker](#docker)
  * [Installing LLVM](#installing-llvm)
    * [Homebrew](#homebrew)
    * [Debian/Ubuntu](#debianubuntu)
@@ -32,6 +36,20 @@ library dependencies that you will need to install as well:
  * [`LLVM`](http://llvm.org)
  * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
  * [`CUDA`](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
+
+
+Docker
+------
+
+A [docker](https://www.docker.com) container is provided with this package
+preinstalled (via stack) at `/opt/accelerate-llvm`. Note that if you wish to use
+the `accelerate-llvm-ptx` GPU backend, you will need to install the [NVIDIA
+docker](https://github.com/NVIDIA/nvidia-docker) plugin; see that page for more
+information.
+
+```sh
+$ docker run -it tmcdonell/accelerate-llvm
+```
 
 
 Installing LLVM
