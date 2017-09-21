@@ -76,6 +76,6 @@ writeArrayData as v ix = write
 writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
 writeArrayPrim v arr i x = do
   p <- instr' $ GetElementPtr arr [i]
-  _ <- instr' $ Store v p x
+  _ <- do_    $ Store v p x
   return ()
 

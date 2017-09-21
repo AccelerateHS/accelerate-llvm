@@ -8,37 +8,16 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
-- location:
-    git:    https://github.com/tmcdonell/accelerate.git
-    commit: aee5f0232e2cfdcf030e2a7ca0570e9ced017d63
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: c39da756025d7a6fd9fb3fd368736ee05ced5df2
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/nvvm.git
-    commit: 632323e2a7c3c75bb07a3edb35de47273dc4cd07
-  extra-dep: true
-
-# - location:
-#     git:    https://github.com/llvm-hs/llvm-hs.git
-#     commit: 1fa109468efdf23bdd2c223dae516ff9af9fa6d7
-#   extra-dep: true
-#   subdirs:
-#     - 'llvm-hs'
-#     - 'llvm-hs-pure'
-
 extra-deps:
 - 'abstract-deque-0.3'
+- 'accelerate-1.1.0.0'
 - 'atomic-primops-0.8.1'
 - 'attoparsec-0.13.1.0'
 - 'base-orphans-0.6'
 - 'c2hs-0.28.2'
 - 'cereal-0.5.4.0'
 - 'chaselev-deque-0.5.0.5'
+- 'cuda-0.8.0.0'
 - 'data-default-class-0.1.2.0'
 - 'dlist-0.8.0.2'
 - 'exceptions-0.8.3'
@@ -55,6 +34,7 @@ extra-deps:
 - 'math-functions-0.2.1.0'
 - 'mtl-2.2.1'
 - 'mwc-random-0.13.6.0'
+- 'nvvm-0.8.0.0'
 - 'parsec-3.1.11'
 - 'primitive-0.6.2.0'
 - 'random-1.1'

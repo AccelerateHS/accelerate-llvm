@@ -13,7 +13,7 @@
 module LLVM.AST.Type.Metadata
   where
 
-import LLVM.AST.Type.Operand
+import qualified LLVM.AST.Constant                        as LLVM
 import qualified LLVM.AST.Operand                         as LLVM
 
 import Data.ByteString.Short                              ( ShortByteString )
@@ -24,11 +24,11 @@ import Data.ByteString.Short                              ( ShortByteString )
 -- <http://llvm.org/docs/LangRef.html#metadata>
 --
 data MetadataNode
-  = MetadataNode [Maybe Metadata]
-  | MetadataNodeReference LLVM.MetadataNodeID
+  = MetadataNode ![Maybe Metadata]
+  | MetadataNodeReference {-# UNPACK #-} !LLVM.MetadataNodeID
 
-data Metadata where
-  MetadataStringOperand :: {-# UNPACK #-} !ShortByteString -> Metadata
-  MetadataOperand       :: Operand a -> Metadata
-  MetadataNodeOperand   :: MetadataNode -> Metadata
+data Metadata
+  = MetadataStringOperand {-# UNPACK #-} !ShortByteString
+  | MetadataConstantOperand !LLVM.Constant
+  | MetadataNodeOperand !MetadataNode
 

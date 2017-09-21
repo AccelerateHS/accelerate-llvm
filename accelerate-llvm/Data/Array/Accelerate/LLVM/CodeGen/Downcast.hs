@@ -47,6 +47,7 @@ import LLVM.AST.Type.Terminator
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
 
 import qualified LLVM.AST.Attribute                                 as L
+import qualified LLVM.AST.AddrSpace                                 as L
 import qualified LLVM.AST.CallingConvention                         as L
 import qualified LLVM.AST.Constant                                  as LC
 import qualified LLVM.AST.Float                                     as L
@@ -308,9 +309,9 @@ instance Downcast Metadata L.Operand where
   downcast = L.MetadataOperand . downcast
 
 instance Downcast Metadata L.Metadata where
-  downcast (MetadataStringOperand s) = L.MDString s
-  downcast (MetadataNodeOperand n)   = L.MDNode (downcast n)
-  downcast (MetadataOperand o)       = L.MDValue (downcast o)
+  downcast (MetadataStringOperand s)   = L.MDString s
+  downcast (MetadataConstantOperand o) = L.MDValue (L.ConstantOperand o)
+  downcast (MetadataNodeOperand n)     = L.MDNode (downcast n)
 
 instance Downcast MetadataNode L.MetadataNode where
   downcast (MetadataNode n)          = L.MetadataNode (downcast n)
@@ -354,7 +355,7 @@ instance Downcast (GlobalFunction args t) L.CallableOperand where
                              in  (downcast t : t', r, n)
 
           (args, result, name)  = trav f
-          ty                    = L.FunctionType result args False
+          ty                    = L.PointerType (L.FunctionType result args False) (L.AddrSpace 0)
       in
       Right (L.ConstantOperand (LC.GlobalReference ty name))
 
