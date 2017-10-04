@@ -35,10 +35,13 @@ import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
+import Control.Concurrent.Unique
 import Control.Monad
+import Data.Hashable
 import Foreign.Ptr
 import GHC.Ptr                                                      ( Ptr(..) )
 import Language.Haskell.TH                                          ( Q, TExp )
+import Numeric
 import System.IO.Unsafe
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
@@ -70,7 +73,8 @@ embed target (ObjectR uid nms !_) = do
 
     makeFFI :: ShortByteString -> FilePath -> Q (TExp (FunPtr ()))
     makeFFI (S8.unpack -> fn) objFile = do
-      fn' <- TH.newName ("__accelerate_llvm_native_" ++ fn)
+      i   <- TH.runIO newUnique
+      fn' <- TH.newName ("__accelerate_llvm_native_" ++ showHex (hash i) [])
       dec <- TH.forImpD TH.CCall TH.Unsafe ('&':fn) fn' [t| FunPtr () |]
       ann <- TH.pragAnnD (TH.ValueAnnotation fn') [| (Object objFile) |]
       TH.addTopDecls [dec, ann]
