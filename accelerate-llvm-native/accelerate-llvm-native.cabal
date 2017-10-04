@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-native
-version:                1.1.0.0
+version:                1.1.0.1
 cabal-version:          >= 1.10
 tested-with:            GHC >= 7.10
 build-type:             Simple
@@ -233,7 +233,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.1.0.0
+  tag:                  1.1.0.1-native
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell
