@@ -162,12 +162,14 @@ Library
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , ghc
+        , hashable                      >= 1.0
         , libffi                        >= 0.1
         , llvm-hs                       >= 4.1 && < 5.1
         , llvm-hs-pure                  >= 4.1 && < 5.1
         , mtl                           >= 2.2.1
         , template-haskell
         , time                          >= 1.4
+        , unique
 
   default-language:
     Haskell2010
