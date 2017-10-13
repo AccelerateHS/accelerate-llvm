@@ -172,8 +172,8 @@ Library
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 5.1
-        , llvm-hs-pure                  >= 4.1 && < 5.1
+        , llvm-hs                       >= 4.1 && < 5.2
+        , llvm-hs-pure                  >= 4.1 && < 5.2
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
