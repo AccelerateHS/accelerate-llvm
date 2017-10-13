@@ -195,8 +195,8 @@ Library
         , exceptions                    >= 0.6
         , fclabels                      >= 2.0
         , filepath                      >= 1.0
-        , llvm-hs                       >= 4.1 && < 5.1
-        , llvm-hs-pure                  >= 4.1 && < 5.1
+        , llvm-hs                       >= 4.1 && < 5.2
+        , llvm-hs-pure                  >= 4.1 && < 5.2
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , template-haskell
