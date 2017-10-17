@@ -6,7 +6,7 @@
 #if __GLASGOW_HASKELL__ < 800
 
 /* LLVM-4.1 */
-#if 1
+#if 0
 /* package llvm-hs-4.1.0.0 */
 #define VERSION_llvm_hs "4.1.0.0"
 #define MIN_VERSION_llvm_hs(major1,major2,minor) (\
