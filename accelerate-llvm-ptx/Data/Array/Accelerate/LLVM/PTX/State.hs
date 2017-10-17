@@ -59,11 +59,10 @@ createTargetForDevice
     -> [CUDA.ContextFlag]
     -> IO PTX
 createTargetForDevice dev prp flags = do
-  ctx    <- CT.new dev prp flags
-  mt     <- MT.new ctx
-  lc     <- LC.new
-  st     <- ST.new ctx
-  return $! PTX ctx mt lc st simpleIO
+  raw <- CUDA.create dev flags
+  ptx <- createTarget dev prp raw
+  _   <- CUDA.pop
+  return ptx
 
 
 -- | Create a PTX execute target for the given device context
@@ -71,13 +70,24 @@ createTargetForDevice dev prp flags = do
 createTargetFromContext
     :: CUDA.Context
     -> IO PTX
-createTargetFromContext ctx' = do
-  dev    <- Context.device
-  prp    <- CUDA.props dev
-  ctx    <- CT.raw dev prp ctx'
-  mt     <- MT.new ctx
-  lc     <- LC.new
-  st     <- ST.new ctx
+createTargetFromContext raw = do
+  dev <- Context.device
+  prp <- CUDA.props dev
+  createTarget dev prp raw
+
+
+-- | Create a PTX execution target
+--
+createTarget
+    :: CUDA.Device
+    -> CUDA.DeviceProperties
+    -> CUDA.Context
+    -> IO PTX
+createTarget dev prp raw = do
+  ctx <- CT.raw dev prp raw
+  mt  <- MT.new ctx
+  lc  <- LC.new
+  st  <- ST.new ctx
   return $! PTX ctx mt lc st simpleIO
 
 
@@ -106,6 +116,8 @@ defaultTarget :: PTX
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
-  (dev,prp)     <- selectBestDevice
-  createTargetForDevice dev prp [CUDA.SchedAuto]
+  (dev,prp,ctx) <- selectBestDevice
+  ptx           <- createTarget dev prp ctx
+  _             <- CUDA.pop
+  return ptx
 
