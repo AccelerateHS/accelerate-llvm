@@ -25,13 +25,9 @@ addons:
       - hvr-ghc
       - ubuntu-toolchain-r-test
       - llvm-toolchain-trusty
-      # - llvm-toolchain-precise-3.5
-      # - llvm-toolchain-precise-3.6
-      # - llvm-toolchain-precise-3.7
-      # - llvm-toolchain-precise-3.8
-      # - llvm-toolchain-precise-3.9
-      # - llvm-toolchain-precise-4.0  # not white-listed yet
       - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main'
+        key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+      - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-5.0 main'
         key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
 
     packages: &apt_packages
@@ -39,7 +35,6 @@ addons:
       - libgmp-dev
       - happy-1.19.5
       - alex-3.1.7
-      - llvm-4.0-dev
 
 matrix:
   include:
@@ -51,6 +46,7 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.22
+            - llvm-4.0-dev
 
     - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.0"
@@ -60,8 +56,9 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-1.24
+            - llvm-4.0-dev
 
-    - env: GHC=8.2.1 CABAL=2.0 LLVM=4.0.0 CUDA=8.0.61-1
+    - env: GHC=8.2.1 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.2"
       addons:
         apt:
@@ -69,6 +66,7 @@ matrix:
           packages:
             - *apt_packages
             - cabal-install-2.0
+            - llvm-5.0-dev
 
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
