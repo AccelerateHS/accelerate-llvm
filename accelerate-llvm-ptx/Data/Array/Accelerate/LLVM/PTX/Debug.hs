@@ -1,5 +1,3 @@
-{-# LANGUAGE CPP           #-}
-{-# LANGUAGE TypeOperators #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Debug
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -24,7 +22,6 @@ import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event
 
 import Control.Concurrent
-import Data.Label
 import Data.Time.Clock
 import System.CPUTime
 import Text.Printf
@@ -36,14 +33,14 @@ import GHC.Float
 -- to format the output string given elapsed GPU and CPU time respectively
 --
 timed
-    :: (Flags :-> Bool)
+    :: Flag
     -> (Double -> Double -> Double -> String)
     -> Maybe Stream
     -> IO ()
     -> IO ()
 {-# INLINE timed #-}
 timed f msg =
-  monitorProcTime (queryFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
+  monitorProcTime (getFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
 
 monitorProcTime
     :: IO Bool
@@ -52,9 +49,8 @@ monitorProcTime
     -> IO ()
     -> IO ()
 {-# INLINE monitorProcTime #-}
-#if ACCELERATE_DEBUG
 monitorProcTime enabled display stream action = do
-  yes <- enabled
+  yes <- if debuggingIsEnabled then enabled else return False
   if yes
     then do
       gpuBegin  <- Event.create []
@@ -87,9 +83,7 @@ monitorProcTime enabled display stream action = do
 
     else
       action
-#else
-monitorProcTime _ _ _ action = action
-#endif
+
 
 {-# INLINE elapsed #-}
 elapsed :: Double -> Double -> Double -> String

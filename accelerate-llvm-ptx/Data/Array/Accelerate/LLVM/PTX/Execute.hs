@@ -584,7 +584,7 @@ launch Kernel{..} stream n args =
     -- Debugging/monitoring support
     query = if Debug.monitoringIsEnabled
               then return True
-              else Debug.queryFlag Debug.dump_exec
+              else Debug.getFlag Debug.dump_exec
 
     fst3 (x,_,_)      = x
     msg wall cpu gpu  = do

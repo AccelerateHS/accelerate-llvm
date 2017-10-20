@@ -1,9 +1,5 @@
 :set -DUNIX
-:set -DACCELERATE_DEBUG
-:set -DACCELERATE_BOUNDS_CHECKS
-:set -DACCELERATE_INTERNAL_CHECKS
 :set -iaccelerate-llvm
 :set -iaccelerate-llvm-native
 :set -iaccelerate-llvm-ptx
-:set -iaccelerate-llvm-multidev
 :set -optP-include -optPutils/cabal_macros.h

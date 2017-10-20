@@ -31,9 +31,7 @@ import qualified LLVM.PassManager                                   as LLVM
 import qualified LLVM.Target                                        as LLVM
 import qualified LLVM.Internal.Module                               as LLVM.Internal
 import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
-#ifdef ACCELERATE_INTERNAL_CHECKS
 import qualified LLVM.Analysis                                      as LLVM
-#endif
 
 -- accelerate
 import Data.Array.Accelerate.Error                                  ( internalError )
@@ -121,8 +119,8 @@ compile acc aenv = do
   --
   cubin <- liftIO . unsafeInterleaveIO $ do
     exists <- doesFileExist cacheFile
-    recomp <- Debug.queryFlag Debug.force_recomp
-    if exists && not (fromMaybe False recomp)
+    recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
+    if exists && not recomp
       then do
         Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %016x" uid)
         B.readFile cacheFile
@@ -156,8 +154,8 @@ compilePTX dev ctx ast = do
 --
 compileCUBIN :: CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
 compileCUBIN dev sass ptx = do
-  _verbose  <- Debug.queryFlag Debug.verbose
-  _debug    <- Debug.queryFlag Debug.debug_cc
+  _verbose  <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.verbose else return False
+  _debug    <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug   else return False
   --
   let verboseFlag       = if _verbose then [ "-v" ]              else []
       debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
@@ -236,7 +234,7 @@ ignoreSIGPIPE =
 --
 compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
 compileModuleNVVM dev name libdevice mdl = do
-  _debug <- Debug.queryFlag Debug.debug_cc
+  _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
   let arch    = CUDA.computeCapability dev
       verbose = if _debug then [ NVVM.GenerateDebugInfo ] else []
@@ -280,14 +278,14 @@ compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
 compileModuleNVPTX dev mdl =
   withPTXTargetMachine dev $ \nvptx -> do
 
+    when Debug.internalChecksAreEnabled $ LLVM.verify mdl
+
     -- Run the standard optimisation pass
     --
     let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
     LLVM.withPassManager pss $ \pm -> do
-#ifdef ACCELERATE_INTERNAL_CHECKS
-      LLVM.verify mdl
-#endif
-      b1      <- LLVM.runPassManager pm mdl
+
+      b1 <- LLVM.runPassManager pm mdl
 
       -- debug printout
       Debug.when Debug.dump_cc $ do
