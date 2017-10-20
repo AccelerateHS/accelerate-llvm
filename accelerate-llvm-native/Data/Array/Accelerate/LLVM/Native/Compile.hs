@@ -87,8 +87,8 @@ compile acc aenv = do
   --
   obj <- liftIO . unsafeInterleaveIO $ do
     exists <- doesFileExist cacheFile
-    recomp <- Debug.queryFlag Debug.force_recomp
-    if exists && not (fromMaybe False recomp)
+    recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
+    if exists && not recomp
       then do
         Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %016x" uid)
         B.readFile cacheFile

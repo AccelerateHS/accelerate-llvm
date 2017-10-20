@@ -72,7 +72,7 @@ cacheOfUID
     => UID
     -> LLVM arch FilePath
 cacheOfUID uid = do
-  dbg       <- liftIO $ queryFlag debug_cc
+  dbg       <- liftIO $ if debuggingIsEnabled then getFlag debug else return False
   appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
   template  <- targetCacheTemplate
   let

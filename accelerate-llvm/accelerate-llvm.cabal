@@ -83,25 +83,6 @@ extra-source-files:
 -- Configuration flags
 -- -------------------
 
-Flag debug
-  Default:              False
-  Description:
-    Enable debug tracing message flags. Note that 'debug' must be enabled in the
-    base 'accelerate' package as well. See the 'accelerate' package for usage
-    and available options.
-
-Flag bounds-checks
-  Default:              True
-  Description:          Enable bounds checking
-
-Flag unsafe-checks
-  Default:              False
-  Description:          Enable bounds checking in unsafe operations
-
-Flag internal-checks
-  Default:              False
-  Description:          Enable internal consistency checks
-
 Flag chase-lev
   Default:              True
   Description:          Use a Chase-Lev deque for work stealing
@@ -185,7 +166,7 @@ Library
   build-depends:
           base                          >= 4.7 && < 4.11
         , abstract-deque                >= 0.3
-        , accelerate                    == 1.1.*
+        , accelerate                    == 1.2.*
         , bytestring                    >= 0.10.4
         , containers                    >= 0.5
         , data-default-class            >= 0.0.1
@@ -193,7 +174,6 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
-        , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , llvm-hs                       >= 4.1 && < 5.2
         , llvm-hs-pure                  >= 4.1 && < 5.2
@@ -214,19 +194,6 @@ Library
   if flag(chase-lev)
     cpp-options:                -DCHASELEV_DEQUE
     build-depends:              chaselev-deque >= 0.5
-
-  if flag(debug)
-    cpp-options:                -DACCELERATE_DEBUG
-
-  if flag(bounds-checks)
-    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
-
-  if flag(unsafe-checks)
-    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
-
-  if flag(internal-checks)
-    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
-
 
 source-repository head
   type:                 git

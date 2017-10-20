@@ -75,29 +75,6 @@ extra-source-files:
     README.md
 
 
--- Configuration flags
--- -------------------
-
-Flag debug
-  Default:              False
-  Description:
-    Enable debug tracing message flags. Note that 'debug' must be enabled in the
-    base 'accelerate' package as well. See the 'accelerate' package for usage
-    and available options.
-
-Flag bounds-checks
-  Default:              True
-  Description:          Enable bounds checking
-
-Flag unsafe-checks
-  Default:              False
-  Description:          Enable bounds checking in unsafe operations
-
-Flag internal-checks
-  Default:              False
-  Description:          Enable internal consistency checks
-
-
 -- Build configuration
 -- -------------------
 
@@ -151,15 +128,14 @@ Library
 
   build-depends:
           base                          >= 4.7 && < 4.11
-        , accelerate                    == 1.1.*
-        , accelerate-llvm               == 1.1.*
+        , accelerate                    == 1.2.*
+        , accelerate-llvm               == 1.2.*
         , bytestring                    >= 0.10.4
         , Cabal                         >= 2.0
         , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.6
         , directory                     >= 1.0
         , dlist                         >= 0.6
-        , fclabels                      >= 2.0
         , filepath                      >= 1.0
         , ghc
         , hashable                      >= 1.0
@@ -178,18 +154,6 @@ Library
 
   if impl(ghc >= 8.0)
     ghc-options:                -Wmissed-specialisations
-
-  if flag(debug)
-    cpp-options:                -DACCELERATE_DEBUG
-
-  if flag(bounds-checks)
-    cpp-options:                -DACCELERATE_BOUNDS_CHECKS
-
-  if flag(unsafe-checks)
-    cpp-options:                -DACCELERATE_UNSAFE_CHECKS
-
-  if flag(internal-checks)
-    cpp-options:                -DACCELERATE_INTERNAL_CHECKS
 
   if os(darwin)
     other-modules:

@@ -8,6 +8,11 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
+- location:
+    git:    https://github.com/tmcdonell/accelerate.git
+    commit: 6ccb16c04785825a726d26ff71a984a4e18c1249
+  extra-dep: true
+
 extra-deps: []
 
 # Override default flag values for local packages and extra-deps
