@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Cache
@@ -29,6 +30,7 @@ import Paths_accelerate_llvm_native
 instance Persistent Native where
   targetCacheTemplate =
     return $ "accelerate-llvm-native-" ++ showVersion version
+         </> "llvm-hs-" ++ VERSION_llvm_hs
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
          </> "meep.o"

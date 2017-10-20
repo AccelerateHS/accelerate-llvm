@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Cache
@@ -34,6 +35,7 @@ instance Persistent PTX where
     let Compute m n = computeCapability dev
     --
     return $ "accelerate-llvm-ptx-" ++ showVersion version
+         </> "llvm-hs-" ++ VERSION_llvm_hs
          </> S8.unpack ptxTargetTriple
          </> B8.unpack (ptxISAVersion m n)
          </> "morp.sass"
