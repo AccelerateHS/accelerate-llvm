@@ -32,6 +32,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 import Foreign.CUDA.Path
 import Foreign.CUDA.Analysis
+import qualified Foreign.CUDA.Driver                                as CUDA
 
 import Data.ByteString                                              ( ByteString )
 import Data.FileEmbed
@@ -105,9 +106,12 @@ nvvmReflectBitcode mdl = do
 --
 libdeviceBitcode :: Compute -> Q (TExp (String, ByteString))
 libdeviceBitcode (Compute m n) = do
-  let arch    = printf "libdevice.compute_%d%d" m n
-      err     = $internalError "libdevice" (printf "not found: %s.YY.bc" arch)
-      best f  = arch `isPrefixOf` f && takeExtension f == ".bc"
+  let basename
+        | CUDA.libraryVersion < 9000 = printf "libdevice.compute_%d%d" m n
+        | otherwise                  = "libdevice"
+      --
+      err     = $internalError "libdevice" (printf "not found: %s.YY.bc" basename)
+      best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
       base    = cudaInstallPath </> "nvvm" </> "libdevice"
   --
   files <- runIO $ getDirectoryContents base

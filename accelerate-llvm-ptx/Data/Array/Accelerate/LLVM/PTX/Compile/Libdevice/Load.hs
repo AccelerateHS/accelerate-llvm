@@ -33,6 +33,7 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( ) -- GHC#1
 
 -- cuda
 import Foreign.CUDA.Analysis
+import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
@@ -64,6 +65,10 @@ class Libdevice a where
   libdevice :: Compute -> a
 
 instance Libdevice AST.Module where
+  libdevice _
+    | CUDA.libraryVersion >= 9000
+    = libdevice_50_mdl
+  --
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_mdl   -- 2.0, 2.1
@@ -74,6 +79,10 @@ instance Libdevice AST.Module where
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
 instance Libdevice (String, ByteString) where
+  libdevice _
+    | CUDA.libraryVersion >= 9000
+    = libdevice_50_bc
+  --
   libdevice (Compute n m) =
     case (n,m) of
       (2,_)             -> libdevice_20_bc    -- 2.0, 2.1
@@ -87,6 +96,13 @@ instance Libdevice (String, ByteString) where
 -- Load the libdevice bitcode files as an LLVM AST module. The top-level
 -- unsafePerformIO ensures that the data is only read from disk once per program
 -- execution.
+--
+-- TLM: As of CUDA-9.0, libdevice is no longer split into multiple files
+-- depending on the target compute architecture. The function 'libdeviceBitcode'
+-- knows this and ignores the architecture parameter, and in the above instances
+-- we only refer to the 5.0 module below. Although the TH splices will be run
+-- 4 times (and read in the same file 4 times) hopefully GHC is smart enough to
+-- remove the unused bindings as dead code...
 --
 {-# NOINLINE libdevice_20_mdl #-}
 {-# NOINLINE libdevice_30_mdl #-}
