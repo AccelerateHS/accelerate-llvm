@@ -28,6 +28,7 @@ extra-deps:
 - 'llvm-hs-pure-4.1.0.0'
 - 'nvvm-0.8.0.0'
 - 'process-1.4.3.0'
+- 'tasty-hedgehog-0.1.0.1'
 - 'transformers-0.5.5.0'
 - 'transformers-compat-0.5.1.4'
 - 'unique-0'
