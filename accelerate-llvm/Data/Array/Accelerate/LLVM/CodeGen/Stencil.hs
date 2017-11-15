@@ -213,8 +213,8 @@ bounded bndy arr@IRArray{..} ix =
                                   IRClamp  -> A.sub numType (IR sz) (int 1)
                                   IRWrap   -> A.sub numType (IR iz) (IR sz)
                                   IRMirror -> do
-                                    a <- A.add numType (IR sz) (int 2)
-                                    b <- A.sub numType (IR iz) a
+                                    a <- A.sub numType (IR iz) (IR sz)
+                                    b <- A.add numType a (int 2)
                                     c <- A.sub numType (IR sz) b
                                     return c
                                   _        -> $internalError "bound" "unexpected boundary condition"
