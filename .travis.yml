@@ -99,23 +99,21 @@ install:
   - c2hs --version
   - llc --version; true
   - opt --version; true
-  - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install --only-dependencies || exit 1
-      else
-        travis_retry stack build --only-dependencies --fast --no-terminal --no-haddock-deps || exit 1
-      fi
+  - travis_retry stack build --only-dependencies --test --fast --no-terminal
+  # - |
+  #     if [ ${GHC} == head -o ! -e stack.yaml ]; then
+  #       travis_retry cabal install --only-dependencies || exit 1
+  #     else
+  #       travis_retry stack build --only-dependencies --test --fast --no-terminal --no-haddock-deps || exit 1
+  #     fi
 
 script:
-  - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install || exit 1
-        travis_retry cabal haddock || exit 1
-      else
-        travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps || exit 1
-      fi
+  - travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps --test --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps --test --no-run-tests
+
+  # Run test suite(s)
+  - stack test accelerate-llvm-native
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
