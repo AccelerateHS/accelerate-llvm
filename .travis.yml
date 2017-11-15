@@ -99,7 +99,7 @@ install:
   - c2hs --version
   - llc --version; true
   - opt --version; true
-  - travis_retry stack build --only-dependencies --test --fast --no-terminal
+  - travis_retry stack build --fast --jobs=2 --test --no-terminal --only-dependencies --no-copy-bins
   # - |
   #     if [ ${GHC} == head -o ! -e stack.yaml ]; then
   #       travis_retry cabal install --only-dependencies || exit 1
@@ -108,12 +108,12 @@ install:
   #     fi
 
 script:
-  - travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps --test --no-run-tests
-  - travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps --test --no-run-tests
+  - travis_retry stack build accelerate-llvm        --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-native --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
 
   # Run test suite(s)
-  - stack test accelerate-llvm-native
+  - stack test accelerate-llvm-native --test=arguments='--hedgehog-tests 50'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
