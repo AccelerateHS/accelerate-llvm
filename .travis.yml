@@ -99,18 +99,18 @@ install:
   - c2hs --version
   - llc --version; true
   - opt --version; true
+
+  # build accelerate with optimisations (required for nofib#286)
+  - travis_retry stack build accelerate --fast --jobs=2 --test --no-terminal --only-dependencies --no-copy-bins
+  - travis_retry stack build accelerate        --jobs=2        --no-terminal
+
+  # build other dependencies
   - travis_retry stack build --fast --jobs=2 --test --no-terminal --only-dependencies --no-copy-bins
-  # - |
-  #     if [ ${GHC} == head -o ! -e stack.yaml ]; then
-  #       travis_retry cabal install --only-dependencies || exit 1
-  #     else
-  #       travis_retry stack build --only-dependencies --test --fast --no-terminal --no-haddock-deps || exit 1
-  #     fi
 
 script:
-  - travis_retry stack build accelerate-llvm        --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-native --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-ptx    --fast --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm        --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-native --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
 
   # Run test suite(s)
   - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
