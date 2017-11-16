@@ -10,18 +10,14 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: 1798d2fe3ea363d2bc1ef8df54e7c04bf9d0dcaa
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: 4272d6e2fdcfefdd6798d81c7af8aff6dc050b1a
+    commit: 71a30b76b34d33d31ffcc20ac0b2be21f6ced3be
   extra-dep: true
 
 extra-deps:
 - 'Cabal-2.0.0.2'
 - 'cabal-doctest-1.0.2'
 - 'chaselev-deque-0.5.0.5'
+- 'cuda-0.9.0.0'
 - 'hedgehog-0.5'
 - 'libffi-0.1'
 - 'llvm-hs-4.2.0'
