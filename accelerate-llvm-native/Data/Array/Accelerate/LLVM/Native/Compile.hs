@@ -105,6 +105,7 @@ compile acc aenv = do
             Debug.traceIO Debug.dump_asm . B8.unpack =<< moduleTargetAssembly machine mdl
 
           obj <- moduleObject machine mdl
+          Debug.traceIO Debug.dump_cc (printf "cc: new object code %016x" uid)
           B.writeFile cacheFile obj
           return obj
 

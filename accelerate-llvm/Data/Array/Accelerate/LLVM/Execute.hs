@@ -36,7 +36,6 @@ import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
 import qualified Data.Array.Accelerate.Array.Sugar              as S
-import qualified Data.Array.Accelerate.Array.Representation     as R
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -382,12 +381,6 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
       ok  <- indexRemote r 0
       if ok then awhile p f =<< travAF f (AsyncR e a)
             else return a
-
-    -- Change the shape of an array without altering its contents
-    reshape :: Shape sh => sh -> Array sh' e -> Array sh e
-    reshape sh (Array sh' adata)
-      = $boundsCheck "reshape" "shape mismatch" (size sh == R.size sh')
-      $ Array (fromElt sh) adata
 
     -- Pull apart the unzipped struct-of-array representation
     unzip :: forall t sh e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> Array sh t -> Array sh e

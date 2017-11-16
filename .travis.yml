@@ -99,23 +99,26 @@ install:
   - c2hs --version
   - llc --version; true
   - opt --version; true
-  - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install --only-dependencies || exit 1
-      else
-        travis_retry stack build --only-dependencies --fast --no-terminal --no-haddock-deps || exit 1
-      fi
+
+  # build accelerate with optimisations (required for nofib#286)
+  - travis_retry stack build accelerate --fast --jobs=2 --test --no-terminal --only-dependencies --no-copy-bins
+  - travis_retry stack build accelerate        --jobs=2        --no-terminal
+
+  # build other dependencies
+  - travis_retry stack build --fast --jobs=2 --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
+  - travis_retry stack build accelerate-llvm        --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-native --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --jobs=2 --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+
+  # Run test suite(s)
+  # Skip 7.10 due to 'RTLD_NEXT not available' (dlsym) error
   - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install || exit 1
-        travis_retry cabal haddock || exit 1
-      else
-        travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps || exit 1
-      fi
+      case ${GHC%.*} in
+        7.*) ;;
+        *  ) stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50' ;;
+      esac
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh

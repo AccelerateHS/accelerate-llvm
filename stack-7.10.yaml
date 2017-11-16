@@ -10,24 +10,21 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: b73188966e43c4279cf7522d9309f2d90f86eb12
-  extra-dep: true
-
-- location:
-    git:    https://github.com/tmcdonell/cuda.git
-    commit: 4272d6e2fdcfefdd6798d81c7af8aff6dc050b1a
+    commit: 71a30b76b34d33d31ffcc20ac0b2be21f6ced3be
   extra-dep: true
 
 extra-deps:
 - 'Cabal-2.0.0.2'
 - 'cabal-doctest-1.0.2'
 - 'chaselev-deque-0.5.0.5'
+- 'cuda-0.9.0.0'
 - 'hedgehog-0.5'
 - 'libffi-0.1'
 - 'llvm-hs-4.2.0'
 - 'llvm-hs-pure-4.1.0.0'
 - 'nvvm-0.8.0.0'
 - 'process-1.4.3.0'
+- 'tasty-hedgehog-0.1.0.1'
 - 'transformers-0.5.5.0'
 - 'transformers-compat-0.5.1.4'
 - 'unique-0'
