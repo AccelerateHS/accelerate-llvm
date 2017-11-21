@@ -30,7 +30,7 @@ import Text.Printf
 
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
-import Data.IORef.Storable
+import Data.Primitive.MutVar
 import Data.Range.Range                                         as R
 import qualified Data.Vector                                    as V
 import qualified Data.Array.Accelerate.Debug                    as Debug
@@ -63,7 +63,7 @@ mkWorkSearch shortest longest = WorkSearch backoff
     backoff :: Int -> Workers -> IO (Maybe Range)
     backoff tid workers = do
       let Worker{..} = V.unsafeIndex workers tid
-      failed   <- readIORef consecutiveFailures
+      failed   <- readMutVar consecutiveFailures
       let sleep = min longest (2 ^ failed)
       if sleep >= shortest
          then do

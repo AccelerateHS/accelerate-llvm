@@ -21,7 +21,7 @@ module Control.Parallel.Meta.Worker (
 ) where
 
 -- accelerate
-import Data.IORef.Storable
+import Data.Range.Range
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- standard library
@@ -29,7 +29,8 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
-import Data.Range.Range
+import Control.Monad.Primitive
+import Data.Primitive.MutVar
 import Data.Vector                                              ( Vector )
 import System.IO.Unsafe
 import System.Random.MWC                                        ( GenIO, createSystemRandom )
@@ -76,7 +77,7 @@ data Worker = Worker {
 
   -- Work scheduling
   , workpool            :: {-# UNPACK #-} !(WSDeque Range)
-  , consecutiveFailures :: {-# UNPACK #-} !(IORef Int)
+  , consecutiveFailures :: {-# UNPACK #-} !(MutVar RealWorld Int)
   , rngState            :: {-# UNPACK #-} !GenIO            -- TLM: don't unpack: too large?
 
   -- TODO: debug/work statistics
@@ -133,7 +134,7 @@ forkGangOn caps = do
                            <*> newEmptyMVar           -- work request
                            <*> newEmptyMVar           -- work complete
                            <*> newQ                   -- work stealing deque
-                           <*> newIORef 0             -- consecutive steal failure count
+                           <*> newMutVar 0            -- consecutive steal failure count
                            <*> createSystemRandom     -- random generator for stealing
           --
           message (printf "fork %d on capability %d" (workerId worker) cap)
@@ -176,7 +177,7 @@ workerIO workers action = mask $ \restore -> do
 
   -- Send requests to the threads
   V.forM_ workers $ \Worker{..} -> do
-    writeIORef consecutiveFailures 0
+    writeMutVar consecutiveFailures 0
     putMVar requestVar $ ReqDo (reflectExceptionsTo main . restore . action)
 
   -- Wait for all requests to complete

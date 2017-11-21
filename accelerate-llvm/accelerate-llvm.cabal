@@ -153,7 +153,6 @@ Library
     Control.Parallel.Meta.Resource.Single
     Control.Parallel.Meta.Resource.SMP
     Control.Parallel.Meta.Trans.LBS
-    Data.IORef.Storable
     Data.Range.Range
 
     -- Extras
@@ -179,6 +178,7 @@ Library
         , llvm-hs-pure                  >= 4.1 && < 5.2
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
+        , primitive                     >= 0.6
         , template-haskell
         , unordered-containers          >= 0.2
         , vector                        >= 0.10
