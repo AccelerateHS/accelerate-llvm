@@ -28,6 +28,7 @@
 module Data.Array.Accelerate.LLVM.Native (
 
   Acc, Arrays,
+  Afunction, AfunctionR,
 
   -- * Synchronous execution
   run, runWith,

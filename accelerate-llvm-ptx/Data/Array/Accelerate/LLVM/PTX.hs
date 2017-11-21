@@ -23,6 +23,7 @@
 module Data.Array.Accelerate.LLVM.PTX (
 
   Acc, Arrays,
+  Afunction, AfunctionR,
 
   -- * Synchronous execution
   run, runWith,
