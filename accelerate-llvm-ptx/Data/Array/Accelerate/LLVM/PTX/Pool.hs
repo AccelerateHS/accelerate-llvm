@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE TemplateHaskell #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Pool
@@ -16,23 +17,26 @@ module Data.Array.Accelerate.LLVM.PTX.Pool (
 
 ) where
 
-import Data.Array.Accelerate.Error
-
 import Data.Maybe
 import Control.Concurrent.MVar
 import Control.Exception
 import Prelude                                                      hiding ( take )
 
+#if __GLASGOW_HASKELL__ >= 800
+import Data.List.NonEmpty                                           ( NonEmpty(..) )
+#endif
+
 
 -- | An item pool
 --
-data Pool a = Pool {-# UNPACK #-} !(MVar [a])
+data Pool a = Pool {-# UNPACK #-} !(MVar (NonEmpty a))
 
 
 -- | Create a new pooled resource containing the given items
 --
 create :: [a] -> IO (Pool a)
-create it = Pool <$> newMVar it
+create []     = Pool <$> newEmptyMVar
+create (x:xs) = Pool <$> newMVar (x :| xs)
 
 
 -- | Execute an operation using an item from the pool. Like 'take', the function
@@ -46,28 +50,33 @@ with pool action =
 --
 take :: Pool a -> IO a
 take (Pool ref) = do
-  ds <- takeMVar ref
-  case ds of
-    []       -> $internalError "take" "assumption violated"
-    [d]      -> return d  -- leave the pool empty
-    (d:rest) -> do
-                   -- XXX: another thread may have returned a context to
-                   -- the pool since we emptied it above.
-                   mask_ $ do
-                     it <- tryTakeMVar ref
-                     case it of
-                       Nothing   -> putMVar ref rest
-                       Just this -> putMVar ref (this ++ rest)
-                   return d
+  x :| xs <- takeMVar ref -- blocking
+  case xs of
+    []     -> return ()   -- leave the pool empty; subsequent 'take's will block
+    (a:as) -> mask_ $ do r <- tryTakeMVar ref
+                         case r of
+                           Nothing        -> putMVar ref (a :| as)
+                           Just (b :| bs) -> putMVar ref (a :| b : bs ++ as)
+  return x
+
 
 -- | Return an item back to the pool for later reuse. This should be
 -- a non-blocking operation.
 --
 put :: Pool a -> a -> IO ()
-put (Pool ref) d =
+put (Pool ref) a =
   mask_ $ do
     it <- tryTakeMVar ref
     case it of
-      Just ds -> putMVar ref (d:ds)
-      Nothing -> putMVar ref [d]
+      Just (b :| bs) -> putMVar ref (a :| b : bs)
+      Nothing        -> putMVar ref (a :| [])
+
+
+#if __GLASGOW_HASKELL__ < 800
+-- | Non-empty (and non-strict) list type.
+--
+infixr 5 :|
+data NonEmpty a = a :| [a]
+  deriving ( Eq, Ord, Show, Read )
+#endif
 
