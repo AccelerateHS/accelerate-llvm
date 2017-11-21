@@ -67,6 +67,7 @@ import Data.Array.Accelerate.LLVM.PTX.Embed                         ( embedOpenA
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment           ( Aval )
 import Data.Array.Accelerate.LLVM.PTX.Link
+import Data.Array.Accelerate.LLVM.PTX.Pool
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.State
@@ -100,12 +101,14 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 -- /NOTE:/ it is recommended to use 'runN' or 'runQ' whenever possible.
 --
 run :: Arrays a => Acc a -> a
-run = runWith defaultTarget
+run a
+  = unsafePerformIO
+  $ with defaultTargets (evaluate . flip runWith a)
 
 -- | As 'run', but execute using the specified target rather than using the
 -- default, automatically selected device.
 --
--- Contexts passed to this function may all target to the same device, or to
+-- Contexts passed to this function may all target the same device, or to
 -- separate devices of differing compute capabilities.
 --
 runWith :: Arrays a => PTX -> Acc a -> a
@@ -123,7 +126,9 @@ runWith target a
 -- different devices, use 'runAsyncWith'.
 --
 runAsync :: Arrays a => Acc a -> IO (Async a)
-runAsync = runAsyncWith defaultTarget
+runAsync a
+  = with defaultTargets
+  $ flip runAsyncWith a
 
 -- | As 'runWith', but execute asynchronously. Be sure not to destroy the context,
 -- or attempt to attach it to a different host thread, before all outstanding
@@ -136,8 +141,7 @@ runAsyncWith target a = asyncBound execute
     execute     = do
       dumpGraph acc
       evalPTX target $ do
-        acc `seq` dumpSimplStats
-        build <- phase "compile" (compileAcc acc)
+        build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
         res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
         return res

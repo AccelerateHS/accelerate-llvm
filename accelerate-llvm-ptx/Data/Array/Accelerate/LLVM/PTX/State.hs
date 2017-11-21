@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -14,32 +15,37 @@
 module Data.Array.Accelerate.LLVM.PTX.State (
 
   evalPTX,
-  createTargetForDevice, createTargetFromContext, defaultTarget
+  createTargetForDevice, createTargetFromContext, defaultTarget, defaultTargets,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Error
 
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.State
-import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table     as MT
-import qualified Data.Array.Accelerate.LLVM.PTX.Context         as CT
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream  as ST
-import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache      as LC
+import Data.Array.Accelerate.LLVM.PTX.Pool                          ( Pool )
+import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table         as MT
+import qualified Data.Array.Accelerate.LLVM.PTX.Context             as CT
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
+import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
+import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
-import Data.Range.Range                                         ( Range(..) )
-import Control.Parallel.Meta                                    ( Executable(..) )
+import Data.Range.Range                                             ( Range(..) )
+import Control.Parallel.Meta                                        ( Executable(..) )
 
 -- standard library
-import Control.Concurrent                                       ( runInBoundThread )
-import Control.Exception                                        ( catch )
-import System.IO.Unsafe                                         ( unsafePerformIO )
+import Control.Concurrent                                           ( runInBoundThread )
+import Control.Exception                                            ( try, catch )
+import Data.Maybe                                                   ( fromMaybe, catMaybes )
+import System.Environment                                           ( lookupEnv )
+import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
+import Text.Printf                                                  ( printf )
+import Text.Read                                                    ( readMaybe )
 import Foreign.CUDA.Driver.Error
-import qualified Foreign.CUDA.Driver                            as CUDA
-import qualified Foreign.CUDA.Driver.Context                    as Context
+import qualified Foreign.CUDA.Driver                                as CUDA
+import qualified Foreign.CUDA.Driver.Context                        as Context
 
 
 -- | Execute a PTX computation
@@ -113,6 +119,8 @@ simpleIO = Executable $ \_name _ppt range action ->
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
+defaultTarget = unsafePerformIO $ do Pool.with defaultTargets return
+{--
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
@@ -120,4 +128,50 @@ defaultTarget = unsafePerformIO $ do
   ptx           <- createTarget dev prp ctx
   _             <- CUDA.pop
   return ptx
+--}
+
+
+-- | Create a shared resource pool of the available CUDA devices.
+--
+-- This globally shared resource pool is auto-initialised on startup. It will
+-- consist of every currently available device, or those specified by the value
+-- of the environment variable @ACCELERATE_LLVM_PTX_DEVICES@ (as a list of
+-- device ordinals).
+--
+{-# NOINLINE defaultTargets #-}
+defaultTargets :: Pool PTX
+defaultTargets = unsafePerformIO $ do
+  Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
+  CUDA.initialise []
+
+  -- Figure out which GPUs we should put into the execution pool
+  --
+  ngpu  <- CUDA.count
+  menv  <- (readMaybe =<<) <$> lookupEnv "ACCELERATE_LLVM_PTX_DEVICES"
+
+  let using   = fromMaybe [0..ngpu-1] menv
+
+      -- Spin up the GPU at the given ordinal. We do this lazily so that it
+      -- happens the first time we try to execute something on the device.
+      --
+      -- On a system with multiple GPUs this prevents creating a context on
+      -- every GPU because we may never actually use it (which might be
+      -- problematic if the devices are in exclusive mode). On the down side,
+      -- any initialisation overhead will occur the first time the context is
+      -- used, rather than entirely upfront.
+      --
+      boot :: Int -> IO (Maybe PTX)
+      boot i =
+        unsafeInterleaveIO $ do
+          dev <- CUDA.device 0
+          prp <- CUDA.props dev
+          r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
+          case r of
+            Right ptx               -> return (Just ptx)
+            Left (e::CUDAException) -> do
+              Debug.traceIO Debug.dump_gc (printf "gc: failed to initialise device %d: %s" i (show e))
+              return Nothing
+
+  gpus <- mapM boot using
+  Pool.create (catMaybes gpus)
 

@@ -100,6 +100,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Array.Table
     Data.Array.Accelerate.LLVM.PTX.Context
     Data.Array.Accelerate.LLVM.PTX.Debug
+    Data.Array.Accelerate.LLVM.PTX.Pool
     Data.Array.Accelerate.LLVM.PTX.State
     Data.Array.Accelerate.LLVM.PTX.Target
 
