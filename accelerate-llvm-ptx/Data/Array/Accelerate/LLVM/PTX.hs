@@ -67,7 +67,6 @@ import Data.Array.Accelerate.LLVM.PTX.Embed                         ( embedOpenA
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment           ( Aval )
 import Data.Array.Accelerate.LLVM.PTX.Link
-import Data.Array.Accelerate.LLVM.PTX.Pool
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.State
@@ -78,11 +77,14 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Async       as E
 import Foreign.CUDA.Driver                                          as CUDA ( CUDAException, mallocHostForeignPtr )
 
 -- standard library
-import Data.Typeable
 import Control.Exception
 import Control.Monad.Trans
+import Data.Typeable
+import GHC.Base                                                     ( Any )
 import System.IO.Unsafe
 import Text.Printf
+import Unsafe.Coerce
+import qualified Data.HashMap.Lazy                                  as Hash
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
@@ -91,6 +93,9 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 -- ----------------------------------------
 
 -- | Compile and run a complete embedded array program.
+--
+-- This will execute using the first available CUDA device. If you wish to run
+-- on a specific device, use 'runWith'.
 --
 -- The result is copied back to the host only once the arrays are demanded (or
 -- the result is forced to normal form). For results consisting of multiple
@@ -103,13 +108,10 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 run :: Arrays a => Acc a -> a
 run a
   = unsafePerformIO
-  $ with defaultTargets (evaluate . flip runWith a)
+  $ wait =<< runAsync a
 
 -- | As 'run', but execute using the specified target rather than using the
 -- default, automatically selected device.
---
--- Contexts passed to this function may all target the same device, or to
--- separate devices of differing compute capabilities.
 --
 runWith :: Arrays a => PTX -> Acc a -> a
 runWith target a
@@ -121,14 +123,20 @@ runWith target a
 -- without waiting for the result. The status of the computation can be queried
 -- using 'wait', 'poll', and 'cancel'.
 --
--- Note that a CUDA context can be active on only one host thread at a time. If
--- you want to execute multiple computations in parallel, on the same or
--- different devices, use 'runAsyncWith'.
+-- This will run on the first available CUDA device. If you wish to run on
+-- a specific device, use 'runAsyncWith'.
 --
 runAsync :: Arrays a => Acc a -> IO (Async a)
-runAsync a
-  = with defaultTargets
-  $ flip runAsyncWith a
+runAsync a = asyncBound execute
+  where
+    !acc      = convertAccWith config a
+    execute   = do
+      dumpGraph acc
+      withPTX $ \_ -> do
+        build <- phase "compile" (compileAcc acc) >>= dumpStats
+        exec  <- phase "link"    (linkAcc build)
+        res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+        return res
 
 -- | As 'runWith', but execute asynchronously. Be sure not to destroy the context,
 -- or attempt to attach it to a different host thread, before all outstanding
@@ -150,7 +158,7 @@ runAsyncWith target a = asyncBound execute
 -- | This is 'runN', specialised to an array program of one argument.
 --
 run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
-run1 = run1With defaultTarget
+run1 = runN
 
 -- | As 'run1', but execute using the specified target rather than using the
 -- default, automatically selected device.
@@ -207,7 +215,57 @@ run1With = runNWith
 -- time, thus eliminating the runtime overhead altogether.
 --
 runN :: Afunction f => f -> AfunctionR f
-runN = runNWith defaultTarget
+runN f = exec
+  where
+    !acc  = convertAfunWith config f
+    !exec = go acc (return Aempty)
+
+    -- Lazily cache the compiled function linked for each execution context.
+    -- This includes specialisation for different compute capabilities and
+    -- device-side memory management.
+    --
+    -- Perhaps this implicit version of 'runN' is not a good idea then, because
+    -- we might need to migrate data between devices between iterations
+    -- depending on which GPU gets scheduled.
+    --
+    afuns = Hash.fromList
+          $ flip map (unsafeGet defaultTargets)
+          $ \target -> unsafePerformIO $
+                evalPTX target $ do
+                  build <- phase "compile" (compileAfun acc)
+                  exe   <- phase "link"    (linkAfun build)
+                  return (ptxContext target, body exe)
+
+    -- We want to dig out the body expression from the compiled function to
+    -- pass it directly to 'executeOpenAcc' together with the collected
+    -- environment variables. However, what should the type of the result be?
+    -- I can't think of a good way to do this so cheat and use 'unsafeCoerce' ):
+    --
+    body :: ExecOpenAfun PTX aenv f -> Any
+    body (Alam l)  = body l
+    body (Abody b) = unsafeCoerce b
+
+    -- We need to recurse on the term structure to determine how many binders to
+    -- peel off (i.e. how many inputs we need) but at the same time we can only
+    -- get an execution context from the pool once we dig down into the body
+    -- because we need to push the 'unsafePerformIO' to this point. This means
+    -- we need to keep 'acc' alive to do the walk, which is a bit unfortunate.
+    --
+    go :: DelayedOpenAfun aenv f -> LLVM PTX (Aval aenv) -> f
+    go (Alam l) k = \arrs ->
+      let k' = do aenv       <- k
+                  AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
+                  return (aenv `Apush` a)
+      in go l k'
+    --
+    go Abody{} k
+      = unsafePerformIO
+      . withPTX $ \target ->
+          phase "execute" $ do
+            aenv <- k
+            r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
+            AD.copyToHostLazy =<< E.get r
+
 
 -- | As 'runN', but execute using the specified target device.
 --
@@ -238,7 +296,7 @@ runNWith target f = exec
 -- | As 'run1', but the computation is executed asynchronously.
 --
 run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> IO (Async b)
-run1Async = run1AsyncWith defaultTarget
+run1Async = runNAsync
 
 -- | As 'run1With', but execute asynchronously.
 --
@@ -290,7 +348,9 @@ instance RunAsync (IO (Async b)) where
 -- collecting results as we go.
 --
 stream :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> [a] -> [b]
-stream = streamWith defaultTarget
+stream f arrs = map go arrs
+  where
+    !go = run1 f
 
 -- | As 'stream', but execute using the specified target.
 --

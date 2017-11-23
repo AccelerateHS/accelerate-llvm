@@ -15,7 +15,11 @@
 module Data.Array.Accelerate.LLVM.PTX.State (
 
   evalPTX,
-  createTargetForDevice, createTargetFromContext, defaultTarget, defaultTargets,
+  withPTX,
+  createTargetForDevice, createTargetFromContext, defaultTarget,
+
+  PTXs(..),
+  defaultTargets,
 
 ) where
 
@@ -40,7 +44,7 @@ import Control.Concurrent                                           ( runInBound
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.Environment                                           ( lookupEnv )
-import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
+import System.IO.Unsafe                                             ( unsafePerformIO )
 import Text.Printf                                                  ( printf )
 import Text.Read                                                    ( readMaybe )
 import Foreign.CUDA.Driver.Error
@@ -56,6 +60,14 @@ evalPTX ptx acc =
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
 
+
+-- | Evaluate a thing given an execution context from the default pool
+--
+withPTX :: (PTX -> LLVM PTX a) -> IO a
+withPTX action =
+  Pool.with (pooled defaultTargets) $ \target -> do
+    r <- evalPTX target (action target)
+    r `seq` return r
 
 -- | Create a new PTX execution target for the given device
 --
@@ -131,6 +143,12 @@ defaultTarget = unsafePerformIO $ do
 --}
 
 
+
+data PTXs = PTXs
+    { pooled    :: {-# UNPACK #-} !(Pool PTX)
+    , unsafeGet :: [PTX]
+    }
+
 -- | Create a shared resource pool of the available CUDA devices.
 --
 -- This globally shared resource pool is auto-initialised on startup. It will
@@ -139,7 +157,7 @@ defaultTarget = unsafePerformIO $ do
 -- device ordinals).
 --
 {-# NOINLINE defaultTargets #-}
-defaultTargets :: Pool PTX
+defaultTargets :: PTXs
 defaultTargets = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
   CUDA.initialise []
@@ -149,29 +167,28 @@ defaultTargets = unsafePerformIO $ do
   ngpu  <- CUDA.count
   menv  <- (readMaybe =<<) <$> lookupEnv "ACCELERATE_LLVM_PTX_DEVICES"
 
-  let using   = fromMaybe [0..ngpu-1] menv
+  let devices = fromMaybe [0..ngpu-1] menv
 
-      -- Spin up the GPU at the given ordinal. We do this lazily so that it
-      -- happens the first time we try to execute something on the device.
-      --
-      -- On a system with multiple GPUs this prevents creating a context on
-      -- every GPU because we may never actually use it (which might be
-      -- problematic if the devices are in exclusive mode). On the down side,
-      -- any initialisation overhead will occur the first time the context is
-      -- used, rather than entirely upfront.
+      -- Spin up the GPU at the given ordinal.
       --
       boot :: Int -> IO (Maybe PTX)
-      boot i =
-        unsafeInterleaveIO $ do
-          dev <- CUDA.device 0
-          prp <- CUDA.props dev
-          r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
-          case r of
-            Right ptx               -> return (Just ptx)
-            Left (e::CUDAException) -> do
-              Debug.traceIO Debug.dump_gc (printf "gc: failed to initialise device %d: %s" i (show e))
-              return Nothing
+      boot i = do
+        dev <- CUDA.device 0
+        prp <- CUDA.props dev
+        r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
+        case r of
+          Right ptx               -> return (Just ptx)
+          Left (e::CUDAException) -> do
+            Debug.traceIO Debug.dump_gc (printf "gc: failed to initialise device %d: %s" i (show e))
+            return Nothing
 
-  gpus <- mapM boot using
-  Pool.create (catMaybes gpus)
+  -- Create the pool from the available devices, which get spun-up lazily as
+  -- required (due to the implementation of the Pool, we will look ahead by one
+  -- each time one device is requested).
+  --
+  available <- catMaybes <$> mapM boot devices
+  if null available
+    then error "No CUDA-capable devices are available"
+    else PTXs <$> Pool.create available
+              <*> return available
 

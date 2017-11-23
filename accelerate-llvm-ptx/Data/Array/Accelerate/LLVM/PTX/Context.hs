@@ -24,9 +24,11 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Device                     as CUDA
+import qualified Foreign.CUDA.Driver.Context                    as CUDA
 
 import Control.Exception
 import Control.Monad
+import Data.Hashable
 import Text.PrettyPrint
 
 
@@ -40,6 +42,10 @@ data Context = Context {
 
 instance Eq Context where
   c1 == c2 = deviceContext c1 == deviceContext c2
+
+instance Hashable Context where
+  hashWithSalt salt =
+    hashWithSalt salt . CUDA.useContext . unsafeGetValue . deviceContext
 
 
 -- | Create a new CUDA execution context
