@@ -1,3 +1,4 @@
+{-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Context
@@ -31,6 +32,9 @@ import Control.Monad
 import Data.Hashable
 import Text.PrettyPrint
 
+import GHC.Base
+import GHC.Ptr
+
 
 -- | An execution context, which is tied to a specific device and CUDA execution
 -- context.
@@ -45,7 +49,11 @@ instance Eq Context where
 
 instance Hashable Context where
   hashWithSalt salt =
-    hashWithSalt salt . CUDA.useContext . unsafeGetValue . deviceContext
+    let
+        ptrToInt :: Ptr a -> Int
+        ptrToInt (Ptr addr#) = I# (addr2Int# addr#)
+    in
+    hashWithSalt salt . ptrToInt . CUDA.useContext . unsafeGetValue . deviceContext
 
 
 -- | Create a new CUDA execution context
