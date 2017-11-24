@@ -173,7 +173,7 @@ targetPool = unsafePerformIO $ do
       --
       boot :: Int -> IO (Maybe PTX)
       boot i = do
-        dev <- CUDA.device 0
+        dev <- CUDA.device i
         prp <- CUDA.props dev
         r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
         case r of
