@@ -131,6 +131,8 @@ simpleIO = Executable $ \_name _ppt range action ->
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
+defaultTarget = error "defaultTarget"
+{--
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
@@ -138,6 +140,8 @@ defaultTarget = unsafePerformIO $ do
   ptx           <- createTarget dev prp ctx
   _             <- CUDA.pop
   return ptx
+--}
+
 
 
 data PTXs = PTXs
