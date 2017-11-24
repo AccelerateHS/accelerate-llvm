@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.PTX.State (
   createTargetForDevice, createTargetFromContext, defaultTarget,
 
   PTXs(..),
-  defaultTargets,
+  targetPool,
 
 ) where
 
@@ -65,7 +65,7 @@ evalPTX ptx acc =
 --
 withPTX :: (PTX -> LLVM PTX a) -> IO a
 withPTX action =
-  Pool.with (pooled defaultTargets) $ \target -> do
+  Pool.with (available targetPool) $ \target -> do
     r <- evalPTX target (action target)
     r `seq` return r
 
@@ -131,8 +131,6 @@ simpleIO = Executable $ \_name _ppt range action ->
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
-defaultTarget = unsafePerformIO $ do Pool.with defaultTargets return
-{--
 defaultTarget = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
   CUDA.initialise []
@@ -140,12 +138,10 @@ defaultTarget = unsafePerformIO $ do
   ptx           <- createTarget dev prp ctx
   _             <- CUDA.pop
   return ptx
---}
-
 
 
 data PTXs = PTXs
-    { pooled    :: {-# UNPACK #-} !(Pool PTX)
+    { available :: {-# UNPACK #-} !(Pool PTX)
     , unsafeGet :: [PTX]
     }
 
@@ -156,9 +152,9 @@ data PTXs = PTXs
 -- of the environment variable @ACCELERATE_LLVM_PTX_DEVICES@ (as a list of
 -- device ordinals).
 --
-{-# NOINLINE defaultTargets #-}
-defaultTargets :: PTXs
-defaultTargets = unsafePerformIO $ do
+{-# NOINLINE targetPool #-}
+targetPool :: PTXs
+targetPool = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
   CUDA.initialise []
 
@@ -167,7 +163,7 @@ defaultTargets = unsafePerformIO $ do
   ngpu  <- CUDA.count
   menv  <- (readMaybe =<<) <$> lookupEnv "ACCELERATE_LLVM_PTX_DEVICES"
 
-  let devices = fromMaybe [0..ngpu-1] menv
+  let ids = fromMaybe [0..ngpu-1] menv
 
       -- Spin up the GPU at the given ordinal.
       --
@@ -186,9 +182,9 @@ defaultTargets = unsafePerformIO $ do
   -- required (due to the implementation of the Pool, we will look ahead by one
   -- each time one device is requested).
   --
-  available <- catMaybes <$> mapM boot devices
-  if null available
+  devices <- catMaybes <$> mapM boot ids
+  if null devices
     then error "No CUDA-capable devices are available"
-    else PTXs <$> Pool.create available
-              <*> return available
+    else PTXs <$> Pool.create devices
+              <*> return devices
 

@@ -47,7 +47,7 @@ module Data.Array.Accelerate.LLVM.PTX (
   PTX, createTargetForDevice, createTargetFromContext,
 
   -- * Controlling host-side allocation
-  registerPinnedAllocator, registerPinnedAllocatorWith,
+  registerPinnedAllocatorWith,
 
 ) where
 
@@ -79,11 +79,12 @@ import Foreign.CUDA.Driver                                          as CUDA ( CU
 -- standard library
 import Control.Exception
 import Control.Monad.Trans
+import Data.HashMap.Lazy                                            ( HashMap )
 import Data.Typeable
-import GHC.Base                                                     ( Any )
 import System.IO.Unsafe
 import Text.Printf
 import Unsafe.Coerce
+import GHC.Base                                                     ( Any )
 import qualified Data.HashMap.Lazy                                  as Hash
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
@@ -229,7 +230,7 @@ runN f = exec
     -- depending on which GPU gets scheduled.
     --
     afuns = Hash.fromList
-          $ flip map (unsafeGet defaultTargets)
+          $ flip map (unsafeGet targetPool)
           $ \target -> unsafePerformIO $
                 evalPTX target $ do
                   build <- phase "compile" (compileAfun acc)
@@ -307,12 +308,52 @@ run1AsyncWith = runNAsyncWith
 -- | As 'runN', but execute asynchronously.
 --
 runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
-runNAsync = runNAsyncWith defaultTarget
+runNAsync f = exec
+  where
+    !acc  = convertAfunWith config f
+    !exec = runAsync' afuns acc (return Aempty)
+
+    afuns = Hash.fromList
+          $ flip map (unsafeGet targetPool)
+          $ \target -> unsafePerformIO $
+                evalPTX target $ do
+                  build <- phase "compile" (compileAfun acc)
+                  exe   <- phase "link"    (linkAfun build)
+                  return (ptxContext target, body exe)
+
+    body :: ExecOpenAfun PTX aenv f -> Any
+    body (Alam l)  = body l
+    body (Abody b) = unsafeCoerce b
+
+class RunAsync f where
+  type RunAsyncR f
+  runAsync' :: HashMap CT.Context Any -> DelayedOpenAfun aenv (RunAsyncR f) -> LLVM PTX (Aval aenv) -> f
+
+instance RunAsync b => RunAsync (a -> b) where
+  type RunAsyncR (a -> b) = a -> RunAsyncR b
+  runAsync' _     Abody{}  _ _    = error "runAsync: function oversaturated"
+  runAsync' afuns (Alam l) k arrs =
+    let k' = do aenv <- k
+                AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
+                return (aenv `Apush` a)
+    in
+    runAsync' afuns l k'
+
+instance RunAsync (IO (Async b)) where
+  type RunAsyncR (IO (Async b)) = b
+  runAsync' _     Alam{}  _ = error "runAsync: function not fully applied"
+  runAsync' afuns Abody{} k =
+    asyncBound . withPTX $ \target ->
+      phase "execute" $ do
+        aenv <- k
+        r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
+        AD.copyToHostLazy =<< E.get r
+
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => PTX -> f -> r
-runNAsyncWith target f = runAsync' target afun (return Aempty)
+runNAsyncWith :: (Afunction f, RunAsyncWith r, AfunctionR f ~ RunAsyncWithR r) => PTX -> f -> r
+runNAsyncWith target f = runAsyncWith' target afun (return Aempty)
   where
     !acc  = convertAfunWith config f
     !afun = unsafePerformIO $ do
@@ -322,23 +363,23 @@ runNAsyncWith target f = runAsync' target afun (return Aempty)
                 exec  <- phase "link"    (linkAfun build)
                 return exec
 
-class RunAsync f where
-  type RunAsyncR f
-  runAsync' :: PTX -> ExecOpenAfun PTX aenv (RunAsyncR f) -> LLVM PTX (Aval aenv) -> f
+class RunAsyncWith f where
+  type RunAsyncWithR f
+  runAsyncWith' :: PTX -> ExecOpenAfun PTX aenv (RunAsyncWithR f) -> LLVM PTX (Aval aenv) -> f
 
-instance RunAsync b => RunAsync (a -> b) where
-  type RunAsyncR (a -> b) = a -> RunAsyncR b
-  runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
-  runAsync' target (Alam l) k arrs =
+instance RunAsyncWith b => RunAsyncWith (a -> b) where
+  type RunAsyncWithR (a -> b) = a -> RunAsyncWithR b
+  runAsyncWith' _      Abody{}  _ _    = error "runAsyncWith: function oversaturated"
+  runAsyncWith' target (Alam l) k arrs =
     let k' = do aenv       <- k
                 AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
                 return (aenv `Apush` a)
-    in runAsync' target l k'
+    in runAsyncWith' target l k'
 
-instance RunAsync (IO (Async b)) where
-  type RunAsyncR  (IO (Async b)) = b
-  runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
-  runAsync' target (Abody b) k = asyncBound . phase "execute" . evalPTX target $ do
+instance RunAsyncWith (IO (Async b)) where
+  type RunAsyncWithR  (IO (Async b)) = b
+  runAsyncWith' _      Alam{}    _ = error "runAsyncWith: function not fully applied"
+  runAsyncWith' target (Abody b) k = asyncBound . phase "execute" . evalPTX target $ do
     aenv <- k
     r    <- E.async (executeOpenAcc b aenv)
     AD.copyToHostLazy =<< E.get r
@@ -497,12 +538,16 @@ config =  phases
 -- Note that since the amount of available pageable memory will be reduced,
 -- overall system performance can suffer.
 --
-registerPinnedAllocator :: IO ()
-registerPinnedAllocator = registerPinnedAllocatorWith defaultTarget
+-- registerPinnedAllocator :: IO ()
+-- registerPinnedAllocator = registerPinnedAllocatorWith defaultTarget
 
 
--- | As with 'registerPinnedAllocator', but configure the given execution
--- context.
+-- | All future array allocations will use pinned memory associated with the
+-- given execution context. These arrays will be directly accessible from the
+-- device, enabling high-speed asynchronous DMA.
+--
+-- Note that since the amount of available pageable memory will be reduced,
+-- overall system performance can suffer.
 --
 registerPinnedAllocatorWith :: PTX -> IO ()
 registerPinnedAllocatorWith target =
