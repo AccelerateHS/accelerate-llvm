@@ -169,8 +169,8 @@ compileCUBIN dev sass ptx = do
             , std_err = CreatePipe
             }
 
-  -- Invoke the 'ptxas' executable (which must be on the PATH) to compile the
-  -- PTX into SASS. The output is written directly to the final cache location.
+  -- Invoke the 'ptxas' executable to compile the generated PTX into SASS (GPU
+  -- object code). The output is written directly to the final cache location.
   --
   withCreateProcess cp $ \(Just inh) Nothing (Just errh) ph -> do
 
