@@ -176,10 +176,12 @@ Library
         -fwarn-tabs
 
   if impl(ghc >= 8.0)
-    ghc-options:                -Wmissed-specialisations
+    ghc-options:
+        -Wmissed-specialisations
 
   if flag(nvvm)
-    cpp-options:                -DACCELERATE_USE_NVVM
+    cpp-options:
+        -DACCELERATE_USE_NVVM
 
 
 test-suite nofib-llvm-ptx
