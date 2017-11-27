@@ -77,10 +77,11 @@ import System.IO.Unsafe
 import System.Process
 import System.Process.Extra
 import Text.Printf                                                  ( printf )
+import qualified Data.Map                                           as Map
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Internal                           as B
-import qualified Data.Map                                           as Map
+import qualified Data.ByteString.Short.Char8                        as S8
 import Prelude                                                      as P
 
 
@@ -201,7 +202,7 @@ compileCUBIN dev sass ptx = do
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
+compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
 compileModuleNVVM dev name libdevice mdl = do
   _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
@@ -232,7 +233,7 @@ compileModuleNVVM dev name libdevice mdl = do
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
   bc  <- LLVM.moduleBitcode mdl
-  ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
+  ptx <- NVVM.compileModules (("",header) : (S8.unpack name,bc) : libdevice) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)
