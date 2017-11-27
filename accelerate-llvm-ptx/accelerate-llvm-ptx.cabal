@@ -137,6 +137,8 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Execute.Event
     Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 
+    System.Process.Extra
+
     Paths_accelerate_llvm_ptx
 
   build-depends:
