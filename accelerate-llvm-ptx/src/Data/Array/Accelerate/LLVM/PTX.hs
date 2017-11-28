@@ -230,7 +230,10 @@ runN f = exec
     -- we might need to migrate data between devices between iterations
     -- depending on which GPU gets scheduled.
     --
-    afuns = Hash.fromList
+    -- Note this is lazy in the value only; this still initialises the context
+    -- on every device.
+    --
+    !afun = Hash.fromList
           $ flip map (unsafeGet defaultTargetPool)
           $ \target -> unsafePerformIO $
                 evalPTX target $ do
@@ -254,7 +257,7 @@ runN f = exec
     -- we need to keep 'acc' alive to do the walk, which is a bit unfortunate.
     --
     go :: DelayedOpenAfun aenv f -> LLVM PTX (Aval aenv) -> f
-    go (Alam l) k = \arrs ->
+    go (Alam l) k = \ !arrs ->
       let k' = do aenv       <- k
                   AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
                   return (aenv `Apush` a)
@@ -265,7 +268,7 @@ runN f = exec
       . withPool defaultTargetPool $ \target ->
           phase "execute" . evalPTX target $ do
             aenv <- k
-            r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
+            r    <- E.async $ executeOpenAcc (unsafeCoerce (afun Hash.! ptxContext target)) aenv
             AD.copyToHostLazy =<< E.get r
 
 
@@ -284,7 +287,7 @@ runNWith target f = exec
     !exec = go afun (return Aempty)
 
     go :: ExecOpenAfun PTX aenv t -> LLVM PTX (Aval aenv) -> t
-    go (Alam l) k = \arrs ->
+    go (Alam l) k = \ !arrs ->
       let k' = do aenv       <- k
                   AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
                   return (aenv `Apush` a)
@@ -312,9 +315,9 @@ runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
 runNAsync f = exec
   where
     !acc  = convertAfunWith config f
-    !exec = runAsync' afuns acc (return Aempty)
+    !exec = runAsync' afun acc (return Aempty)
 
-    afuns = Hash.fromList
+    !afun = Hash.fromList
           $ flip map (unsafeGet defaultTargetPool)
           $ \target -> unsafePerformIO $
                 evalPTX target $ do
@@ -332,23 +335,23 @@ class RunAsync f where
 
 instance RunAsync b => RunAsync (a -> b) where
   type RunAsyncR (a -> b) = a -> RunAsyncR b
-  runAsync' _     Abody{}  _ _    = error "runAsync: function oversaturated"
-  runAsync' afuns (Alam l) k arrs =
+  runAsync' _    Abody{}  _ _     = error "runAsync: function oversaturated"
+  runAsync' afun (Alam l) k !arrs =
     let k' = do aenv <- k
                 AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
                 return (aenv `Apush` a)
     in
-    runAsync' afuns l k'
+    runAsync' afun l k'
 
 instance RunAsync (IO (Async b)) where
   type RunAsyncR (IO (Async b)) = b
-  runAsync' _     Alam{}  _ = error "runAsync: function not fully applied"
-  runAsync' afuns Abody{} k =
+  runAsync' _    Alam{}  _ = error "runAsync: function not fully applied"
+  runAsync' afun Abody{} k =
     asyncBound $
       withPool defaultTargetPool $ \target ->
         phase "execute" . evalPTX target $ do
           aenv <- k
-          r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
+          r    <- E.async $ executeOpenAcc (unsafeCoerce (afun Hash.! ptxContext target)) aenv
           AD.copyToHostLazy =<< E.get r
 
 
@@ -371,8 +374,8 @@ class RunAsyncWith f where
 
 instance RunAsyncWith b => RunAsyncWith (a -> b) where
   type RunAsyncWithR (a -> b) = a -> RunAsyncWithR b
-  runAsyncWith' _      Abody{}  _ _    = error "runAsyncWith: function oversaturated"
-  runAsyncWith' target (Alam l) k arrs =
+  runAsyncWith' _      Abody{}  _ _     = error "runAsyncWith: function oversaturated"
+  runAsyncWith' target (Alam l) k !arrs =
     let k' = do aenv       <- k
                 AsyncR _ a <- E.async (AD.useRemoteAsync arrs)
                 return (aenv `Apush` a)
@@ -530,7 +533,7 @@ runQ'_main using k f = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
         s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (AD.useRemoteAsync $(TH.varE x)) |]
-        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+        go lam (TH.bangP (TH.varP x) : xs) (TH.varE a : as) (return s : stmts)
 
       go (Abody body) xs as stmts =
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
