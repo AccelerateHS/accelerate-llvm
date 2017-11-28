@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
+## [next]
+### Changed
+ * `run` variants which do not take an explicit execution context now execute on
+   the first available device in an exclusive fashion. Multi-GPU systems can
+   specify the default set of GPUs to use with environment variable
+   `ACCELERATE_LLVM_PTX_DEVICES` as a list of device ordinals.
+
 ## [1.1.0.0] - 2017-09-21
 ### Added
  * support for GHC-8.2
@@ -27,7 +34,8 @@ Policy (PVP)](https://pvp.haskell.org)
   * initial release
 
 
-[1.1.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...HEAD
+[next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.2.0.0...HEAD
+[1.1.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.0.0.1
 [1.0.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
 
