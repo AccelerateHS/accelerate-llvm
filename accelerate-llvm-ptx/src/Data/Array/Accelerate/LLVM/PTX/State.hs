@@ -149,7 +149,7 @@ defaultTarget = head (unsafeGet defaultTargetPool)
 --
 {-# NOINLINE defaultTargetPool #-}
 defaultTargetPool :: Pool PTX
-defaultTargetPool = unsafePerformIO $ do
+defaultTargetPool = unsafePerformIO $! do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
   CUDA.initialise []
 
