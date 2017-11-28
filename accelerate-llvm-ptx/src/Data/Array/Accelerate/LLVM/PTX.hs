@@ -133,11 +133,12 @@ runAsync a = asyncBound execute
     !acc      = convertAccWith config a
     execute   = do
       dumpGraph acc
-      withPTX $ \_ -> do
-        build <- phase "compile" (compileAcc acc) >>= dumpStats
-        exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
-        return res
+      withPool defaultTargetPool $ \target ->
+        evalPTX target $ do
+          build <- phase "compile" (compileAcc acc) >>= dumpStats
+          exec  <- phase "link"    (linkAcc build)
+          res   <- phase "execute" (executeAcc exec >>= AD.copyToHostLazy)
+          return res
 
 -- | As 'runWith', but execute asynchronously. Be sure not to destroy the context,
 -- or attempt to attach it to a different host thread, before all outstanding
@@ -230,7 +231,7 @@ runN f = exec
     -- depending on which GPU gets scheduled.
     --
     afuns = Hash.fromList
-          $ flip map (unsafeGet targetPool)
+          $ flip map (unsafeGet defaultTargetPool)
           $ \target -> unsafePerformIO $
                 evalPTX target $ do
                   build <- phase "compile" (compileAfun acc)
@@ -261,8 +262,8 @@ runN f = exec
     --
     go Abody{} k
       = unsafePerformIO
-      . withPTX $ \target ->
-          phase "execute" $ do
+      . withPool defaultTargetPool $ \target ->
+          phase "execute" . evalPTX target $ do
             aenv <- k
             r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
             AD.copyToHostLazy =<< E.get r
@@ -314,7 +315,7 @@ runNAsync f = exec
     !exec = runAsync' afuns acc (return Aempty)
 
     afuns = Hash.fromList
-          $ flip map (unsafeGet targetPool)
+          $ flip map (unsafeGet defaultTargetPool)
           $ \target -> unsafePerformIO $
                 evalPTX target $ do
                   build <- phase "compile" (compileAfun acc)
@@ -343,11 +344,12 @@ instance RunAsync (IO (Async b)) where
   type RunAsyncR (IO (Async b)) = b
   runAsync' _     Alam{}  _ = error "runAsync: function not fully applied"
   runAsync' afuns Abody{} k =
-    asyncBound . withPTX $ \target ->
-      phase "execute" $ do
-        aenv <- k
-        r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
-        AD.copyToHostLazy =<< E.get r
+    asyncBound $
+      withPool defaultTargetPool $ \target ->
+        phase "execute" . evalPTX target $ do
+          aenv <- k
+          r    <- E.async $ executeOpenAcc (unsafeCoerce (afuns Hash.! ptxContext target)) aenv
+          AD.copyToHostLazy =<< E.get r
 
 
 -- | As 'runNWith', but execute asynchronously.
@@ -446,7 +448,7 @@ streamWith target f arrs = map go arrs
 -- @since 1.1.0.0
 --
 runQ :: Afunction f => f -> TH.ExpQ
-runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
+runQ = runQ' [| unsafePerformIO |]
 
 -- | Ahead-of-time analogue of 'runNWith'. See 'runQ' for more information.
 --
@@ -464,7 +466,7 @@ runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
 runQWith :: Afunction f => f -> TH.ExpQ
 runQWith f = do
   target <- TH.newName "target"
-  TH.lamE [TH.varP target] (runQ' [| unsafePerformIO |] (TH.varE target) f)
+  TH.lamE [TH.varP target] (runQWith' [| unsafePerformIO |] (TH.varE target) f)
 
 
 -- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
@@ -476,7 +478,7 @@ runQWith f = do
 -- @since 1.1.0.0
 --
 runQAsync :: Afunction f => f -> TH.ExpQ
-runQAsync = runQ' [| async |] [| defaultTarget |]
+runQAsync = runQ' [| async |]
 
 -- | Ahead-of-time analogue of 'runNAsyncWith'. See 'runQWith' for more information.
 --
@@ -489,11 +491,34 @@ runQAsync = runQ' [| async |] [| defaultTarget |]
 runQAsyncWith :: Afunction f => f -> TH.ExpQ
 runQAsyncWith f = do
   target <- TH.newName "target"
-  TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
+  TH.lamE [TH.varP target] (runQWith' [| async |] (TH.varE target) f)
 
 
-runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
-runQ' using target f = do
+runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
+runQ' using = runQ'_main using (\go -> [| withPool defaultTargetPool $ \target -> evalPTX target $go |])
+
+runQWith' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQWith' using target = runQ'_main using (TH.appE [| evalPTX $target |])
+
+-- Generate a template haskell expression for the given function to be embedded
+-- into the current program. The supplied continuation specifies how to execute
+-- the given body expression (e.g. using 'evalPTX')
+--
+-- NOTE:
+--
+--  * Can we do this without requiring an active GPU context? This should be
+--    possible with only the DeviceProperties, but we would have to be a little
+--    careful if we pass invalid values for the other state components. If we
+--    attempt this, at minimum we need to parse the generated .sass to extract
+--    resource usage information, rather than loading the module and probing
+--    directly.
+--
+--  * What happens if we execute this code on a different architecture revision?
+--    With runN this will automatically be recompiled for each new architecture
+--    (at runtime).
+--
+runQ'_main :: Afunction f => TH.ExpQ -> (TH.ExpQ -> TH.ExpQ) -> f -> TH.ExpQ
+runQ'_main using k f = do
   afun  <- let acc = convertAfunWith config f
            in  TH.runIO $ do
                  dumpGraph acc
@@ -511,8 +536,7 @@ runQ' using target f = do
         let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
             eval = TH.noBindS [| AD.copyToHostLazy =<< E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
         in
-        TH.lamE (reverse xs) [| $using . phase "execute" . evalPTX $target $
-                                  $(TH.doE (reverse (eval : stmts))) |]
+        TH.lamE (reverse xs) (TH.appE using [| phase "execute" $(k (TH.doE (reverse (eval : stmts)))) |])
   --
   go afun [] [] []
 

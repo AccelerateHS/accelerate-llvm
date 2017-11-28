@@ -15,20 +15,20 @@
 module Data.Array.Accelerate.LLVM.PTX.State (
 
   evalPTX,
-  withPTX,
-  createTargetForDevice, createTargetFromContext, defaultTarget,
+  createTargetForDevice, createTargetFromContext,
 
-  PTXs(..),
-  targetPool,
+  Pool(..),
+  withPool,
+  defaultTarget,
+  defaultTargetPool,
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Error
 
-import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.PTX.Pool                          ( Pool )
+import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Table         as MT
 import qualified Data.Array.Accelerate.LLVM.PTX.Context             as CT
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
@@ -60,14 +60,6 @@ evalPTX ptx acc =
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
 
-
--- | Evaluate a thing given an execution context from the default pool
---
-withPTX :: (PTX -> LLVM PTX a) -> IO a
-withPTX action =
-  Pool.with (available targetPool) $ \target -> do
-    r <- evalPTX target (action target)
-    r `seq` return r
 
 -- | Create a new PTX execution target for the given device
 --
@@ -117,6 +109,23 @@ simpleIO = Executable $ \_name _ppt range action ->
     IE u v      -> action u v 0
 
 
+-- Shared execution contexts
+-- -------------------------
+
+-- In order to implement runN, we need to keep track of all available contexts,
+-- as well as the managed resource pool.
+--
+data Pool a = Pool
+    { managed   :: {-# UNPACK #-} !(Pool.Pool a)
+    , unsafeGet :: [a]
+    }
+
+-- Evaluate a thing given an execution context from the default pool
+--
+withPool :: Pool a -> (a -> IO b) -> IO b
+withPool p = Pool.with (managed p)
+
+
 -- Top-level mutable state
 -- -----------------------
 --
@@ -125,29 +134,11 @@ simpleIO = Executable $ \_name _ppt range action ->
 -- ensure they are executed only once, and reused for subsequent invocations.
 --
 
--- | Select and initialise the default CUDA device, and create a new target
--- context. The device is selected based on compute capability and estimated
--- maximum throughput.
+-- | Select a device from the default pool.
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
-defaultTarget = error "defaultTarget"
-{--
-defaultTarget = unsafePerformIO $ do
-  Debug.traceIO Debug.dump_gc "gc: initialise default PTX target"
-  CUDA.initialise []
-  (dev,prp,ctx) <- selectBestDevice
-  ptx           <- createTarget dev prp ctx
-  _             <- CUDA.pop
-  return ptx
---}
-
-
-
-data PTXs = PTXs
-    { available :: {-# UNPACK #-} !(Pool PTX)
-    , unsafeGet :: [PTX]
-    }
+defaultTarget = head (unsafeGet defaultTargetPool)
 
 -- | Create a shared resource pool of the available CUDA devices.
 --
@@ -156,9 +147,9 @@ data PTXs = PTXs
 -- of the environment variable @ACCELERATE_LLVM_PTX_DEVICES@ (as a list of
 -- device ordinals).
 --
-{-# NOINLINE targetPool #-}
-targetPool :: PTXs
-targetPool = unsafePerformIO $ do
+{-# NOINLINE defaultTargetPool #-}
+defaultTargetPool :: Pool PTX
+defaultTargetPool = unsafePerformIO $ do
   Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
   CUDA.initialise []
 
@@ -189,6 +180,6 @@ targetPool = unsafePerformIO $ do
   devices <- catMaybes <$> mapM boot ids
   if null devices
     then error "No CUDA-capable devices are available"
-    else PTXs <$> Pool.create devices
+    else Pool <$> Pool.create devices
               <*> return devices
 
