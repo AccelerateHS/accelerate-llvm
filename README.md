@@ -157,6 +157,7 @@ some combinations:
 | **CUDA-7.0** |     ⭕    |     ❌    |          |          |          |          |          |
 | **CUDA-7.5** |          |     ⭕    |     ⭕    |     ❌    |          |          |          |
 | **CUDA-8.0** |          |          |     ⭕    |     ⭕    |     ❌    |     ❌    |          |
+| **CUDA-9.0** |          |          |          |          |          |     ❌    |     ❌    |
 
 Where ⭕ = Works, and ❌ = Does not work.
 

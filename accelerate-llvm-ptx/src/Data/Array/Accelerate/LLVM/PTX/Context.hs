@@ -1,3 +1,4 @@
+{-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Context
@@ -24,10 +25,15 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Device                     as CUDA
+import qualified Foreign.CUDA.Driver.Context                    as CUDA
 
 import Control.Exception
 import Control.Monad
+import Data.Hashable
 import Text.PrettyPrint
+
+import GHC.Base
+import GHC.Ptr
 
 
 -- | An execution context, which is tied to a specific device and CUDA execution
@@ -40,6 +46,14 @@ data Context = Context {
 
 instance Eq Context where
   c1 == c2 = deviceContext c1 == deviceContext c2
+
+instance Hashable Context where
+  hashWithSalt salt =
+    let
+        ptrToInt :: Ptr a -> Int
+        ptrToInt (Ptr addr#) = I# (addr2Int# addr#)
+    in
+    hashWithSalt salt . ptrToInt . CUDA.useContext . unsafeGetValue . deviceContext
 
 
 -- | Create a new CUDA execution context
@@ -77,7 +91,7 @@ raw dev prp ctx = do
        (CUDA.setCache CUDA.PreferL1)
 
   -- Display information about the selected device
-  Debug.traceIO Debug.verbose (deviceInfo dev prp)
+  Debug.traceIO Debug.dump_phases (deviceInfo dev prp)
 
   return $! Context prp lft
 
@@ -109,18 +123,17 @@ pop = do
 
 -- Nicely format a summary of the selected CUDA device, example:
 --
--- Device 0: GeForce 9600M GT (compute capability 1.1)
---           4 multiprocessors @ 1.25GHz (32 cores), 512MB global memory
+-- Device 0: GeForce 9600M GT (compute capability 1.1), 4 multiprocessors @ 1.25GHz (32 cores), 512MB global memory
 --
 deviceInfo :: CUDA.Device -> CUDA.DeviceProperties -> String
-deviceInfo dev prp = render $ reset <>
-  devID <> colon <+> vcat [ name <+> parens compute
-                          , processors <+> at <+> text clock <+> parens cores <> comma <+> memory
-                          ]
+deviceInfo dev prp = render $
+  devID <> colon <+> name <+> parens compute
+        <> comma <+> processors <+> at <+> text clock <+> parens cores
+        <> comma <+> memory
   where
     name        = text (CUDA.deviceName prp)
     compute     = text "compute capatability" <+> text (show $ CUDA.computeCapability prp)
-    devID       = text "Device" <+> int (fromIntegral $ CUDA.useDevice dev)     -- hax
+    devID       = text "device" <+> int (fromIntegral $ CUDA.useDevice dev)
     processors  = int (CUDA.multiProcessorCount prp)                              <+> text "multiprocessors"
     cores       = int (CUDA.multiProcessorCount prp * coresPerMultiProcessor prp) <+> text "cores"
     memory      = text mem <+> text "global memory"
@@ -128,7 +141,7 @@ deviceInfo dev prp = render $ reset <>
     clock       = Debug.showFFloatSIBase (Just 2) 1000 (fromIntegral $ CUDA.clockRate prp * 1000 :: Double) "Hz"
     mem         = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral $ CUDA.totalGlobalMem prp   :: Double) "B"
     at          = char '@'
-    reset       = zeroWidthText "\r"
+    -- reset       = zeroWidthText "\r"
 
 
 {-# INLINE trace #-}

@@ -56,7 +56,13 @@ enumerateDevices :: IO [(Device, DeviceProperties)]
 enumerateDevices = do
   devs  <- mapM CUDA.device . enumFromTo 0 . subtract 1 =<< CUDA.count
   prps  <- mapM CUDA.props devs
-  return . sortBy (flip cmp `on` snd) $ zip devs prps
+  return $ sortBy (flip compareDevices `on` snd) (zip devs prps)
+
+
+-- Return a ordering of two device with respect to (estimated) performance
+--
+compareDevices :: DeviceProperties -> DeviceProperties -> Ordering
+compareDevices = cmp
   where
     compute     = computeCapability
     flops d     = multiProcessorCount d * coresPerMultiProcessor d * clockRate d

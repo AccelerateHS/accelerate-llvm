@@ -50,7 +50,6 @@ import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
 import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
-
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 -- cuda
@@ -59,7 +58,6 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.NVVM                                       as NVVM
 
 -- standard library
-import Control.Concurrent
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad.Except
@@ -68,22 +66,22 @@ import Data.ByteString                                              ( ByteString
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
 import Data.Word
-import Foreign.C
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.IO.Exception                                             ( IOErrorType(..), IOException(..) )
 import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO
 import System.IO.Unsafe
 import System.Process
+import System.Process.Extra
 import Text.Printf                                                  ( printf )
+import qualified Data.Map                                           as Map
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Internal                           as B
-import qualified Data.Map                                           as Map
+import qualified Data.ByteString.Short.Char8                        as S8
 import Prelude                                                      as P
 
 
@@ -169,8 +167,8 @@ compileCUBIN dev sass ptx = do
             , std_err = CreatePipe
             }
 
-  -- Invoke the 'ptxas' executable (which must be on the PATH) to compile the
-  -- PTX into SASS. The output is written directly to the final cache location.
+  -- Invoke the 'ptxas' executable to compile the generated PTX into SASS (GPU
+  -- object code). The output is written directly to the final cache location.
   --
   withCreateProcess cp $ \(Just inh) Nothing (Just errh) ph -> do
 
@@ -201,38 +199,10 @@ compileCUBIN dev sass ptx = do
   B.readFile sass
 
 
--- | Fork a thread while doing something else, but kill it if there's an
--- exception.
---
--- This is important because we want to kill the thread that is holding the
--- Handle lock, because when we clean up the process we try to close that
--- handle, which could otherwise deadlock.
---
--- Stolen from the 'process' package.
---
-withForkWait :: IO () -> (IO () -> IO a) -> IO a
-withForkWait async body = do
-  waitVar <- newEmptyMVar :: IO (MVar (Either SomeException ()))
-  mask $ \restore -> do
-    tid <- forkIO $ try (restore async) >>= putMVar waitVar
-    let wait = takeMVar waitVar >>= either throwIO return
-    restore (body wait) `onException` killThread tid
-
-ignoreSIGPIPE :: IO () -> IO ()
-ignoreSIGPIPE =
-  handle $ \e ->
-    case e of
-      IOError{..} | ResourceVanished <- ioe_type
-                  , Just ioe         <- ioe_errno
-                  , Errno ioe == ePIPE
-                  -> return ()
-      _ -> throwIO e
-
-
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> String -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
+compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
 compileModuleNVVM dev name libdevice mdl = do
   _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
@@ -263,7 +233,7 @@ compileModuleNVVM dev name libdevice mdl = do
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
   bc  <- LLVM.moduleBitcode mdl
-  ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
+  ptx <- NVVM.compileModules (("",header) : (S8.unpack name,bc) : libdevice) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)

@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: nightly-2017-11-16
+resolver: nightly-2017-11-27
 
 packages:
 - 'accelerate-llvm'
@@ -10,7 +10,7 @@ packages:
 
 - location:
     git:    https://github.com/tmcdonell/accelerate.git
-    commit: 71a30b76b34d33d31ffcc20ac0b2be21f6ced3be
+    commit: 0b683b29deb8ee83065093b72693f50a6793fac4
   extra-dep: true
 
 extra-deps: []

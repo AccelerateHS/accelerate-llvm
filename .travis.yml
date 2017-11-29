@@ -58,7 +58,7 @@ matrix:
             - cabal-install-1.24
             - llvm-4.0-dev
 
-    - env: GHC=8.2.1 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
+    - env: GHC=8.2.2 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.2"
       addons:
         apt:

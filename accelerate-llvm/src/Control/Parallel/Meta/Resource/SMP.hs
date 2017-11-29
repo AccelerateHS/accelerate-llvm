@@ -28,7 +28,7 @@ module Control.Parallel.Meta.Resource.SMP (
 -- accelerate
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
-import Data.IORef.Storable
+import Data.Primitive.MutVar
 import Data.Range.Range
 import qualified Data.Array.Accelerate.Debug            as Debug
 
@@ -75,7 +75,7 @@ mkWorkSearch retries = WorkSearch search
 
           loop 0      = do
             message myId "work search failed"
-            modifyIORef (consecutiveFailures me) (+1)
+            modifyMutVar' (consecutiveFailures me) (+1)
             return Nothing
 
           loop n      = do
@@ -87,7 +87,7 @@ mkWorkSearch retries = WorkSearch search
                  case mwork of
                    Nothing    -> loop (n-1)
                    _          -> do event myId (printf "steal from %d" (workerId target))
-                                    writeIORef (consecutiveFailures me) 0
+                                    writeMutVar (consecutiveFailures me) 0
                                     return mwork
       in
       loop retries
@@ -95,7 +95,7 @@ mkWorkSearch retries = WorkSearch search
 --          case self of
 --            Nothing -> loop retries
 --            _       -> do message myId "steal from self"
---                          writeIORef (consecutiveFailures me) 0
+--                          writeMutVar (consecutiveFailures me) 0
 --                          return self
 
 
