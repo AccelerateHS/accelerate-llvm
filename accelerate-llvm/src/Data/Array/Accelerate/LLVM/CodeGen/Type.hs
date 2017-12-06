@@ -115,6 +115,7 @@ instance TypeOf Instruction where
       IntToFP _ t _         -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
       BitCast t _           -> PrimType (ScalarPrimType t)
       PtrCast t _           -> PrimType t
+      FCmp{}                -> type'
       Cmp{}                 -> type'
       Select t _ _ _        -> PrimType (ScalarPrimType t)
       Phi t _               -> PrimType t

@@ -190,6 +190,11 @@ instance Downcast (Instruction a) L.Instruction where
   downcast (Phi t incoming)         = L.Phi (downcast t) (downcast incoming) md
   downcast (Select _ p x y)         = L.Select (downcast p) (downcast x) (downcast y) md
   downcast (Call f attrs)           = L.Call tailcall L.C [] (downcast f) (downcast f) (downcast attrs) md
+  downcast (FCmp t p x y)           =
+    let
+        fp UNO = FP.UNO
+        fp OEQ = FP.OEQ
+    in L.FCmp (fp p) (downcast x) (downcast y) md
   downcast (Cmp t p x y)            =
     let
         fp EQ = FP.OEQ
