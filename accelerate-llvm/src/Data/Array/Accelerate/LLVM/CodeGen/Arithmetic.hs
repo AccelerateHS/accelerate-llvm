@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                      ( Eq, Num, Either(..), ($), (==), undefined, otherwise, flip, fromInteger )
+import Prelude                                                      ( Eq, Num, Either(..), ($), (==), undefined, otherwise, flip, fromInteger, fromRational )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                    ( finiteBitSize )
@@ -383,30 +383,12 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- ------------------------
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isNaN f (op f -> x) = do
-  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
-      t = type'
-  name <- intrinsic
-        $ case f of
-            TypeFloat{}   -> "isnanf"
-            TypeCFloat{}  -> "isnanf"
-            TypeDouble{}  -> "isnand"
-            TypeCDouble{} -> "isnand"
-  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
-  return r
+isNaN f (op f -> x) = instr (FCmp f UNO x x)
 
 isInfinite :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isInfinite f (op f -> x) = do
-  let p = ScalarPrimType (NumScalarType (FloatingNumType f))
-      t = type'
-  name <- intrinsic
-        $ case f of
-            TypeFloat{}   -> "isinff"
-            TypeCFloat{}  -> "isinff"
-            TypeDouble{}  -> "isinfd"
-            TypeCDouble{} -> "isinfd"
-  r    <- call (Lam p x (Body t name)) [NoUnwind, ReadOnly]
-  return r
+isInfinite f x | FloatingDict <- floatingDict f = do
+  (op f -> axx) <- mathf "fabs" f x
+  instr (FCmp f OEQ axx (floating f (1.0 P./ 0.0)))
 
 
 -- Operators from RealFrac
