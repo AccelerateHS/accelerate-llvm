@@ -49,15 +49,8 @@ llvmIntrinsic =
           : (base <> "f", Label ("llvm." <> base <> ".f32"))
           : (base <> "l", Label ("llvm." <> base <> ".f128"))
           : rest
-
-      others
-          = ("isnanf", "isnan")
-          : ("isnand", "isnan")
-          : ("isinff", "isinf")
-          : ("isinfd", "isinf")
-          : []
   in
-  HashMap.fromList $ foldr floating others
+  HashMap.fromList $ foldr floating []
     [ "sqrt"
     , "powi"
     , "sin"
