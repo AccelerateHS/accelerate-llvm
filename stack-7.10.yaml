@@ -8,12 +8,10 @@ packages:
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
-- location:
-    git:    https://github.com/tmcdonell/accelerate.git
-    commit: b8dc2e258f44e704dd172306a53aeefb5ba1dd68
-  extra-dep: true
-
 extra-deps:
+- git:    https://github.com/tmcdonell/accelerate.git
+  commit: f4f5ab275c8a9d98cca0447635f7dbbd57d4fb8a
+
 - 'Cabal-2.0.0.2'
 - 'chaselev-deque-0.5.0.5'
 - 'cuda-0.9.0.0'
@@ -38,14 +36,13 @@ flags:
     semigroups: true
 
 # Extra package databases containing global packages
-extra-package-dbs: []
+# extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
 # system-ghc: true
 
 # Require a specific version of stack, using version ranges
-# require-stack-version: -any # Default
-# require-stack-version: >= 0.1.4.0
+require-stack-version: ">= 1.6"
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386
