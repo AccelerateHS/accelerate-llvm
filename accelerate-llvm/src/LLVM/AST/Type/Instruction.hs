@@ -279,13 +279,12 @@ data Instruction a where
   --
   -- We treat non-scalar types as signed/unsigned integer values.
   --
-
   FCmp          :: FloatingType a
                 -> FOrdering
                 -> Operand a
                 -> Operand a
                 -> Instruction Bool
-                
+
   Cmp           :: ScalarType a
                 -> Ordering
                 -> Operand a
