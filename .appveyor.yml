@@ -47,7 +47,7 @@ before_build:
   - stack build --no-terminal --no-copy-bins --fast --only-dependencies --extra-lib-dirs=C:\llvm-5.0.0\bin
 
 build_script:
-  - stack build accelerate-llvm        --no-terminal --no-copy-bins --fast --only-dependencies
-  - stack build accelerate-llvm-native --no-terminal --no-copy-bins --fast --only-dependencies
-  - stack build accelerate-llvm-ptx    --no-terminal --no-copy-bins --fast --only-dependencies
+  - stack build accelerate-llvm        --no-terminal --fast
+  - stack build accelerate-llvm-native --no-terminal --fast
+  - stack build accelerate-llvm-ptx    --no-terminal --fast
 
