@@ -35,7 +35,7 @@ before_build:
   # CUDA refuses to install the driver if no compatible GPU can be found, so
   # copy these .dll files manually
   - appveyor DownloadFile "https://drive.google.com/uc?export=download&id=1zjAtTJMvDPwq5gtR2F4aeEWtNqZA8VHB" -FileName nvdriver-9.0.176.7z
-  - 7z x nvdriver-9.0.172.7z -oC:\Windows\System32
+  - 7z x nvdriver-9.0.176.7z -oC:\Windows\System32
 
   # use MSYS2 to install libffi & fix install prefix in pkg-config file
   - pacman -S --noconfirm libffi-devel
