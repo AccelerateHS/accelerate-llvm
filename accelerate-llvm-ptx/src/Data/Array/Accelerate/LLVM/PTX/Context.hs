@@ -132,7 +132,7 @@ deviceInfo dev prp = render $
         <> comma <+> memory
   where
     name        = text (CUDA.deviceName prp)
-    compute     = text "compute capatability" <+> text (show $ CUDA.computeCapability prp)
+    compute     = text "compute capability" <+> text (show $ CUDA.computeCapability prp)
     devID       = text "device" <+> int (fromIntegral $ CUDA.useDevice dev)
     processors  = int (CUDA.multiProcessorCount prp)                              <+> text "multiprocessors"
     cores       = int (CUDA.multiProcessorCount prp * coresPerMultiProcessor prp) <+> text "cores"
