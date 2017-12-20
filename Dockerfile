@@ -1,11 +1,11 @@
 # vim: nospell
 
-FROM nvidia/cuda:8.0-devel-ubuntu16.04
+FROM nvidia/cuda:9.0-devel-ubuntu16.04
 LABEL maintainer "Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>"
 
-ARG GHC_VERSION=8.0.2
-ARG CABAL_VERSION=1.24
-ARG LTS_SLUG=lts-9.0
+ARG GHC_VERSION=8.2.2
+ARG CABAL_VERSION=2.0
+ARG LTS_SLUG=lts-10.0
 ARG DEBIAN_FRONTEND=noninteractive
 
 ENV LANG C.UTF-8
@@ -21,7 +21,7 @@ RUN add-apt-repository -y ppa:hvr/ghc \
  && apt-get update \
  && apt-get install -y \
       curl \
-      llvm-3.7 \
+      llvm-3.9 \
       pkg-config \
       wget
 
@@ -37,15 +37,15 @@ RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 # This version is tracked here:
 # https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/Backends/LLVM/Installing
 #
-# GHC 8.0 requires LLVM 3.7 tools (specifically, llc-3.7 and opt-3.7).
-RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-3.7" 50
-RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-3.7" 50
+# GHC 8.0 requires LLVM 3.9 tools (specifically, llc-3.9 and opt-3.9).
+RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-3.9" 50
+RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-3.9" 50
 
-# Install llvm-4.0
+# Install llvm-5.0
 RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
- && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-4.0 main" \
+ && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main" \
  && apt-get update \
- && apt-get install -y llvm-4.0-dev
+ && apt-get install -y llvm-5.0-dev
 
 # Setup stack
 RUN stack --no-terminal --resolver=${LTS_SLUG} setup
@@ -55,7 +55,7 @@ RUN stack --no-terminal install c2hs
 WORKDIR /opt/accelerate-llvm
 COPY ./README.md /opt/accelerate-llvm/README.md
 COPY ./LICENSE /opt/accelerate-llvm/LICENSE
-COPY ./stack-8.0.yaml /opt/accelerate-llvm/stack.yaml
+COPY ./stack-8.2.yaml /opt/accelerate-llvm/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal /opt/accelerate-llvm/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal /opt/accelerate-llvm/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal /opt/accelerate-llvm/accelerate-llvm-ptx/
