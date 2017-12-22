@@ -158,6 +158,10 @@ Library
         -Wall
         -fwarn-tabs
 
+  ghc-prof-options:
+        -caf-all
+        -auto-all
+
   if impl(ghc >= 8.0)
     ghc-options:
         -Wmissed-specialisations
