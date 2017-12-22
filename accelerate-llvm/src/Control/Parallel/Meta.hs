@@ -26,7 +26,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.Concurrent.Deque.Class
 import Data.Monoid
 import Data.Sequence                                                ( Seq )
-import Data.Range.Range                                             as R
+import Data.Range                                                   as R
 import qualified Data.Vector                                        as V
 
 import GHC.Base                                                     ( quotInt, remInt )

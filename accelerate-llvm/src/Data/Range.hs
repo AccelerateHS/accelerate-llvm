@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -funbox-strict-fields #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : Data.Range.Range
+-- Module      : Data.Range
 -- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
@@ -14,7 +14,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Range.Range
+module Data.Range
   where
 
 -- accelerate

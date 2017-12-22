@@ -36,7 +36,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
-import Data.Range.Range                                             ( Range(..) )
+import Data.Range                                                   ( Range(..) )
 import Control.Parallel.Meta                                        ( Executable(..) )
 
 -- standard library

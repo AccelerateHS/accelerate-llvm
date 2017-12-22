@@ -45,7 +45,7 @@ import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
-import Data.Range.Range                                         ( Range(..) )
+import Data.Range                                               ( Range(..) )
 import Control.Parallel.Meta                                    ( runExecutable )
 
 -- cuda

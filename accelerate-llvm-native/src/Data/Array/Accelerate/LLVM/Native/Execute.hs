@@ -43,7 +43,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 -- Use work-stealing scheduler
-import Data.Range.Range                                             ( Range(..) )
+import Data.Range                                                   ( Range(..) )
 import Control.Parallel.Meta                                        ( Executable(..) )
 import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 

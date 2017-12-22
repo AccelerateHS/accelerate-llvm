@@ -21,7 +21,7 @@ module Control.Parallel.Meta.Worker (
 ) where
 
 -- accelerate
-import Data.Range.Range
+import Data.Range
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 -- standard library

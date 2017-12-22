@@ -24,8 +24,8 @@ module Control.Parallel.Meta.Trans.LBS (
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import Data.Concurrent.Deque.Class
-import Data.Range.Range                                         ( Range )
-import qualified Data.Range.Range                               as R
+import Data.Range                                               ( Range )
+import qualified Data.Range                                     as R
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 import Control.Monad

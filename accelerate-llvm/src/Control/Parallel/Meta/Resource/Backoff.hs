@@ -31,7 +31,7 @@ import Text.Printf
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import Data.Primitive.MutVar
-import Data.Range.Range                                         as R
+import Data.Range                                               as R
 import qualified Data.Vector                                    as V
 import qualified Data.Array.Accelerate.Debug                    as Debug
 

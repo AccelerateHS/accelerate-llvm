@@ -29,7 +29,7 @@ module Control.Parallel.Meta.Resource.SMP (
 import Control.Parallel.Meta
 import Control.Parallel.Meta.Worker
 import Data.Primitive.MutVar
-import Data.Range.Range
+import Data.Range
 import qualified Data.Array.Accelerate.Debug            as Debug
 
 -- standard library

@@ -153,11 +153,11 @@ Library
     Control.Parallel.Meta.Resource.Single
     Control.Parallel.Meta.Resource.SMP
     Control.Parallel.Meta.Trans.LBS
-    Data.Range.Range
 
     -- Extras
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
+    Data.Range
 
   other-modules:
     Paths_accelerate_llvm
