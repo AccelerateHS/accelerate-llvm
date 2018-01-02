@@ -26,6 +26,7 @@ import qualified Data.Vector                                    as V
 -- aware of any other sources of work (at this level) and only ever tries to pop
 -- from its own local queue.
 --
+{-# INLINE mkResource #-}
 mkResource :: Resource
 mkResource
   = Resource

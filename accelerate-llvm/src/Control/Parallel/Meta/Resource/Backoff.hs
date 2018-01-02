@@ -36,9 +36,11 @@ import qualified Data.Vector                                    as V
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
 
+{-# INLINE mkResource #-}
 mkResource :: Resource
 mkResource = Resource defaultWorkSearch
 
+{-# INLINE defaultWorkSearch #-}
 defaultWorkSearch :: WorkSearch
 defaultWorkSearch = mkWorkSearch 100 10000
 
@@ -56,6 +58,7 @@ defaultWorkSearch = mkWorkSearch 100 10000
 -- an amount that doubles each time until it surpasses the maximum, at which
 -- point it will always sleep for the maximum time (10ms)
 --
+{-# INLINE mkWorkSearch #-}
 mkWorkSearch :: Int -> Int -> WorkSearch
 mkWorkSearch _        0       = WorkSearch $ \_ _ -> return Nothing
 mkWorkSearch shortest longest = WorkSearch backoff

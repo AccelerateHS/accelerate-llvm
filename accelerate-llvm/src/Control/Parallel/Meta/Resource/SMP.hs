@@ -43,6 +43,7 @@ import qualified Data.Vector                            as V
 -- workers have uniform access to shared resources such as memory. Thus workers
 -- at this level can steal cheaply from each other.
 --
+{-# INLINE mkResource #-}
 mkResource
     :: Int              -- ^ number of steal attempts per 'WorkSearch'
     -> Resource
@@ -63,6 +64,7 @@ mkResource retries =
 -- between number of times to traverse each level and number of times to
 -- traverse the entire resource stack.
 --
+{-# INLINE mkWorkSearch #-}
 mkWorkSearch :: Int -> WorkSearch
 mkWorkSearch retries = WorkSearch search
   where

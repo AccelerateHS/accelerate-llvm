@@ -36,6 +36,7 @@ import qualified Data.Vector                                    as V
 -- | Transform the 'WorkSearch' function of the given 'Resource' to include a
 -- lazy binary splitting work stealing scheduler.
 --
+{-# INLINE mkResource #-}
 mkResource
     :: Int              -- ^ profitable parallelism threshold
     -> Resource         -- ^ the resource to modify
@@ -57,6 +58,7 @@ mkResource ppt (Resource ws)
 --   3. If the remaining work queue is empty, split this work chunk in half.
 --      Place the second half onto the remaining work queue and go to (1).
 --
+{-# INLINE mkWorkSearch #-}
 mkWorkSearch
     :: Int              -- ^ profitable parallelism threshold
     -> WorkSearch       -- ^ the basic work search method to modify

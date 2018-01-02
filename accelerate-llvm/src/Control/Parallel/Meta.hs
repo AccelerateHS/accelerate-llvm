@@ -25,23 +25,10 @@ import Control.Parallel.Meta.Worker
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Concurrent.Deque.Class
 import Data.Monoid
-import Data.Sequence                                                ( Seq )
 import Data.Range                                                   as R
 import qualified Data.Vector                                        as V
 
 import GHC.Base                                                     ( quotInt, remInt )
-
-
--- | The 'Startup' component of a 'Resource' is a callback that implements
--- initialisation behaviour. For example, it might contact remote hosts, spawn
--- threads, or initialise hardware such as GPUs.
---
-data Startup = Startup {
-  _runStartup :: Gang -> IO () }
-
-instance Monoid Startup where
-  mempty                            = Startup $ \_ -> return ()
-  Startup st1 `mappend` Startup st2 = Startup $ \g -> st1 g >> st2 g
 
 
 -- | The 'WorkSearch' component of a 'Resource' is a callback that responds to
@@ -50,9 +37,12 @@ instance Monoid Startup where
 -- program.
 --
 data WorkSearch = WorkSearch {
-  runWorkSearch :: Int -> Workers -> IO (Maybe Range) }
+    runWorkSearch :: Int -> Workers -> IO (Maybe Range)
+  }
 
 instance Monoid WorkSearch where
+  {-# INLINE mempty  #-}
+  {-# INLINE mappend #-}
   mempty                                  = WorkSearch $ \_ _ -> return Nothing
   WorkSearch ws1 `mappend` WorkSearch ws2 =
     WorkSearch $ \tid st -> do
@@ -73,6 +63,8 @@ data Resource = Resource {
   }
 
 instance Monoid Resource where
+  {-# INLINE mempty  #-}
+  {-# INLINE mappend #-}
   mempty                                = Resource mempty
   mappend (Resource ws1) (Resource ws2) = Resource (ws1 <> ws2)
 
@@ -104,25 +96,12 @@ data Executable = Executable {
   }
 
 
--- | The 'Finalise' component of an executable is an action the thread applies
--- after processing the work function, given its thread id the ranges that this
--- thread actually handled.
---
-data Finalise = Finalise {
-    _runFinalise :: Seq Range -> IO ()
-  }
-
-instance Monoid Finalise where
-  mempty                            = Finalise $ \_ -> return ()
-  Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
-
-
-
 -- | Run a sequential operation
 --
 -- We just have the first thread of the gang execute the operation, but we could
 -- also make the threads compete, which might be useful on a loaded system.
 --
+{-# INLINEABLE runSeqIO #-}
 runSeqIO
     :: Gang
     -> Range
@@ -181,6 +160,7 @@ runSeqIO gang (IE u v) action =
 -- TLM: The initial work distribution should probably be aligned to cache
 --      boundaries, rather than attempting to split exactly evenly.
 --
+{-# INLINEABLE runParIO #-}
 runParIO
     :: Resource
     -> Gang
@@ -218,4 +198,34 @@ runParIO resource gang (IE inf sup) action =
 
     when (end > start) $ pushL (workpool me) (IE start end)
     loop
+
+
+
+-- Icebox
+-- ------
+
+{--
+-- | The 'Startup' component of a 'Resource' is a callback that implements
+-- initialisation behaviour. For example, it might contact remote hosts, spawn
+-- threads, or initialise hardware such as GPUs.
+--
+data Startup = Startup {
+  _runStartup :: Gang -> IO () }
+
+instance Monoid Startup where
+  mempty                            = Startup $ \_ -> return ()
+  Startup st1 `mappend` Startup st2 = Startup $ \g -> st1 g >> st2 g
+
+-- | The 'Finalise' component of an executable is an action the thread applies
+-- after processing the work function, given its thread id the ranges that this
+-- thread actually handled.
+--
+data Finalise = Finalise {
+    _runFinalise :: Seq Range -> IO ()
+  }
+
+instance Monoid Finalise where
+  mempty                            = Finalise $ \_ -> return ()
+  Finalise f1 `mappend` Finalise f2 = Finalise $ \r -> f1 r >> f2 r
+--}
 
