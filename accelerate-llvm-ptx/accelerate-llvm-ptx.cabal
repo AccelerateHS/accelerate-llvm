@@ -106,6 +106,9 @@ Library
 
     Data.Array.Accelerate.LLVM.PTX.Execute
     Data.Array.Accelerate.LLVM.PTX.Execute.Async
+    Data.Array.Accelerate.LLVM.PTX.Execute.Environment
+    Data.Array.Accelerate.LLVM.PTX.Execute.Event
+    Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
     Data.Array.Accelerate.LLVM.PTX.Execute.Stream
     Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir
 
@@ -132,10 +135,6 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Link.Object
 
     Data.Array.Accelerate.LLVM.PTX.Embed
-
-    Data.Array.Accelerate.LLVM.PTX.Execute.Environment
-    Data.Array.Accelerate.LLVM.PTX.Execute.Event
-    Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
 
     System.Process.Extra
 
