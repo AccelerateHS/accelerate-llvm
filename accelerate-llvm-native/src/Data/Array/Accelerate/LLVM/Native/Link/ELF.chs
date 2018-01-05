@@ -604,20 +604,20 @@ readSymbolTable p@Peek{..} secs obj SectionHeader{..} = do
       offset  = sh_offset + sh_entsize  -- First symbol in the table is always null; skip it.
                                         -- Make sure to update relocation indices
   strtab  <- readStringTable obj (secs V.! sh_link)
-  symbols <- runGet (V.replicateM (nsym-1) (readSymbol p strtab)) (B.drop offset obj)
+  symbols <- runGet (V.replicateM (nsym-1) (readSymbol p secs strtab)) (B.drop offset obj)
   return symbols
 
-readSymbol :: Peek -> ByteString -> Get Symbol
-readSymbol p@Peek{..} strtab =
+readSymbol :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol p@Peek{..} secs strtab =
   case is64Bit of
-    True  -> readSymbol64 p strtab
-    False -> readSymbol32 p strtab
+    True  -> readSymbol64 p secs strtab
+    False -> readSymbol32 p secs strtab
 
-readSymbol32 :: Peek -> ByteString -> Get Symbol
-readSymbol32 _ _ = fail "TODO: readSymbol32"
+readSymbol32 :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol32 _ _ _ = fail "TODO: readSymbol32"
 
-readSymbol64 :: Peek -> ByteString -> Get Symbol
-readSymbol64 Peek{..} strtab = do
+readSymbol64 :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol64 Peek{..} secs strtab = do
   st_strx     <- fromIntegral <$> getWord32
   st_info     <- getWord8
   skip 1 -- st_other  <- getWord8
@@ -625,8 +625,10 @@ readSymbol64 Peek{..} strtab = do
   sym_value   <- getWord64
   skip 8 -- st_size   <- getWord64
 
-  let sym_name | st_strx == 0 = B.empty
-               | otherwise    = indexStringTable strtab st_strx
+  let sym_name
+        | sym_type == Section = indexStringTable strtab (sh_name (secs V.! sym_section))
+        | st_strx == 0        = B.empty
+        | otherwise           = indexStringTable strtab st_strx
 
       sym_binding = toEnum $ fromIntegral ((st_info .&. 0xF0) `shiftR` 4)
       sym_type    = toEnum $ fromIntegral (st_info .&. 0x0F)
