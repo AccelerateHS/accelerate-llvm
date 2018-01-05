@@ -45,6 +45,7 @@ import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
 import System.IO.Unsafe
 import System.Posix.DynamicLinker
+import System.Posix.Types                                 ( COff(..) )
 import Text.Printf
 import qualified Data.ByteString                          as B
 import qualified Data.ByteString.Char8                    as B8
@@ -86,6 +87,7 @@ loadObject obj =
           Segment vmsize oc_fp -> do
             withForeignPtr oc_fp $ \oc_p -> do
               mprotect oc_p vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
+              munmap oc_p vmsize
 
       return (funtab, objectcode)
 
@@ -146,7 +148,8 @@ loadSegment obj strtab secs symtab relocs = do
       vmsize'     = V.last offsets                                  -- bytes required to store all sections
       vmsize      = pad pagesize (vmsize' + (V.length symtab * 16)) -- sections + jump tables
   --
-  seg_fp  <- mallocPlainForeignPtrAlignedBytes vmsize pagesize
+  seg_fp <- mmap vmsize
+  message ("seg_p: " ++ show seg_fp)
   funtab  <- withForeignPtr seg_fp $ \seg_p -> do
               -- Just in case, clear out the segment data (corresponds to NOP).
               -- This also takes care of .bss sections
@@ -707,8 +710,39 @@ mprotect addr len prot
   = throwErrnoIfMinus1_ "mprotect"
   $ c_mprotect (castPtr addr) (fromIntegral len) (fromIntegral prot)
 
+-- mmap memory in the lower 2GB of memory with read and write permissions which
+-- is process private. Note this is autmatically aligned to page size, see
+-- manual for mmap.
+--
+mmap :: Int -> IO (ForeignPtr Word8)
+mmap len = do
+  p_mem <- throwErrnoIf (== m1ptr) "mmap" $
+    let
+      addr = nullPtr
+      length = fromIntegral len
+      prot = ({#const PROT_READ#} .|. {#const PROT_WRITE#})
+      flags = ({#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|.
+               {#const MAP_32BIT#})
+      fd = fromIntegral (-1)
+      offset = fromIntegral 0
+     in c_mmap addr length prot flags fd offset
+  -- No finalizer, run manually on object code lifetime
+  newForeignPtr_ p_mem
+  where m1ptr = nullPtr `plusPtr` (-1)
+
+-- Unmap mmap'd memory
+--
+munmap :: Ptr Word8 -> Int -> IO ()
+munmap ptr len = throwErrnoIfMinus1_ "munmap" (c_munmap ptr (fromIntegral len))
+
 foreign import ccall unsafe "mprotect"
   c_mprotect :: Ptr () -> CSize -> CInt -> IO CInt
+
+foreign import ccall unsafe "mmap"
+  c_mmap :: Ptr a -> CSize -> CInt -> CInt -> CInt -> COff -> IO (Ptr a)
+
+foreign import ccall unsafe "munmap"
+  c_munmap :: Ptr a -> CSize -> IO CInt
 
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
