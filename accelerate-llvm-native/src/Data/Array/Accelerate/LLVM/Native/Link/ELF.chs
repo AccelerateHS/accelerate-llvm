@@ -256,9 +256,9 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
         then do
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               value'  = fromIntegral jump' + r_addend
-          relocate value'
+          relocate' value'
         else
-          relocate value
+          relocate' value
 
   where
     pc :: Ptr Word8
@@ -276,6 +276,9 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
 
     relocate :: Int64 -> IO ()
     relocate x = poke (castPtr pc :: Ptr Word32) (fromIntegral x)
+
+    relocate' :: Int64 -> IO ()
+    relocate' x = poke (castPtr pc :: Ptr Int32) (fromIntegral x)
 
 #else
 precessRelocation =
