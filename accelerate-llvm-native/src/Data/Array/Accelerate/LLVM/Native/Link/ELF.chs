@@ -654,7 +654,7 @@ resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
   = unsafePerformIO
   $ B.unsafeUseAsCString name $ \c_name -> do
-      addr <- c_dlsym (packDL Next) c_name
+      addr <- c_dlsym (packDL Default) c_name
       if addr == nullFunPtr
         then do
           err <- dlerror
