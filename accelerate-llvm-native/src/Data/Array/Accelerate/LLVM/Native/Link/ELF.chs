@@ -222,48 +222,59 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 processRelocation :: Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
-  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%s, value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
+  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-13s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
   case r_type of
     R_X86_64_None -> return ()
-    R_X86_64_64   -> relocate (fromIntegral symval + r_addend)
+    R_X86_64_64   -> relocate value
+
     R_X86_64_PC32 ->
-      let offset = fromIntegral symval + r_addend - fromIntegral pc' in
-      if  offset >= 0x7fffffff || offset < -0x80000000
+      let offset :: Int64
+          offset = fromIntegral (value - pc')
+      in
+      if offset >= 0x7fffffff || offset < -0x80000000
         then do
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               offset' = fromIntegral jump' + r_addend - fromIntegral pc'
-          relocate offset'
+          relocate (fromIntegral offset' :: Word32)
         else
-          relocate offset
+          relocate (fromIntegral offset  :: Word32)
 
     R_X86_64_PC64 ->
-      let offset = fromIntegral symval + r_addend - fromIntegral pc' in
-      relocate offset
+      let offset :: Int64
+          offset = fromIntegral (value - pc')
+      in
+      relocate (fromIntegral offset :: Word32)
 
     R_X86_64_32   ->
-      let value = symval + fromIntegral r_addend in
-      if  value >= 0x7fffffff
-        then do
+      if value >= 0x7fffffff
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               value'  = fromIntegral jump' + r_addend
-          relocate value'
+          in
+          relocate (fromIntegral value' :: Word32)
         else
-          relocate (fromIntegral value)
+          relocate (fromIntegral value  :: Word32)
 
     R_X86_64_32S  ->
-      let value = fromIntegral symval + r_addend in
-      if  value >= 0x7fffffff || value < -0x80000000
-        then do
+      let values :: Int64
+          values = fromIntegral value
+      in
+      if values > 0x7fffffff || values < -0x80000000
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               value'  = fromIntegral jump' + r_addend
-          relocate' value'
+          in
+          relocate (fromIntegral value' :: Int32)
         else
-          relocate' value
+          relocate (fromIntegral value  :: Int32)
 
   where
     pc :: Ptr Word8
     pc  = seg_p `plusPtr` (fromIntegral r_offset + sec_offset V.! r_section)
     pc' = castPtrToWord64 pc
+
+    value :: Word64
+    value = symval + fromIntegral r_addend
 
     symval :: Word64
     symval =
@@ -274,11 +285,8 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
 
     Symbol{..} = symtab V.! r_symbol
 
-    relocate :: Int64 -> IO ()
-    relocate x = poke (castPtr pc :: Ptr Word32) (fromIntegral x)
-
-    relocate' :: Int64 -> IO ()
-    relocate' x = poke (castPtr pc :: Ptr Int32) (fromIntegral x)
+    relocate :: Storable a => a -> IO ()
+    relocate x = poke (castPtr pc) x
 
 #else
 precessRelocation =
