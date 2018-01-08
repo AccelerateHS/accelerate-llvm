@@ -165,6 +165,7 @@ ptxISAVersion 5 0 = "ptx40"
 ptxISAVersion 5 2 = "ptx41"
 ptxISAVersion 5 3 = "ptx42"
 ptxISAVersion 6 _ = "ptx50"
+ptxISAVersion 7 _ = "ptx60"
 ptxISAVersion _ _ = "ptx40"
 
 

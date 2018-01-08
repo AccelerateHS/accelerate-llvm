@@ -1,63 +1,23 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: ghc-8.2
+resolver: lts-10.0
 
 packages:
 - 'accelerate-llvm'
 - 'accelerate-llvm-native'
 - 'accelerate-llvm-ptx'
 
-extra-deps:
-- 'abstract-deque-0.3'
-- 'accelerate-1.1.0.0'
-- 'atomic-primops-0.8.1'
-- 'attoparsec-0.13.1.0'
-- 'base-orphans-0.6'
-- 'c2hs-0.28.2'
-- 'cereal-0.5.4.0'
-- 'chaselev-deque-0.5.0.5'
-- 'cuda-0.8.0.0'
-- 'data-default-class-0.1.2.0'
-- 'dlist-0.8.0.2'
-- 'exceptions-0.8.3'
-- 'fclabels-2.0.3.2'
-- 'file-embed-0.0.10'
-- 'ghc-paths-0.1.0.9'
-- 'hashable-1.2.6.1'
-- 'hashtables-1.2.1.1'
-- 'integer-logarithms-1.0.1'
-- 'language-c-0.6.1'
-- 'libffi-0.1'
-- 'llvm-hs-4.2.0'
-- 'llvm-hs-pure-4.1.0.0'
-- 'math-functions-0.2.1.0'
-- 'mtl-2.2.1'
-- 'mwc-random-0.13.6.0'
-- 'nvvm-0.8.0.0'
-- 'parsec-3.1.11'
-- 'primitive-0.6.2.0'
-- 'random-1.1'
-- 'scientific-0.3.4.12'
-- 'stm-2.4.4.1'
-- 'syb-0.7'
-- 'text-1.2.2.2'
-- 'transformers-compat-0.5.1.4'
-- 'unique-0'
-- 'unordered-containers-0.2.8.0'
-- 'utf8-string-1.0.1.1'
-- 'vector-0.12.0.1'
-- 'vector-th-unbox-0.2.1.6'
+# extra-deps: []
 
 # Override default flag values for local packages and extra-deps
-flags: {}
+# flags: {}
 
 # Extra global and per-package GHC options
-ghc-options:
-  '*': -fdiagnostics-color=always
+# ghc-options: {}
 
 # Extra package databases containing global packages
-extra-package-dbs: []
+# extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
 # system-ghc: true
