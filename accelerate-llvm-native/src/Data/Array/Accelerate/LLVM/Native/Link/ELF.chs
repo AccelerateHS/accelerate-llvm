@@ -39,8 +39,7 @@ import Foreign.ForeignPtr
 import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.ForeignPtr                                     ( mallocPlainForeignPtrAlignedBytes )
-import GHC.Prim                                           ( addr2Int#, int2Word# )
+import GHC.Prim                                           ( addr2Int#, int2Word#, int2Addr# )
 import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
 import System.IO.Unsafe
@@ -76,17 +75,14 @@ loadObject obj =
       --
       (funtab, oc) <- loadSegment obj strtab secs symbols relocs
 
-      -- The executable pages are allocated on the GC heap. When the pages are
-      -- finalised, unset the executable bit and mark them as read/write so that
-      -- they can be reused
+      -- Unmap the executable pages when they are no longer required
       --
       objectcode <- newLifetime [oc]
       addFinalizer objectcode $ do
         Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show funtab)
         case oc of
-          Segment vmsize oc_fp -> do
-            withForeignPtr oc_fp $ \oc_p -> do
-              mprotect oc_p vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
+          Segment vmsize oc_fp ->
+            withForeignPtr oc_fp $ \oc_p ->
               munmap oc_p vmsize
 
       return (funtab, objectcode)
@@ -147,43 +143,46 @@ loadSegment obj strtab secs symtab relocs = do
       --
       vmsize'     = V.last offsets                                  -- bytes required to store all sections
       vmsize      = pad pagesize (vmsize' + (V.length symtab * 16)) -- sections + jump tables
+
+  -- Allocate new pages to store the executable code. This is allocated in
+  -- the lower 2GB so that 32-bit relocations should work without needing
+  -- to go via the jump tables.
   --
-  seg_fp <- mmap vmsize
-  message ("seg_p: " ++ show seg_fp)
-  funtab  <- withForeignPtr seg_fp $ \seg_p -> do
-              -- Just in case, clear out the segment data (corresponds to NOP).
-              -- This also takes care of .bss sections
-              fillBytes seg_p 0 vmsize
+  -- The memory is implicitly initialised to zero (corresponding to NOP).
+  -- This also takes care of .bss sections.
+  --
+  seg_p   <- mmap vmsize
+  seg_fp  <- newForeignPtr_ seg_p
 
-              -- Jump tables are placed directly after the segment data
-              let jump_p = seg_p `plusPtr` vmsize'
-              V.imapM_ (makeJumpIsland jump_p) symtab
+  -- Jump tables are placed directly after the segment data
+  let jump_p = seg_p `plusPtr` vmsize'
+  V.imapM_ (makeJumpIsland jump_p) symtab
 
-              -- Copy over section data
-              V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
+  -- Copy over section data
+  V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
 
-              -- Process relocations
-              V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
+  -- Process relocations
+  V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
 
-              -- Mark the page as executable and read-only
-              mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
+  -- Mark the page as executable and read-only
+  mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
 
-              -- Resolve external symbols defined in the sections into function
-              -- pointers.
-              --
-              -- Note that in order to support ahead-of-time compilation, the
-              -- generated functions are given unique names by appending with an
-              -- underscore followed by a 16-digit unique ID. The execution
-              -- phase doesn't need to know about this however, so un-mangle the
-              -- name to the basic "map", "fold", etc.
-              --
-              let extern Symbol{..}   = sym_binding == Global && sym_type == Func
-                  resolve Symbol{..}  =
-                    let name  = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
-                        addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
-                    in
-                    (name, addr)
-              return $ FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
+  -- Resolve external symbols defined in the sections into function
+  -- pointers.
+  --
+  -- Note that in order to support ahead-of-time compilation, the
+  -- generated functions are given unique names by appending with an
+  -- underscore followed by a 16-digit unique ID. The execution
+  -- phase doesn't need to know about this however, so un-mangle the
+  -- name to the basic "map", "fold", etc.
+  --
+  let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
+      extern Symbol{..}   = sym_binding == Global && sym_type == Func
+      resolve Symbol{..}  =
+        let name  = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
+            addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
+        in
+        (name, addr)
   --
   return (funtab, Segment vmsize seg_fp)
 
@@ -708,35 +707,28 @@ castPtrToWord64 (Ptr addr#) = W64# (int2Word# (addr2Int# addr#))
 mprotect :: Ptr Word8 -> Int -> Int -> IO ()
 mprotect addr len prot
   = throwErrnoIfMinus1_ "mprotect"
-  $ c_mprotect (castPtr addr) (fromIntegral len) (fromIntegral prot)
+  $ c_mprotect addr (fromIntegral len) (fromIntegral prot)
 
--- mmap memory in the lower 2GB of memory with read and write permissions which
--- is process private. Note this is autmatically aligned to page size, see
--- manual for mmap.
+-- Allocate memory pages in the lower 2GB
 --
-mmap :: Int -> IO (ForeignPtr Word8)
-mmap len = do
-  p_mem <- throwErrnoIf (== m1ptr) "mmap" $
-    let
-      addr = nullPtr
-      length = fromIntegral len
-      prot = ({#const PROT_READ#} .|. {#const PROT_WRITE#})
-      flags = ({#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|.
-               {#const MAP_32BIT#})
-      fd = fromIntegral (-1)
-      offset = fromIntegral 0
-     in c_mmap addr length prot flags fd offset
-  -- No finalizer, run manually on object code lifetime
-  newForeignPtr_ p_mem
-  where m1ptr = nullPtr `plusPtr` (-1)
+mmap :: Int -> IO (Ptr Word8)
+mmap len
+  = throwErrnoIf (== mAP_FAILED) "mmap"
+  $ c_mmap nullPtr (fromIntegral len) prot flags (-1) 0
+  where
+    prot       = {#const PROT_READ#} .|. {#const PROT_WRITE#}
+    flags      = {#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|. {#const MAP_32BIT#}
+    mAP_FAILED = Ptr (int2Addr# (-1#))
 
--- Unmap mmap'd memory
+-- Remove a memory mapping
 --
 munmap :: Ptr Word8 -> Int -> IO ()
-munmap ptr len = throwErrnoIfMinus1_ "munmap" (c_munmap ptr (fromIntegral len))
+munmap addr len
+  = throwErrnoIfMinus1_ "munmap"
+  $ c_munmap addr (fromIntegral len)
 
 foreign import ccall unsafe "mprotect"
-  c_mprotect :: Ptr () -> CSize -> CInt -> IO CInt
+  c_mprotect :: Ptr a -> CSize -> CInt -> IO CInt
 
 foreign import ccall unsafe "mmap"
   c_mmap :: Ptr a -> CSize -> CInt -> CInt -> CInt -> COff -> IO (Ptr a)
@@ -746,17 +738,6 @@ foreign import ccall unsafe "munmap"
 
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
-
-#if __GLASGOW_HASKELL__ <= 708
--- Fill a given number of bytes in memory. Added in base-4.8.0.0.
---
-fillBytes :: Ptr a -> Word8 -> Int -> IO ()
-fillBytes dest char size = do
-  _ <- memset dest (fromIntegral char) (fromIntegral size)
-  return ()
-
-foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO (Ptr a)
-#endif
 
 
 -- Debug
