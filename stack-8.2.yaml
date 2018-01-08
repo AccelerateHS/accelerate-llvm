@@ -16,7 +16,7 @@ extra-deps:
 # flags: {}
 
 # Extra global and per-package GHC options
-# ghc-options:
+# ghc-options: {}
 
 # Extra package databases containing global packages
 # extra-package-dbs: []

@@ -13,6 +13,10 @@ Policy (PVP)](https://pvp.haskell.org)
    specify the default set of GPUs to use with environment variable
    `ACCELERATE_LLVM_PTX_DEVICES` as a list of device ordinals.
 
+## [1.1.0.1] - 2018-01-08
+### Fixed
+ * add support for building with CUDA-9.x
+
 ## [1.1.0.0] - 2017-09-21
 ### Added
  * support for GHC-8.2
@@ -34,7 +38,8 @@ Policy (PVP)](https://pvp.haskell.org)
   * initial release
 
 
-[next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.2.0.0...HEAD
+[next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-ptx...HEAD
+[1.1.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...1.1.0.1-ptx
 [1.1.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.0.0.1
 [1.0.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0

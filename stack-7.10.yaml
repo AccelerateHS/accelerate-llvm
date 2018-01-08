@@ -19,7 +19,7 @@ extra-deps:
 - 'libffi-0.1'
 - 'llvm-hs-4.2.0'
 - 'llvm-hs-pure-4.1.0.0'
-- 'nvvm-0.8.0.0'
+- 'nvvm-0.8.0.2'
 - 'process-1.4.3.0'
 - 'tasty-hedgehog-0.1.0.1'
 - 'transformers-0.5.5.0'

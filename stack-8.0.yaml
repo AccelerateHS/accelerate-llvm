@@ -14,7 +14,7 @@ extra-deps:
 
 - 'Cabal-2.0.0.2'
 - 'cuda-0.9.0.0'
-- 'nvvm-0.8.0.0'
+- 'nvvm-0.8.0.2'
 - 'tasty-hedgehog-0.1.0.1'
 
 # Override default flag values for local packages and extra-deps
