@@ -19,6 +19,9 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 -- llvm-general
 import LLVM.Target                                                  hiding ( Target )
 import LLVM.AST.DataLayout                                          ( DataLayout )
+import qualified LLVM.Relocation                                    as RelocationModel
+import qualified LLVM.CodeModel                                     as CodeModel
+import qualified LLVM.CodeGenOpt                                    as CodeOptimisation
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
@@ -76,5 +79,19 @@ nativeCPUName = unsafePerformIO $ getHostCPUName
 withNativeTargetMachine
     :: (TargetMachine -> IO a)
     -> IO a
-withNativeTargetMachine = withHostTargetMachine
+withNativeTargetMachine k = do
+  initializeNativeTarget
+  nativeCPUFeatures <- getHostCPUFeatures
+  (nativeTarget, _) <- lookupTarget Nothing nativeTargetTriple
+  withTargetOptions $ \targetOptions ->
+    withTargetMachine
+        nativeTarget
+        nativeTargetTriple
+        nativeCPUName
+        nativeCPUFeatures
+        targetOptions
+        RelocationModel.DynamicNoPIC
+        CodeModel.Default
+        CodeOptimisation.Default
+        k
 

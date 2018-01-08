@@ -39,12 +39,12 @@ import Foreign.ForeignPtr
 import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
-import GHC.ForeignPtr                                     ( mallocPlainForeignPtrAlignedBytes )
-import GHC.Prim                                           ( addr2Int#, int2Word# )
+import GHC.Prim                                           ( addr2Int#, int2Word#, int2Addr# )
 import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
 import System.IO.Unsafe
 import System.Posix.DynamicLinker
+import System.Posix.Types                                 ( COff(..) )
 import Text.Printf
 import qualified Data.ByteString                          as B
 import qualified Data.ByteString.Char8                    as B8
@@ -75,17 +75,15 @@ loadObject obj =
       --
       (funtab, oc) <- loadSegment obj strtab secs symbols relocs
 
-      -- The executable pages are allocated on the GC heap. When the pages are
-      -- finalised, unset the executable bit and mark them as read/write so that
-      -- they can be reused
+      -- Unmap the executable pages when they are no longer required
       --
       objectcode <- newLifetime [oc]
       addFinalizer objectcode $ do
         Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show funtab)
         case oc of
-          Segment vmsize oc_fp -> do
-            withForeignPtr oc_fp $ \oc_p -> do
-              mprotect oc_p vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
+          Segment vmsize oc_fp ->
+            withForeignPtr oc_fp $ \oc_p ->
+              munmap oc_p vmsize
 
       return (funtab, objectcode)
 
@@ -145,42 +143,46 @@ loadSegment obj strtab secs symtab relocs = do
       --
       vmsize'     = V.last offsets                                  -- bytes required to store all sections
       vmsize      = pad pagesize (vmsize' + (V.length symtab * 16)) -- sections + jump tables
+
+  -- Allocate new pages to store the executable code. This is allocated in
+  -- the lower 2GB so that 32-bit relocations should work without needing
+  -- to go via the jump tables.
   --
-  seg_fp  <- mallocPlainForeignPtrAlignedBytes vmsize pagesize
-  funtab  <- withForeignPtr seg_fp $ \seg_p -> do
-              -- Just in case, clear out the segment data (corresponds to NOP).
-              -- This also takes care of .bss sections
-              fillBytes seg_p 0 vmsize
+  -- The memory is implicitly initialised to zero (corresponding to NOP).
+  -- This also takes care of .bss sections.
+  --
+  seg_p   <- mmap vmsize
+  seg_fp  <- newForeignPtr_ seg_p
 
-              -- Jump tables are placed directly after the segment data
-              let jump_p = seg_p `plusPtr` vmsize'
-              V.imapM_ (makeJumpIsland jump_p) symtab
+  -- Jump tables are placed directly after the segment data
+  let jump_p = seg_p `plusPtr` vmsize'
+  V.imapM_ (makeJumpIsland jump_p) symtab
 
-              -- Copy over section data
-              V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
+  -- Copy over section data
+  V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
 
-              -- Process relocations
-              V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
+  -- Process relocations
+  V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
 
-              -- Mark the page as executable and read-only
-              mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
+  -- Mark the page as executable and read-only
+  mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
 
-              -- Resolve external symbols defined in the sections into function
-              -- pointers.
-              --
-              -- Note that in order to support ahead-of-time compilation, the
-              -- generated functions are given unique names by appending with an
-              -- underscore followed by a 16-digit unique ID. The execution
-              -- phase doesn't need to know about this however, so un-mangle the
-              -- name to the basic "map", "fold", etc.
-              --
-              let extern Symbol{..}   = sym_binding == Global && sym_type == Func
-                  resolve Symbol{..}  =
-                    let name  = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
-                        addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
-                    in
-                    (name, addr)
-              return $ FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
+  -- Resolve external symbols defined in the sections into function
+  -- pointers.
+  --
+  -- Note that in order to support ahead-of-time compilation, the
+  -- generated functions are given unique names by appending with an
+  -- underscore followed by a 16-digit unique ID. The execution
+  -- phase doesn't need to know about this however, so un-mangle the
+  -- name to the basic "map", "fold", etc.
+  --
+  let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
+      extern Symbol{..}   = sym_binding == Global && sym_type == Func
+      resolve Symbol{..}  =
+        let name  = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
+            addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
+        in
+        (name, addr)
   --
   return (funtab, Segment vmsize seg_fp)
 
@@ -222,48 +224,73 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 processRelocation :: Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
-  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%s, value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
+  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-14s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
   case r_type of
     R_X86_64_None -> return ()
-    R_X86_64_64   -> relocate (fromIntegral symval + r_addend)
+    R_X86_64_64   -> relocate value
+
     R_X86_64_PC32 ->
-      let offset = fromIntegral symval + r_addend - fromIntegral pc' in
-      if  offset >= 0x7fffffff || offset < -0x80000000
-        then do
+      let offset :: Int64
+          offset = fromIntegral (value - pc')
+      in
+      if offset >= 0x7fffffff || offset < -0x80000000
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               offset' = fromIntegral jump' + r_addend - fromIntegral pc'
-          relocate offset'
+          in
+          relocate (fromIntegral offset' :: Word32)
         else
-          relocate offset
+          relocate (fromIntegral offset  :: Word32)
 
     R_X86_64_PC64 ->
-      let offset = fromIntegral symval + r_addend - fromIntegral pc' in
-      relocate offset
+      let offset :: Int64
+          offset = fromIntegral (value - pc')
+      in
+      relocate (fromIntegral offset :: Word32)
 
-    R_X86_64_32   ->
-      let value = symval + fromIntegral r_addend in
-      if  value >= 0x7fffffff
-        then do
+    R_X86_64_32 ->
+      if value >= 0x7fffffff
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               value'  = fromIntegral jump' + r_addend
-          relocate value'
+          in
+          relocate (fromIntegral value' :: Word32)
         else
-          relocate (fromIntegral value)
+          relocate (fromIntegral value  :: Word32)
 
-    R_X86_64_32S  ->
-      let value = fromIntegral symval + r_addend in
-      if  value >= 0x7fffffff || value < -0x80000000
-        then do
+    R_X86_64_32S ->
+      let values :: Int64
+          values = fromIntegral value
+      in
+      if values > 0x7fffffff || values < -0x80000000
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               value'  = fromIntegral jump' + r_addend
-          relocate value'
+          in
+          relocate (fromIntegral value' :: Int32)
         else
-          relocate value
+          relocate (fromIntegral value  :: Int32)
+
+    R_X86_64_PLT32 ->
+      let offset :: Int64
+          offset  = fromIntegral (value - pc')
+      in
+      if offset >= 0x7fffffff || offset < -0x80000000
+        then
+          let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
+              offset' = fromIntegral jump' + r_addend - fromIntegral pc'
+          in
+          relocate (fromIntegral offset' :: Word32)
+        else
+          relocate (fromIntegral offset  :: Word32)
 
   where
     pc :: Ptr Word8
     pc  = seg_p `plusPtr` (fromIntegral r_offset + sec_offset V.! r_section)
     pc' = castPtrToWord64 pc
+
+    value :: Word64
+    value = symval + fromIntegral r_addend
 
     symval :: Word64
     symval =
@@ -274,8 +301,8 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
 
     Symbol{..} = symtab V.! r_symbol
 
-    relocate :: Int64 -> IO ()
-    relocate x = poke (castPtr pc :: Ptr Word32) (fromIntegral x)
+    relocate :: Storable a => a -> IO ()
+    relocate x = poke (castPtr pc) x
 
 #else
 precessRelocation =
@@ -417,12 +444,13 @@ data Relocation = Relocation
 #endif
 #ifdef x86_64_HOST_ARCH
 {#enum define RelocationType
-    { R_X86_64_NONE as R_X86_64_None      -- no relocation
-    , R_X86_64_64   as R_X86_64_64        -- direct 64-bit
-    , R_X86_64_PC32 as R_X86_64_PC32      -- PC relative 32-bit signed
-    , R_X86_64_PC64 as R_X86_64_PC64      -- PC relative 64-bit
-    , R_X86_64_32   as R_X86_64_32        -- direct 32-bit zero extended
-    , R_X86_64_32S  as R_X86_64_32S       -- direct 32-bit sign extended
+    { R_X86_64_NONE   as R_X86_64_None      -- no relocation
+    , R_X86_64_64     as R_X86_64_64        -- direct 64-bit
+    , R_X86_64_PC32   as R_X86_64_PC32      -- PC relative 32-bit signed
+    , R_X86_64_PC64   as R_X86_64_PC64      -- PC relative 64-bit
+    , R_X86_64_32     as R_X86_64_32        -- direct 32-bit zero extended
+    , R_X86_64_32S    as R_X86_64_32S       -- direct 32-bit sign extended
+    , R_X86_64_PLT32  as R_X86_64_PLT32     -- 32-bit PLT address
     -- ... many more relocation types
     }
     deriving (Eq, Show)
@@ -601,20 +629,20 @@ readSymbolTable p@Peek{..} secs obj SectionHeader{..} = do
       offset  = sh_offset + sh_entsize  -- First symbol in the table is always null; skip it.
                                         -- Make sure to update relocation indices
   strtab  <- readStringTable obj (secs V.! sh_link)
-  symbols <- runGet (V.replicateM (nsym-1) (readSymbol p strtab)) (B.drop offset obj)
+  symbols <- runGet (V.replicateM (nsym-1) (readSymbol p secs strtab)) (B.drop offset obj)
   return symbols
 
-readSymbol :: Peek -> ByteString -> Get Symbol
-readSymbol p@Peek{..} strtab =
+readSymbol :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol p@Peek{..} secs strtab =
   case is64Bit of
-    True  -> readSymbol64 p strtab
-    False -> readSymbol32 p strtab
+    True  -> readSymbol64 p secs strtab
+    False -> readSymbol32 p secs strtab
 
-readSymbol32 :: Peek -> ByteString -> Get Symbol
-readSymbol32 _ _ = fail "TODO: readSymbol32"
+readSymbol32 :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol32 _ _ _ = fail "TODO: readSymbol32"
 
-readSymbol64 :: Peek -> ByteString -> Get Symbol
-readSymbol64 Peek{..} strtab = do
+readSymbol64 :: Peek -> Vector SectionHeader -> ByteString -> Get Symbol
+readSymbol64 Peek{..} secs strtab = do
   st_strx     <- fromIntegral <$> getWord32
   st_info     <- getWord8
   skip 1 -- st_other  <- getWord8
@@ -622,8 +650,10 @@ readSymbol64 Peek{..} strtab = do
   sym_value   <- getWord64
   skip 8 -- st_size   <- getWord64
 
-  let sym_name | st_strx == 0 = B.empty
-               | otherwise    = indexStringTable strtab st_strx
+  let sym_name
+        | sym_type == Section = indexStringTable strtab (sh_name (secs V.! sym_section))
+        | st_strx == 0        = B.empty
+        | otherwise           = indexStringTable strtab st_strx
 
       sym_binding = toEnum $ fromIntegral ((st_info .&. 0xF0) `shiftR` 4)
       sym_type    = toEnum $ fromIntegral (st_info .&. 0x0F)
@@ -651,7 +681,7 @@ resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
   = unsafePerformIO
   $ B.unsafeUseAsCString name $ \c_name -> do
-      addr <- c_dlsym (packDL Next) c_name
+      addr <- c_dlsym (packDL Default) c_name
       if addr == nullFunPtr
         then do
           err <- dlerror
@@ -677,24 +707,37 @@ castPtrToWord64 (Ptr addr#) = W64# (int2Word# (addr2Int# addr#))
 mprotect :: Ptr Word8 -> Int -> Int -> IO ()
 mprotect addr len prot
   = throwErrnoIfMinus1_ "mprotect"
-  $ c_mprotect (castPtr addr) (fromIntegral len) (fromIntegral prot)
+  $ c_mprotect addr (fromIntegral len) (fromIntegral prot)
+
+-- Allocate memory pages in the lower 2GB
+--
+mmap :: Int -> IO (Ptr Word8)
+mmap len
+  = throwErrnoIf (== mAP_FAILED) "mmap"
+  $ c_mmap nullPtr (fromIntegral len) prot flags (-1) 0
+  where
+    prot       = {#const PROT_READ#} .|. {#const PROT_WRITE#}
+    flags      = {#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|. {#const MAP_32BIT#}
+    mAP_FAILED = Ptr (int2Addr# (-1#))
+
+-- Remove a memory mapping
+--
+munmap :: Ptr Word8 -> Int -> IO ()
+munmap addr len
+  = throwErrnoIfMinus1_ "munmap"
+  $ c_munmap addr (fromIntegral len)
 
 foreign import ccall unsafe "mprotect"
-  c_mprotect :: Ptr () -> CSize -> CInt -> IO CInt
+  c_mprotect :: Ptr a -> CSize -> CInt -> IO CInt
+
+foreign import ccall unsafe "mmap"
+  c_mmap :: Ptr a -> CSize -> CInt -> CInt -> CInt -> COff -> IO (Ptr a)
+
+foreign import ccall unsafe "munmap"
+  c_munmap :: Ptr a -> CSize -> IO CInt
 
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
-
-#if __GLASGOW_HASKELL__ <= 708
--- Fill a given number of bytes in memory. Added in base-4.8.0.0.
---
-fillBytes :: Ptr a -> Word8 -> Int -> IO ()
-fillBytes dest char size = do
-  _ <- memset dest (fromIntegral char) (fromIntegral size)
-  return ()
-
-foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO (Ptr a)
-#endif
 
 
 -- Debug
