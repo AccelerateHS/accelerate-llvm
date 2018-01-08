@@ -222,7 +222,7 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 processRelocation :: Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
-  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-13s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
+  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-14s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
   case r_type of
     R_X86_64_None -> return ()
     R_X86_64_64   -> relocate value
@@ -232,9 +232,10 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
           offset = fromIntegral (value - pc')
       in
       if offset >= 0x7fffffff || offset < -0x80000000
-        then do
+        then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
               offset' = fromIntegral jump' + r_addend - fromIntegral pc'
+          in
           relocate (fromIntegral offset' :: Word32)
         else
           relocate (fromIntegral offset  :: Word32)
@@ -245,7 +246,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
       in
       relocate (fromIntegral offset :: Word32)
 
-    R_X86_64_32   ->
+    R_X86_64_32 ->
       if value >= 0x7fffffff
         then
           let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
@@ -255,7 +256,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
         else
           relocate (fromIntegral value  :: Word32)
 
-    R_X86_64_32S  ->
+    R_X86_64_32S ->
       let values :: Int64
           values = fromIntegral value
       in
@@ -267,6 +268,19 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
           relocate (fromIntegral value' :: Int32)
         else
           relocate (fromIntegral value  :: Int32)
+
+    R_X86_64_PLT32 ->
+      let offset :: Int64
+          offset  = fromIntegral (value - pc')
+      in
+      if offset >= 0x7fffffff || offset < -0x80000000
+        then
+          let jump'   = castPtrToWord64 (jump_p `plusPtr` (r_symbol * 16 + 8))
+              offset' = fromIntegral jump' + r_addend - fromIntegral pc'
+          in
+          relocate (fromIntegral offset' :: Word32)
+        else
+          relocate (fromIntegral offset  :: Word32)
 
   where
     pc :: Ptr Word8
@@ -428,12 +442,13 @@ data Relocation = Relocation
 #endif
 #ifdef x86_64_HOST_ARCH
 {#enum define RelocationType
-    { R_X86_64_NONE as R_X86_64_None      -- no relocation
-    , R_X86_64_64   as R_X86_64_64        -- direct 64-bit
-    , R_X86_64_PC32 as R_X86_64_PC32      -- PC relative 32-bit signed
-    , R_X86_64_PC64 as R_X86_64_PC64      -- PC relative 64-bit
-    , R_X86_64_32   as R_X86_64_32        -- direct 32-bit zero extended
-    , R_X86_64_32S  as R_X86_64_32S       -- direct 32-bit sign extended
+    { R_X86_64_NONE   as R_X86_64_None      -- no relocation
+    , R_X86_64_64     as R_X86_64_64        -- direct 64-bit
+    , R_X86_64_PC32   as R_X86_64_PC32      -- PC relative 32-bit signed
+    , R_X86_64_PC64   as R_X86_64_PC64      -- PC relative 64-bit
+    , R_X86_64_32     as R_X86_64_32        -- direct 32-bit zero extended
+    , R_X86_64_32S    as R_X86_64_32S       -- direct 32-bit sign extended
+    , R_X86_64_PLT32  as R_X86_64_PLT32     -- 32-bit PLT address
     -- ... many more relocation types
     }
     deriving (Eq, Show)
