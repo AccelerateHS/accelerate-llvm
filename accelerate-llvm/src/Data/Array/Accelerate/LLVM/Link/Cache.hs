@@ -16,28 +16,29 @@ module Data.Array.Accelerate.LLVM.Link.Cache (
 
 ) where
 
-import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Control.Monad
 import Control.Concurrent.MVar
-import Data.IntMap.Strict                                           ( IntMap )
+import Data.Map.Strict                                              ( Map )
 import Prelude                                                      hiding ( lookup )
 import Text.Printf
-import qualified Data.IntMap.Strict                                 as IM
+import qualified Data.Map.Strict                                    as Map
 
 
 -- Simple reference-counted linker cache for function tables 'f' implemented by
 -- object code 'o'.
 --
-data LinkCache f o = LinkCache {-# UNPACK #-} !(MVar (IntMap (Entry f o)))
+data LinkCache f o = LinkCache {-# UNPACK #-} !(MVar (Map UID (Entry f o)))
 data Entry f o     = Entry {-# UNPACK #-} !Int !f !o
 
 
 -- Create a new linker cache
 --
 new :: IO (LinkCache f o)
-new = LinkCache `liftM` newMVar IM.empty
+new = LinkCache `liftM` newMVar Map.empty
 
 
 -- Return the binding addresses for the given kernel functions (by key). If the
@@ -45,20 +46,20 @@ new = LinkCache `liftM` newMVar IM.empty
 -- be run in order to generate them. This happens as a single atomic step; thus
 -- the cache is thread safe.
 --
-dlsym :: Int -> LinkCache f o -> IO (f,o) -> IO (Lifetime f)
+dlsym :: UID -> LinkCache f o -> IO (f,o) -> IO (Lifetime f)
 dlsym key cache@(LinkCache var) k = do
-  modifyMVar var $ \im ->
-    case IM.lookup key im of
+  modifyMVar var $ \m ->
+    case Map.lookup key m of
       -- Run the supplied function to generate the object code and add to the cache
       Nothing -> do
         (f,o)  <- k
         ticket <- issue key f cache
-        return ( IM.insert key (Entry 1 f o) im, ticket )
+        return ( Map.insert key (Entry 1 f o) m, ticket )
 
       -- Return the existing object code
       Just (Entry c f o) -> do
         ticket <- issue key f cache
-        return ( IM.insert key (Entry (c+1) f o) im, ticket )
+        return ( Map.insert key (Entry (c+1) f o) m, ticket )
 
 
 {--
@@ -75,9 +76,9 @@ dlsym key cache@(LinkCache var) k = do
 insert :: Int -> f -> o -> LinkCache f o -> IO (Lifetime f)
 insert key functionTable objectCode cache@(LinkCache var) = do
   ticket <- issue key functionTable cache
-  modifyMVar_ var $ \im ->
+  modifyMVar_ var $ \m ->
     let collision = $internalError "insert" "duplicate entry"
-    in  return $! IM.insertWith collision key (Entry 1 functionTable objectCode) im
+    in  return $! Map.insertWith collision key (Entry 1 functionTable objectCode) m
   --
   return ticket
 
@@ -87,12 +88,12 @@ insert key functionTable objectCode cache@(LinkCache var) = do
 --
 lookup :: Int -> LinkCache f o -> IO (Maybe (Lifetime f))
 lookup key cache@(LinkCache var) = do
-  modifyMVar var $ \im ->
-    case IM.lookup key im of
-      Nothing             -> return (im, Nothing)
+  modifyMVar var $ \m ->
+    case Map.lookup key m of
+      Nothing             -> return (m, Nothing)
       Just (Entry c f o)  -> do
         ticket <- issue key f cache
-        return ( IM.insert key (Entry (c+1) f o) im, Just ticket )
+        return ( Map.insert key (Entry (c+1) f o) m, Just ticket )
 --}
 
 
@@ -100,15 +101,15 @@ lookup key cache@(LinkCache var) = do
 -- lifetime is GC'ed it decreasing the reference count of the corresponding
 -- entry, and removes it from the table entirely once the count drops to zero.
 --
-issue :: Int -> f -> LinkCache f o -> IO (Lifetime f)
+issue :: UID -> f -> LinkCache f o -> IO (Lifetime f)
 issue key fun (LinkCache var) = do
   ticket <- newLifetime fun
   addFinalizer ticket $
     let refcount (Entry c f o)
-          | c <= 1    = trace dump_ld (printf "ld: remove object code %016x" key) Nothing
+          | c <= 1    = trace dump_ld (printf "ld: remove object code %s" (show key)) Nothing
           | otherwise = Just (Entry (c-1) f o)
     in
-    modifyMVar_ var $ \im -> return $! IM.update refcount key im
+    modifyMVar_ var $ \m -> return $! Map.update refcount key m
   --
   return ticket
 

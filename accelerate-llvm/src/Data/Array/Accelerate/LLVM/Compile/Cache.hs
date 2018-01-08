@@ -20,6 +20,7 @@ module Data.Array.Accelerate.LLVM.Compile.Cache (
 
 import Data.Array.Accelerate.Debug
 import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Analysis.Hash
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -44,9 +45,9 @@ class Persistent arch where
   targetCacheTemplate :: LLVM arch FilePath
 
 
--- | Unique identifier for an accelerate computation
+-- | Unique identifier for an accelerate computation (SHA3-256 digest)
 --
-type UID = Int
+type UID = Hash
 
 
 -- | Return the unique cache file path corresponding to a given accelerate
@@ -80,7 +81,7 @@ cacheOfUID uid = do
       (name, ext)   = splitExtensions file
       --
       cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base </> if dbg then "dbg" else "rel"
-      cachefile     = cachepath </> printf "%s%016X" name uid <.> ext
+      cachefile     = cachepath </> printf "%s%s" name (show uid) <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
   return cachefile
