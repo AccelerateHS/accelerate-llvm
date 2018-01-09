@@ -70,7 +70,7 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 --
 makeOpenAcc :: UID -> Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (IROpenAcc Native aenv a)
 makeOpenAcc uid name param kernel = do
-  body  <- makeKernel (name <> fromString (printf "_%016x" uid)) param kernel
+  body  <- makeKernel (name <> fromString (printf "_%s" (show uid))) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process

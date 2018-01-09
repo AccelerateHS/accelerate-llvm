@@ -170,16 +170,15 @@ loadSegment obj strtab secs symtab relocs = do
   -- Resolve external symbols defined in the sections into function
   -- pointers.
   --
-  -- Note that in order to support ahead-of-time compilation, the
-  -- generated functions are given unique names by appending with an
-  -- underscore followed by a 16-digit unique ID. The execution
-  -- phase doesn't need to know about this however, so un-mangle the
-  -- name to the basic "map", "fold", etc.
+  -- Note that in order to support ahead-of-time compilation, the generated
+  -- functions are given unique names by appending with an underscore followed
+  -- by a unique ID. The execution phase doesn't need to know about this
+  -- however, so un-mangle the name to the basic "map", "fold", etc.
   --
   let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
       extern Symbol{..}   = sym_binding == Global && sym_type == Func
       resolve Symbol{..}  =
-        let name  = BS.toShort (B8.take (B8.length sym_name - 17) sym_name)
+        let name  = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
             addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
         in
         (name, addr)

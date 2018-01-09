@@ -120,7 +120,7 @@ compile acc aenv = do
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
       then do
-        Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %016x" uid)
+        Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %s" (show uid))
         B.readFile cacheFile
 
       else

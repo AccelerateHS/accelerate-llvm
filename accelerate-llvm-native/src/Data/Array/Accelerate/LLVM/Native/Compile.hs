@@ -90,7 +90,7 @@ compile acc aenv = do
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
       then do
-        Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %016x" uid)
+        Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %s" (show uid))
         B.readFile cacheFile
 
       else
@@ -105,7 +105,7 @@ compile acc aenv = do
             Debug.traceIO Debug.dump_asm . B8.unpack =<< moduleTargetAssembly machine mdl
 
           obj <- moduleObject machine mdl
-          Debug.traceIO Debug.dump_cc (printf "cc: new object code %016x" uid)
+          Debug.traceIO Debug.dump_cc (printf "cc: new object code %s" (show uid))
           B.writeFile cacheFile obj
           return obj
 
