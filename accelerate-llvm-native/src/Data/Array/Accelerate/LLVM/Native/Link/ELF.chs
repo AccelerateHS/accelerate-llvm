@@ -712,12 +712,12 @@ mprotect addr len prot
 --
 mmap :: Int -> IO (Ptr Word8)
 mmap len
-  = throwErrnoIf (== mAP_FAILED) "mmap"
+  = throwErrnoIf (== _MAP_FAILED) "mmap"
   $ c_mmap nullPtr (fromIntegral len) prot flags (-1) 0
   where
-    prot       = {#const PROT_READ#} .|. {#const PROT_WRITE#}
-    flags      = {#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|. {#const MAP_32BIT#}
-    mAP_FAILED = Ptr (int2Addr# (-1#))
+    prot        = {#const PROT_READ#} .|. {#const PROT_WRITE#}
+    flags       = {#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|. {#const MAP_32BIT#}
+    _MAP_FAILED = Ptr (int2Addr# (-1#))
 
 -- Remove a memory mapping
 --
