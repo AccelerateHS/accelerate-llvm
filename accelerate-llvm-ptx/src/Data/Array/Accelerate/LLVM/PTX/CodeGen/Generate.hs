@@ -17,9 +17,7 @@ import Prelude                                                  hiding ( fromInt
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -50,10 +48,9 @@ mkGenerate ptx aenv apply =
   makeOpenAcc ptx "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
-      i' <- fromIntegral integralType numType i         -- loop counter is Int32
-      ix <- indexOfInt (irArrayShape arrOut) i'         -- convert to multidimensional index
+      ix <- indexOfInt (irArrayShape arrOut) i          -- convert to multidimensional index
       r  <- app1 apply ix                               -- apply generator function
-      writeArray arrOut i' r                            -- store result
+      writeArray arrOut i r                             -- store result
 
     return_
 

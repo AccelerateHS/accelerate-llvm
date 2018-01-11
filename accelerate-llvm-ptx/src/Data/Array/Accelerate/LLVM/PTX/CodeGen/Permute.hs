@@ -141,13 +141,12 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
 
     imapFromTo start end $ \i -> do
 
-      i'  <- A.fromIntegral integralType numType i
-      ix  <- indexOfInt sh i'
+      ix  <- indexOfInt sh i
       ix' <- app1 project ix
 
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i'
+        x <- app1 delayedLinearIndex i
         r <- app1 update x
 
         case rmw of
@@ -240,14 +239,13 @@ mkPermute_mutex ptx aenv combine project IRDelayed{..} =
 
     imapFromTo start end $ \i -> do
 
-      i'  <- A.fromIntegral integralType numType i
-      ix  <- indexOfInt sh i'
+      ix  <- indexOfInt sh i
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i'
+        x <- app1 delayedLinearIndex i
 
         atomically arrLock j $ do
           y <- readArray arrOut j

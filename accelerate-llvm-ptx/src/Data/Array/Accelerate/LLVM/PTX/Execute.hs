@@ -55,7 +55,6 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import Control.Monad                                            ( when )
 import Control.Monad.State                                      ( gets, liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
-import Data.Int                                                 ( Int32 )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
 import Data.Word                                                ( Word32 )
@@ -359,7 +358,7 @@ scanAllOp exe gamma aenv stream n m = withExecutable exe $ \ptxExecutable -> do
   -- then apply those values to the partial results.
   when (s > 1) $ do
     liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
+    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, c)
 
   return out
 
@@ -444,7 +443,7 @@ scan'AllOp exe gamma aenv stream (Z :. n) = withExecutable exe $ \ptxExecutable 
     else do
       sum <- allocateRemote Z
       liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
-      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, i32 c)
+      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, c)
       return (out, sum)
 
 
@@ -533,10 +532,6 @@ stencil2Op exe gamma aenv stream arr brr =
 defaultPPT :: Int
 defaultPPT = 32768
 
-{-# INLINE i32 #-}
-i32 :: Int -> Int32
-i32 = fromIntegral
-
 -- | Retrieve the named kernel
 --
 (!#) :: FunctionTable -> ShortByteString -> Kernel
@@ -563,7 +558,7 @@ executeOp
     -> IO ()
 executeOp ptx@PTX{..} kernel@Kernel{..} gamma aenv stream r args =
   runExecutable fillP kernelName defaultPPT r $ \start end _ -> do
-    argv <- marshal ptx stream (i32 start, i32 end, args, (gamma,aenv))
+    argv <- marshal ptx stream (start, end, args, (gamma,aenv))
     launch kernel stream (end-start) argv
 
 

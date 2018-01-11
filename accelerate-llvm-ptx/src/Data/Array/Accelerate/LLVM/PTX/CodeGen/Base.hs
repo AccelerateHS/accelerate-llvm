@@ -166,7 +166,7 @@ globalThreadIdx = do
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this kernel should evaluate.
 --
-gangParam :: (IR Int32, IR Int32, [LLVM.Parameter])
+gangParam :: (IR Int, IR Int, [LLVM.Parameter])
 gangParam =
   let t         = scalarType
       start     = "ix.start"
