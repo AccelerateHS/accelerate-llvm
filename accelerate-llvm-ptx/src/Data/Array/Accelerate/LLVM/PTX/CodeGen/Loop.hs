@@ -14,7 +14,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 -- accelerate
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic            as A
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
@@ -29,7 +29,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 -- The start and end array indices are given as natural array indexes, and the
 -- thread specific indices are calculated by the loop.
 --
--- > for ( int32 i = blockDim.x * blockIdx.x + threadIdx.x + start
+-- > for ( int i = blockDim.x * blockIdx.x + threadIdx.x + start
 -- >     ; i <  end
 -- >     ; i += blockDim.x * gridDim.x )
 --
@@ -37,10 +37,10 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 --       boundary. This might not always be the case, so provide a version that
 --       explicitly aligns reads to the warp boundary.
 --
-imapFromTo :: IR Int32 -> IR Int32 -> (IR Int32 -> CodeGen ()) -> CodeGen ()
+imapFromTo :: IR Int -> IR Int -> (IR Int -> CodeGen ()) -> CodeGen ()
 imapFromTo start end body = do
-  step  <- gridSize
-  tid   <- globalThreadIdx
+  step  <- A.fromIntegral integralType numType =<< gridSize
+  tid   <- A.fromIntegral integralType numType =<< globalThreadIdx
   i0    <- add numType tid start
   --
   Loop.imapFromStepTo i0 step end body

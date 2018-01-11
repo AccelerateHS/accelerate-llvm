@@ -139,8 +139,8 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
     -- 'scanl (+) 0' of the segment length array, so its size has increased by
     -- one.
     --
-    sz    <- i32 . indexHead =<< delayedExtent arr
-    ss    <- do n <- i32 . indexHead =<< delayedExtent seg
+    sz    <- indexHead <$> delayedExtent arr
+    ss    <- do n <- indexHead <$> delayedExtent seg
                 A.sub numType n (lift 1)
 
     -- Each thread block cooperatively reduces a segment.
@@ -156,9 +156,9 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
         i <- case rank (undefined::sh) of
                0 -> return s
                _ -> A.rem integralType s ss
-        j <- A.add numType i tid
-        v <- app1 (delayedLinearIndex seg) =<< A.fromIntegral integralType numType j
-        writeArray smem tid =<< i32 v
+        j <- A.add numType i =<< int tid
+        v <- app1 (delayedLinearIndex seg) j
+        writeArray smem tid =<< int v
 
       -- Once all threads have caught up, begin work on the new segment.
       __syncthreads
@@ -199,10 +199,9 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
             -- (e.g. we must have all threads convergent on __syncthreads) or
             -- a bug in NVPTX / ptxas.
             --
-            bd <- blockDim
-            i0 <- A.add numType inf tid
+            i0 <- A.add numType inf =<< int tid
             x0 <- if A.lt scalarType i0 sup
-                    then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i0
+                    then app1 (delayedLinearIndex arr) i0
                     else let
                              go :: TupleType a -> Operands a
                              go UnitTuple       = OP_Unit
@@ -211,10 +210,12 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                          in
                          return . IR $ go (eltType (undefined::e))
 
-            v0 <- A.sub numType sup inf
-            r0 <- if A.gte scalarType v0 bd
-                    then reduceBlockSMem dev combine Nothing   x0
-                    else reduceBlockSMem dev combine (Just v0) x0
+            bd  <- int =<< blockDim
+            v0  <- A.sub numType sup inf
+            v0' <- i32 v0
+            r0  <- if A.gte scalarType v0 bd
+                     then reduceBlockSMem dev combine Nothing    x0
+                     else reduceBlockSMem dev combine (Just v0') x0
 
             -- Step 2: keep walking over the input
             nxt <- A.add numType inf bd
@@ -223,13 +224,13 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                      -- Wait for threads to catch up before starting the next stripe
                      __syncthreads
 
-                     i' <- A.add numType offset tid
+                     i' <- A.add numType offset =<< int tid
                      v' <- A.sub numType sup offset
                      r' <- if A.gte scalarType v' bd
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
-                               x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                               x <- app1 (delayedLinearIndex arr) i'
                                y <- reduceBlockSMem dev combine Nothing x
                                return y
 
@@ -239,9 +240,10 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                              -- points, similar to the above NOTE.
                              else do
                                x <- if A.lt scalarType i' sup
-                                      then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                      then app1 (delayedLinearIndex arr) i'
                                       else return r
-                               y <- reduceBlockSMem dev combine (Just v') x
+                               z <- i32 v'
+                               y <- reduceBlockSMem dev combine (Just z) x
                                return y
 
                      -- first thread incorporates the result from the previous
@@ -346,15 +348,16 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
     -- reduces. Note that this is a segment-offset array computed by 'scanl (+) 0'
     -- of the segment length array, so its size has increased by one.
     --
-    sz    <- i32 . indexHead =<< delayedExtent arr
-    ss    <- do a <- i32 . indexHead =<< delayedExtent seg
+    sz    <- indexHead <$> delayedExtent arr
+    ss    <- do a <- indexHead <$> delayedExtent seg
                 b <- A.sub numType a (lift 1)
                 return b
 
     -- Each thread reduces a segment independently
-    s0    <- A.add numType start gwid
-    gd    <- gridDim
-    step  <- A.mul numType wpb gd
+    s0    <- A.add numType start =<< int gwid
+    gd    <- int =<< gridDim
+    wpb'  <- int wpb
+    step  <- A.mul numType wpb' gd
     imapFromStepTo s0 step end $ \s -> do
 
       -- The first two threads of the warp determine the indices of the segments
@@ -365,9 +368,9 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
         a <- case rank (undefined::sh) of
                0 -> return s
                _ -> A.rem integralType s ss
-        b <- A.add numType a lane
-        c <- app1 (delayedLinearIndex seg) =<< A.fromIntegral integralType numType b
-        writeArray lim lane =<< i32 c
+        b <- A.add numType a =<< int lane
+        c <- app1 (delayedLinearIndex seg) b
+        writeArray lim lane =<< int c
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
@@ -378,7 +381,8 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                        0 -> return (A.pair u v)
                        _ -> do q <- A.quot integralType s ss
                                a <- A.mul numType q sz
-                               A.pair <$> A.add numType u a <*> A.add numType v a
+                               A.pair <$> A.add numType u a
+                                      <*> A.add numType v a
 
       -- TLM: I don't think this should be necessary...
       __syncthreads
@@ -400,43 +404,45 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
             --
             -- See comment above why we initialise the loop in this way
             --
-            i0 <- A.add numType inf lane
-            x0 <- if A.lt scalarType i0 sup
-                    then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i0
-                    else let
-                             go :: TupleType a -> Operands a
-                             go UnitTuple       = OP_Unit
-                             go (PairTuple a b) = OP_Pair (go a) (go b)
-                             go (SingleTuple t) = ir' t (undef t)
-                         in
-                         return . IR $ go (eltType (undefined::e))
+            i0  <- A.add numType inf =<< int lane
+            x0  <- if A.lt scalarType i0 sup
+                     then app1 (delayedLinearIndex arr) i0
+                     else let
+                              go :: TupleType a -> Operands a
+                              go UnitTuple       = OP_Unit
+                              go (PairTuple a b) = OP_Pair (go a) (go b)
+                              go (SingleTuple t) = ir' t (undef t)
+                          in
+                          return . IR $ go (eltType (undefined::e))
 
-            v0 <- A.sub numType sup inf
-            r0 <- if A.gte scalarType v0 (int32 ws)
-                    then reduceWarpSMem dev combine smem Nothing   x0
-                    else reduceWarpSMem dev combine smem (Just v0) x0
+            v0  <- A.sub numType sup inf
+            v0' <- i32 v0
+            r0  <- if A.gte scalarType v0 (lift ws)
+                     then reduceWarpSMem dev combine smem Nothing    x0
+                     else reduceWarpSMem dev combine smem (Just v0') x0
 
             -- Step 2: Keep walking over the rest of the segment
-            nx <- A.add numType inf (int32 ws)
-            r  <- iterFromStepTo nx (int32 ws) sup r0 $ \offset r -> do
+            nx  <- A.add numType inf (lift ws)
+            r   <- iterFromStepTo nx (lift ws) sup r0 $ \offset r -> do
 
                     -- TLM: Similarly, I think this is unnecessary...
                     __syncthreads
 
-                    i' <- A.add numType offset lane
+                    i' <- A.add numType offset =<< int lane
                     v' <- A.sub numType sup offset
-                    r' <- if A.gte scalarType v' (int32 ws)
+                    r' <- if A.gte scalarType v' (lift ws)
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
-                              x <- app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                              x <- app1 (delayedLinearIndex arr) i'
                               y <- reduceWarpSMem dev combine smem Nothing x
                               return y
 
                             else do
                               x <- if A.lt scalarType i' sup
-                                     then app1 (delayedLinearIndex arr) =<< A.fromIntegral integralType numType i'
+                                     then app1 (delayedLinearIndex arr) i'
                                      else return r
-                              y <- reduceWarpSMem dev combine smem (Just v') x
+                              z <- i32 v'
+                              y <- reduceWarpSMem dev combine smem (Just z) x
                               return y
 
                     -- The first lane incorporates the result from the previous
@@ -459,6 +465,9 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
     return_
 
 
-i32 :: IsIntegral a => IR a -> CodeGen (IR Int32)
+i32 :: IsIntegral i => IR i -> CodeGen (IR Int32)
 i32 = A.fromIntegral integralType numType
+
+int :: IsIntegral i => IR i -> CodeGen (IR Int)
+int = A.fromIntegral integralType numType
 

@@ -48,7 +48,7 @@ import LLVM.AST.Type.Representation
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
-import Control.Monad                                                ( (>=>), (<=<) )
+import Control.Monad                                                ( (>=>) )
 import Data.String                                                  ( fromString )
 import Data.Bits                                                    as P
 import Prelude                                                      as P
@@ -161,17 +161,19 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
   in
   makeOpenAccWith config "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    tid <- threadIdx
-    bd  <- blockDim
+    tid     <- threadIdx
+    bd      <- blockDim
 
     -- We can assume that there is only a single thread block
-    i0  <- A.add numType start tid
-    sz  <- A.sub numType end start
+    start'  <- i32 start
+    end'    <- i32 end
+    i0      <- A.add numType start' tid
+    sz      <- A.sub numType end' start'
     when (A.lt scalarType i0 sz) $ do
 
       -- Thread reads initial element and then participates in block-wide
       -- reduction.
-      x0 <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+      x0 <- app1 delayedLinearIndex =<< int i0
       r0 <- if A.eq scalarType sz bd
               then reduceBlockSMem dev combine Nothing   x0
               else reduceBlockSMem dev combine (Just sz) x0
@@ -218,8 +220,8 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
     -- reductions.
     --
     tid   <- threadIdx
-    bd    <- blockDim
-    sz    <- i32 . indexHead =<< delayedExtent
+    bd    <- int =<< blockDim
+    sz    <- indexHead <$> delayedExtent
 
     imapFromTo start end $ \seg -> do
 
@@ -233,7 +235,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
 
       -- Threads cooperatively reduce this stripe
       reduceFromTo dev from to combine
-        (app1 delayedLinearIndex <=< A.fromIntegral integralType numType)
+        (app1 delayedLinearIndex)
         (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
 
     return_
@@ -272,9 +274,9 @@ mkFoldAllM2 dev aenv combine mseed =
     -- reduction step and add the initial element (for exclusive reductions).
     --
     tid   <- threadIdx
-    bd    <- blockDim
     gd    <- gridDim
-    sz    <- i32 . indexHead $ irArrayShape arrTmp
+    bd    <- int =<< blockDim
+    sz    <- return $ indexHead (irArrayShape arrTmp)
 
     imapFromTo start end $ \seg -> do
 
@@ -333,9 +335,11 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
-    tid <- threadIdx
-    sz  <- i32 . indexHead =<< delayedExtent
-    when (A.lt scalarType tid sz) $ do
+    tid   <- threadIdx
+    sz    <- indexHead <$> delayedExtent
+    sz'   <- i32 sz
+
+    when (A.lt scalarType tid sz') $ do
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.
@@ -351,28 +355,29 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
         from  <- A.mul numType seg  sz          -- first linear index this block will reduce
         to    <- A.add numType from sz          -- last linear index this block will reduce (exclusive)
 
-        i0    <- A.add numType from tid
-        x0    <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i0
+        i0    <- A.add numType from =<< int tid
+        x0    <- app1 delayedLinearIndex i0
         bd    <- blockDim
-        r0    <- if A.gte scalarType sz bd
-                   then reduceBlockSMem dev combine Nothing   x0
-                   else reduceBlockSMem dev combine (Just sz) x0
+        r0    <- if A.gte scalarType sz' bd
+                   then reduceBlockSMem dev combine Nothing    x0
+                   else reduceBlockSMem dev combine (Just sz') x0
 
         -- Step 2: keep walking over the input
-        next  <- A.add numType from bd
-        r     <- iterFromStepTo next bd to r0 $ \offset r -> do
+        bd'   <- int bd
+        next  <- A.add numType from bd'
+        r     <- iterFromStepTo next bd' to r0 $ \offset r -> do
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
 
           -- Threads cooperatively reduce this stripe of the input
-          i   <- A.add numType offset tid
+          i   <- A.add numType offset =<< int tid
           v'  <- A.sub numType to offset
-          r'  <- if A.gte scalarType v' bd
+          r'  <- if A.gte scalarType v' bd'
                    -- All threads of the block are valid, so we can avoid
                    -- bounds checks.
                    then do
-                     x <- app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                     x <- app1 delayedLinearIndex i
                      y <- reduceBlockSMem dev combine Nothing x
                      return y
 
@@ -383,9 +388,10 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
                    -- reduction procedure to avoid synchronisation divergence.
                    else do
                      x <- if A.lt scalarType i to
-                            then app1 delayedLinearIndex =<< A.fromIntegral integralType numType i
+                            then app1 delayedLinearIndex i
                             else return r
-                     y <- reduceBlockSMem dev combine (Just v') x
+                     v <- i32 v'
+                     y <- reduceBlockSMem dev combine (Just v) x
                      return y
 
           if A.eq scalarType tid (lift 0)
@@ -571,16 +577,16 @@ reduceWarpSMem dev combine smem size = reduce 0
 reduceFromTo
     :: Elt a
     => DeviceProperties
-    -> IR Int32                                 -- ^ starting index
-    -> IR Int32                                 -- ^ final index (exclusive)
+    -> IR Int                                   -- ^ starting index
+    -> IR Int                                   -- ^ final index (exclusive)
     -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
-    -> (IR Int32 -> CodeGen (IR a))             -- ^ function to retrieve element at index
+    -> (IR Int -> CodeGen (IR a))               -- ^ function to retrieve element at index
     -> (IR a -> CodeGen ())                     -- ^ what to do with the value
     -> CodeGen ()
 reduceFromTo dev from to combine get set = do
 
-  tid   <- threadIdx
-  bd    <- blockDim
+  tid   <- int =<< threadIdx
+  bd    <- int =<< blockDim
 
   valid <- A.sub numType to from
   i     <- A.add numType from tid
@@ -599,7 +605,8 @@ reduceFromTo dev from to combine get set = do
                -- the reduction
                when (A.lt scalarType i to) $ do
                  x <- get i
-                 r <- reduceBlockSMem dev combine (Just valid) x
+                 v <- i32 valid
+                 r <- reduceBlockSMem dev combine (Just v) x
                  set r
 
                return (IR OP_Unit :: IR ())
@@ -614,15 +621,17 @@ reduceFromTo dev from to combine get set = do
 i32 :: IR Int -> CodeGen (IR Int32)
 i32 = A.fromIntegral integralType numType
 
+int :: IR Int32 -> CodeGen (IR Int)
+int = A.fromIntegral integralType numType
 
 imapFromTo
-    :: IR Int32
-    -> IR Int32
-    -> (IR Int32 -> CodeGen ())
+    :: IR Int
+    -> IR Int
+    -> (IR Int -> CodeGen ())
     -> CodeGen ()
 imapFromTo start end body = do
-  bid <- blockIdx
-  gd  <- gridDim
+  bid <- int =<< blockIdx
+  gd  <- int =<< gridDim
   i0  <- A.add numType start bid
   imapFromStepTo i0 gd end body
 

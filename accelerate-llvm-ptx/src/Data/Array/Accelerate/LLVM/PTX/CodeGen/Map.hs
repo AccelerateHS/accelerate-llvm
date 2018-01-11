@@ -19,9 +19,7 @@ import Prelude                                                  hiding ( fromInt
 
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
-import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -51,10 +49,9 @@ mkMap ptx aenv apply IRDelayed{..} =
   makeOpenAcc ptx "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapFromTo start end $ \i -> do
-      i' <- fromIntegral integralType numType i
-      xs <- app1 delayedLinearIndex i'
+      xs <- app1 delayedLinearIndex i
       ys <- app1 apply xs
-      writeArray arrOut i' ys
+      writeArray arrOut i ys
 
     return_
 
