@@ -484,10 +484,12 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp ppt exe (name, f) gamma aenv r args =
-  runExecutable exe name ppt r $ \start end _tid ->
-  monitorProcTime              $
-    callFFI f retVoid =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
+executeOp ppt exe (name, f) gamma aenv r args = do
+  args' <- marshal (undefined::Native) () (args, (gamma, aenv))
+  --
+  runExecutable exe name ppt r $ \start end _tid -> do
+   monitorProcTime             $
+    callFFI f retVoid (argInt start : argInt end : args')
 
 
 -- Standard C functions
