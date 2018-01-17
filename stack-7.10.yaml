@@ -10,7 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: a5c030dd800c1b0c75b3e1c0d0fd45d1b6cc7e9b
+  commit: 99ea5b8f9266cb06e4dfca2983f6d6bd56155786
 
 - 'Cabal-2.0.0.2'
 - 'chaselev-deque-0.5.0.5'
