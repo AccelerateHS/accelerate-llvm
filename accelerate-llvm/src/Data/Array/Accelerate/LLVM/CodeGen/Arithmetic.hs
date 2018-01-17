@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                      ( Eq, Num, Either(..), ($), (==), undefined, otherwise, flip, fromInteger, fromRational )
+import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), undefined, otherwise, flip, fromInteger, fromRational )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                    ( finiteBitSize )
@@ -32,8 +32,9 @@ import qualified Data.Ord                                           as Ord
 import qualified Prelude                                            as P
 
 -- accelerate
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 
 -- accelerate-llvm
 import LLVM.AST.Type.Constant
@@ -534,8 +535,13 @@ toFloating n1 f2 (op n1 -> x) =
            Ord.GT -> instr (FTrunc f1 f2 x)
            Ord.LT -> instr (FExt   f1 f2 x)
 
-coerce :: forall a b. ScalarType a -> ScalarType b -> IR a -> CodeGen (IR b)
-coerce ta tb (op ta -> x) = instr (BitCast tb x)
+coerce :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen (IR b)
+coerce ta tb (IR x) = IR <$> go ta tb x
+  where
+    go :: ScalarType a -> ScalarType b -> Operands a -> CodeGen (Operands b)
+    go ta' tb' x'
+      | Just Refl <- matchScalarType ta' tb' = return x'
+      | otherwise                            = ir' tb' <$> instr' (BitCast tb' (op' ta' x'))
 
 
 -- Utility functions
