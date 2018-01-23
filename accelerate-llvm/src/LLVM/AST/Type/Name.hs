@@ -17,7 +17,9 @@ module LLVM.AST.Type.Name
 
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Data
+#if __GLASGOW_HASKELL__ >= 800
 import Data.Semigroup
+#endif
 import Data.String
 import Data.Word
 import Prelude
