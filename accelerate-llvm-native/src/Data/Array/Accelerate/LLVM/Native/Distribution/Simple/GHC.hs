@@ -30,7 +30,6 @@ import Distribution.Simple.Utils
 import qualified Distribution.ModuleName as ModuleName
 import Distribution.Simple.Program
 import qualified Distribution.Simple.Program.Ar    as Ar
-import qualified Distribution.Simple.Program.Ld    as Ld
 import Distribution.Simple.Program.GHC
 import Distribution.Simple.Setup
 import qualified Distribution.Simple.Setup as Cabal
@@ -359,7 +358,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
 
       whenGHCiLib $ do
         (ldProg, _) <- requireProgram verbosity ldProgram (withPrograms lbi)
-        Ld.combineObjectFiles verbosity ldProg
+        Internal.combineObjectFiles verbosity lbi ldProg
           ghciLibFilePath ghciObjFiles
 
       whenSharedLib False $
