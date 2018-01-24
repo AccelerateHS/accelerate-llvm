@@ -19,6 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC.Internal (
   getHaskellObjects,
   mkGhcOptPackages,
   profDetailLevelFlag,
+  combineObjectFiles
 
 ) where
 
@@ -28,9 +29,12 @@ import Distribution.Backpack
 import Distribution.PackageDescription as PD hiding (Flag)
 import Distribution.Simple.Compiler hiding (Flag)
 import Distribution.Simple.LocalBuildInfo
+import Distribution.Simple.Program (ConfiguredProgram)
 import Distribution.Simple.Program.GHC
+import qualified Distribution.Simple.Program.Ld as Ld
 import Distribution.Simple.Setup
 import Distribution.Simple
+import Distribution.Verbosity (Verbosity)
 import qualified Distribution.ModuleName as ModuleName
 
 import qualified Data.Map as Map
@@ -113,3 +117,10 @@ allLibModules :: Library -> ComponentLocalBuildInfo -> [ModuleName.ModuleName]
 allLibModules lib _ = libModules lib
 #endif
 
+combineObjectFiles :: Verbosity -> LocalBuildInfo -> ConfiguredProgram
+                   -> FilePath -> [FilePath] -> IO ()
+#if MIN_VERSION_Cabal(2,1,0)
+combineObjectFiles = Ld.combineObjectFiles
+#else
+combineObjectFiles v _ = Ld.combineObjectFiles v
+#endif

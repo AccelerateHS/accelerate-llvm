@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Control.Parallel.Meta
@@ -24,7 +25,10 @@ import Control.Monad
 import Control.Parallel.Meta.Worker
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Concurrent.Deque.Class
-import Data.Monoid
+import Data.Monoid                                                  ( Monoid(..) )
+#if __GLASGOW_HASKELL__ >= 800
+import Data.Semigroup                                               ( Semigroup(..) )
+#endif
 import Data.Range                                                   as R
 import qualified Data.Vector                                        as V
 
@@ -39,6 +43,17 @@ import GHC.Base                                                     ( quotInt, r
 data WorkSearch = WorkSearch {
     runWorkSearch :: Int -> Workers -> IO (Maybe Range)
   }
+
+#if __GLASGOW_HASKELL__ >= 800
+instance Semigroup WorkSearch where
+  {-# INLINE (<>) #-}
+  WorkSearch ws1 <> WorkSearch ws2 =
+    WorkSearch $ \tid st -> do
+        mwork <- ws1 tid st
+        case mwork of
+          Nothing -> ws2 tid st
+          _       -> return mwork
+#endif
 
 instance Monoid WorkSearch where
   {-# INLINE mempty  #-}
@@ -62,11 +77,17 @@ data Resource = Resource {
     workSearch  :: WorkSearch
   }
 
+#if __GLASGOW_HASKELL__ >= 800
+instance Semigroup Resource where
+  {-# INLINE (<>) #-}
+  Resource ws1 <> Resource ws2 = Resource (ws1 <> ws2)
+#endif
+
 instance Monoid Resource where
   {-# INLINE mempty  #-}
   {-# INLINE mappend #-}
   mempty                                = Resource mempty
-  mappend (Resource ws1) (Resource ws2) = Resource (ws1 <> ws2)
+  mappend (Resource ws1) (Resource ws2) = Resource (ws1 `mappend` ws2)
 
 
 -- | An action to execute. The first parameters are the start and end indices of
