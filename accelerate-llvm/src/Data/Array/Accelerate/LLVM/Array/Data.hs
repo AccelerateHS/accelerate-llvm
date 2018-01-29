@@ -64,35 +64,31 @@ class Async arch => Remote arch where
   {-# INLINEABLE useRemoteR #-}
   useRemoteR
       :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-      => Int                      -- ^ number of elements in the payload
+      => Int                      -- ^ number of elements to copy
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
       -> ArrayData e              -- ^ array payload
       -> LLVM arch ()
   useRemoteR _ _ _ = return ()
 
-  -- | Upload a section of an array from the host to the remote device. Only the
-  -- elements between the given indices (inclusive left, exclusive right) are
-  -- transferred.
+  -- | Upload a section of an array from the host to the remote device.
   --
   {-# INLINEABLE copyToRemoteR #-}
   copyToRemoteR
       :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of first element to copy
-      -> Int
+      -> Int                      -- ^ number of elements to copy
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
       -> ArrayData e              -- ^ array payload
       -> LLVM arch ()
   copyToRemoteR _ _ _ _ = return ()
 
-  -- | Copy a section of an array from the remote device back to the host. The
-  -- elements between the given indices (inclusive left, exclusive right) are
-  -- transferred.,v
+  -- | Copy a section of an array from the remote device back to the host.
   --
   {-# INLINEABLE copyToHostR #-}
   copyToHostR
       :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of the first element to copy
-      -> Int
+      -> Int                      -- ^ number of elements to copy
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
       -> ArrayData e              -- ^ array payload
       -> LLVM arch ()
@@ -107,7 +103,7 @@ class Async arch => Remote arch where
   copyToPeerR
       :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
       => Int                      -- ^ index of the first element to copy
-      -> Int
+      -> Int                      -- ^ number of elements to copy
       -> arch                     -- ^ remote device to copy to
       -> Maybe (StreamR arch)     -- ^ execute synchronously w.r.t. this execution stream
       -> ArrayData e              -- ^ array payload
@@ -159,9 +155,9 @@ useRemoteAsync
 useRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \ad -> do
+    in  runArray arr $ \scale ad -> do
           s <- fork
-          useRemoteR n (Just s) ad
+          useRemoteR (scale n) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -192,9 +188,9 @@ copyToRemoteAsync
 copyToRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \ad -> do
+    in  runArray arr $ \scale ad -> do
           s <- fork
-          copyToRemoteR 0 n (Just s) ad
+          copyToRemoteR 0 (scale n) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -225,9 +221,9 @@ copyToHostAsync
 copyToHostAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \ad -> do
+    in  runArray arr $ \scale ad -> do
           s <- fork
-          copyToHostR 0 n (Just s) ad
+          copyToHostR 0 (scale n) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -259,9 +255,9 @@ copyToPeerAsync
 copyToPeerAsync peer arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \ad -> do
+    in  runArray arr $ \scale ad -> do
           s <- fork
-          copyToPeerR 0 n peer (Just s) ad
+          copyToPeerR 0 (scale n) peer (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -402,44 +398,44 @@ runArrays arrs worker = toArr `liftM` runR (arrays arrs) (fromArr arrs)
 runArray
     :: forall m sh e. Monad m
     => Array sh e
-    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> m (ArrayData e'))
+    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => (Int -> Int) -> ArrayData e' -> m (ArrayData e'))
     -> m (Array sh e)
-runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata
+runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata id
   where
-    runR :: ArrayEltR e' -> ArrayData e' -> m (ArrayData e')
-    runR ArrayEltRint              ad                = worker ad
-    runR ArrayEltRint8             ad                = worker ad
-    runR ArrayEltRint16            ad                = worker ad
-    runR ArrayEltRint32            ad                = worker ad
-    runR ArrayEltRint64            ad                = worker ad
-    runR ArrayEltRword             ad                = worker ad
-    runR ArrayEltRword8            ad                = worker ad
-    runR ArrayEltRword16           ad                = worker ad
-    runR ArrayEltRword32           ad                = worker ad
-    runR ArrayEltRword64           ad                = worker ad
-    runR ArrayEltRhalf             ad                = worker ad
-    runR ArrayEltRfloat            ad                = worker ad
-    runR ArrayEltRdouble           ad                = worker ad
-    runR ArrayEltRbool             ad                = worker ad
-    runR ArrayEltRchar             ad                = worker ad
-    runR ArrayEltRcshort           ad                = worker ad
-    runR ArrayEltRcushort          ad                = worker ad
-    runR ArrayEltRcint             ad                = worker ad
-    runR ArrayEltRcuint            ad                = worker ad
-    runR ArrayEltRclong            ad                = worker ad
-    runR ArrayEltRculong           ad                = worker ad
-    runR ArrayEltRcllong           ad                = worker ad
-    runR ArrayEltRcullong          ad                = worker ad
-    runR ArrayEltRcfloat           ad                = worker ad
-    runR ArrayEltRcdouble          ad                = worker ad
-    runR ArrayEltRcchar            ad                = worker ad
-    runR ArrayEltRcschar           ad                = worker ad
-    runR ArrayEltRcuchar           ad                = worker ad
-    runR ArrayEltRunit             AD_Unit           = return AD_Unit
-    runR (ArrayEltRvec2 ae)        (AD_V2 ad)        = liftM  AD_V2   (runR ae ad)
-    runR (ArrayEltRvec3 ae)        (AD_V3 ad)        = liftM  AD_V3   (runR ae ad)
-    runR (ArrayEltRvec4 ae)        (AD_V4 ad)        = liftM  AD_V4   (runR ae ad)
-    runR (ArrayEltRvec8 ae)        (AD_V8 ad)        = liftM  AD_V8   (runR ae ad)
-    runR (ArrayEltRvec16 ae)       (AD_V16 ad)       = liftM  AD_V16  (runR ae ad)
-    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) = liftM2 AD_Pair (runR aeR2 ad2) (runR aeR1 ad1)
+    runR :: ArrayEltR e' -> ArrayData e' -> (Int -> Int) -> m (ArrayData e')
+    runR ArrayEltRint              ad                k = worker k ad
+    runR ArrayEltRint8             ad                k = worker k ad
+    runR ArrayEltRint16            ad                k = worker k ad
+    runR ArrayEltRint32            ad                k = worker k ad
+    runR ArrayEltRint64            ad                k = worker k ad
+    runR ArrayEltRword             ad                k = worker k ad
+    runR ArrayEltRword8            ad                k = worker k ad
+    runR ArrayEltRword16           ad                k = worker k ad
+    runR ArrayEltRword32           ad                k = worker k ad
+    runR ArrayEltRword64           ad                k = worker k ad
+    runR ArrayEltRhalf             ad                k = worker k ad
+    runR ArrayEltRfloat            ad                k = worker k ad
+    runR ArrayEltRdouble           ad                k = worker k ad
+    runR ArrayEltRbool             ad                k = worker k ad
+    runR ArrayEltRchar             ad                k = worker k ad
+    runR ArrayEltRcshort           ad                k = worker k ad
+    runR ArrayEltRcushort          ad                k = worker k ad
+    runR ArrayEltRcint             ad                k = worker k ad
+    runR ArrayEltRcuint            ad                k = worker k ad
+    runR ArrayEltRclong            ad                k = worker k ad
+    runR ArrayEltRculong           ad                k = worker k ad
+    runR ArrayEltRcllong           ad                k = worker k ad
+    runR ArrayEltRcullong          ad                k = worker k ad
+    runR ArrayEltRcfloat           ad                k = worker k ad
+    runR ArrayEltRcdouble          ad                k = worker k ad
+    runR ArrayEltRcchar            ad                k = worker k ad
+    runR ArrayEltRcschar           ad                k = worker k ad
+    runR ArrayEltRcuchar           ad                k = worker k ad
+    runR ArrayEltRunit             AD_Unit           _ = return AD_Unit
+    runR (ArrayEltRvec2 ae)        (AD_V2 ad)        k = liftM  AD_V2   (runR ae ad (k . (*2)))
+    runR (ArrayEltRvec3 ae)        (AD_V3 ad)        k = liftM  AD_V3   (runR ae ad (k . (*3)))
+    runR (ArrayEltRvec4 ae)        (AD_V4 ad)        k = liftM  AD_V4   (runR ae ad (k . (*4)))
+    runR (ArrayEltRvec8 ae)        (AD_V8 ad)        k = liftM  AD_V8   (runR ae ad (k . (*8)))
+    runR (ArrayEltRvec16 ae)       (AD_V16 ad)       k = liftM  AD_V16  (runR ae ad (k . (*16)))
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) k = liftM2 AD_Pair (runR aeR2 ad2 k) (runR aeR1 ad1 k)
 
