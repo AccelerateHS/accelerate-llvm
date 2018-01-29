@@ -24,8 +24,8 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 
 import qualified Data.ByteString.Short                              as B
 
@@ -62,6 +62,7 @@ data instance Operands CLong    = OP_CLong   (Operand CLong)
 data instance Operands CULong   = OP_CULong  (Operand CULong)
 data instance Operands CLLong   = OP_CLLong  (Operand CLLong)
 data instance Operands CULLong  = OP_CULLong (Operand CULLong)
+data instance Operands Half     = OP_Half    (Operand Half)
 data instance Operands Float    = OP_Float   (Operand Float)
 data instance Operands Double   = OP_Double  (Operand Double)
 data instance Operands CFloat   = OP_CFloat  (Operand CFloat)
@@ -71,79 +72,13 @@ data instance Operands Char     = OP_Char    (Operand Char)
 data instance Operands CChar    = OP_CChar   (Operand CChar)
 data instance Operands CSChar   = OP_CSChar  (Operand CSChar)
 data instance Operands CUChar   = OP_CUChar  (Operand CUChar)
+data instance Operands (V2 a)   = OP_V2      (Operand (V2 a))
+data instance Operands (V3 a)   = OP_V3      (Operand (V3 a))
+data instance Operands (V4 a)   = OP_V4      (Operand (V4 a))
+data instance Operands (V8 a)   = OP_V8      (Operand (V8 a))
+data instance Operands (V16 a)  = OP_V16     (Operand (V16 a))
 data instance Operands (a,b)    = OP_Pair    (Operands a) (Operands b)
 
--- Extra instances to support operands of pointer type
---
--- data instance Operands (Ptr Int)      = OP_PtrInt     (Operand (Ptr Int))
--- data instance Operands (Ptr Int8)     = OP_PtrInt8    (Operand (Ptr Int8))
--- data instance Operands (Ptr Int16)    = OP_PtrInt16   (Operand (Ptr Int16))
--- data instance Operands (Ptr Int32)    = OP_PtrInt32   (Operand (Ptr Int32))
--- data instance Operands (Ptr Int64)    = OP_PtrInt64   (Operand (Ptr Int64))
--- data instance Operands (Ptr Word)     = OP_PtrWord    (Operand (Ptr Word))
--- data instance Operands (Ptr Word8)    = OP_PtrWord8   (Operand (Ptr Word8))
--- data instance Operands (Ptr Word16)   = OP_PtrWord16  (Operand (Ptr Word16))
--- data instance Operands (Ptr Word32)   = OP_PtrWord32  (Operand (Ptr Word32))
--- data instance Operands (Ptr Word64)   = OP_PtrWord64  (Operand (Ptr Word64))
--- data instance Operands (Ptr CShort)   = OP_PtrCShort  (Operand (Ptr CShort))
--- data instance Operands (Ptr CUShort)  = OP_PtrCUShort (Operand (Ptr CUShort))
--- data instance Operands (Ptr CInt)     = OP_PtrCInt    (Operand (Ptr CInt))
--- data instance Operands (Ptr CUInt)    = OP_PtrCUInt   (Operand (Ptr CUInt))
--- data instance Operands (Ptr CLong)    = OP_PtrCLong   (Operand (Ptr CLong))
--- data instance Operands (Ptr CULong)   = OP_PtrCULong  (Operand (Ptr CULong))
--- data instance Operands (Ptr CLLong)   = OP_PtrCLLong  (Operand (Ptr CLLong))
--- data instance Operands (Ptr CULLong)  = OP_PtrCULLong (Operand (Ptr CULLong))
--- data instance Operands (Ptr Float)    = OP_PtrFloat   (Operand (Ptr Float))
--- data instance Operands (Ptr Double)   = OP_PtrDouble  (Operand (Ptr Double))
--- data instance Operands (Ptr CFloat)   = OP_PtrCFloat  (Operand (Ptr CFloat))
--- data instance Operands (Ptr CDouble)  = OP_PtrCDouble (Operand (Ptr CDouble))
--- data instance Operands (Ptr Bool)     = OP_PtrBool    (Operand (Ptr Bool))
--- data instance Operands (Ptr Char)     = OP_PtrChar    (Operand (Ptr Char))
--- data instance Operands (Ptr CChar)    = OP_PtrCChar   (Operand (Ptr CChar))
--- data instance Operands (Ptr CSChar)   = OP_PtrCSChar  (Operand (Ptr CSChar))
--- data instance Operands (Ptr CUChar)   = OP_PtrCUChar  (Operand (Ptr CUChar))
-
--- type instance EltRepr (Ptr Int)       = Ptr Int
--- type instance EltRepr (Ptr Int8)      = Ptr Int8
--- type instance EltRepr (Ptr Int16)     = Ptr Int16
--- type instance EltRepr (Ptr Int32)     = Ptr Int32
--- type instance EltRepr (Ptr Int64)     = Ptr Int64
--- type instance EltRepr (Ptr Word)      = Ptr Word
--- type instance EltRepr (Ptr Word8)     = Ptr Word8
--- type instance EltRepr (Ptr Word16)    = Ptr Word16
--- type instance EltRepr (Ptr Word32)    = Ptr Word32
--- type instance EltRepr (Ptr Word64)    = Ptr Word64
--- type instance EltRepr (Ptr CShort)    = Ptr CShort
--- type instance EltRepr (Ptr CUShort)   = Ptr CUShort
--- type instance EltRepr (Ptr CInt)      = Ptr CInt
--- type instance EltRepr (Ptr CUInt)     = Ptr CUInt
--- type instance EltRepr (Ptr CLong)     = Ptr CLong
--- type instance EltRepr (Ptr CULong)    = Ptr CULong
--- type instance EltRepr (Ptr CLLong)    = Ptr CLLong
--- type instance EltRepr (Ptr CULLong)   = Ptr CULLong
--- type instance EltRepr (Ptr Float)     = Ptr Float
--- type instance EltRepr (Ptr Double)    = Ptr Double
--- type instance EltRepr (Ptr CFloat)    = Ptr CFloat
--- type instance EltRepr (Ptr CDouble)   = Ptr CDouble
--- type instance EltRepr (Ptr Bool)      = Ptr Bool
--- type instance EltRepr (Ptr Char)      = Ptr Char
--- type instance EltRepr (Ptr CChar)     = Ptr CChar
--- type instance EltRepr (Ptr CSChar)    = Ptr CSChar
--- type instance EltRepr (Ptr CUChar)    = Ptr CUChar
--- type instance EltRepr (Ptr (a,b))     = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b))
--- type instance EltRepr (Ptr (a,b,c))   = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c))
--- type instance EltRepr (Ptr (a,b,c,d)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d))
--- type instance EltRepr (Ptr (a,b,c,d,e)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e))
--- type instance EltRepr (Ptr (a,b,c,d,e,f)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m,n)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m), EltRepr (Ptr n))
--- type instance EltRepr (Ptr (a,b,c,d,e,f,g,h,i,j,k,l,m,n,o)) = TupleRepr (EltRepr (Ptr a), EltRepr (Ptr b), EltRepr (Ptr c), EltRepr (Ptr d), EltRepr (Ptr e), EltRepr (Ptr f), EltRepr (Ptr g), EltRepr (Ptr h), EltRepr (Ptr i), EltRepr (Ptr j), EltRepr (Ptr k), EltRepr (Ptr l), EltRepr (Ptr m), EltRepr (Ptr n), EltRepr (Ptr o))
 
 -- | Given some evidence that 'IR a' represents a scalar type, it can be
 -- converted between the IR and Operand data types.
@@ -173,22 +108,59 @@ instance IROP PrimType where
   op t                   = $internalError "op" ("unhandled type: " ++ show t)
   ir (ScalarPrimType t)  = ir t
   ir t                   = $internalError "ir" ("unhandeld type: " ++ show t)
-
+  --
   op' (ScalarPrimType t) = op' t
   op' t                  = $internalError "op'" ("unhandled type: " ++ show t)
   ir' (ScalarPrimType t) = ir' t
   ir' t                  = $internalError "ir'" ("unhandled type: " ++ show t)
 
 instance IROP ScalarType where
-  op (NumScalarType t)    = op t
-  op (NonNumScalarType t) = op t
-  ir (NumScalarType t)    = ir t
-  ir (NonNumScalarType t) = ir t
+  op (SingleScalarType t) = op t
+  op (VectorScalarType t) = op t
+  ir (SingleScalarType t) = ir t
+  ir (VectorScalarType t) = ir t
+
+  op' (SingleScalarType t) = op' t
+  op' (VectorScalarType t) = op' t
+
+  ir' (SingleScalarType t) = ir' t
+  ir' (VectorScalarType t) = ir' t
+
+instance IROP SingleType where
+  op (NumSingleType t)    = op t
+  op (NonNumSingleType t) = op t
+  ir (NumSingleType t)    = ir t
+  ir (NonNumSingleType t) = ir t
   --
-  op' (NumScalarType t)    = op' t
-  op' (NonNumScalarType t) = op' t
-  ir' (NumScalarType t)    = ir' t
-  ir' (NonNumScalarType t) = ir' t
+  op' (NumSingleType t)    = op' t
+  op' (NonNumSingleType t) = op' t
+  ir' (NumSingleType t)    = ir' t
+  ir' (NonNumSingleType t) = ir' t
+
+instance IROP VectorType where
+  op Vector2Type{}  (IR (OP_V2 x))  = x
+  op Vector3Type{}  (IR (OP_V3 x))  = x
+  op Vector4Type{}  (IR (OP_V4 x))  = x
+  op Vector8Type{}  (IR (OP_V8 x))  = x
+  op Vector16Type{} (IR (OP_V16 x)) = x
+  --
+  ir Vector2Type{}  = IR . OP_V2
+  ir Vector3Type{}  = IR . OP_V3
+  ir Vector4Type{}  = IR . OP_V4
+  ir Vector8Type{}  = IR . OP_V8
+  ir Vector16Type{} = IR . OP_V16
+  --
+  op' Vector2Type{}  (OP_V2 x)  = x
+  op' Vector3Type{}  (OP_V3 x)  = x
+  op' Vector4Type{}  (OP_V4 x)  = x
+  op' Vector8Type{}  (OP_V8 x)  = x
+  op' Vector16Type{} (OP_V16 x) = x
+  --
+  ir' Vector2Type{}  = OP_V2
+  ir' Vector3Type{}  = OP_V3
+  ir' Vector4Type{}  = OP_V4
+  ir' Vector8Type{}  = OP_V8
+  ir' Vector16Type{} = OP_V16
 
 instance IROP NumType where
   op (IntegralNumType t) = op t
@@ -202,125 +174,129 @@ instance IROP NumType where
   ir' (FloatingNumType t) = ir' t
 
 instance IROP IntegralType where
-  op (TypeInt     _) (IR (OP_Int     x)) = x
-  op (TypeInt8    _) (IR (OP_Int8    x)) = x
-  op (TypeInt16   _) (IR (OP_Int16   x)) = x
-  op (TypeInt32   _) (IR (OP_Int32   x)) = x
-  op (TypeInt64   _) (IR (OP_Int64   x)) = x
-  op (TypeWord    _) (IR (OP_Word    x)) = x
-  op (TypeWord8   _) (IR (OP_Word8   x)) = x
-  op (TypeWord16  _) (IR (OP_Word16  x)) = x
-  op (TypeWord32  _) (IR (OP_Word32  x)) = x
-  op (TypeWord64  _) (IR (OP_Word64  x)) = x
-  op (TypeCShort  _) (IR (OP_CShort  x)) = x
-  op (TypeCUShort _) (IR (OP_CUShort x)) = x
-  op (TypeCInt    _) (IR (OP_CInt    x)) = x
-  op (TypeCUInt   _) (IR (OP_CUInt   x)) = x
-  op (TypeCLong   _) (IR (OP_CLong   x)) = x
-  op (TypeCULong  _) (IR (OP_CULong  x)) = x
-  op (TypeCLLong  _) (IR (OP_CLLong  x)) = x
-  op (TypeCULLong _) (IR (OP_CULLong x)) = x
+  op TypeInt{}     (IR (OP_Int     x)) = x
+  op TypeInt8{}    (IR (OP_Int8    x)) = x
+  op TypeInt16{}   (IR (OP_Int16   x)) = x
+  op TypeInt32{}   (IR (OP_Int32   x)) = x
+  op TypeInt64{}   (IR (OP_Int64   x)) = x
+  op TypeWord{}    (IR (OP_Word    x)) = x
+  op TypeWord8{}   (IR (OP_Word8   x)) = x
+  op TypeWord16{}  (IR (OP_Word16  x)) = x
+  op TypeWord32{}  (IR (OP_Word32  x)) = x
+  op TypeWord64{}  (IR (OP_Word64  x)) = x
+  op TypeCShort{}  (IR (OP_CShort  x)) = x
+  op TypeCUShort{} (IR (OP_CUShort x)) = x
+  op TypeCInt{}    (IR (OP_CInt    x)) = x
+  op TypeCUInt{}   (IR (OP_CUInt   x)) = x
+  op TypeCLong{}   (IR (OP_CLong   x)) = x
+  op TypeCULong{}  (IR (OP_CULong  x)) = x
+  op TypeCLLong{}  (IR (OP_CLLong  x)) = x
+  op TypeCULLong{} (IR (OP_CULLong x)) = x
   --
-  ir (TypeInt     _) = IR . OP_Int
-  ir (TypeInt8    _) = IR . OP_Int8
-  ir (TypeInt16   _) = IR . OP_Int16
-  ir (TypeInt32   _) = IR . OP_Int32
-  ir (TypeInt64   _) = IR . OP_Int64
-  ir (TypeWord    _) = IR . OP_Word
-  ir (TypeWord8   _) = IR . OP_Word8
-  ir (TypeWord16  _) = IR . OP_Word16
-  ir (TypeWord32  _) = IR . OP_Word32
-  ir (TypeWord64  _) = IR . OP_Word64
-  ir (TypeCShort  _) = IR . OP_CShort
-  ir (TypeCUShort _) = IR . OP_CUShort
-  ir (TypeCInt    _) = IR . OP_CInt
-  ir (TypeCUInt   _) = IR . OP_CUInt
-  ir (TypeCLong   _) = IR . OP_CLong
-  ir (TypeCULong  _) = IR . OP_CULong
-  ir (TypeCLLong  _) = IR . OP_CLLong
-  ir (TypeCULLong _) = IR . OP_CULLong
+  ir TypeInt{}     = IR . OP_Int
+  ir TypeInt8{}    = IR . OP_Int8
+  ir TypeInt16{}   = IR . OP_Int16
+  ir TypeInt32{}   = IR . OP_Int32
+  ir TypeInt64{}   = IR . OP_Int64
+  ir TypeWord{}    = IR . OP_Word
+  ir TypeWord8{}   = IR . OP_Word8
+  ir TypeWord16{}  = IR . OP_Word16
+  ir TypeWord32{}  = IR . OP_Word32
+  ir TypeWord64{}  = IR . OP_Word64
+  ir TypeCShort{}  = IR . OP_CShort
+  ir TypeCUShort{} = IR . OP_CUShort
+  ir TypeCInt{}    = IR . OP_CInt
+  ir TypeCUInt{}   = IR . OP_CUInt
+  ir TypeCLong{}   = IR . OP_CLong
+  ir TypeCULong{}  = IR . OP_CULong
+  ir TypeCLLong{}  = IR . OP_CLLong
+  ir TypeCULLong{} = IR . OP_CULLong
   --
-  op' (TypeInt     _) (OP_Int     x) = x
-  op' (TypeInt8    _) (OP_Int8    x) = x
-  op' (TypeInt16   _) (OP_Int16   x) = x
-  op' (TypeInt32   _) (OP_Int32   x) = x
-  op' (TypeInt64   _) (OP_Int64   x) = x
-  op' (TypeWord    _) (OP_Word    x) = x
-  op' (TypeWord8   _) (OP_Word8   x) = x
-  op' (TypeWord16  _) (OP_Word16  x) = x
-  op' (TypeWord32  _) (OP_Word32  x) = x
-  op' (TypeWord64  _) (OP_Word64  x) = x
-  op' (TypeCShort  _) (OP_CShort  x) = x
-  op' (TypeCUShort _) (OP_CUShort x) = x
-  op' (TypeCInt    _) (OP_CInt    x) = x
-  op' (TypeCUInt   _) (OP_CUInt   x) = x
-  op' (TypeCLong   _) (OP_CLong   x) = x
-  op' (TypeCULong  _) (OP_CULong  x) = x
-  op' (TypeCLLong  _) (OP_CLLong  x) = x
-  op' (TypeCULLong _) (OP_CULLong x) = x
+  op' TypeInt{}     (OP_Int     x) = x
+  op' TypeInt8{}    (OP_Int8    x) = x
+  op' TypeInt16{}   (OP_Int16   x) = x
+  op' TypeInt32{}   (OP_Int32   x) = x
+  op' TypeInt64{}   (OP_Int64   x) = x
+  op' TypeWord{}    (OP_Word    x) = x
+  op' TypeWord8{}   (OP_Word8   x) = x
+  op' TypeWord16{}  (OP_Word16  x) = x
+  op' TypeWord32{}  (OP_Word32  x) = x
+  op' TypeWord64{}  (OP_Word64  x) = x
+  op' TypeCShort{}  (OP_CShort  x) = x
+  op' TypeCUShort{} (OP_CUShort x) = x
+  op' TypeCInt{}    (OP_CInt    x) = x
+  op' TypeCUInt{}   (OP_CUInt   x) = x
+  op' TypeCLong{}   (OP_CLong   x) = x
+  op' TypeCULong{}  (OP_CULong  x) = x
+  op' TypeCLLong{}  (OP_CLLong  x) = x
+  op' TypeCULLong{} (OP_CULLong x) = x
   --
-  ir' (TypeInt     _) = OP_Int
-  ir' (TypeInt8    _) = OP_Int8
-  ir' (TypeInt16   _) = OP_Int16
-  ir' (TypeInt32   _) = OP_Int32
-  ir' (TypeInt64   _) = OP_Int64
-  ir' (TypeWord    _) = OP_Word
-  ir' (TypeWord8   _) = OP_Word8
-  ir' (TypeWord16  _) = OP_Word16
-  ir' (TypeWord32  _) = OP_Word32
-  ir' (TypeWord64  _) = OP_Word64
-  ir' (TypeCShort  _) = OP_CShort
-  ir' (TypeCUShort _) = OP_CUShort
-  ir' (TypeCInt    _) = OP_CInt
-  ir' (TypeCUInt   _) = OP_CUInt
-  ir' (TypeCLong   _) = OP_CLong
-  ir' (TypeCULong  _) = OP_CULong
-  ir' (TypeCLLong  _) = OP_CLLong
-  ir' (TypeCULLong _) = OP_CULLong
+  ir' TypeInt{}     = OP_Int
+  ir' TypeInt8{}    = OP_Int8
+  ir' TypeInt16{}   = OP_Int16
+  ir' TypeInt32{}   = OP_Int32
+  ir' TypeInt64{}   = OP_Int64
+  ir' TypeWord{}    = OP_Word
+  ir' TypeWord8{}   = OP_Word8
+  ir' TypeWord16{}  = OP_Word16
+  ir' TypeWord32{}  = OP_Word32
+  ir' TypeWord64{}  = OP_Word64
+  ir' TypeCShort{}  = OP_CShort
+  ir' TypeCUShort{} = OP_CUShort
+  ir' TypeCInt{}    = OP_CInt
+  ir' TypeCUInt{}   = OP_CUInt
+  ir' TypeCLong{}   = OP_CLong
+  ir' TypeCULong{}  = OP_CULong
+  ir' TypeCLLong{}  = OP_CLLong
+  ir' TypeCULLong{} = OP_CULLong
 
 instance IROP FloatingType where
-  op (TypeFloat   _) (IR (OP_Float   x)) = x
-  op (TypeDouble  _) (IR (OP_Double  x)) = x
-  op (TypeCFloat  _) (IR (OP_CFloat  x)) = x
-  op (TypeCDouble _) (IR (OP_CDouble x)) = x
+  op TypeHalf{}    (IR (OP_Half    x)) = x
+  op TypeFloat{}   (IR (OP_Float   x)) = x
+  op TypeDouble{}  (IR (OP_Double  x)) = x
+  op TypeCFloat{}  (IR (OP_CFloat  x)) = x
+  op TypeCDouble{} (IR (OP_CDouble x)) = x
   --
-  ir (TypeFloat   _) = IR . OP_Float
-  ir (TypeDouble  _) = IR . OP_Double
-  ir (TypeCFloat  _) = IR . OP_CFloat
-  ir (TypeCDouble _) = IR . OP_CDouble
+  ir TypeHalf{}    = IR . OP_Half
+  ir TypeFloat{}   = IR . OP_Float
+  ir TypeDouble{}  = IR . OP_Double
+  ir TypeCFloat{}  = IR . OP_CFloat
+  ir TypeCDouble{} = IR . OP_CDouble
   --
-  op' (TypeFloat   _) (OP_Float   x) = x
-  op' (TypeDouble  _) (OP_Double  x) = x
-  op' (TypeCFloat  _) (OP_CFloat  x) = x
-  op' (TypeCDouble _) (OP_CDouble x) = x
+  op' TypeHalf{}    (OP_Half    x) = x
+  op' TypeFloat{}   (OP_Float   x) = x
+  op' TypeDouble{}  (OP_Double  x) = x
+  op' TypeCFloat{}  (OP_CFloat  x) = x
+  op' TypeCDouble{} (OP_CDouble x) = x
   --
-  ir' (TypeFloat   _) = OP_Float
-  ir' (TypeDouble  _) = OP_Double
-  ir' (TypeCFloat  _) = OP_CFloat
-  ir' (TypeCDouble _) = OP_CDouble
+  ir' TypeHalf{}    = OP_Half
+  ir' TypeFloat{}   = OP_Float
+  ir' TypeDouble{}  = OP_Double
+  ir' TypeCFloat{}  = OP_CFloat
+  ir' TypeCDouble{} = OP_CDouble
 
 instance IROP NonNumType where
-  op (TypeBool   _) (IR (OP_Bool   x)) = x
-  op (TypeChar   _) (IR (OP_Char   x)) = x
-  op (TypeCChar  _) (IR (OP_CChar  x)) = x
-  op (TypeCSChar _) (IR (OP_CSChar x)) = x
-  op (TypeCUChar _) (IR (OP_CUChar x)) = x
+  op TypeBool{}   (IR (OP_Bool   x)) = x
+  op TypeChar{}   (IR (OP_Char   x)) = x
+  op TypeCChar{}  (IR (OP_CChar  x)) = x
+  op TypeCSChar{} (IR (OP_CSChar x)) = x
+  op TypeCUChar{} (IR (OP_CUChar x)) = x
   --
-  ir (TypeBool   _) = IR . OP_Bool
-  ir (TypeChar   _) = IR . OP_Char
-  ir (TypeCChar  _) = IR . OP_CChar
-  ir (TypeCSChar _) = IR . OP_CSChar
-  ir (TypeCUChar _) = IR . OP_CUChar
+  ir TypeBool{}   = IR . OP_Bool
+  ir TypeChar{}   = IR . OP_Char
+  ir TypeCChar{}  = IR . OP_CChar
+  ir TypeCSChar{} = IR . OP_CSChar
+  ir TypeCUChar{} = IR . OP_CUChar
   --
-  op' (TypeBool   _) (OP_Bool   x) = x
-  op' (TypeChar   _) (OP_Char   x) = x
-  op' (TypeCChar  _) (OP_CChar  x) = x
-  op' (TypeCSChar _) (OP_CSChar x) = x
-  op' (TypeCUChar _) (OP_CUChar x) = x
+  op' TypeBool{}   (OP_Bool   x) = x
+  op' TypeChar{}   (OP_Char   x) = x
+  op' TypeCChar{}  (OP_CChar  x) = x
+  op' TypeCSChar{} (OP_CSChar x) = x
+  op' TypeCUChar{} (OP_CUChar x) = x
   --
-  ir' (TypeBool   _) = OP_Bool
-  ir' (TypeChar   _) = OP_Char
-  ir' (TypeCChar  _) = OP_CChar
-  ir' (TypeCSChar _) = OP_CSChar
-  ir' (TypeCUChar _) = OP_CUChar
+  ir' TypeBool{}   = OP_Bool
+  ir' TypeChar{}   = OP_Char
+  ir' TypeCChar{}  = OP_CChar
+  ir' TypeCSChar{} = OP_CSChar
+  ir' TypeCUChar{} = OP_CUChar
 

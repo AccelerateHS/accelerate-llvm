@@ -35,6 +35,7 @@ import Data.Array.Accelerate.Array.Sugar                            hiding ( For
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -257,9 +258,12 @@ compileOpenAcc = traverseAcc
         -- case so that the execution phase does not have to continually perform
         -- the below check.
         --
-        unzip :: PreFun DelayedOpenAcc aenv (a -> b)
+        unzip :: forall sh a b. Elt a => PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
               -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
+        unzip _ _
+          | TypeRscalar VectorScalarType{}      <- eltType (undefined::a)
+          = Nothing
         unzip f a
           | Lam (Body (Prj tix (Var ZeroIdx)))  <- f
           , Delayed sh index _                  <- a

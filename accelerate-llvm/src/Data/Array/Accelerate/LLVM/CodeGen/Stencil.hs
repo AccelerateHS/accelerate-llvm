@@ -189,17 +189,17 @@ bounded bndy arr@IRArray{..} ix =
     bound (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
-        go UnitTuple OP_Unit OP_Unit
+        go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
-        go (PairTuple tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)
+        go (TypeRpair tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)
           = do
                ix' <- go tsh sh ih
                i'  <- go ti  sz iz
                return $ OP_Pair ix' i'
-        go (SingleTuple t) sz iz
+        go (TypeRscalar t) sz iz
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = do
-               IR i' <- if A.lt t (IR iz) (int 0)
+               IR i' <- if A.lt (singleType :: SingleType Int) (IR iz) (int 0)
                           then
                             case bndy of
                               IRClamp  -> return (int 0)
@@ -207,7 +207,7 @@ bounded bndy arr@IRArray{..} ix =
                               IRWrap   -> A.add    numType (IR sz) (IR iz)
                               _        -> $internalError "bound" "unexpected boundary condition"
                           else
-                            if A.gte t (IR iz) (IR sz)
+                            if A.gte (singleType :: SingleType Int) (IR iz) (IR sz)
                               then
                                 case bndy of
                                   IRClamp  -> A.sub numType (IR sz) (int 1)
@@ -230,15 +230,16 @@ bounded bndy arr@IRArray{..} ix =
     inside (IR extent1) (IR extent2) = go (eltType (undefined::sh)) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Bool)
-        go UnitTuple OP_Unit OP_Unit
+        go TypeRunit OP_Unit OP_Unit
           = return (bool True)
-        go (PairTuple tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)
+        go (TypeRpair tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)
           = if go ti sz iz
               then go tsh sh ih
               else return (bool False)
-        go (SingleTuple t) sz iz
+        go (TypeRscalar t) sz iz
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-          = if A.lt t (IR iz) (int 0) `A.lor` A.gte t (IR iz) (IR sz)
+          = if A.lt  (singleType :: SingleType Int) (IR iz) (int 0) `A.lor`
+               A.gte (singleType :: SingleType Int) (IR iz) (IR sz)
               then return (bool False)
               else return (bool True)
           --
@@ -283,9 +284,9 @@ cons :: forall sh. Shape sh => IR Int -> IR sh -> IR (sh :. Int)
 cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
   where
     go :: TupleType t -> Operands t -> Operands (t,Int)
-    go UnitTuple OP_Unit                 = OP_Pair OP_Unit ix
-    go (PairTuple th tz) (OP_Pair sh sz)
-      | SingleTuple t <- tz
+    go TypeRunit OP_Unit                 = OP_Pair OP_Unit ix
+    go (TypeRpair th tz) (OP_Pair sh sz)
+      | TypeRscalar t <- tz
       , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = OP_Pair (go th sh) sz
     go _ _
@@ -299,9 +300,9 @@ uncons (IR extent) = let (ix, extent') = go (eltType (undefined::(sh :. Int))) e
                      in  (IR ix, IR extent')
   where
     go :: TupleType (t, Int) -> Operands (t, Int) -> (Operands Int, Operands t)
-    go (PairTuple UnitTuple _) (OP_Pair OP_Unit v2)      = (v2, OP_Unit)
-    go (PairTuple t1@(PairTuple _ t2) _) (OP_Pair v1 v3)
-      | SingleTuple t <- t2
+    go (TypeRpair TypeRunit _) (OP_Pair OP_Unit v2)      = (v2, OP_Unit)
+    go (TypeRpair t1@(TypeRpair _ t2) _) (OP_Pair v1 v3)
+      | TypeRscalar t <- t2
       , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = let (i, v1') = go t1 v1
         in  (i, OP_Pair v1' v3)
