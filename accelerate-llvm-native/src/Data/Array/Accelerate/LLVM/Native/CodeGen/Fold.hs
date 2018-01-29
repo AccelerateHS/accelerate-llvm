@@ -212,9 +212,9 @@ mkFoldAllP1 uid aenv combine IRDelayed{..} =
     -- operations remains left-to-right.
     --
     imapFromTo start end $ \i -> do
-      inf <- A.mul numType i   stride
-      a   <- A.add numType inf stride
-      sup <- A.min scalarType a length
+      inf <- A.mul numType    i   stride
+      a   <- A.add numType    inf stride
+      sup <- A.min singleType a   length
       r   <- reduce1FromTo inf sup (app2 combine) (app1 delayedLinearIndex)
       writeArray arrTmp i r
 

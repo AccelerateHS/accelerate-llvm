@@ -58,6 +58,12 @@ cloneArray arr@(Array _ src) = liftIO $ do
     copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 = copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
                                               copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
     --
+    copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)   = copyR aeR ad1 ad2
+    copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad3)   = copyR aeR ad1 ad3
+    copyR (ArrayEltRvec4 aeR)  (AD_V4 ad1)  (AD_V4 ad4)   = copyR aeR ad1 ad4
+    copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad8)   = copyR aeR ad1 ad8
+    copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad16) = copyR aeR ad1 ad16
+    --
     copyR ArrayEltRint              ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRint8             ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRint16            ad1 ad2 = copyPrim ad1 ad2
@@ -68,6 +74,7 @@ cloneArray arr@(Array _ src) = liftIO $ do
     copyR ArrayEltRword16           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRword32           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRword64           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRhalf             ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRfloat            ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRdouble           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRbool             ad1 ad2 = copyPrim ad1 ad2
