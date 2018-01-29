@@ -52,7 +52,7 @@ instance Remote PTX where
   allocateRemote !sh = do
     let !n = size sh
     arr <- liftIO $ allocateArray sh
-    runArray arr (\scale ad -> Prim.mallocArray (scale n) ad >> return ad)
+    runArray arr (\m ad -> Prim.mallocArray (n*m) ad >> return ad)
 
   {-# INLINEABLE useRemoteR #-}
   useRemoteR !n !mst !ad = do

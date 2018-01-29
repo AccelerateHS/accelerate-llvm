@@ -155,9 +155,9 @@ useRemoteAsync
 useRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \scale ad -> do
+    in  runArray arr $ \m ad -> do
           s <- fork
-          useRemoteR (scale n) (Just s) ad
+          useRemoteR (n*m) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -188,9 +188,9 @@ copyToRemoteAsync
 copyToRemoteAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \scale ad -> do
+    in  runArray arr $ \m ad -> do
           s <- fork
-          copyToRemoteR 0 (scale n) (Just s) ad
+          copyToRemoteR 0 (n*m) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -221,9 +221,9 @@ copyToHostAsync
 copyToHostAsync arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \scale ad -> do
+    in  runArray arr $ \m ad -> do
           s <- fork
-          copyToHostR 0 (scale n) (Just s) ad
+          copyToHostR 0 (n*m) (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -255,9 +255,9 @@ copyToPeerAsync
 copyToPeerAsync peer arrs stream = do
   arrs' <- runArrays arrs $ \arr@Array{} ->
     let n = size (shape arr)
-    in  runArray arr $ \scale ad -> do
+    in  runArray arr $ \m ad -> do
           s <- fork
-          copyToPeerR 0 (scale n) peer (Just s) ad
+          copyToPeerR 0 (n*m) peer (Just s) ad
           after stream =<< checkpoint s
           join s
           return ad
@@ -398,44 +398,44 @@ runArrays arrs worker = toArr `liftM` runR (arrays arrs) (fromArr arrs)
 runArray
     :: forall m sh e. Monad m
     => Array sh e
-    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => (Int -> Int) -> ArrayData e' -> m (ArrayData e'))
+    -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => Int -> ArrayData e' -> m (ArrayData e'))
     -> m (Array sh e)
-runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata id
+runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata 1
   where
-    runR :: ArrayEltR e' -> ArrayData e' -> (Int -> Int) -> m (ArrayData e')
-    runR ArrayEltRint              ad                k = worker k ad
-    runR ArrayEltRint8             ad                k = worker k ad
-    runR ArrayEltRint16            ad                k = worker k ad
-    runR ArrayEltRint32            ad                k = worker k ad
-    runR ArrayEltRint64            ad                k = worker k ad
-    runR ArrayEltRword             ad                k = worker k ad
-    runR ArrayEltRword8            ad                k = worker k ad
-    runR ArrayEltRword16           ad                k = worker k ad
-    runR ArrayEltRword32           ad                k = worker k ad
-    runR ArrayEltRword64           ad                k = worker k ad
-    runR ArrayEltRhalf             ad                k = worker k ad
-    runR ArrayEltRfloat            ad                k = worker k ad
-    runR ArrayEltRdouble           ad                k = worker k ad
-    runR ArrayEltRbool             ad                k = worker k ad
-    runR ArrayEltRchar             ad                k = worker k ad
-    runR ArrayEltRcshort           ad                k = worker k ad
-    runR ArrayEltRcushort          ad                k = worker k ad
-    runR ArrayEltRcint             ad                k = worker k ad
-    runR ArrayEltRcuint            ad                k = worker k ad
-    runR ArrayEltRclong            ad                k = worker k ad
-    runR ArrayEltRculong           ad                k = worker k ad
-    runR ArrayEltRcllong           ad                k = worker k ad
-    runR ArrayEltRcullong          ad                k = worker k ad
-    runR ArrayEltRcfloat           ad                k = worker k ad
-    runR ArrayEltRcdouble          ad                k = worker k ad
-    runR ArrayEltRcchar            ad                k = worker k ad
-    runR ArrayEltRcschar           ad                k = worker k ad
-    runR ArrayEltRcuchar           ad                k = worker k ad
+    runR :: ArrayEltR e' -> ArrayData e' -> Int -> m (ArrayData e')
+    runR ArrayEltRint              ad                n = worker n ad
+    runR ArrayEltRint8             ad                n = worker n ad
+    runR ArrayEltRint16            ad                n = worker n ad
+    runR ArrayEltRint32            ad                n = worker n ad
+    runR ArrayEltRint64            ad                n = worker n ad
+    runR ArrayEltRword             ad                n = worker n ad
+    runR ArrayEltRword8            ad                n = worker n ad
+    runR ArrayEltRword16           ad                n = worker n ad
+    runR ArrayEltRword32           ad                n = worker n ad
+    runR ArrayEltRword64           ad                n = worker n ad
+    runR ArrayEltRhalf             ad                n = worker n ad
+    runR ArrayEltRfloat            ad                n = worker n ad
+    runR ArrayEltRdouble           ad                n = worker n ad
+    runR ArrayEltRbool             ad                n = worker n ad
+    runR ArrayEltRchar             ad                n = worker n ad
+    runR ArrayEltRcshort           ad                n = worker n ad
+    runR ArrayEltRcushort          ad                n = worker n ad
+    runR ArrayEltRcint             ad                n = worker n ad
+    runR ArrayEltRcuint            ad                n = worker n ad
+    runR ArrayEltRclong            ad                n = worker n ad
+    runR ArrayEltRculong           ad                n = worker n ad
+    runR ArrayEltRcllong           ad                n = worker n ad
+    runR ArrayEltRcullong          ad                n = worker n ad
+    runR ArrayEltRcfloat           ad                n = worker n ad
+    runR ArrayEltRcdouble          ad                n = worker n ad
+    runR ArrayEltRcchar            ad                n = worker n ad
+    runR ArrayEltRcschar           ad                n = worker n ad
+    runR ArrayEltRcuchar           ad                n = worker n ad
+    runR (ArrayEltRvec2 ae)        (AD_V2 ad)        n = liftM  AD_V2   (runR ae ad (n*2))
+    runR (ArrayEltRvec3 ae)        (AD_V3 ad)        n = liftM  AD_V3   (runR ae ad (n*3))
+    runR (ArrayEltRvec4 ae)        (AD_V4 ad)        n = liftM  AD_V4   (runR ae ad (n*4))
+    runR (ArrayEltRvec8 ae)        (AD_V8 ad)        n = liftM  AD_V8   (runR ae ad (n*8))
+    runR (ArrayEltRvec16 ae)       (AD_V16 ad)       n = liftM  AD_V16  (runR ae ad (n*16))
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) n = liftM2 AD_Pair (runR aeR2 ad2 n) (runR aeR1 ad1 n)
     runR ArrayEltRunit             AD_Unit           _ = return AD_Unit
-    runR (ArrayEltRvec2 ae)        (AD_V2 ad)        k = liftM  AD_V2   (runR ae ad (k . (*2)))
-    runR (ArrayEltRvec3 ae)        (AD_V3 ad)        k = liftM  AD_V3   (runR ae ad (k . (*3)))
-    runR (ArrayEltRvec4 ae)        (AD_V4 ad)        k = liftM  AD_V4   (runR ae ad (k . (*4)))
-    runR (ArrayEltRvec8 ae)        (AD_V8 ad)        k = liftM  AD_V8   (runR ae ad (k . (*8)))
-    runR (ArrayEltRvec16 ae)       (AD_V16 ad)       k = liftM  AD_V16  (runR ae ad (k . (*16)))
-    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) k = liftM2 AD_Pair (runR aeR2 ad2 k) (runR aeR1 ad1 k)
 
