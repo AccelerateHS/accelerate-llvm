@@ -311,15 +311,15 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
 
       -- If this thread has input, read data and participate in thread-block scan
       let valid i = case dir of
-                      L -> A.lt  scalarType i sz
-                      R -> A.gte scalarType i (lift 0)
+                      L -> A.lt  singleType i sz
+                      R -> A.gte singleType i (lift 0)
 
       when (valid i0) $ do
         x0 <- app1 delayedLinearIndex i0
         x1 <- case mseed of
                 Nothing   -> return x0
                 Just seed ->
-                  if A.eq scalarType tid (lift 0) `A.land` A.eq scalarType chunk (lift 0)
+                  if A.eq singleType tid (lift 0) `A.land` A.eq singleType chunk (lift 0)
                     then do
                       z <- seed
                       case dir of
@@ -330,7 +330,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
 
         n  <- A.sub numType sz inf
         n' <- i32 n
-        x2 <- if A.gte scalarType n bd'
+        x2 <- if A.gte singleType n bd'
                 then scanBlockSMem dir dev combine Nothing   x1
                 else scanBlockSMem dir dev combine (Just n') x1
 
@@ -342,7 +342,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
         -- necessary for full blocks in a multi-block scan; the final
         -- partially-full tile does not have a successor block.
         last <- A.sub numType bd (lift 1)
-        when (A.gt scalarType gd (lift 1) `land` A.eq scalarType tid last) $
+        when (A.gt singleType gd (lift 1) `land` A.eq singleType tid last) $
           case dir of
             L -> writeArray arrTmp chunk x2
             R -> do u <- A.sub numType end chunk
@@ -406,15 +406,15 @@ mkScanAllP2 dir dev aenv combine =
                          return z
 
       let valid i = case dir of
-                      L -> A.lt  scalarType i end
-                      R -> A.gte scalarType i start
+                      L -> A.lt  singleType i end
+                      R -> A.gte singleType i start
 
       when (valid i0) $ do
 
         __syncthreads
 
         x0 <- readArray arrTmp i0
-        x1 <- if A.gt scalarType offset (lift 0) `land` A.eq scalarType tid (lift 0)
+        x1 <- if A.gt singleType offset (lift 0) `land` A.eq singleType tid (lift 0)
                 then do
                   c <- readArray carry (lift 0 :: IR Int32)
                   case dir of
@@ -425,7 +425,7 @@ mkScanAllP2 dir dev aenv combine =
 
         n  <- A.sub numType end offset
         n' <- i32 n
-        x2 <- if A.gte scalarType n bd'
+        x2 <- if A.gte singleType n bd'
                 then scanBlockSMem dir dev combine Nothing   x1
                 else scanBlockSMem dir dev combine (Just n') x1
 
@@ -435,7 +435,7 @@ mkScanAllP2 dir dev aenv combine =
         -- The last thread writes the carry-out value. If the last thread is not
         -- active, then this must be the last stripe anyway.
         last <- A.sub numType bd (lift 1)
-        when (A.eq scalarType tid last) $
+        when (A.eq singleType tid last) $
           writeArray carry (lift 0 :: IR Int32) x2
 
     return_
@@ -474,7 +474,7 @@ mkScanAllP3 dir dev aenv combine mseed =
     -- Threads that will never contribute can just exit immediately. The size of
     -- each chunk is set by the block dimension of the step 1 kernel, which may
     -- be different from the block size of this kernel.
-    when (A.lt scalarType tid stride) $ do
+    when (A.lt singleType tid stride) $ do
 
       -- Iterate over the segments computed in phase 1. Note that we have one
       -- fewer chunk to process because the first has no carry-in.
@@ -491,13 +491,13 @@ mkScanAllP3 dir dev aenv combine mseed =
                          b <- A.mul numType stride a
                          case mseed of
                            Just{}  -> do
-                             c <- A.add numType b (lift 1)
-                             d <- A.add numType c stride
-                             e <- A.min scalarType d sz
+                             c <- A.add numType    b (lift 1)
+                             d <- A.add numType    c stride
+                             e <- A.min singleType d sz
                              return (c,e)
                            Nothing -> do
-                             c <- A.add numType b stride
-                             d <- A.min scalarType c sz
+                             c <- A.add numType    b stride
+                             d <- A.min singleType c sz
                              return (b,d)
                        R -> do
                          a <- A.sub numType end chunk
@@ -505,13 +505,13 @@ mkScanAllP3 dir dev aenv combine mseed =
                          c <- A.sub numType sz b
                          case mseed of
                            Just{}  -> do
-                             d <- A.sub numType c (lift 1)
-                             e <- A.sub numType d stride
-                             f <- A.max scalarType e (lift 0)
+                             d <- A.sub numType    c (lift 1)
+                             e <- A.sub numType    d stride
+                             f <- A.max singleType e (lift 0)
                              return (f,d)
                            Nothing -> do
-                             d <- A.sub numType c stride
-                             e <- A.max scalarType d (lift 0)
+                             d <- A.sub numType    c stride
+                             e <- A.max singleType d (lift 0)
                              return (e,c)
 
         -- Read the carry-in value
@@ -599,8 +599,8 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
 
       -- If this thread has input it participates in the scan
       let valid i = case dir of
-                      L -> A.lt  scalarType i sz
-                      R -> A.gte scalarType i (lift 0)
+                      L -> A.lt  singleType i sz
+                      R -> A.gte singleType i (lift 0)
 
       when (valid i0) $ do
         x0 <- app1 delayedLinearIndex i0
@@ -608,7 +608,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
         -- Thread 0 of the first segment must also evaluate and store the
         -- initial element
         ti <- threadIdx
-        x1 <- if A.eq scalarType ti (lift 0) `A.land` A.eq scalarType seg (lift 0)
+        x1 <- if A.eq singleType ti (lift 0) `A.land` A.eq singleType seg (lift 0)
                 then do
                   z <- seed
                   writeArray arrOut i0 z
@@ -621,7 +621,7 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
         -- Block-wide scan
         n  <- A.sub numType sz inf
         n' <- i32 n
-        x2 <- if A.gte scalarType n bd
+        x2 <- if A.gte singleType n bd
                 then scanBlockSMem dir dev combine Nothing   x1
                 else scanBlockSMem dir dev combine (Just n') x1
 
@@ -629,15 +629,15 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
         -- space for the initial element, so the very last thread does not store
         -- its result here.
         case dir of
-          L -> when (A.lt  scalarType j0 sz)       $ writeArray arrOut j0 x2
-          R -> when (A.gte scalarType j0 (lift 0)) $ writeArray arrOut j0 x2
+          L -> when (A.lt  singleType j0 sz)       $ writeArray arrOut j0 x2
+          R -> when (A.gte singleType j0 (lift 0)) $ writeArray arrOut j0 x2
 
         -- Last active thread writes its result to the partial sums array. These
         -- will be used to compute the carry-in value in step 2.
-        m  <- do x <- A.min scalarType n bd
+        m  <- do x <- A.min singleType n bd
                  y <- A.sub numType x (lift 1)
                  return y
-        when (A.eq scalarType tid m) $
+        when (A.eq singleType tid m) $
           case dir of
             L -> writeArray arrTmp seg x2
             R -> do x <- A.sub numType end seg
@@ -697,8 +697,8 @@ mkScan'AllP2 dir dev aenv combine =
                        return z
 
       let valid i = case dir of
-                      L -> A.lt  scalarType i end
-                      R -> A.gte scalarType i start
+                      L -> A.lt  singleType i end
+                      R -> A.gte singleType i start
 
       when (valid i0) $ do
 
@@ -706,7 +706,7 @@ mkScan'AllP2 dir dev aenv combine =
         __syncthreads
 
         x0 <- readArray arrTmp i0
-        x1 <- if A.gt scalarType offset (lift 0) `A.land` A.eq scalarType tid (lift 0)
+        x1 <- if A.gt singleType offset (lift 0) `A.land` A.eq singleType tid (lift 0)
                 then do
                   c <- readArray carry (lift 0 :: IR Int32)
                   case dir of
@@ -717,7 +717,7 @@ mkScan'AllP2 dir dev aenv combine =
 
         n  <- A.sub numType end offset
         n' <- i32 n
-        x2 <- if A.gte scalarType n bd
+        x2 <- if A.gte singleType n bd
                 then scanBlockSMem dir dev combine Nothing   x1
                 else scanBlockSMem dir dev combine (Just n') x1
 
@@ -725,18 +725,18 @@ mkScan'AllP2 dir dev aenv combine =
         writeArray arrTmp i0 x2
 
         -- The last active thread saves its result as the carry-out value.
-        m  <- do x <- A.min scalarType bd n
+        m  <- do x <- A.min singleType bd n
                  y <- A.sub numType x (lift 1)
                  z <- i32 y
                  return z
-        when (A.eq scalarType tid m) $
+        when (A.eq singleType tid m) $
           writeArray carry (lift 0 :: IR Int32) x2
 
     -- First thread stores the final carry-out values at the final reduction
     -- result for the entire array
     __syncthreads
 
-    when (A.eq scalarType tid (lift 0)) $
+    when (A.eq singleType tid (lift 0)) $
       writeArray arrSum (lift 0 :: IR Int32) =<< readArray carry (lift 0 :: IR Int32)
 
     return_
@@ -771,7 +771,7 @@ mkScan'AllP3 dir dev aenv combine =
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
 
-    when (A.lt scalarType tid stride) $ do
+    when (A.lt singleType tid stride) $ do
 
       bid <- int =<< blockIdx
       gd  <- int =<< gridDim
@@ -780,19 +780,19 @@ mkScan'AllP3 dir dev aenv combine =
 
         (inf,sup) <- case dir of
                        L -> do
-                         a <- A.add numType chunk (lift 1)
-                         b <- A.mul numType stride a
-                         c <- A.add numType b (lift 1)
-                         d <- A.add numType c stride
-                         e <- A.min scalarType d sz
+                         a <- A.add numType    chunk  (lift 1)
+                         b <- A.mul numType    stride a
+                         c <- A.add numType    b      (lift 1)
+                         d <- A.add numType    c      stride
+                         e <- A.min singleType d      sz
                          return (c,e)
                        R -> do
-                         a <- A.sub numType end chunk
-                         b <- A.mul numType stride a
-                         c <- A.sub numType sz b
-                         d <- A.sub numType c (lift 1)
-                         e <- A.sub numType d stride
-                         f <- A.max scalarType e (lift 0)
+                         a <- A.sub numType    end    chunk
+                         b <- A.mul numType    stride a
+                         c <- A.sub numType    sz     b
+                         d <- A.sub numType    c      (lift 1)
+                         e <- A.sub numType    d      stride
+                         f <- A.max singleType e      (lift 0)
                          return (f,d)
 
         carry     <- case dir of
@@ -923,7 +923,7 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
       r <-
         case mseed of
           Just seed -> do
-            when (A.eq scalarType tid (lift 0)) $ do
+            when (A.eq singleType tid (lift 0)) $ do
               z <- seed
               writeArray arrOut j0 z
               writeArray carry (lift 0 :: IR Int32) z
@@ -933,16 +933,16 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
             return $ A.trip sz i0 j1
 
           Nothing -> do
-            when (A.lt scalarType tid' sz) $ do
+            when (A.lt singleType tid' sz) $ do
               n' <- i32 sz
               x0 <- app1 delayedLinearIndex i0
-              r0 <- if A.gte scalarType sz bd'
+              r0 <- if A.gte singleType sz bd'
                       then scanBlockSMem dir dev combine Nothing   x0
                       else scanBlockSMem dir dev combine (Just n') x0
               writeArray arrOut j0 r0
 
               ll <- A.sub numType bd (lift 1)
-              when (A.eq scalarType tid ll) $
+              when (A.eq singleType tid ll) $
                 writeArray carry (lift 0 :: IR Int32) r0
 
             n1 <- A.sub numType sz bd'
@@ -952,7 +952,7 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
 
       -- Iterate over the remaining elements in this segment
       void $ while
-        (\(A.fst3   -> n)       -> A.gt scalarType n (lift 0))
+        (\(A.fst3   -> n)       -> A.gt singleType n (lift 0))
         (\(A.untrip -> (n,i,j)) -> do
 
           -- Wait for the carry-in value from the previous iteration to be updated
@@ -965,18 +965,18 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
           -- Out-of-bounds threads return 'undef' at this point, which is really
           -- unfortunate ):
           --
-          x <- if A.lt scalarType tid' n
+          x <- if A.lt singleType tid' n
                  then app1 delayedLinearIndex i
                  else let
                           go :: TupleType a -> Operands a
-                          go UnitTuple       = OP_Unit
-                          go (PairTuple a b) = OP_Pair (go a) (go b)
-                          go (SingleTuple t) = ir' t (undef t)
+                          go TypeRunit       = OP_Unit
+                          go (TypeRpair a b) = OP_Pair (go a) (go b)
+                          go (TypeRscalar t) = ir' t (undef t)
                       in
                       return . IR $ go (eltType (undefined::e))
 
           -- Thread zero incorporates the carry-in element
-          y <- if A.eq scalarType tid (lift 0)
+          y <- if A.eq singleType tid (lift 0)
                  then do
                    c <- readArray carry (lift 0 :: IR Int32)
                    case dir of
@@ -987,18 +987,18 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
 
           -- Perform the scan and write the result to memory
           m <- i32 n
-          z <- if A.gte scalarType n bd'
+          z <- if A.gte singleType n bd'
                  then scanBlockSMem dir dev combine Nothing  y
                  else scanBlockSMem dir dev combine (Just m) y
 
-          when (A.lt scalarType tid' n) $ do
+          when (A.lt singleType tid' n) $ do
             writeArray arrOut j z
 
             -- The last thread of the block writes its result as the carry-out
             -- value. If this thread is not active then we are on the last
             -- iteration of the loop and it will not be needed.
             w <- A.sub numType bd (lift 1)
-            when (A.eq scalarType tid w) $
+            when (A.eq singleType tid w) $
               writeArray carry (lift 0 :: IR Int32) z
 
           -- Update indices for the next iteration
@@ -1064,7 +1064,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
     -- block, those threads will never contribute to the output.
     tid   <- threadIdx
     tid'  <- int tid
-    when (A.lte scalarType tid' sz) $ do
+    when (A.lte singleType tid' sz) $ do
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively scanning along each outermost index.
@@ -1097,7 +1097,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
         -- Evaluate the initial element. Store it into the carry-in slot as well
         -- as to the array as the first element. This is always valid because if
         -- the input array is empty then we will be evaluating via mkScan'Fill.
-        when (A.eq scalarType tid (lift 0)) $ do
+        when (A.eq singleType tid (lift 0)) $ do
           z <- seed
           writeArray arrOut i0                   z
           writeArray carry  (lift 0 :: IR Int32) z
@@ -1116,7 +1116,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
         -- indices i* and j* are local to each thread
         n0  <- A.sub numType sup inf
         void $ while
-          (\(A.fst3   -> n)       -> A.gt scalarType n (lift 0))
+          (\(A.fst3   -> n)       -> A.gt singleType n (lift 0))
           (\(A.untrip -> (n,i,j)) -> do
 
             -- Wait for threads to catch up to ensure the carry-in value from
@@ -1125,12 +1125,12 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
 
             -- If all threads in the block will participate this round we can
             -- avoid (almost) all bounds checks.
-            _ <- if A.gte scalarType n bd'
+            _ <- if A.gte singleType n bd'
                     -- All threads participate. No bounds checks required but
                     -- the last thread needs to update the carry-in value.
                     then do
                       x <- app1 delayedLinearIndex i
-                      y <- if A.eq scalarType tid (lift 0)
+                      y <- if A.eq singleType tid (lift 0)
                               then do
                                 c <- readArray carry (lift 0 :: IR Int32)
                                 case dir of
@@ -1144,13 +1144,13 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
                       -- align directly on the boundary of the array this is not
                       -- valid for the last thread.
                       case dir of
-                        L -> when (A.lt  scalarType j sup) $ writeArray arrOut j z
-                        R -> when (A.gte scalarType j inf) $ writeArray arrOut j z
+                        L -> when (A.lt  singleType j sup) $ writeArray arrOut j z
+                        R -> when (A.gte singleType j inf) $ writeArray arrOut j z
 
                       -- Last thread of the block also saves its result as the
                       -- carry-in value
                       bd1 <- A.sub numType bd (lift 1)
-                      when (A.eq scalarType tid bd1) $
+                      when (A.eq singleType tid bd1) $
                         writeArray carry (lift 0 :: IR Int32) z
 
                       return (IR OP_Unit :: IR ())
@@ -1159,9 +1159,9 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
                     -- the last iteration of the loop. The last active thread
                     -- still needs to store its value into the carry-in slot.
                     else do
-                      when (A.lt scalarType tid' n) $ do
+                      when (A.lt singleType tid' n) $ do
                         x <- app1 delayedLinearIndex i
-                        y <- if A.eq scalarType tid (lift 0)
+                        y <- if A.eq singleType tid (lift 0)
                                 then do
                                   c <- readArray carry (lift 0 :: IR Int32)
                                   case dir of
@@ -1173,7 +1173,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
                         z <- scanBlockSMem dir dev combine (Just l) y
 
                         m <- A.sub numType n (lift 1)
-                        _ <- if A.lt scalarType tid' m
+                        _ <- if A.lt singleType tid' m
                                then writeArray arrOut j                   z >> return (IR OP_Unit :: IR ())
                                else writeArray carry (lift 0 :: IR Int32) z >> return (IR OP_Unit :: IR ())
 
@@ -1187,7 +1187,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
         __syncthreads
 
         -- Store the carry-in value to the separate final results array
-        when (A.eq scalarType tid (lift 0)) $
+        when (A.eq singleType tid (lift 0)) $
           writeArray arrSum seg =<< readArray carry (lift 0 :: IR Int32)
 
     return_
@@ -1269,7 +1269,7 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
       -- Share warp aggregates
       wid   <- warpId
       lane  <- laneId
-      when (A.eq scalarType lane (int32 (CUDA.warpSize dev - 1))) $ do
+      when (A.eq singleType lane (int32 (CUDA.warpSize dev - 1))) $ do
         writeArray smem wid input
 
       -- Wait for each warp to finish its local scan and share the aggregate
@@ -1277,7 +1277,7 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
 
       -- Compute the prefix value for this warp and add to the partial result.
       -- This step is not required for the first warp, which has no carry-in.
-      if A.eq scalarType wid (lift 0)
+      if A.eq singleType wid (lift 0)
         then return input
         else do
           -- Every thread sequentially scans the warp aggregates to compute
@@ -1286,7 +1286,7 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
           -- (warp size ^ 2).
           steps  <- case nelem of
                       Nothing -> return wid
-                      Just n  -> A.min scalarType wid =<< A.quot integralType n (int32 (CUDA.warpSize dev))
+                      Just n  -> A.min singleType wid =<< A.quot integralType n (int32 (CUDA.warpSize dev))
 
           p0     <- readArray smem (lift 0 :: IR Int32)
           prefix <- iterFromStepTo (lift 1) (lift 1) steps p0 $ \step x -> do
@@ -1339,7 +1339,7 @@ scanWarpSMem dir dev combine smem = scan 0
           writeArray smem i x
 
           -- update partial result if in range
-          x'   <- if A.gte scalarType lane (lift offset)
+          x'   <- if A.gte singleType lane (lift offset)
                     then do
                       i' <- A.sub numType i (lift offset)     -- lane + HALF_WARP - offset
                       x' <- readArray smem i'

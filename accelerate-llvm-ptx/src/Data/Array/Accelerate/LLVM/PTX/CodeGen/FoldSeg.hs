@@ -145,14 +145,14 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
 
     -- Each thread block cooperatively reduces a segment.
     -- s0    <- dequeue queue (lift 1)
-    -- for s0 (\s -> A.lt scalarType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
+    -- for s0 (\s -> A.lt singleType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
     imapFromTo start end $ \s -> do
 
       -- The first two threads of the block determine the indices of the
       -- segments array that we will reduce between and distribute those values
       -- to the other threads in the block.
       tid <- threadIdx
-      when (A.lt scalarType tid (lift 2)) $ do
+      when (A.lt singleType tid (lift 2)) $ do
         i <- case rank (undefined::sh) of
                0 -> return s
                _ -> A.rem integralType s ss
@@ -176,14 +176,14 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                                                  <*> A.add numType v a
 
       void $
-        if A.eq scalarType inf sup
+        if A.eq singleType inf sup
           -- This segment is empty. If this is an exclusive reduction the
           -- first thread writes out the initial element for this segment.
           then do
             case mseed of
               Nothing -> return (IR OP_Unit :: IR ())
               Just z  -> do
-                when (A.eq scalarType tid (lift 0)) $ writeArray arrOut s =<< z
+                when (A.eq singleType tid (lift 0)) $ writeArray arrOut s =<< z
                 return (IR OP_Unit)
 
           -- This is a non-empty segment.
@@ -200,20 +200,20 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
             -- a bug in NVPTX / ptxas.
             --
             i0 <- A.add numType inf =<< int tid
-            x0 <- if A.lt scalarType i0 sup
+            x0 <- if A.lt singleType i0 sup
                     then app1 (delayedLinearIndex arr) i0
                     else let
                              go :: TupleType a -> Operands a
-                             go UnitTuple       = OP_Unit
-                             go (PairTuple a b) = OP_Pair (go a) (go b)
-                             go (SingleTuple t) = ir' t (undef t)
+                             go TypeRunit       = OP_Unit
+                             go (TypeRpair a b) = OP_Pair (go a) (go b)
+                             go (TypeRscalar t) = ir' t (undef t)
                          in
                          return . IR $ go (eltType (undefined::e))
 
             bd  <- int =<< blockDim
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
-            r0  <- if A.gte scalarType v0 bd
+            r0  <- if A.gte singleType v0 bd
                      then reduceBlockSMem dev combine Nothing    x0
                      else reduceBlockSMem dev combine (Just v0') x0
 
@@ -226,7 +226,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
 
                      i' <- A.add numType offset =<< int tid
                      v' <- A.sub numType sup offset
-                     r' <- if A.gte scalarType v' bd
+                     r' <- if A.gte singleType v' bd
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
@@ -239,7 +239,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                              -- to avoid thread divergence on synchronisation
                              -- points, similar to the above NOTE.
                              else do
-                               x <- if A.lt scalarType i' sup
+                               x <- if A.lt singleType i' sup
                                       then app1 (delayedLinearIndex arr) i'
                                       else return r
                                z <- i32 v'
@@ -248,14 +248,14 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
 
                      -- first thread incorporates the result from the previous
                      -- iteration
-                     if A.eq scalarType tid (lift 0)
+                     if A.eq singleType tid (lift 0)
                        then app2 combine r r'
                        else return r'
 
             -- Step 3: Thread zero writes the aggregate reduction for this
             -- segment to memory. If this is an exclusive fold combine with the
             -- initial element as well.
-            when (A.eq scalarType tid (lift 0)) $
+            when (A.eq singleType tid (lift 0)) $
              writeArray arrOut s =<<
                case mseed of
                  Nothing -> return r
@@ -364,7 +364,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       -- array that we will reduce between and distribute those values to the
       -- other threads in the warp
       lane <- laneId
-      when (A.lt scalarType lane (lift 2)) $ do
+      when (A.lt singleType lane (lift 2)) $ do
         a <- case rank (undefined::sh) of
                0 -> return s
                _ -> A.rem integralType s ss
@@ -388,14 +388,14 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       __syncthreads
 
       void $
-        if A.eq scalarType inf sup
+        if A.eq singleType inf sup
           -- This segment is empty. If this is an exclusive reduction the first
           -- lane writes out the initial element for this segment.
           then do
             case mseed of
               Nothing -> return (IR OP_Unit :: IR ())
               Just z  -> do
-                when (A.eq scalarType lane (lift 0)) $ writeArray arrOut s =<< z
+                when (A.eq singleType lane (lift 0)) $ writeArray arrOut s =<< z
                 return (IR OP_Unit)
 
           -- This is a non-empty segment.
@@ -405,19 +405,19 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
             -- See comment above why we initialise the loop in this way
             --
             i0  <- A.add numType inf =<< int lane
-            x0  <- if A.lt scalarType i0 sup
+            x0  <- if A.lt singleType i0 sup
                      then app1 (delayedLinearIndex arr) i0
                      else let
                               go :: TupleType a -> Operands a
-                              go UnitTuple       = OP_Unit
-                              go (PairTuple a b) = OP_Pair (go a) (go b)
-                              go (SingleTuple t) = ir' t (undef t)
+                              go TypeRunit       = OP_Unit
+                              go (TypeRpair a b) = OP_Pair (go a) (go b)
+                              go (TypeRscalar t) = ir' t (undef t)
                           in
                           return . IR $ go (eltType (undefined::e))
 
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
-            r0  <- if A.gte scalarType v0 (lift ws)
+            r0  <- if A.gte singleType v0 (lift ws)
                      then reduceWarpSMem dev combine smem Nothing    x0
                      else reduceWarpSMem dev combine smem (Just v0') x0
 
@@ -430,7 +430,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
 
                     i' <- A.add numType offset =<< int lane
                     v' <- A.sub numType sup offset
-                    r' <- if A.gte scalarType v' (lift ws)
+                    r' <- if A.gte singleType v' (lift ws)
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
                               x <- app1 (delayedLinearIndex arr) i'
@@ -438,7 +438,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                               return y
 
                             else do
-                              x <- if A.lt scalarType i' sup
+                              x <- if A.lt singleType i' sup
                                      then app1 (delayedLinearIndex arr) i'
                                      else return r
                               z <- i32 v'
@@ -447,14 +447,14 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
 
                     -- The first lane incorporates the result from the previous
                     -- iteration
-                    if A.eq scalarType lane (lift 0)
+                    if A.eq singleType lane (lift 0)
                       then app2 combine r r'
                       else return r'
 
             -- Step 3: Lane zero writes the aggregate reduction for this
             -- segment to memory. If this is an exclusive reduction, also
             -- combine with the initial element
-            when (A.eq scalarType lane (lift 0)) $
+            when (A.eq singleType lane (lift 0)) $
               writeArray arrOut s =<<
                 case mseed of
                   Nothing -> return r

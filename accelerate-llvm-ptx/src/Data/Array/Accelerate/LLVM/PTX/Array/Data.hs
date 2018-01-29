@@ -125,6 +125,12 @@ copyToHostLazy arrs = do
         runR :: ArrayEltR e -> ArrayData e -> IO (ArrayData e)
         runR ArrayEltRunit              AD_Unit          = return AD_Unit
         runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) = AD_Pair    <$> runR aeR2 ad2 <*> runR aeR1 ad1
+        runR (ArrayEltRvec2 aeR)       (AD_V2 ad)        = AD_V2      <$> runR aeR ad
+        runR (ArrayEltRvec3 aeR)       (AD_V3 ad)        = AD_V3      <$> runR aeR ad
+        runR (ArrayEltRvec4 aeR)       (AD_V4 ad)        = AD_V4      <$> runR aeR ad
+        runR (ArrayEltRvec8 aeR)       (AD_V8 ad)        = AD_V8      <$> runR aeR ad
+        runR (ArrayEltRvec16 aeR)      (AD_V16 ad)       = AD_V16     <$> runR aeR ad
+        --
         runR ArrayEltRint           ad@(AD_Int ua)       = AD_Int     <$> peekR ad ua
         runR ArrayEltRint8          ad@(AD_Int8 ua)      = AD_Int8    <$> peekR ad ua
         runR ArrayEltRint16         ad@(AD_Int16 ua)     = AD_Int16   <$> peekR ad ua
@@ -143,6 +149,7 @@ copyToHostLazy arrs = do
         runR ArrayEltRculong        ad@(AD_CULong ua)    = AD_CULong  <$> peekR ad ua
         runR ArrayEltRcllong        ad@(AD_CLLong ua)    = AD_CLLong  <$> peekR ad ua
         runR ArrayEltRcullong       ad@(AD_CULLong ua)   = AD_CULLong <$> peekR ad ua
+        runR ArrayEltRhalf          ad@(AD_Half ua)      = AD_Half    <$> peekR ad ua
         runR ArrayEltRfloat         ad@(AD_Float ua)     = AD_Float   <$> peekR ad ua
         runR ArrayEltRdouble        ad@(AD_Double ua)    = AD_Double  <$> peekR ad ua
         runR ArrayEltRcfloat        ad@(AD_CFloat ua)    = AD_CFloat  <$> peekR ad ua
@@ -176,6 +183,12 @@ cloneArrayAsync stream arr@(Array _ src) = do
     copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 = copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
                                               copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
     --
+    copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)  = copyR aeR ad1 ad2
+    copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad2)  = copyR aeR ad1 ad2
+    copyR (ArrayEltRvec4 aeR)  (AD_V4 ad1)  (AD_V4 ad2)  = copyR aeR ad1 ad2
+    copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad2)  = copyR aeR ad1 ad2
+    copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad2) = copyR aeR ad1 ad2
+    --
     copyR ArrayEltRint              ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRint8             ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRint16            ad1 ad2 = copyPrim ad1 ad2
@@ -186,6 +199,7 @@ cloneArrayAsync stream arr@(Array _ src) = do
     copyR ArrayEltRword16           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRword32           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRword64           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRhalf             ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRfloat            ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRdouble           ad1 ad2 = copyPrim ad1 ad2
     copyR ArrayEltRbool             ad1 ad2 = copyPrim ad1 ad2
