@@ -254,8 +254,8 @@ llvmOfOpenExp arch top env aenv = cvtE top
             pack (SnocTup t x)
               | Just Refl <- matchExpType x
               = do
-                  (i, vec)  <- pack t
                   x'        <- cvtE x
+                  (i, vec)  <- pack t
                   vec'      <- instr' $ InsertElement i vec (op a x')
                   return (i+1, vec')
                 where
