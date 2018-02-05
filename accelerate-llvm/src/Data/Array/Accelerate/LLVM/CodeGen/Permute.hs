@@ -95,7 +95,7 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
       -- different threads.
       --
       | Lam (Lam (Body body)) <- fun
-      , SingleTuple{}         <- eltType (undefined::e)
+      , TypeRscalar{}         <- eltType (undefined::e)
       , Just body'            <- strengthenE latest body
       , fun'                  <- llvmOfFun1 arch (Lam (Body body')) aenv
       = Just (Exchange, fun')
@@ -110,7 +110,7 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
       -- generic spin-lock based approach.
       --
       | Lam (Lam (Body body)) <- fun
-      , SingleTuple{}         <- eltType (undefined::e)
+      , TypeRscalar{}         <- eltType (undefined::e)
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
       , fun'                  <- llvmOfFun1 arch (Lam (Body x')) aenv
@@ -171,15 +171,15 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
 -- > }
 --
 atomicCAS_rmw
-    :: ScalarType t
+    :: SingleType t
     -> (IR t -> CodeGen (IR t))
     -> Operand (Ptr t)
     -> CodeGen ()
 atomicCAS_rmw t update addr =
   case t of
-    NonNumScalarType s                -> nonnum s
-    NumScalarType (FloatingNumType f) -> floating f
-    NumScalarType (IntegralNumType i) -> integral i
+    NonNumSingleType s                -> nonnum s
+    NumSingleType (FloatingNumType f) -> floating f
+    NumSingleType (IntegralNumType i) -> integral i
 
   where
     nonnum :: NonNumType t -> CodeGen ()
@@ -190,6 +190,7 @@ atomicCAS_rmw t update addr =
     nonnum TypeCUChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
 
     floating :: FloatingType t -> CodeGen ()
+    floating TypeHalf{}    = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
     floating TypeFloat{}   = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
     floating TypeDouble{}  = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
     floating TypeCFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
@@ -199,16 +200,14 @@ atomicCAS_rmw t update addr =
     integral i             = atomicCAS_rmw' t i update addr
 
 
--- Would like to add a (BitSizeEq t i) constraint, but we can't do that since we
--- have defined (BitSize Bool = 1)
 atomicCAS_rmw'
-    :: ScalarType t
+    :: SingleType t
     -> IntegralType i
     -> (IR t -> CodeGen (IR t))
     -> Operand (Ptr t)
     -> CodeGen ()
 atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
-  let si = NumScalarType (IntegralNumType i)
+  let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   spin  <- newBlock "rmw.spin"
   exit  <- newBlock "rmw.exit"
@@ -219,8 +218,8 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
   top   <- br spin
 
   setBlock spin
-  old   <- instr' $ BitCast t (op i old')
-  val   <- update (ir t old)
+  old   <- instr' $ BitCast (SingleScalarType t) (op i old')
+  val   <- update $ ir t old
   val'  <- instr' $ BitCast si (op t val)
   r     <- instr' $ CmpXchg i NonVolatile addr' (op i old') val' (CrossThread, AcquireRelease) Monotonic
   done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
@@ -256,16 +255,16 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
 -- address.
 --
 atomicCAS_cmp
-    :: ScalarType t
-    -> (ScalarType t -> IR t -> IR t -> CodeGen (IR Bool))
+    :: SingleType t
+    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
     -> Operand (Ptr t)
     -> Operand t
     -> CodeGen ()
 atomicCAS_cmp t cmp addr val =
   case t of
-    NonNumScalarType s                -> nonnum s
-    NumScalarType (FloatingNumType f) -> floating f
-    NumScalarType (IntegralNumType i) -> integral i
+    NonNumSingleType s                -> nonnum s
+    NumSingleType (FloatingNumType f) -> floating f
+    NumSingleType (IntegralNumType i) -> integral i
 
   where
     nonnum :: NonNumType t -> CodeGen ()
@@ -276,6 +275,7 @@ atomicCAS_cmp t cmp addr val =
     nonnum TypeCUChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
 
     floating :: FloatingType t -> CodeGen ()
+    floating TypeHalf{}    = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
     floating TypeFloat{}   = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
     floating TypeDouble{}  = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
     floating TypeCFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
@@ -285,17 +285,15 @@ atomicCAS_cmp t cmp addr val =
     integral i             = atomicCAS_cmp' t i cmp addr val
 
 
--- Would like to add a (BitSizeEq t i) constraint, but we can't do that since we
--- have defined (BitSize Bool = 1)
 atomicCAS_cmp'
-    :: ScalarType t       -- actual type of elements
+    :: SingleType t       -- actual type of elements
     -> IntegralType i     -- unsigned integral type of same bit size as 't'
-    -> (ScalarType t -> IR t -> IR t -> CodeGen (IR Bool))
+    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
     -> Operand (Ptr t)
     -> Operand t
     -> CodeGen ()
-atomicCAS_cmp' t i cmp addr val | EltDict <- scalarElt t = do
-  let si = NumScalarType (IntegralNumType i)
+atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
+  let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   test  <- newBlock "cas.cmp"
   spin  <- newBlock "cas.retry"
@@ -307,7 +305,7 @@ atomicCAS_cmp' t i cmp addr val | EltDict <- scalarElt t = do
   old   <- fresh
 
   -- Read the current value at the address
-  start <- instr' $ Load t NonVolatile addr
+  start <- instr' $ Load (SingleScalarType t) NonVolatile addr
   top   <- br test
 
   -- Compare the new value with the current contents at that memory slot. If the
@@ -326,7 +324,7 @@ atomicCAS_cmp' t i cmp addr val | EltDict <- scalarElt t = do
   r     <- instr' $ CmpXchg i NonVolatile addr' old' val' (CrossThread, AcquireRelease) Monotonic
   done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
   next  <- instr' $ ExtractValue si (SuccTupIdx ZeroTupIdx) r
-  next' <- instr' $ BitCast t next
+  next' <- instr' $ BitCast (SingleScalarType t) next
 
   bot   <- cbr (ir scalarType done) exit test
   _     <- phi' test old [(ir t start,top), (ir t next',bot)]

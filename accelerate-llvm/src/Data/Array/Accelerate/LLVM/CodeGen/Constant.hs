@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
   primConst,
-  constant, scalar, num, integral, floating, nonnum,
+  constant, scalar, single, vector, num, integral, floating, nonnum,
   undef,
 
 ) where
@@ -50,15 +50,21 @@ primPi t | FloatingDict <- floatingDict t = pi
 -- | A constant value
 --
 constant :: TupleType a -> a -> Operands a
-constant UnitTuple         ()    = OP_Unit
-constant (PairTuple ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
-constant (SingleTuple t)   a     = ir' t (scalar t a)
+constant TypeRunit         ()    = OP_Unit
+constant (TypeRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
+constant (TypeRscalar t)   a     = ir' t (scalar t a)
 
 scalar :: ScalarType a -> a -> Operand a
 scalar t = ConstantOperand . ScalarConstant t
 
+single :: SingleType a -> a -> Operand a
+single t = scalar (SingleScalarType t)
+
+vector :: VectorType (v a) -> (v a) -> Operand (v a)
+vector t = scalar (VectorScalarType t)
+
 num :: NumType a -> a -> Operand a
-num t = scalar (NumScalarType t)
+num t = single (NumSingleType t)
 
 integral :: IntegralType a -> a -> Operand a
 integral t = num (IntegralNumType t)
@@ -67,7 +73,7 @@ floating :: FloatingType a -> a -> Operand a
 floating t = num (FloatingNumType t)
 
 nonnum :: NonNumType a -> a -> Operand a
-nonnum t = scalar (NonNumScalarType t)
+nonnum t = single (NonNumSingleType t)
 
 
 -- | The string 'undef' can be used anywhere a constant is expected, and

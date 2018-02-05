@@ -47,9 +47,9 @@ readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operan
 readArrayData as v ix = read
   where
     read :: TupleType t -> Operands t -> CodeGen (Operands t)
-    read UnitTuple          OP_Unit                  = return OP_Unit
-    read (PairTuple t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (SingleTuple t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
+    read TypeRunit          OP_Unit                  = return OP_Unit
+    read (TypeRpair t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (TypeRscalar t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
 
 readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen (Operand e)
 readArrayPrim t v arr ix = do
@@ -69,9 +69,9 @@ writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Opera
 writeArrayData as v ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
-    write UnitTuple          OP_Unit                   OP_Unit        = return ()
-    write (PairTuple t2 t1) (OP_Pair a2 a1)           (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (SingleTuple t)   (asPtr as . op' t -> arr) (op' t -> val)  = writeArrayPrim v arr ix val
+    write TypeRunit          OP_Unit                   OP_Unit        = return ()
+    write (TypeRpair t2 t1) (OP_Pair a2 a1)           (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
+    write (TypeRscalar t)   (asPtr as . op' t -> arr) (op' t -> val)  = writeArrayPrim v arr ix val
 
 writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
 writeArrayPrim v arr i x = do

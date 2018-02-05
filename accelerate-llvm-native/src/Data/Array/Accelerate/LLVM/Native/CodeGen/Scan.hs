@@ -299,8 +299,8 @@ mkScanS dir uid aenv combine mseed IRDelayed{..} =
               R -> A.sub numType i0 sz
 
       let cont i = case dir of
-                     L -> A.lt scalarType i iz
-                     R -> A.gt scalarType i iz
+                     L -> A.lt singleType i iz
+                     R -> A.gt singleType i iz
 
       void $ while (cont . A.fst3)
                    (\(A.untrip -> (i,j,v)) -> do
@@ -358,8 +358,8 @@ mkScan'S dir uid aenv combine seed IRDelayed{..} =
               R -> A.sub numType i0 sz
 
       let cont i  = case dir of
-                      L -> A.lt scalarType i iz
-                      R -> A.gt scalarType i iz
+                      L -> A.lt singleType i iz
+                      R -> A.gt singleType i iz
 
       -- Loop through the input. Only at the top of the loop to we write the
       -- carry-in value (i.e. value from the last loop iteration) to the output
@@ -441,9 +441,9 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- For exclusive scans the first chunk must incorporate the initial element
     -- into the input and output, while all other chunks increment their output
     -- index by one.
-    inf <- A.mul numType chunk stride
-    a   <- A.add numType inf   stride
-    sup <- A.min scalarType a  len
+    inf <- A.mul numType    chunk stride
+    a   <- A.add numType    inf   stride
+    sup <- A.min singleType a     len
 
     -- index i* is the index that we read data from. Recall that the supremum
     -- index is exclusive
@@ -457,17 +457,17 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     j0  <- case mseed of
              Nothing -> return i0
              Just _  -> case dir of
-                          L -> if A.eq scalarType chunk firstChunk
+                          L -> if A.eq singleType chunk firstChunk
                                  then return i0
                                  else next i0
-                          R -> if A.eq scalarType chunk firstChunk
+                          R -> if A.eq singleType chunk firstChunk
                                  then return sup
                                  else return i0
 
     -- Evaluate/read the initial element for this chunk. Update the read-from
     -- index appropriately
     (v0,i1) <- A.unpair <$> case mseed of
-                 Just seed -> if A.eq scalarType chunk firstChunk
+                 Just seed -> if A.eq singleType chunk firstChunk
                                 then A.pair <$> seed                       <*> pure i0
                                 else A.pair <$> app1 delayedLinearIndex i0 <*> next i0
                  Nothing   ->        A.pair <$> app1 delayedLinearIndex i0 <*> next i0
@@ -479,8 +479,8 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  scalarType i sup
-             R -> A.gte scalarType i inf
+             L -> A.lt  singleType i sup
+             R -> A.gte singleType i inf
 
     r   <- while (cont . A.fst3)
                  (\(A.untrip -> (i,j,v)) -> do
@@ -518,8 +518,8 @@ mkScanP2 dir uid aenv combine =
       paramEnv                  = envParam aenv
       --
       cont i                    = case dir of
-                                    L -> A.lt  scalarType i end
-                                    R -> A.gte scalarType i start
+                                    L -> A.lt  singleType i end
+                                    R -> A.gte singleType i start
 
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -589,9 +589,9 @@ mkScanP3 dir uid aenv combine mseed =
                L -> next chunk
                R -> pure chunk
 
-    b     <- A.mul numType a stride
-    c     <- A.add numType b stride
-    d     <- A.min scalarType c (indexHead (irArrayShape arrOut))
+    b     <- A.mul numType    a stride
+    c     <- A.add numType    b stride
+    d     <- A.min singleType c (indexHead (irArrayShape arrOut))
 
     (inf,sup) <- case (dir,mseed) of
                    (L,Just _) -> (,) <$> next b <*> next d
@@ -668,9 +668,9 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
     -- Compute the start and end indices for this non-empty chunk of the input.
     --
     len <- indexHead <$> delayedExtent
-    inf <- A.mul numType chunk stride
-    a   <- A.add numType inf   stride
-    sup <- A.min scalarType a  len
+    inf <- A.mul numType    chunk stride
+    a   <- A.add numType    inf   stride
+    sup <- A.min singleType a     len
 
     -- index i* is the index that we pull data from.
     i0 <- case dir of
@@ -680,13 +680,13 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
     -- index j* is the index that we write results to. The first chunk needs to
     -- include the initial element, and all other chunks shift their results
     -- across by one to make space.
-    j0      <- if A.eq scalarType chunk firstChunk
+    j0      <- if A.eq singleType chunk firstChunk
                  then pure i0
                  else next i0
 
     -- Evaluate/read the initial element. Update the read-from index
     -- appropriately.
-    (v0,i1) <- A.unpair <$> if A.eq scalarType chunk firstChunk
+    (v0,i1) <- A.unpair <$> if A.eq singleType chunk firstChunk
                               then A.pair <$> seed                       <*> pure i0
                               else A.pair <$> app1 delayedLinearIndex i0 <*> pure j0
 
@@ -697,8 +697,8 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  scalarType i sup
-             R -> A.gte scalarType i inf
+             L -> A.lt  singleType i sup
+             R -> A.gte singleType i inf
 
     r  <- while (cont . A.fst3)
                 (\(A.untrip-> (i,j,v)) -> do
@@ -736,8 +736,8 @@ mkScan'P2 dir uid aenv combine =
       paramEnv                  = envParam aenv
       --
       cont i                    = case dir of
-                                    L -> A.lt  scalarType i end
-                                    R -> A.gte scalarType i start
+                                    L -> A.lt  singleType i end
+                                    R -> A.gte singleType i start
 
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -810,7 +810,7 @@ mkScan'P3 dir uid aenv combine =
 
     b     <- A.mul numType a stride
     c     <- A.add numType b stride
-    d     <- A.min scalarType c (indexHead (irArrayShape arrOut))
+    d     <- A.min singleType c (indexHead (irArrayShape arrOut))
 
     inf   <- next b
     sup   <- next d

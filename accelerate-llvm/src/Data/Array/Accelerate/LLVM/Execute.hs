@@ -387,8 +387,8 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
     unzip tix (Array sh adata) = Array sh $ go tix (eltType (undefined::t)) adata
       where
         go :: TupleIdx v e -> TupleType t' -> ArrayData t' -> ArrayData (EltRepr e)
-        go (SuccTupIdx ix) (PairTuple t _) (AD_Pair x _)           = go ix t x
-        go ZeroTupIdx      (PairTuple _ t) (AD_Pair _ x)
+        go (SuccTupIdx ix) (TypeRpair t _) (AD_Pair x _)           = go ix t x
+        go ZeroTupIdx      (TypeRpair _ t) (AD_Pair _ x)
           | Just Refl <- matchTupleType t (eltType (undefined::e)) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 

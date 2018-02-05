@@ -97,7 +97,7 @@ mkFoldSegS uid aenv combine mseed arr seg =
     -- Number of segments, useful only if reducing DIM2 and higher
     ss <- indexHead <$> delayedExtent seg
 
-    let test si = A.lt scalarType (A.fst si) end
+    let test si = A.lt singleType (A.fst si) end
         initial = A.pair start (lift 0)
 
         body :: IR (Int,Int) -> CodeGen (IR (Int,Int))

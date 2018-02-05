@@ -118,9 +118,9 @@ travTypeToList t f = snd $ go (eltType t) 0
   where
     -- DANGER: [1] must traverse in the same order as [2]
     go :: TupleType s -> Int -> (Int, [a])
-    go UnitTuple         i = (i,   [])
-    go (SingleTuple t')  i = (i+1, [f t' i])
-    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+    go TypeRunit         i = (i,   [])
+    go (TypeRscalar t')  i = (i+1, [f t' i])
+    go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
                                  (i2, r2) = go t2 i1
                              in
                              (i2, r2 ++ r1)
@@ -134,9 +134,9 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
-    go UnitTuple         i = (i,   OP_Unit)
-    go (SingleTuple t')  i = (i+1, ir' t' $ f t' i)
-    go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+    go TypeRunit         i = (i,   OP_Unit)
+    go (TypeRscalar t')  i = (i+1, ir' t' $ f t' i)
+    go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
                                  (i2, r2) = go t2 i1
                              in
                              (i2, OP_Pair r2 r1)
@@ -150,11 +150,11 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 -- travTypeToIRPtr as t f = IR . snd $ go (eltType t) 0
 --   where
 --     -- DANGER: [2] must traverse in the same order as [1]
---     -- go :: TupleType s -> Int -> (Int, Operands (Ptr s))
---     go :: TupleType (EltRepr s) -> Int -> (Int, Operands (EltRepr (Ptr s)))   -- TLM: ugh ):
---     go UnitTuple         i = (i,   OP_Unit)
---     go (SingleTuple t')  i = (i+1, ir' (PtrPrimType t' as) $ f t' i)
---     go (PairTuple t2 t1) i = let (i1, r1) = go t1 i
+--     -- go :: TypeR s -> Int -> (Int, Operands (Ptr s))
+--     go :: TypeR (EltRepr s) -> Int -> (Int, Operands (EltRepr (Ptr s)))   -- TLM: ugh ):
+--     go TypeRunit         i = (i,   OP_Unit)
+--     go (TypeRscalar t')  i = (i+1, ir' (PtrPrimType t' as) $ f t' i)
+--     go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
 --                                  (i2, r2) = go t2 i1
 --                              in
 --                              (i2, OP_Pair r2 r1)

@@ -113,12 +113,7 @@ script:
   - travis_retry stack build accelerate-llvm-ptx    --test --haddock --no-terminal --no-haddock-deps --no-run-tests
 
   # Run test suite(s)
-  # Skip 7.10 due to 'RTLD_NEXT not available' (dlsym) error
-  - |
-      case ${GHC%.*} in
-        7.*) ;;
-        *  ) stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50' ;;
-      esac
+  - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh

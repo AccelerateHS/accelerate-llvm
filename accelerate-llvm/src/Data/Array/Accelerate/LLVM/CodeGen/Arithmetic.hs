@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), undefined, otherwise, flip, fromInteger, fromRational )
+import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), (/), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                    ( finiteBitSize )
@@ -77,7 +77,7 @@ abs n x =
     IntegralNumType i
       | unsigned i                     -> return x
       | IntegralDict <- integralDict i ->
-          let p = ScalarPrimType (NumScalarType n)
+          let p = ScalarPrimType (SingleScalarType (NumSingleType n))
               t = PrimType p
           in
           case finiteBitSize (undefined :: a) of
@@ -90,14 +90,14 @@ signum t x =
     IntegralNumType i
       | IntegralDict <- integralDict i
       , unsigned i
-      -> do z <- neq (NumScalarType t) x (ir t (num t 0))
+      -> do z <- neq (NumSingleType t) x (ir t (num t 0))
             s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
             return s
       --
       -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
       | IntegralDict <- integralDict i
       -> do let wsib = finiteBitSize (undefined::a)
-            z <- neq (NumScalarType t) x (ir t (num t 0))
+            z <- neq (NumSingleType t) x (ir t (num t 0))
             l <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
             r <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
             s <- bor i l r
@@ -107,8 +107,8 @@ signum t x =
     FloatingNumType f
       | FloatingDict <- floatingDict f
       -> do
-            l <- gt (NumScalarType t) x (ir f (floating f 0))
-            r <- lt (NumScalarType t) x (ir f (floating f 0))
+            l <- gt (NumSingleType t) x (ir f (floating f 0))
+            r <- lt (NumSingleType t) x (ir f (floating f 0))
             u <- instr (IntToFP (Right nonNumType) f (op scalarType l))
             v <- instr (IntToFP (Right nonNumType) f (op scalarType r))
             s <- sub t u v
@@ -151,7 +151,7 @@ idiv i x y
   , zero         <- ir i (integral i 0)
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
-  , s            <- NumScalarType n
+  , s            <- NumSingleType n
   = if gt s x zero `land` lt s y zero
        then do
          a <- sub n x one
@@ -177,7 +177,7 @@ mod i x y
   , EltDict      <- integralElt i
   , zero         <- ir i (integral i 0)
   , n            <- IntegralNumType i
-  , s            <- NumScalarType n
+  , s            <- NumSingleType n
   = do r <- rem i x y
        if (gt s x zero `land` lt s y zero) `lor` (lt s x zero `land` gt s y zero)
           then if neq s r zero
@@ -195,7 +195,7 @@ divMod i x y
   , zero         <- ir i (integral i 0)
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
-  , s            <- NumScalarType n
+  , s            <- NumSingleType n
   = if gt s x zero `land` lt s y zero
        then do
          a <- sub n x one
@@ -273,7 +273,7 @@ popCount :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 popCount i x
   | IntegralDict <- integralDict i
   = do let ctpop = fromString $ printf "llvm.ctpop.i%d" (finiteBitSize (undefined::a))
-           p     = ScalarPrimType (NumScalarType (IntegralNumType i))
+           p     = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t     = PrimType p
        --
        c <- call (Lam p (op i x) (Body t ctpop)) [NoUnwind, ReadNone]
@@ -284,7 +284,7 @@ countLeadingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 countLeadingZeros i x
   | IntegralDict <- integralDict i
   = do let clz = fromString $ printf "llvm.ctlz.i%d" (finiteBitSize (undefined::a))
-           p   = ScalarPrimType (NumScalarType (IntegralNumType i))
+           p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
@@ -295,7 +295,7 @@ countTrailingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
 countTrailingZeros i x
   | IntegralDict <- integralDict i
   = do let clz = fromString $ printf "llvm.cttz.i%d" (finiteBitSize (undefined::a))
-           p   = ScalarPrimType (NumScalarType (IntegralNumType i))
+           p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
@@ -388,8 +388,8 @@ isNaN f (op f -> x) = instr (FCmp f UNO x x)
 
 isInfinite :: FloatingType a -> IR a -> CodeGen (IR Bool)
 isInfinite f x | FloatingDict <- floatingDict f = do
-  (op f -> axx) <- mathf "fabs" f x
-  instr (FCmp f OEQ axx (floating f (1.0 P./ 0.0)))
+  y <- mathf "fabs" f x
+  instr (FCmp f OEQ (op f y) (floating f (1/0)))
 
 
 -- Operators from RealFrac
@@ -417,37 +417,37 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Ordering -> ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp :: Ordering -> SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
-lt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+lt :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 lt = cmp LT
 
-gt :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+gt :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 gt = cmp GT
 
-lte :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+lte :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 lte = cmp LE
 
-gte :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+gte :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 gte = cmp GE
 
-eq :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+eq :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 eq = cmp EQ
 
-neq :: ScalarType a -> IR a -> IR a -> CodeGen (IR Bool)
+neq :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
 neq = cmp NE
 
-max :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
+max :: SingleType a -> IR a -> IR a -> CodeGen (IR a)
 max ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
-  | otherwise                               = do c <- op scalarType <$> gte ty x y
+  | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
+  | otherwise                               = do c <- op singleType <$> gte ty x y
                                                  binop (flip Select c) ty x y
 
-min :: ScalarType a -> IR a -> IR a -> CodeGen (IR a)
+min :: SingleType a -> IR a -> IR a -> CodeGen (IR a)
 min ty x y
-  | NumScalarType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
-  | otherwise                               = do c <- op scalarType <$> lte ty x y
+  | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
+  | otherwise                               = do c <- op singleType <$> lte ty x y
                                                  binop (flip Select c) ty x y
 
 
@@ -513,7 +513,7 @@ fromIntegral i1 n (op i1 -> x) =
              bits_b = finiteBitSize (undefined::b)
          in
          case Ord.compare bits_a bits_b of
-           Ord.EQ -> instr (BitCast (NumScalarType n) x)
+           Ord.EQ -> instr (BitCast (SingleScalarType (NumSingleType n)) x)
            Ord.GT -> instr (Trunc (IntegralBoundedType i1) (IntegralBoundedType i2) x)
            Ord.LT -> instr (Ext   (IntegralBoundedType i1) (IntegralBoundedType i2) x)
 
@@ -531,7 +531,7 @@ toFloating n1 f2 (op n1 -> x) =
              bytes_b = sizeOf (undefined::b)
          in
          case Ord.compare bytes_a bytes_b of
-           Ord.EQ -> instr (BitCast (NumScalarType (FloatingNumType f2)) x)
+           Ord.EQ -> instr (BitCast (SingleScalarType (NumSingleType (FloatingNumType f2))) x)
            Ord.GT -> instr (FTrunc f1 f2 x)
            Ord.LT -> instr (FExt   f1 f2 x)
 
@@ -663,7 +663,7 @@ unless test doit = do
 --
 mathf :: ShortByteString -> FloatingType t -> IR t -> CodeGen (IR t)
 mathf n f (op f -> x) = do
-  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+  let s = ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType f)))
       t = PrimType s
   --
   name <- lm f n
@@ -673,7 +673,7 @@ mathf n f (op f -> x) = do
 
 mathf2 :: ShortByteString -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
 mathf2 n f (op f -> x) (op f -> y) = do
-  let s = ScalarPrimType (NumScalarType (FloatingNumType f))
+  let s = ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType f)))
       t = PrimType s
   --
   name <- lm f n
@@ -684,6 +684,7 @@ lm :: FloatingType t -> ShortByteString -> CodeGen Label
 lm t n
   = intrinsic
   $ case t of
+      TypeHalf{}    -> n<>"f"   -- XXX: check
       TypeFloat{}   -> n<>"f"
       TypeCFloat{}  -> n<>"f"
       TypeDouble{}  -> n

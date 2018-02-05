@@ -21,6 +21,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
+import Data.Proxy
+import Data.Typeable
 import Prelude                                                      hiding ( exp, any )
 import qualified Data.IntMap                                        as IM
 
@@ -34,16 +36,20 @@ import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Operand
+
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Monad                     ( CodeGen )
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Foreign
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 
 
 -- Scalar expressions
@@ -106,7 +112,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
         IndexHead ix                -> indexHead <$> cvtE ix
         IndexTail ix                -> indexTail <$> cvtE ix
-        Prj ix tup                  -> prjT ix <$> cvtE tup
+        Prj ix tup                  -> prjT ix =<< cvtE tup
         Tuple tup                   -> cvtT tup
         Foreign asm f x             -> foreignE asm f =<< cvtE x
         Cond c t e                  -> A.ifThenElse (cvtE c) (cvtE t) (cvtE e)
@@ -154,37 +160,119 @@ llvmOfOpenExp arch top env aenv = cvtE top
         extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
           let sh' = extend sliceIdx slx sl
           in  OP_Pair sh' sz
-        extend (SliceFixed sliceIdx) (OP_Pair slx sz) sl                   =
+        extend (SliceFixed sliceIdx) (OP_Pair slx sz)      sl              =
           let sh' = extend sliceIdx slx sl
           in  OP_Pair sh' sz
 
-    prjT :: forall t e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IR e
-    prjT tix (IR ops) = IR $ go tix (eltType (undefined::t)) ops
+    prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> CodeGen (IR e)
+    prjT tix (IR tup) =
+      case eltType (undefined::t) of
+        TypeRscalar (VectorScalarType v) -> goV tix v tup
+        t                                -> goT tix t tup
       where
-        go :: TupleIdx v e -> TupleType t' -> Operands t' -> Operands (EltRepr e)
-        go ZeroTupIdx (PairTuple _ t) (OP_Pair _ v)
-          | Just Refl <- matchTupleType t (eltType (undefined :: e))
-          = v
-        go (SuccTupIdx ix) (PairTuple t _) (OP_Pair tup _) = go ix t tup
-        go _ _ _                                           = $internalError "prjT" "inconsistent valuation"
+        -- for unzipped tuples
+        goT :: TupleIdx s e -> TupleType t' -> Operands t' -> CodeGen (IR e)
+        goT (SuccTupIdx ix) (TypeRpair t _) (OP_Pair x _) = goT ix t x
+        goT ZeroTupIdx      (TypeRpair _ t) (OP_Pair _ x)
+          | Just Refl <- matchTupleType t (eltType (undefined::e))
+          = return $ IR x
+        goT _ _ _
+          = $internalError "prjT/tup" "inconsistent valuation"
+
+        -- for SIMD vectors
+        goV :: forall (v :: * -> *) a. TupleIdx (ProdRepr t) e -> VectorType (v a) -> Operands (v a) -> CodeGen (IR e)
+        goV vix v (op' v -> vec)
+          | Just Refl <- matchProdR (prod Proxy (undefined::t)) (vecProdR v)
+          , Just Refl <- matchVecT (eltType (undefined::e)) (vecElemT v)
+          = instr $ ExtractElement v vix vec
+        goV _ _ _
+          = $internalError "prjT/vec" "inconsistent valuation"
+
+        matchVecT :: TupleType (EltRepr e) -> TupleType a -> Maybe (e :~: a)
+        matchVecT e v
+          | Just Refl <- matchTupleType e v = gcast Refl
+          | otherwise                       = Nothing
+
+        vecElemT :: VectorType (v a) -> TupleType a
+        vecElemT (Vector2Type  a) = TypeRscalar (SingleScalarType a)
+        vecElemT (Vector3Type  a) = TypeRscalar (SingleScalarType a)
+        vecElemT (Vector4Type  a) = TypeRscalar (SingleScalarType a)
+        vecElemT (Vector8Type  a) = TypeRscalar (SingleScalarType a)
+        vecElemT (Vector16Type a) = TypeRscalar (SingleScalarType a)
+
+        matchProdR :: ProdR Elt a -> ProdR Elt b -> Maybe (a :~: b)
+        matchProdR ProdRunit        ProdRunit        = Just Refl
+        matchProdR pa@(ProdRsnoc a) pb@(ProdRsnoc b)
+          | Just Refl <- matchProdR a b
+          , Just Refl <- matchTop pa pb
+          = Just Refl
+          where
+            matchTop :: forall ta tb a b. (Elt a, Elt b) => ProdR Elt (ta,a) -> ProdR Elt (tb,b) -> Maybe (a :~: b)
+            matchTop _ _
+              | Just Refl <- matchTupleType (eltType (undefined::a)) (eltType (undefined::b)) = gcast Refl
+              | otherwise                                                                     = Nothing
+        matchProdR _ _
+          = Nothing
+
+        vecProdR :: VectorType v -> ProdR Elt (ProdRepr v)
+        vecProdR (Vector2Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V2 a)
+        vecProdR (Vector3Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V3 a)
+        vecProdR (Vector4Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V4 a)
+        vecProdR (Vector8Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V8 a)
+        vecProdR (Vector16Type e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V16 a)
 
     cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (IR t)
-    cvtT tup = IR <$> go (eltType (undefined::t)) tup
+    cvtT tup =
+      case eltType (undefined::t) of
+        TypeRscalar (VectorScalarType v) -> IR <$> goV v tup
+        t                                -> IR <$> goT t tup
       where
-        go :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
-        go UnitTuple NilTup
+        -- for unzipped tuples
+        goT :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
+        goT TypeRunit NilTup
           = return OP_Unit
-        go (PairTuple ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
+        goT (TypeRpair ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
           -- We must assert that the reified type 'tb' of 'b' is actually
           -- equivalent to the type of 'b'. This can not fail, but is necessary
           -- because 'tb' observes the representation type of surface type 'b'.
           | Just Refl <- matchTupleType tb (eltType (undefined::b))
-          = do a'    <- go ta a
+          = do a'    <- goT ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
-        go _ _ = $internalError "cvtT"
-               $ unlines [ "impossible evaluation"
-                         , "  possible solution: ensure that the 'EltRepr' and 'ProdRepr' instances of your data type are consistent." ]
+        goT _ _
+          = $internalError "cvtT/tup"
+          $ unlines [ "impossible evaluation"
+                    , "  possible solution: ensure that the 'EltRepr' and 'ProdRepr' instances of your data type are consistent." ]
+
+        -- for packed SIMD vectors
+        goV :: forall (v :: * -> *) a. VectorType (v a) -> Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (Operands (v a))
+        goV v ts = ir' v . snd <$> pack ts
+          where
+            pack :: Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Int32, Operand (v a))
+            pack NilTup
+              = return (0, undef (VectorScalarType v))
+            pack (SnocTup t x)
+              | Just Refl <- matchExpType x
+              = do
+                  x'        <- cvtE x
+                  (i, vec)  <- pack t
+                  vec'      <- instr' $ InsertElement i vec (op a x')
+                  return (i+1, vec')
+                where
+                  matchExpType :: forall s. Elt s => DelayedOpenExp env aenv s -> Maybe (s :~: a)
+                  matchExpType _
+                    | Just Refl <- matchTupleType (eltType (undefined::s)) (TypeRscalar (SingleScalarType a)) = gcast Refl
+                    | otherwise                                                                               = Nothing
+            pack _
+              = $internalError "cvtT/vec" "impossible evaluation"
+
+            a :: SingleType a
+            a = case v of
+                  Vector2Type  t -> t
+                  Vector3Type  t -> t
+                  Vector4Type  t -> t
+                  Vector8Type  t -> t
+                  Vector16Type t -> t
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
     linearIndex (IRManifest v) ix =
@@ -202,15 +290,15 @@ llvmOfOpenExp arch top env aenv = cvtE top
     shapeSize (IR extent) = go (eltType (undefined::sh)) extent
       where
         go :: TupleType t -> Operands t -> CodeGen (IR Int)
-        go UnitTuple OP_Unit
+        go TypeRunit OP_Unit
           = return $ IR (constant (eltType (undefined :: Int)) 1)
-        go (PairTuple tsh t) (OP_Pair sh sz)
+        go (TypeRpair tsh t) (OP_Pair sh sz)
           | Just Refl <- matchTupleType t (eltType (undefined::Int))
           = do
                a <- go tsh sh
                b <- A.mul numType a (IR sz)
                return b
-        go (SingleTuple t) (op' t -> i)
+        go (TypeRscalar t) (op' t -> i)
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
           = return $ ir t i
         go _ _
@@ -220,13 +308,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
     intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
-        go UnitTuple OP_Unit OP_Unit
+        go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
-        go (SingleTuple t) sh1 sh2
+        go (TypeRscalar t) sh1 sh2
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
-          = do IR x <- A.min t (IR sh1) (IR sh2)
+          = do IR x <- A.min (singleType :: SingleType Int) (IR sh1) (IR sh2)
                return x
-        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+        go (TypeRpair tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
           = do
                sz' <- go tsz sz1 sz2
                sh' <- go tsh sh1 sh2
@@ -238,13 +326,13 @@ llvmOfOpenExp arch top env aenv = cvtE top
     union (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
-        go UnitTuple OP_Unit OP_Unit
+        go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
-        go (SingleTuple t) sh1 sh2
+        go (TypeRscalar t) sh1 sh2
           | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)       -- TLM: GHC hang if this is omitted
-          = do IR x <- A.max t (IR sh1) (IR sh2)
+          = do IR x <- A.max (singleType :: SingleType Int) (IR sh1) (IR sh2)
                return x
-        go (PairTuple tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
+        go (TypeRpair tsh tsz) (OP_Pair sh1 sz1) (OP_Pair sh2 sz2)
           = do
                sz' <- go tsz sz1 sz2
                sh' <- go tsh sh1 sh2
@@ -388,10 +476,10 @@ intOfIndex :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR Int)
 intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
   where
     cvt :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Int)
-    cvt UnitTuple OP_Unit OP_Unit
+    cvt TypeRunit OP_Unit OP_Unit
       = return $ IR (constant (eltType (undefined :: Int)) 0)
 
-    cvt (PairTuple tsh t) (OP_Pair sh sz) (OP_Pair ix i)
+    cvt (TypeRpair tsh t) (OP_Pair sh sz) (OP_Pair ix i)
       | Just Refl <- matchTupleType t (eltType (undefined::Int))
       -- If we short-circuit the last dimension, we can avoid inserting
       -- a multiply by zero and add of the result.
@@ -403,7 +491,7 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
             c <- A.add numType b (IR i)
             return c
 
-    cvt (SingleTuple t) _ (op' t -> i)
+    cvt (TypeRscalar t) _ (op' t -> i)
       | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return $ ir t i
 
@@ -417,10 +505,10 @@ indexOfInt :: forall sh. Shape sh => IR sh -> IR Int -> CodeGen (IR sh)
 indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
   where
     cvt :: TupleType t -> Operands t -> IR Int -> CodeGen (Operands t)
-    cvt UnitTuple OP_Unit _
+    cvt TypeRunit OP_Unit _
       = return OP_Unit
 
-    cvt (PairTuple tsh tsz) (OP_Pair sh sz) i
+    cvt (TypeRpair tsh tsz) (OP_Pair sh sz) i
       | Just Refl <- matchTupleType tsz (eltType (undefined::Int))
       = do
            i'    <- A.quot integralType i (IR sz)
@@ -432,7 +520,7 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
 
-    cvt (SingleTuple t) _ (IR i)
+    cvt (TypeRscalar t) _ (IR i)
       | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
       = return i
 

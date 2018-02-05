@@ -71,6 +71,12 @@ instance ArrayElt e => M.Marshalable Native (ArrayData e) where
         marshalR aeR1 (fstArrayData ad) `DL.append`
         marshalR aeR2 (sndArrayData ad)
       --
+      marshalR (ArrayEltRvec2 ae)  (AD_V2 ad)  = marshalR ae ad
+      marshalR (ArrayEltRvec3 ae)  (AD_V3 ad)  = marshalR ae ad
+      marshalR (ArrayEltRvec4 ae)  (AD_V4 ad)  = marshalR ae ad
+      marshalR (ArrayEltRvec8 ae)  (AD_V8 ad)  = marshalR ae ad
+      marshalR (ArrayEltRvec16 ae) (AD_V16 ad) = marshalR ae ad
+      --
       marshalR ArrayEltRint     ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRint8    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRint16   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
@@ -81,6 +87,7 @@ instance ArrayElt e => M.Marshalable Native (ArrayData e) where
       marshalR ArrayEltRword16  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRword32  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRword64  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
+      marshalR ArrayEltRhalf    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRfloat   ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRdouble  ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)
       marshalR ArrayEltRchar    ad = DL.singleton $ FFI.argPtr (ptrsOfArrayData ad)

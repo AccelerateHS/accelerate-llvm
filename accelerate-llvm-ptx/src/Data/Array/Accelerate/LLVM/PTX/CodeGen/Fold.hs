@@ -169,16 +169,16 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
     end'    <- i32 end
     i0      <- A.add numType start' tid
     sz      <- A.sub numType end' start'
-    when (A.lt scalarType i0 sz) $ do
+    when (A.lt singleType i0 sz) $ do
 
       -- Thread reads initial element and then participates in block-wide
       -- reduction.
       x0 <- app1 delayedLinearIndex =<< int i0
-      r0 <- if A.eq scalarType sz bd
+      r0 <- if A.eq singleType sz bd
               then reduceBlockSMem dev combine Nothing   x0
               else reduceBlockSMem dev combine (Just sz) x0
 
-      when (A.eq scalarType tid (lift 0)) $
+      when (A.eq singleType tid (lift 0)) $
         writeArray arrOut tid =<<
           case mseed of
             Nothing -> return r0
@@ -229,14 +229,14 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
       __syncthreads
 
       -- Bounds of the input array we will reduce between
-      from  <- A.mul numType seg  bd
-      step  <- A.add numType from bd
-      to    <- A.min scalarType sz step
+      from  <- A.mul numType    seg  bd
+      step  <- A.add numType    from bd
+      to    <- A.min singleType sz   step
 
       -- Threads cooperatively reduce this stripe
       reduceFromTo dev from to combine
         (app1 delayedLinearIndex)
-        (when (A.eq scalarType tid (lift 0)) . writeArray arrTmp seg)
+        (when (A.eq singleType tid (lift 0)) . writeArray arrTmp seg)
 
     return_
 
@@ -284,17 +284,17 @@ mkFoldAllM2 dev aenv combine mseed =
       __syncthreads
 
       -- Bounds of the input we will reduce between
-      from  <- A.mul numType seg  bd
-      step  <- A.add numType from bd
-      to    <- A.min scalarType sz step
+      from  <- A.mul numType    seg  bd
+      step  <- A.add numType    from bd
+      to    <- A.min singleType sz   step
 
       -- Threads cooperatively reduce this stripe
       reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
-        when (A.eq scalarType tid (lift 0)) $
+        when (A.eq singleType tid (lift 0)) $
           writeArray arrOut seg =<<
             case mseed of
               Nothing -> return r
-              Just z  -> if A.eq scalarType gd (lift 1)
+              Just z  -> if A.eq singleType gd (lift 1)
                            then flip (app2 combine) r =<< z   -- Note: initial element on the left
                            else return r
 
@@ -339,7 +339,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
     sz    <- indexHead <$> delayedExtent
     sz'   <- i32 sz
 
-    when (A.lt scalarType tid sz') $ do
+    when (A.lt singleType tid sz') $ do
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.
@@ -358,7 +358,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
         i0    <- A.add numType from =<< int tid
         x0    <- app1 delayedLinearIndex i0
         bd    <- blockDim
-        r0    <- if A.gte scalarType sz' bd
+        r0    <- if A.gte singleType sz' bd
                    then reduceBlockSMem dev combine Nothing    x0
                    else reduceBlockSMem dev combine (Just sz') x0
 
@@ -373,7 +373,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
           -- Threads cooperatively reduce this stripe of the input
           i   <- A.add numType offset =<< int tid
           v'  <- A.sub numType to offset
-          r'  <- if A.gte scalarType v' bd'
+          r'  <- if A.gte singleType v' bd'
                    -- All threads of the block are valid, so we can avoid
                    -- bounds checks.
                    then do
@@ -387,21 +387,21 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
                    -- reduction, we must still have all threads enter the
                    -- reduction procedure to avoid synchronisation divergence.
                    else do
-                     x <- if A.lt scalarType i to
+                     x <- if A.lt singleType i to
                             then app1 delayedLinearIndex i
                             else return r
                      v <- i32 v'
                      y <- reduceBlockSMem dev combine (Just v) x
                      return y
 
-          if A.eq scalarType tid (lift 0)
+          if A.eq singleType tid (lift 0)
             then app2 combine r r'
             else return r'
 
         -- Step 3: Thread 0 writes the aggregate reduction of this dimension to
         -- memory. If this is an exclusive fold, combine with the initial element.
         --
-        when (A.eq scalarType tid (lift 0)) $
+        when (A.eq singleType tid (lift 0)) $
           writeArray arrOut seg =<<
             case mseed of
               Nothing -> return r
@@ -468,7 +468,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
         Just n -> do
           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
           valid  <- A.sub numType n offset
-          if A.gte scalarType valid (int32 (CUDA.warpSize dev))
+          if A.gte singleType valid (int32 (CUDA.warpSize dev))
             then reduceWarpSMem dev combine smem Nothing      input
             else reduceWarpSMem dev combine smem (Just valid) input
 
@@ -485,7 +485,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- Share the per-lane aggregates
       wid   <- warpId
       lane  <- laneId
-      when (A.eq scalarType lane (lift 0)) $ do
+      when (A.eq singleType lane (lift 0)) $ do
         writeArray smem wid input
 
       -- Wait for each warp to finish its local reduction
@@ -495,7 +495,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- done in CUB), but we could also do this cooperatively (better for
       -- larger thread blocks?)
       tid   <- threadIdx
-      if A.eq scalarType tid (lift 0)
+      if A.eq singleType tid (lift 0)
         then do
           steps <- case size of
                      Nothing -> return warps
@@ -539,7 +539,7 @@ reduceWarpSMem dev combine smem size = reduce 0
     valid i =
       case size of
         Nothing -> return (lift True)
-        Just n  -> A.lt scalarType i n
+        Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
     reduce :: Int -> IR e -> CodeGen (IR e)
@@ -591,7 +591,7 @@ reduceFromTo dev from to combine get set = do
   valid <- A.sub numType to from
   i     <- A.add numType from tid
 
-  _     <- if A.gte scalarType valid bd
+  _     <- if A.gte singleType valid bd
              then do
                -- All threads in the block will participate in the reduction, so
                -- we can avoid bounds checks
@@ -603,7 +603,7 @@ reduceFromTo dev from to combine get set = do
              else do
                -- Only in-bounds threads can read their input and participate in
                -- the reduction
-               when (A.lt scalarType i to) $ do
+               when (A.lt singleType i to) $ do
                  x <- get i
                  v <- i32 valid
                  r <- reduceBlockSMem dev combine (Just v) x
