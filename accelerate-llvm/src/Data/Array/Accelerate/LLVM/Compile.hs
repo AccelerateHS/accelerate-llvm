@@ -66,11 +66,11 @@ class Foreign arch => Compile arch where
 data CompiledOpenAcc arch aenv a where
   BuildAcc  :: Gamma aenv
             -> ObjectR arch
-            -> AST.PreOpenAccSkeleton (CompiledOpenAcc arch) aenv a
+            -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
   PlainAcc  :: Arrays a
-            => AST.PreOpenAccCommand  (CompiledOpenAcc arch) aenv a
+            => AST.PreOpenAccCommand  CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
 
@@ -241,7 +241,7 @@ compileOpenAcc = traverseAcc
         travB (Constant c) = return $ pure (Constant c)
         travB (Function f) = liftA Function <$> travF f
 
-        build :: (IntMap (Idx' aenv), AST.PreOpenAccSkeleton (CompiledOpenAcc arch) aenv arrs)
+        build :: (IntMap (Idx' aenv), AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv arrs)
               -> LLVM arch (CompiledOpenAcc arch aenv arrs)
         build (aenv, eacc) = do
           let aval = makeGamma aenv
@@ -249,7 +249,7 @@ compileOpenAcc = traverseAcc
           return $! BuildAcc aval kernel eacc
 
         plain :: Arrays arrs'
-              => (IntMap (Idx' aenv'), AST.PreOpenAccCommand (CompiledOpenAcc arch) aenv' arrs')
+              => (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
         plain (_, eacc) = return (PlainAcc eacc)
 
@@ -286,10 +286,10 @@ compileOpenAcc = traverseAcc
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
                  -> LLVM arch (CompiledOpenAcc arch aenv b)
-        foreignA asm f a =
-          case foreignAcc (undefined :: arch) asm of
-            Just{}  -> plain =<< liftA (AST.Aforeign asm) <$> travA a
-            Nothing -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
+        foreignA ff f a =
+          case foreignAcc (undefined :: arch) ff of
+            Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) asm) <$> travA a
+            Nothing  -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
               absurd :: Idx () t -> Idx aenv t
               absurd = error "complicated stuff in simple words"

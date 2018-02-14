@@ -97,6 +97,7 @@ instance Execute PTX where
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
+  aforeign      = aforeignOp
 
 
 -- Skeleton implementation
@@ -521,6 +522,29 @@ stencil2Op
     -> LLVM PTX (Array sh c)
 stencil2Op exe gamma aenv stream arr brr =
   simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
+
+
+-- Foreign functions
+--
+aforeignOp
+    :: (Arrays as, Arrays bs)
+    => String
+    -> (Stream -> as -> LLVM PTX bs)
+    -> Stream
+    -> as
+    -> LLVM PTX bs
+aforeignOp name asm stream arr =
+  Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) $
+    asm stream arr
+  where
+    query = if Debug.monitoringIsEnabled
+              then return True
+              else liftIO $ Debug.getFlag Debug.dump_exec
+
+    msg wall cpu gpu = do
+      Debug.addProcessorTime Debug.PTX gpu
+      Debug.traceIO Debug.dump_exec $
+        printf "exec: %s %s" name (Debug.elapsed wall cpu gpu)
 
 
 -- Skeleton execution

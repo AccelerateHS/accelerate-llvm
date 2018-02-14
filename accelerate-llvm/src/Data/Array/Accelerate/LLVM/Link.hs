@@ -56,11 +56,11 @@ class Link arch where
 data ExecOpenAcc arch aenv a where
   ExecAcc   :: Gamma aenv
             -> ExecutableR arch
-            -> PreOpenAccSkeleton (ExecOpenAcc arch) aenv a
+            -> PreOpenAccSkeleton ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
   EvalAcc   :: Arrays a
-            => PreOpenAccCommand (ExecOpenAcc arch) aenv a
+            => PreOpenAccCommand  ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
 -- An AST annotated with compiled and linked functions in the target address
@@ -124,7 +124,7 @@ linkOpenAcc = travA
         Atuple tup              -> Atuple       <$> travAtup tup
         Aprj ix tup             -> Aprj ix      <$> travA tup
         Reshape s ix            -> Reshape      <$> travE s <*> pure ix
-        Aforeign asm a          -> Aforeign asm <$> travA a
+        Aforeign s f a          -> Aforeign s f <$> travA a
 
     travA (BuildAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
       case pacc of
