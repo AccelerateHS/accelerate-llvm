@@ -21,7 +21,7 @@ import Data.Array.Accelerate.Debug                      hiding ( timed, elapsed 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event
 
-import Control.Monad.IO.Class                           ( MonadIO(..) )
+import Control.Monad.Trans
 import Control.Concurrent
 import Data.Time.Clock
 import System.CPUTime
