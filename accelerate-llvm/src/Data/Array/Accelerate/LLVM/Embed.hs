@@ -157,6 +157,7 @@ liftPreOpenAccCommand arch pacc =
   case pacc of
     Avar ix           -> [|| Avar $$(liftIdx ix) ||]
     Alet bnd body     -> [|| Alet $$(liftA bnd) $$(liftA body) ||]
+    Alloc sh          -> [|| Alloc $$(liftE sh) ||]
     Use a             -> [|| Use $$(liftArrays (arrays (undefined::a)) a) ||]
     Unit e            -> [|| Unit $$(liftE e) ||]
     Atuple tup        -> [|| Atuple $$(liftAtuple tup) ||]
@@ -236,6 +237,7 @@ liftPreOpenExp arch pexp =
     Var ix                    -> [|| Var $$(liftIdx ix) ||]
     Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
     Const c                   -> [|| Const $$(liftConst (eltType (undefined::t)) c) ||]
+    Undef                     -> [|| Undef ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
     Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
     IndexNil                  -> [|| IndexNil ||]

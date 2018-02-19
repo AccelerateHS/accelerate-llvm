@@ -148,6 +148,10 @@ compileOpenAcc = traverseAcc
         -- Foreign arrays operations
         Aforeign ff afun a          -> foreignA ff afun a
 
+        -- Uninitialised array allocation
+        Generate sh f
+          | alloc f                 -> plain =<< liftA AST.Alloc      <$> travE sh
+
         -- Array injection & manipulation
         Reshape sh a                -> plain =<< liftA2 AST.Reshape   <$> travE sh <*> travM a
         Unit e                      -> plain =<< liftA  AST.Unit      <$> travE e
@@ -253,12 +257,33 @@ compileOpenAcc = traverseAcc
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
         plain (_, eacc) = return (PlainAcc eacc)
 
+        -- Filling an array with undefined values is equivalent to allocating an
+        -- uninitialised array. We look for this specific pattern because we
+        -- expect it to appear only in certain places, e.g. as the default array
+        -- in a 'permute' where the default values are never used. Note however
+        -- that the simplifier does not take into account 'undef' values. For
+        -- example, the following transformation is valid:
+        --
+        --   x + undef  ~~>  undef
+        --
+        -- so it is still possible to generate empty functions which we will
+        -- execute, even though they do nothing (except incur scheduler
+        -- overhead).
+        --
+        alloc :: (Shape sh, Elt e)
+              => PreFun DelayedOpenAcc aenv (sh -> e)
+              -> Bool
+        alloc f
+          | Lam (Body Undef) <- f = True
+          | otherwise             = False
+
         -- Unzips of manifest array data can be done in constant time without
         -- executing any array programs. We split them out here into a separate
         -- case so that the execution phase does not have to continually perform
         -- the below check.
         --
-        unzip :: forall sh a b. Elt a => PreFun DelayedOpenAcc aenv (a -> b)
+        unzip :: forall sh a b. Elt a
+              => PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
               -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
         unzip _ _
@@ -275,11 +300,10 @@ compileOpenAcc = traverseAcc
         unzip _ _
           = Nothing
 
-        -- Is there a foreign version available for this backend? If so, we
-        -- leave that node in the AST and strip out the remaining terms.
-        -- Subsequent phases, if they encounter a foreign node, can assume that
-        -- it is for them. Otherwise, drop this term and continue walking down
-        -- the list of alternate implementations.
+        -- Is there a foreign version available for this backend? If so, take
+        -- the foreign function and drop the remaining terms. Otherwise, drop
+        -- this term and continue walking down the list of alternate
+        -- implementations.
         --
         foreignA :: (Arrays a, Arrays b, A.Foreign asm)
                  => asm         (a -> b)
@@ -303,6 +327,7 @@ compileOpenAcc = traverseAcc
         Var ix                  -> return $ pure (Var ix)
         Const c                 -> return $ pure (Const c)
         PrimConst c             -> return $ pure (PrimConst c)
+        Undef                   -> return $ pure Undef
         IndexAny                -> return $ pure IndexAny
         IndexNil                -> return $ pure IndexNil
         Foreign ff f x          -> foreignE ff f x

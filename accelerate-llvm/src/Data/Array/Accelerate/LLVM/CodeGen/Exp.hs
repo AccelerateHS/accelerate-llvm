@@ -107,6 +107,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
         PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
         PrimApp f x                 -> primFun f x
+        Undef                       -> return undefE
         IndexNil                    -> return indexNil
         IndexAny                    -> return indexAny
         IndexCons sh sz             -> indexCons <$> cvtE sh <*> cvtE sz
@@ -134,6 +135,14 @@ llvmOfOpenExp arch top env aenv = cvtE top
     indexAny :: forall sh. Shape sh => IR (Any sh)
     indexAny = let any = Any :: Any sh
                in  IR (constant (eltType any) (fromElt any))
+
+    undefE :: forall t. Elt t => IR t
+    undefE = IR $ go (eltType (undefined::t))
+      where
+        go :: TupleType s -> Operands s
+        go TypeRunit       = OP_Unit
+        go (TypeRscalar t) = ir' t (undef t)
+        go (TypeRpair a b) = OP_Pair (go a) (go b)
 
     indexSlice :: SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)
                -> IR slix

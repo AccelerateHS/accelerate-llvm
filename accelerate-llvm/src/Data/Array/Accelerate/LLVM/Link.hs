@@ -117,6 +117,7 @@ linkOpenAcc = travA
         Avar ix                 -> return (Avar ix)
         Use arrs                -> rnfArrs (arrays (undefined::arrs)) arrs `seq` return (Use arrs)
         Unit e                  -> Unit         <$> travE e
+        Alloc sh                -> Alloc        <$> travE sh
         Alet a b                -> Alet         <$> travA a  <*> travA b
         Apply f a               -> Apply        <$> travAF f <*> travA a
         Awhile p f a            -> Awhile       <$> travAF p <*> travAF f <*> travA a
@@ -167,6 +168,7 @@ linkOpenAcc = travA
         Var ix                  -> return (Var ix)
         Const c                 -> return (Const c)
         PrimConst c             -> return (PrimConst c)
+        Undef                   -> return Undef
         IndexAny                -> return IndexAny
         IndexNil                -> return IndexNil
         Let a b                 -> Let                <$> travE a <*> travE b
