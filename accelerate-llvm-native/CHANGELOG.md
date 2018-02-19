@@ -14,9 +14,20 @@ Policy (PVP)](https://pvp.haskell.org)
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
 
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+  * @VorpalChoices
+  * Ryan Scott (@ryanglscott)
+  * Jesse Sigal (@jasigal)
+
+
 ## [1.1.0.1] - 2017-10-04
 ### Fixed
  * fix for `runQ*` generating multiple declarations with the same name
+
 
 ## [1.1.0.0] - 2017-09-21
 ### Added

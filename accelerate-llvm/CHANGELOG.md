@@ -11,6 +11,14 @@ Policy (PVP)](https://pvp.haskell.org)
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
 
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+  * Ryan Scott (@ryanglscott)
+
+
 ## [1.1.0.0] - 2017-09-21
 ### Added
  * support for GHC-8.2
