@@ -10,18 +10,24 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 7f98d1cc573e3dc3626a4ed9a5369c1765bfe7ac
+  commit: d0a979ad9b781143896cd1f977f8d5b92783a4cd
 
 - 'Cabal-2.0.0.2'
 - 'chaselev-deque-0.5.0.5'
+- 'comonad-5.0.3'
 - 'cuda-0.9.0.0'
 - 'hedgehog-0.5'
+- 'kan-extensions-5.1'
+- 'lens-4.16'
 - 'libffi-0.1'
 - 'llvm-hs-4.2.0'
 - 'llvm-hs-pure-4.1.0.0'
 - 'nvvm-0.8.0.2'
 - 'process-1.4.3.0'
+- 'profunctors-5.2.2'
+- 'tagged-0.8.5'
 - 'tasty-hedgehog-0.1.0.1'
+- 'th-abstraction-0.2.6.0'
 - 'transformers-0.5.5.0'
 - 'transformers-compat-0.5.1.4'
 - 'unique-0'
