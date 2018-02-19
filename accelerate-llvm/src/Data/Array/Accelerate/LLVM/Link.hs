@@ -167,6 +167,7 @@ linkOpenAcc = travA
         Var ix                  -> return (Var ix)
         Const c                 -> return (Const c)
         PrimConst c             -> return (PrimConst c)
+        Undef                   -> return Undef
         IndexAny                -> return IndexAny
         IndexNil                -> return IndexNil
         Let a b                 -> Let                <$> travE a <*> travE b

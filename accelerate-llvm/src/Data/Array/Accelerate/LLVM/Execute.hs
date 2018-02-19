@@ -34,7 +34,7 @@ import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj )
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj, evalUndef )
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -430,6 +430,7 @@ executeOpenExp rootExp env aenv stream = travE rootExp
     travE exp = case exp of
       Var ix                    -> return (prj ix env)
       Let bnd body              -> travE bnd >>= \x -> executeOpenExp body (env `Push` x) aenv stream
+      Undef                     -> return evalUndef
       Const c                   -> return (toElt c)
       PrimConst c               -> return (evalPrimConst c)
       PrimApp f x               -> evalPrim f <$> travE x

@@ -303,6 +303,7 @@ compileOpenAcc = traverseAcc
         Var ix                  -> return $ pure (Var ix)
         Const c                 -> return $ pure (Const c)
         PrimConst c             -> return $ pure (PrimConst c)
+        Undef                   -> return $ pure Undef
         IndexAny                -> return $ pure IndexAny
         IndexNil                -> return $ pure IndexNil
         Foreign ff f x          -> foreignE ff f x
