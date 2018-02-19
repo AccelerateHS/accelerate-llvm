@@ -310,6 +310,7 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
         Unit x              -> newRemote Z . const =<< travE x
         Avar ix             -> avar ix
         Alet bnd body       -> alet bnd body
+        Alloc sh            -> allocateRemote =<< travE sh
         Apply f a           -> travAF f =<< async (executeOpenAcc a aenv)
         Atuple tup          -> toAtuple <$> travT tup
         Aprj ix tup         -> evalPrj ix . fromAtuple <$> travA tup

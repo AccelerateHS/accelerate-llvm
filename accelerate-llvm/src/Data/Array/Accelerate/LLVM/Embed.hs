@@ -157,6 +157,7 @@ liftPreOpenAccCommand arch pacc =
   case pacc of
     Avar ix           -> [|| Avar $$(liftIdx ix) ||]
     Alet bnd body     -> [|| Alet $$(liftA bnd) $$(liftA body) ||]
+    Alloc sh          -> [|| Alloc $$(liftE sh) ||]
     Use a             -> [|| Use $$(liftArrays (arrays (undefined::a)) a) ||]
     Unit e            -> [|| Unit $$(liftE e) ||]
     Atuple tup        -> [|| Atuple $$(liftAtuple tup) ||]

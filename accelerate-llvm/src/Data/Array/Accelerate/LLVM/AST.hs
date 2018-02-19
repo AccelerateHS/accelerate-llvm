@@ -48,6 +48,10 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch (aenv, bnd) body
               -> PreOpenAccCommand acc arch aenv        body
 
+  Alloc       :: (Shape sh, Elt e)
+              => PreExp           (acc arch) aenv sh
+              -> PreOpenAccCommand acc arch  aenv (Array sh e)
+
   Use         :: Arrays arrs
               => ArrRepr arrs
               -> PreOpenAccCommand acc arch aenv arrs
