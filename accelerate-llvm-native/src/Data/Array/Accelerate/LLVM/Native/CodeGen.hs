@@ -26,6 +26,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.Native.Target
 
 
@@ -43,4 +44,6 @@ instance Skeleton Native where
   scanr1 _      = mkScanr1
   scanr' _      = mkScanr'
   permute _     = mkPermute
+  stencil       = mkStencil1
+  stencil2      = mkStencil2
 

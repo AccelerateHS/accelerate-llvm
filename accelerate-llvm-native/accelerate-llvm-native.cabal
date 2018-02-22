@@ -100,6 +100,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Map
     Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
 
     Data.Array.Accelerate.LLVM.Native.Compile
     Data.Array.Accelerate.LLVM.Native.Compile.Cache
