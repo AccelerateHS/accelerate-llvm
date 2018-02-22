@@ -21,6 +21,7 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
@@ -47,10 +48,13 @@ imapNestedFromTo
     :: forall sh. Shape sh
     => IR sh                                    -- ^ initial index (inclusive)
     -> IR sh                                    -- ^ final index (exclusive)
-    -> (IR sh -> CodeGen ())                    -- ^ apply at each index
+    -> IR sh                                    -- ^ total array extent
+    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
     -> CodeGen ()
-imapNestedFromTo (IR start) (IR end) body = go (eltType (undefined::sh)) start end (body . IR)
+imapNestedFromTo (IR start) (IR end) extent body = go (eltType (undefined::sh)) start end (body' . IR)
   where
+    body' ix = body ix =<< intOfIndex extent ix
+
     go :: TupleType t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
     go UnitTuple OP_Unit OP_Unit k
       = k OP_Unit
