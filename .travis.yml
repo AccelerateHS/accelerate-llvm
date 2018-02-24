@@ -93,7 +93,7 @@ before_install:
   - travis_retry stack install c2hs --fast --no-terminal
 
 install:
-  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
   - c2hs --version
@@ -102,19 +102,18 @@ install:
 
   # build accelerate with optimisations (required for nofib#286)
   - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
-  # - travis_retry travis_wait 60 stack build accelerate --no-terminal
+  - travis_retry travis_wait 60 stack build accelerate --no-terminal
 
   # build other dependencies
-  # - travis_retry stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
+  - travis_retry stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
-  - true
-  # - travis_retry stack build accelerate-llvm        --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  # - travis_retry stack build accelerate-llvm-native --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  # - travis_retry stack build accelerate-llvm-ptx    --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm        --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-native --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --test --haddock --no-terminal --no-haddock-deps --no-run-tests
 
-  # # Run test suite(s)
-  # - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
+  # Run test suite(s)
+  - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
