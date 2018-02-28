@@ -82,13 +82,37 @@ mkStencil1
     -> IRBoundary Native aenv (Array sh a)
     -> IRManifest Native aenv (Array sh a)
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
-mkStencil1 arch uid aenv f b1 ir1 =
+mkStencil1 _arch uid aenv f b1 ir1 =
   let
 	(faceN, boundaryParams)                               = faceIndex
 	(innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range
-  in foldr1 (+++) <$> sequence [
-
+	(arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array DIM2 b))
+  in foldr1 (+++) <$> sequence
+  [ makeOpenAcc uid "stencil1_boundary" (boundaryParams ++ paramOut) $
+        mkStencil1_boundary aenv f b1 ir1
+  , makeOpenAcc uid "stencil1_inner"    (innerParams    ++ paramOut) $
+        mkStencil1_inner    aenv f b1 ir1
   ]
+
+
+mkStencil1_boundary
+  :: Gamma aenv
+  -> IRFun1 Native aenv (stencil -> b)
+  -> IRBoundary Native aenv (Array sh a)
+  -> IRManifest Native aenv (Array sh a)
+  -> CodeGen ()
+mkStencil1_boundary aenv f b1 ir1 =
+  undefined
+
+
+mkStencil1_inner
+  :: Gamma aenv
+  -> IRFun1 Native aenv (stencil -> b)
+  -> IRBoundary Native aenv (Array sh a)
+  -> IRManifest Native aenv (Array sh a)
+  -> CodeGen ()
+mkStencil1_inner aenv f b1 ir1 =
+  undefined
 
 
 mkStencil2
