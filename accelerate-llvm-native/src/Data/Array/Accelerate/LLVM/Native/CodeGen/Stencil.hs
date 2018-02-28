@@ -10,7 +10,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.AST                                          as AST
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
@@ -105,8 +105,29 @@ mkStencil1_boundary
   -> IRManifest Native aenv (Array sh a)
   -> IR Int
   -> CodeGen ()
-mkStencil1_boundary aenv arrOut f b1 ir1 faceN =
+mkStencil1_boundary aenv arrOut f b1 ir1@(IRManifest v1) faceN =
+  let
+    (start, end) = calculateFace faceN (irArrayShape arrOut) (boundaryThickness (AST.stencil :: StencilR sh a stencil))
+  in
+    mkStencil1_inner aenv arrOut f b1 ir1 start end
+
+
+calculateFace
+  :: forall sh. (Shape sh)
+  => IR Int
+  -> IR sh
+  -> IR sh
+  -> (IR sh, IR sh)
+calculateFace =
   undefined
+
+
+boundaryThickness
+  :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
+  => StencilR sh a stencil
+  -> IR sh
+boundaryThickness =
+	undefined
 
 
 mkStencil1_inner
