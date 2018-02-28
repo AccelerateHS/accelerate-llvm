@@ -82,7 +82,13 @@ mkStencil1
     -> IRBoundary Native aenv (Array sh a)
     -> IRManifest Native aenv (Array sh a)
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
-mkStencil1 = undefined
+mkStencil1 arch uid aenv f b1 ir1 =
+  let
+	(faceN, boundaryParams)                               = faceIndex
+	(innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range
+  in foldr1 (+++) <$> sequence [
+
+  ]
 
 
 mkStencil2
