@@ -119,8 +119,11 @@ mkStencil1_inner
   -> IR sh
   -> IR sh
   -> CodeGen ()
-mkStencil1_inner aenv arrOut f b1 ir1 start end =
-  undefined
+mkStencil1_inner aenv arrOut f b1 ir1@(IRManifest v1) start end =
+  imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
+      s <- stencilAccess b1 (irArray (aprj v1 aenv)) ix
+      r <- app1 f s
+      writeArray arrOut i r
 
 
 mkStencil2
