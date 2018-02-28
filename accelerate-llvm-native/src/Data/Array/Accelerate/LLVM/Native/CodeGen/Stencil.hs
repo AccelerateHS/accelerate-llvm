@@ -34,6 +34,44 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 
+import qualified LLVM.AST.Global                                          as LLVM
+
+
+-- Parameters for boundary region
+faceIndex
+    :: ( IR Int                 -- The face index
+	   , [LLVM.Parameter]
+	   )
+faceIndex =
+  let
+    faceIndex = "faceIndex"
+  in
+    ( local scalarType faceIndex
+    , [ scalarParameter scalarType faceIndex
+      ]
+    )
+
+
+-- Parameters for inner region
+range
+    :: (Shape sh)
+    => ( IR sh                  -- The multidimensional start index
+       , IR sh                  -- The multidimensional end   index
+       , [LLVM.Parameter]
+       )
+range =
+  let
+    t     = undefined
+    start = "start"
+    end   = "end"
+  in
+    ( local t start
+    , local t end
+    , [ scalarParameter t start
+      , scalarParameter t end
+      ]
+    )
+
 
 mkStencil1
     :: forall aenv stencil a b sh. (Skeleton Native, Stencil sh a stencil, Elt b)
@@ -45,6 +83,7 @@ mkStencil1
     -> IRManifest Native aenv (Array sh a)
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkStencil1 = undefined
+
 
 mkStencil2
     :: forall aenv stencil1 stencil2 a1 a2 b sh. (Skeleton Native, Stencil sh a1 stencil1, Stencil sh a2 stencil2, Elt b)
