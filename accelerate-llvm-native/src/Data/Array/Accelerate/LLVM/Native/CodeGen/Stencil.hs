@@ -90,14 +90,14 @@ mkStencil1 _arch uid aenv f b1 ir1 =
 	paramEnv                                              = envParam aenv
   in foldr1 (+++) <$> sequence
   [ makeOpenAcc uid "stencil1_boundary" (boundaryParams ++ paramOut ++ paramEnv) $
-        mkStencil1_boundary arrOut f b1 ir1 faceN
+        mkStencil1_boundary aenv arrOut f b1 ir1 faceN
   , makeOpenAcc uid "stencil1_inner"    (innerParams    ++ paramOut ++ paramEnv) $
-        mkStencil1_inner    arrOut f b1 ir1 innerStart innerEnd
+        mkStencil1_inner    aenv arrOut f b1 ir1 innerStart innerEnd
   ]
 
 
 mkStencil1_boundary
-  :: forall a b sh aenv stencil. (Shape sh)
+  :: forall a b sh aenv stencil. (Shape sh, Stencil sh a stencil, Elt b)
   => Gamma aenv
   -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
@@ -110,7 +110,7 @@ mkStencil1_boundary aenv arrOut f b1 ir1 faceN =
 
 
 mkStencil1_inner
-  :: forall a b sh aenv stencil. (Shape sh)
+  :: forall a b sh aenv stencil. (Shape sh, Stencil sh a stencil, Elt b)
   => Gamma aenv
   -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
