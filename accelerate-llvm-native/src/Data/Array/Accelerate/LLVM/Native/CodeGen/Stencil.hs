@@ -98,26 +98,28 @@ mkStencil1 _arch uid aenv f b1 ir1 =
 
 mkStencil1_boundary
   :: forall a b sh aenv stencil. (Shape sh)
-  => IRArray (Array sh b)
+  => Gamma aenv
+  -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
   -> IRBoundary Native aenv (Array sh a)
   -> IRManifest Native aenv (Array sh a)
   -> IR Int
   -> CodeGen ()
-mkStencil1_boundary arrOut f b1 ir1 faceN =
+mkStencil1_boundary aenv arrOut f b1 ir1 faceN =
   undefined
 
 
 mkStencil1_inner
   :: forall a b sh aenv stencil. (Shape sh)
-  => IRArray (Array sh b)
+  => Gamma aenv
+  -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
   -> IRBoundary Native aenv (Array sh a)
   -> IRManifest Native aenv (Array sh a)
   -> IR sh
   -> IR sh
   -> CodeGen ()
-mkStencil1_inner arrOut f b1 ir1 start end =
+mkStencil1_inner aenv arrOut f b1 ir1 start end =
   undefined
 
 
