@@ -89,9 +89,9 @@ mkStencil1 _arch uid aenv f b1 ir1 =
 	(arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array DIM2 b))
   in foldr1 (+++) <$> sequence
   [ makeOpenAcc uid "stencil1_boundary" (boundaryParams ++ paramOut) $
-        mkStencil1_boundary aenv f b1 ir1
+        mkStencil1_boundary aenv f b1 ir1 faceN
   , makeOpenAcc uid "stencil1_inner"    (innerParams    ++ paramOut) $
-        mkStencil1_inner    aenv f b1 ir1
+        mkStencil1_inner    aenv f b1 ir1 innerStart innerEnd
   ]
 
 
@@ -100,16 +100,20 @@ mkStencil1_boundary
   -> IRFun1 Native aenv (stencil -> b)
   -> IRBoundary Native aenv (Array sh a)
   -> IRManifest Native aenv (Array sh a)
+  -> IR Int
   -> CodeGen ()
 mkStencil1_boundary aenv f b1 ir1 =
   undefined
 
 
 mkStencil1_inner
-  :: Gamma aenv
+  :: (Shape sh)
+  => Gamma aenv
   -> IRFun1 Native aenv (stencil -> b)
   -> IRBoundary Native aenv (Array sh a)
   -> IRManifest Native aenv (Array sh a)
+  -> IR sh
+  -> IR sh
   -> CodeGen ()
 mkStencil1_inner aenv f b1 ir1 =
   undefined
