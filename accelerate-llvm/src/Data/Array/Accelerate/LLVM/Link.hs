@@ -190,6 +190,7 @@ linkOpenAcc = travA
         ShapeSize e             -> ShapeSize          <$> travE e
         Intersect x y           -> Intersect          <$> travE x <*> travE y
         Union x y               -> Union              <$> travE x <*> travE y
+        Coerce x                -> Coerce             <$> travE x
         Foreign asm _ x         -> Foreign asm err    <$> travE x
           where err = $internalError "link" "attempt to use fallback foreign expression"
 

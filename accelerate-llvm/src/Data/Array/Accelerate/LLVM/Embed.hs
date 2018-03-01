@@ -259,6 +259,7 @@ liftPreOpenExp arch pexp =
     ShapeSize ix              -> [|| ShapeSize $$(liftE ix) ||]
     Intersect sh1 sh2         -> [|| Intersect $$(liftE sh1) $$(liftE sh2) ||]
     Union sh1 sh2             -> [|| Union $$(liftE sh1) $$(liftE sh2) ||]
+    Coerce x                  -> [|| Coerce $$(liftE x) ||]
 
 
 -- Utilities

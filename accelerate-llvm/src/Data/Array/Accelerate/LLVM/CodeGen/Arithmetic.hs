@@ -535,8 +535,8 @@ toFloating n1 f2 (op n1 -> x) =
            Ord.GT -> instr (FTrunc f1 f2 x)
            Ord.LT -> instr (FExt   f1 f2 x)
 
-coerce :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen (IR b)
-coerce ta tb (IR x) = IR <$> go ta tb x
+bitcast :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen (IR b)
+bitcast ta tb (IR x) = IR <$> go ta tb x
   where
     go :: ScalarType a -> ScalarType b -> Operands a -> CodeGen (Operands b)
     go ta' tb' x'

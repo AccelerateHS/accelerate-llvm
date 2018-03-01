@@ -34,7 +34,7 @@ import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj, evalUndef )
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj, evalUndef, evalCoerce )
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -455,6 +455,7 @@ executeOpenExp rootExp env aenv stream = travE rootExp
       Index acc ix              -> join $ index       <$> travA acc <*> travE ix
       LinearIndex acc ix        -> join $ indexRemote <$> travA acc <*> travE ix
       Foreign _ f x             -> foreignE f x
+      Coerce x                  -> evalCoerce <$> travE x
 
     -- Helpers
     -- -------
