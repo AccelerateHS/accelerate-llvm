@@ -101,11 +101,11 @@ install:
   - opt --version; true
 
   # build accelerate with optimisations (required for nofib#286)
-  - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
-  - travis_retry travis_wait 60 stack build accelerate --no-terminal
+  # - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
+  # - travis_retry travis_wait 60 stack build accelerate --no-terminal
 
-  # build other dependencies
-  - travis_retry stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
+  # build dependencies
+  - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
   - travis_retry stack build accelerate-llvm        --test --haddock --no-terminal --no-haddock-deps --no-run-tests
