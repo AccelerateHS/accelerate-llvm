@@ -1,0 +1,158 @@
+# For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
+# vim: nospell
+
+resolver: ghc-8.4.0.20180224 # 8.4.1-rc1
+compiler: ghc-8.4.0.20180224
+compiler-check: match-exact
+
+allow-newer: true
+
+setup-info:
+  ghc:
+    macosx:
+      8.4.0.20180224:
+        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-apple-darwin.tar.xz
+        sha256: 4cf1afc5c6672e4628ba84c775a081fc4cf08bddd07f30fcc57d909fc5939c06
+    linux32:
+      8.4.0.20180224:
+        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-i386-deb8-linux.tar.xz
+        sha256: ce2f7583c64b700b22281a488e9a950ee50ec756a83520e3360748f67e14bfa2
+    linux64:
+      8.4.0.20180224:
+        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-deb8-linux.tar.xz
+        sha256: a83b57a600b513f689716e98b53badfb2e2aa1117bff7c5bab12c07854eecb07
+    windows32:
+      8.4.0.20180224:
+        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-i386-unknown-mingw32.tar.xz
+        sha256: 28799a8ceee197a050fa1ef0740a78b01bf93b13f5a7b8e7ef5061b231c270dc
+    windows64:
+      8.4.0.20180224:
+        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-unknown-mingw32.tar.xz
+        sha256: 7d125b3bbaa2ec4022215787a259a41bf944ec02736c9555f2a19432eef21cad
+
+packages:
+- 'accelerate-llvm'
+- 'accelerate-llvm-native'
+- 'accelerate-llvm-ptx'
+
+extra-deps:
+- git:    https://github.com/tmcdonell/accelerate.git
+  commit: 8d4ebb3af4d6e5a14d4f395b908c0ce1e4200c4e
+- 'abstract-deque-0.3'
+- 'adjunctions-4.4'
+- 'ansi-terminal-0.8.0.1'
+- 'ansi-wl-pprint-0.6.8.2'
+- 'async-2.2.1'
+- 'atomic-primops-0.8.1.1'
+- 'attoparsec-0.13.2.2'
+- 'base-compat-0.9.3'
+- 'base-orphans-0.6'
+- 'basement-0.0.6'
+- 'bifunctors-5.5.2'
+- 'cabal-doctest-1.0.6'
+- 'call-stack-0.1.0'
+- 'cereal-0.5.5.0'
+- 'chaselev-deque-0.5.0.5'
+- 'clock-0.7.2'
+- 'code-page-0.1.3'
+- 'colour-2.3.4'
+- 'comonad-5.0.3'
+- 'concurrent-output-1.10.3'
+- 'constraints-0.10'
+- 'contravariant-1.4.1'
+- 'cryptonite-0.25'
+- 'cuda-0.9.0.1'
+- 'data-default-class-0.1.2.0'
+- 'distributive-0.5.3'
+- 'dlist-0.8.0.4'
+- 'doctest-0.14.0'
+- 'exceptions-0.8.3'
+- 'fail-4.9.0.0'
+- 'file-embed-0.0.10.1'
+- 'foundation-0.0.19'
+- 'free-5'
+- 'ghc-paths-0.1.0.9'
+- 'half-0.2.2.3'
+- 'hashable-1.2.6.1'
+# - 'hashtables-1.2.2.1'
+- git:    https://github.com/deepfire/hashtables.git
+  commit: b9eb4b10a50bd6250330422afecc065339a32412
+- 'haskell-lexer-1.0.1'
+- 'hedgehog-0.5.2'
+- 'integer-logarithms-1.0.2'
+- 'kan-extensions-5.1'
+- 'lens-4.16'
+- 'libffi-0.1'
+- 'lifted-async-0.10.0'
+- 'lifted-base-0.2.3.11'
+# - 'llvm-hs-5.1.3'
+# - 'llvm-hs-pure-5.1.2'
+- git:    https://github.com/llvm-hs/llvm-hs.git
+  commit: 5e219b0eac74761cc852d63a5c680103ec5baea3
+  subdirs:
+    - 'llvm-hs'
+    - 'llvm-hs-pure'
+- 'math-functions-0.2.1.0'
+- 'memory-0.14.14'
+- 'mmorph-1.1.0'
+- 'monad-control-1.0.2.2'
+- 'mwc-random-0.13.6.0'
+- 'nvvm-0.8.0.2'
+- 'optparse-applicative-0.14.0.0'
+- 'parallel-3.2.1.1'
+- 'pipes-4.3.7'
+- 'pretty-show-1.7'
+- 'primitive-0.6.3.0'
+- 'profunctors-5.2.2'
+- 'random-1.1'
+- 'reflection-2.1.3'
+- 'resourcet-1.2.0'
+- 'scientific-0.3.5.2'
+- 'semigroupoids-5.2.2'
+- 'semigroups-0.18.4'
+- 'StateVar-1.1.0.4'
+- 'syb-0.7'
+- 'tagged-0.8.5'
+- 'tasty-1.0.1'
+- 'tasty-expected-failure-0.11.0.4'
+- 'tasty-hedgehog-0.1.0.2'
+- 'tasty-hunit-0.10.0.1'
+- 'terminal-size-0.3.2.1'
+- 'th-abstraction-0.2.6.0'
+- 'th-lift-0.7.8'
+- 'transformers-base-0.4.4'
+- 'transformers-compat-0.5.1.4'
+- 'unbounded-delays-0.1.1.0'
+- 'unique-0'
+- 'unliftio-core-0.1.1.0'
+- 'unordered-containers-0.2.9.0'
+- 'utf8-string-1.0.1.1'
+- 'vector-0.12.0.1'
+- 'vector-th-unbox-0.2.1.6'
+- 'void-0.7.2'
+- 'wl-pprint-annotated-0.1.0.0'
+
+# Override default flag values for local packages and extra-deps
+# flags: {}
+
+# Extra global and per-package GHC options
+# ghc-options: {}
+
+# Extra package databases containing global packages
+# extra-package-dbs: []
+
+# Control whether we use the GHC we find on the path
+# system-ghc: true
+
+# Require a specific version of stack, using version ranges
+# require-stack-version: -any # Default
+# require-stack-version: >= 0.1.4.0
+
+# Override the architecture used by stack, especially useful on Windows
+# arch: i386
+# arch: x86_64
+
+# Extra directories used by stack for building
+# extra-include-dirs: [/path/to/dir]
+# extra-lib-dirs: [/path/to/dir]
+
