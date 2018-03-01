@@ -37,7 +37,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 8d4ebb3af4d6e5a14d4f395b908c0ce1e4200c4e
+  commit: f808a6e6cddf1d516851106da63cf00f11f2a9c0
 - 'abstract-deque-0.3'
 - 'adjunctions-4.4'
 - 'ansi-terminal-0.8.0.1'
@@ -100,7 +100,6 @@ extra-deps:
 - 'nvvm-0.8.0.2'
 - 'optparse-applicative-0.14.0.0'
 - 'parallel-3.2.1.1'
-- 'pipes-4.3.7'
 - 'pretty-show-1.7'
 - 'primitive-0.6.3.0'
 - 'profunctors-5.2.2'
