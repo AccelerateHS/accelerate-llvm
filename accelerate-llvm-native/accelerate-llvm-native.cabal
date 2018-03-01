@@ -127,7 +127,7 @@ Library
     Paths_accelerate_llvm_native
 
   build-depends:
-          base                          >= 4.7 && < 4.11
+          base                          >= 4.7 && < 4.12
         , accelerate                    == 1.2.*
         , accelerate-llvm               == 1.2.*
         , bytestring                    >= 0.10.4
