@@ -23,6 +23,7 @@ import Control.Applicative                                          hiding ( Con
 import Control.Monad
 import Data.Proxy
 import Data.Typeable
+import Text.Printf
 import Prelude                                                      hiding ( exp, any )
 import qualified Data.IntMap                                        as IM
 
@@ -46,7 +47,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.CodeGen.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Type                      hiding ( typeOf )
 import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
@@ -128,6 +129,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Intersect sh1 sh2           -> join $ intersect <$> cvtE sh1 <*> cvtE sh2
         Union sh1 sh2               -> join $ union     <$> cvtE sh1 <*> cvtE sh2
         While c f x                 -> while (cvtF1 c) (cvtF1 f) (cvtE x)
+        Coerce x                    -> coerce =<< cvtE x
 
     indexNil :: IR Z
     indexNil = IR (constant (eltType Z) (fromElt Z))
@@ -368,6 +370,23 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Nothing | Lam (Body b) <- no -> llvmOfOpenExp arch b (Empty `Push` x) IM.empty
         _                            -> error "when a grid's misaligned with another behind / that's a moiré..."
 
+    coerce :: forall a b. (Elt a, Elt b) => IR a -> CodeGen (IR b)
+    coerce (IR as) = IR <$> go (eltType (undefined::a)) (eltType (undefined::b)) as
+      where
+        go :: TupleType s -> TupleType t -> Operands s -> CodeGen (Operands t)
+        go TypeRunit         TypeRunit         OP_Unit         = return OP_Unit
+        go (TypeRpair s1 s2) (TypeRpair t1 t2) (OP_Pair x1 x2) = OP_Pair <$> go s1 t1 x1 <*> go s2 t2 x2
+        go (TypeRscalar s)   (TypeRscalar t)   x
+          | Just Refl <- matchScalarType s t = return x
+          | otherwise                        = ir' t <$> instr' (BitCast t (op' s x))
+        --
+        go (TypeRpair TypeRunit s) t@TypeRscalar{} (OP_Pair OP_Unit x) = go s t x
+        go s@TypeRscalar{} (TypeRpair TypeRunit t) x                   = OP_Pair OP_Unit <$> go s t x
+        go _ _ _
+          = error $ printf "could not coerce type `%s' to `%s'"
+                      (show (typeOf (undefined::a)))
+                      (show (typeOf (undefined::b)))
+
     primFun :: Elt r
             => PrimFun (a -> r)
             -> DelayedOpenExp env aenv a
@@ -459,7 +478,6 @@ llvmOfOpenExp arch top env aenv = cvtE top
         PrimBoolToInt             -> A.boolToInt             =<< cvtE x
         PrimFromIntegral ta tb    -> A.fromIntegral ta tb    =<< cvtE x
         PrimToFloating ta tb      -> A.toFloating ta tb      =<< cvtE x
-        PrimCoerce ta tb          -> A.coerce ta tb          =<< cvtE x
           -- no missing patterns, whoo!
 
 

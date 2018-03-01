@@ -10,7 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 8a3147e7a6e68df953093193a93f1c9b46d9e322
+  commit: 8d4ebb3af4d6e5a14d4f395b908c0ce1e4200c4e
 
 - 'Cabal-2.0.0.2'
 - 'cuda-0.9.0.0'
