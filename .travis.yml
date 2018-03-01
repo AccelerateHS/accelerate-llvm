@@ -118,9 +118,9 @@ install:
   - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
-  - travis_retry stack build accelerate-llvm        --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-native --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-ptx    --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm        --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-native --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
 
   # Run test suite(s)
   - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
