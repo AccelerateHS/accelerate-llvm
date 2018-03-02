@@ -6,7 +6,7 @@
 
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
-	mkStencil1, mkStencil2
+    mkStencil1, mkStencil2
 
 ) where
 
@@ -40,8 +40,8 @@ import qualified LLVM.AST.Global                                          as LLV
 -- Parameters for boundary region
 faceIndex
     :: ( IR Int                 -- The face index
-	   , [LLVM.Parameter]
-	   )
+       , [LLVM.Parameter]
+       )
 faceIndex =
   let
     faceIndex = "faceIndex"
@@ -84,10 +84,10 @@ mkStencil1
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkStencil1 _arch uid aenv f b1 ir1 =
   let
-	(faceN, boundaryParams)                               = faceIndex
-	(innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range
-	(arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array sh b))
-	paramEnv                                              = envParam aenv
+    (faceN, boundaryParams)                               = faceIndex
+    (innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range
+    (arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array sh b))
+    paramEnv                                              = envParam aenv
   in foldr1 (+++) <$> sequence
   [ makeOpenAcc uid "stencil1_boundary" (boundaryParams ++ paramOut ++ paramEnv) $
         mkStencil1_boundary aenv arrOut f b1 ir1 faceN
@@ -114,20 +114,51 @@ mkStencil1_boundary aenv arrOut f b1 ir1@(IRManifest v1) faceN =
 
 calculateFace
   :: forall sh. (Shape sh)
-  => IR Int
+  => Int
   -> IR sh
   -> IR sh
   -> (IR sh, IR sh)
-calculateFace =
-  undefined
+calculateFace n e t =
+  let
+    (start, end) = go n e t
+  in
+    (IR start, IR end)
+  where
+    go _ Z _ = (Z, Z)
+    go n extent@(extent' :. e) thickness@(thickness' :. t)
+      | n == 0 = (start' :.      0 , end' :.      t )
+      | n == 1 = (start' :. (e - t), end' :.  e     )
+      | n >  1 = (start' :.      t , end' :. (e - t))
+      where
+        (start', end') = calculateFace (n - 2) extent' thickness'
 
 
-boundaryThickness
-  :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
-  => StencilR sh a stencil
-  -> IR sh
-boundaryThickness =
-	undefined
+boundaryThickness = undefined
+-- boundaryThickness
+  -- :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
+  -- => StencilR sh a stencil
+  -- -> IR sh
+-- boundaryThickness stencilR = (undefined :: Shape sh => sh -> IR sh) (go [stencilR])
+--   where
+--     -- go :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
+--     --    => [StencilR sh a stencil]
+--     --    -> sh
+--     -- go [] = Z
+--     go stencilRs =
+--       let
+--         (sizes, nested) = Prelude.unzip . Prelude.map aux $ stencilRs
+--       in
+--         go (Prelude.concat nested) :. maximum sizes
+--     --
+--     aux StencilRunit3 = (1, [])
+--     aux StencilRunit5 = (2, [])
+--     aux StencilRunit7 = (3, [])
+--     aux StencilRunit9 = (4, [])
+--     --
+--     aux (StencilRtup3 a b c)             = (1, [a, b, c])
+--     aux (StencilRtup5 a b c d e)         = (2, [a, b, c, d, e])
+--     aux (StencilRtup7 a b c d e f g)     = (3, [a, b, c, d, e, f, g])
+--     aux (StencilRtup9 a b c d e f g h i) = (4, [a, b, c, d, e, f, g, h, i])
 
 
 mkStencil1_inner
