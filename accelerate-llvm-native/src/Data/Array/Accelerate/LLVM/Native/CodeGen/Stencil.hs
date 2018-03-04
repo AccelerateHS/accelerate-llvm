@@ -112,25 +112,25 @@ mkStencil1_boundary aenv arrOut f b1 ir1@(IRManifest v1) faceN =
     mkStencil1_inner aenv arrOut f b1 ir1 start end
 
 
-calculateFace
-  :: forall sh. (Shape sh)
-  => Int
-  -> IR sh
-  -> IR sh
-  -> (IR sh, IR sh)
-calculateFace n e t =
-  let
-    (start, end) = go n e t
-  in
-    (IR start, IR end)
-  where
-    go _ Z _ = (Z, Z)
-    go n extent@(extent' :. e) thickness@(thickness' :. t)
-      | n == 0 = (start' :.      0 , end' :.      t )
-      | n == 1 = (start' :. (e - t), end' :.  e     )
-      | n >  1 = (start' :.      t , end' :. (e - t))
-      where
-        (start', end') = calculateFace (n - 2) extent' thickness'
+calculateFace = undefined
+--   :: forall sh. (Shape sh)
+--   => Int
+--   -> IR sh
+--   -> IR sh
+--   -> (IR sh, IR sh)
+-- calculateFace n e t =
+--   let
+--     (start, end) = go n e t
+--   in
+--     (IR start, IR end)
+--   where
+--     go _ Z _ = (Z, Z)
+--     go n extent@(extent' :. e) thickness@(thickness' :. t)
+--       | n == 0 = (start' :.      0 , end' :.      t )
+--       | n == 1 = (start' :. (e - t), end' :.  e     )
+--       | n >  1 = (start' :.      t , end' :. (e - t))
+--       where
+--         (start', end') = calculateFace (n - 2) extent' thickness'
 
 
 boundaryThickness = undefined
