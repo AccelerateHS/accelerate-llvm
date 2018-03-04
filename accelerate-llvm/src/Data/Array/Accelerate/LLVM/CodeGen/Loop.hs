@@ -51,7 +51,7 @@ imapFromStepTo
     -> CodeGen ()
 imapFromStepTo start step end body =
   for start
-      (\i -> lt scalarType i end)
+      (\i -> lt singleType i end)
       (\i -> add numType i step)
       body
 
@@ -69,7 +69,7 @@ iterFromStepTo
     -> CodeGen (IR a)
 iterFromStepTo start step end seed body =
   iter start seed
-       (\i -> lt scalarType i end)
+       (\i -> lt singleType i end)
        (\i -> add numType i step)
        body
 

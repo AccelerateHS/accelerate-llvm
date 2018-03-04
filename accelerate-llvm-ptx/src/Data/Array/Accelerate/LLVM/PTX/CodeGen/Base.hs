@@ -231,6 +231,7 @@ atomicAdd_f t addr val =
       width :: Int
       width =
         case t of
+          TypeHalf{}    -> 16
           TypeFloat{}   -> 32
           TypeDouble{}  -> 64
           TypeCFloat{}  -> 32
@@ -275,13 +276,13 @@ staticSharedMem n = do
                    }
   where
     go :: TupleType s -> CodeGen (Operands s)
-    go UnitTuple          = return OP_Unit
-    go (PairTuple t1 t2)  = OP_Pair <$> go t1 <*> go t2
-    go tt@(SingleTuple t) = do
+    go TypeRunit          = return OP_Unit
+    go (TypeRpair t1 t2)  = OP_Pair <$> go t1 <*> go t2
+    go tt@(TypeRscalar t) = do
       -- Declare a new global reference for the statically allocated array
       -- located in the __shared__ memory space.
       nm <- freshName
-      sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayType n t) sharedMemAddrSpace)) nm
+      sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType n t) sharedMemAddrSpace)) nm
       declare $ LLVM.globalVariableDefaults
         { LLVM.addrSpace = sharedMemAddrSpace
         , LLVM.type'     = LLVM.ArrayType n (downcast t)
@@ -314,7 +315,7 @@ initialiseDynamicSharedMemory = do
     , LLVM.name      = LLVM.Name "__shared__"
     , LLVM.alignment = 4
     }
-  return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayType 0 scalarType) sharedMemAddrSpace)) "__shared__"
+  return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType 0 scalarType) sharedMemAddrSpace)) "__shared__"
 
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
@@ -329,15 +330,15 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
   smem <- initialiseDynamicSharedMemory
   let
       go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
-      go UnitTuple         i  = return (i, OP_Unit)
-      go (PairTuple t2 t1) i0 = do
+      go TypeRunit         i  = return (i, OP_Unit)
+      go (TypeRpair t2 t1) i0 = do
         (i1, p1) <- go t1 i0
         (i2, p2) <- go t2 i1
         return $ (i2, OP_Pair p2 p1)
-      go (SingleTuple t)   i  = do
+      go (TypeRscalar t)   i  = do
         p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
         q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-        a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (SingleTuple t))))
+        a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (TypeRscalar t))))
         b <- instr' $ Add numType i a
         return (b, ir' t (unPtr q))
   --

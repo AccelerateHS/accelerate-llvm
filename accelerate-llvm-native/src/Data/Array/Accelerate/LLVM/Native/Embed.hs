@@ -57,7 +57,7 @@ instance Embed Native where
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do
   objFile <- TH.runIO (evalNative target (cacheOfUID uid))
-  funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 17) fn)), $$(makeFFI fn objFile) ) ||]
+  funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 65) fn)), $$(makeFFI fn objFile) ) ||]
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where

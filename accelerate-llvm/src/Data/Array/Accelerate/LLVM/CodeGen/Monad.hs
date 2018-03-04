@@ -241,9 +241,9 @@ fresh :: forall a. Elt a => CodeGen (IR a)
 fresh = IR <$> go (eltType (undefined::a))
   where
     go :: TupleType t -> CodeGen (Operands t)
-    go UnitTuple         = return OP_Unit
-    go (PairTuple t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (SingleTuple t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
+    go TypeRunit         = return OP_Unit
+    go (TypeRpair t2 t1) = OP_Pair <$> go t2 <*> go t1
+    go (TypeRscalar t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -323,12 +323,12 @@ phi' :: forall a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen (IR a)
 phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b) | (IR o, b) <- incoming ]
   where
     go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen (Operands t)
-    go UnitTuple OP_Unit _
+    go TypeRunit OP_Unit _
       = return OP_Unit
-    go (PairTuple t2 t1) (OP_Pair n2 n1) inc
+    go (TypeRpair t2 t1) (OP_Pair n2 n1) inc
       = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- inc ]
                 <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
-    go (SingleTuple t) tup inc
+    go (TypeRscalar t) tup inc
       | LocalReference _ v <- op' t tup = ir' t <$> phi1 target v [ (op' t x, b) | (x, b) <- inc ]
       | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
 

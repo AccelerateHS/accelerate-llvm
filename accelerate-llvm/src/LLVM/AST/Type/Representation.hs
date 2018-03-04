@@ -64,11 +64,10 @@ data Type a where
   PrimType  :: PrimType a -> Type a
 
 data PrimType a where
-  ScalarPrimType :: ScalarType a -> PrimType a
-  PtrPrimType    :: PrimType a -> AddrSpace -> PrimType (Ptr a)   -- volatility?
-  TupleType      :: TupleType (ProdRepr a) -> PrimType a          -- HAX: aggregate structures
-  ArrayType      :: Word64 -> ScalarType a -> PrimType a          -- HAX: static array
-
+  ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
+  PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
+  StructPrimType  :: TupleType (ProdRepr a)  -> PrimType a          -- opaque structures (required for CmpXchg)
+  ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
 
 -- | All types
 --
@@ -416,10 +415,10 @@ instance Show (Type a) where
   show (PrimType t)    = show t
 
 instance Show (PrimType a) where
-  show (ScalarPrimType t)            = show t
-  show (TupleType t)                 = show t
-  show (ArrayType n t)               = printf "[%d x %s]" n (show t)
-  show (PtrPrimType t (AddrSpace n)) = printf "Ptr%s %s" a p
+  show (ScalarPrimType t)             = show t
+  show (StructPrimType t)             = show t
+  show (ArrayPrimType n t)            = printf "[%d x %s]" n (show t)
+  show (PtrPrimType t (AddrSpace n))  = printf "Ptr%s %s" a p
     where
       p             = show t
       a | n == 0    = ""

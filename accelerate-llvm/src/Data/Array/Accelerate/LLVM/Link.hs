@@ -56,11 +56,11 @@ class Link arch where
 data ExecOpenAcc arch aenv a where
   ExecAcc   :: Gamma aenv
             -> ExecutableR arch
-            -> PreOpenAccSkeleton (ExecOpenAcc arch) aenv a
+            -> PreOpenAccSkeleton ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
   EvalAcc   :: Arrays a
-            => PreOpenAccCommand (ExecOpenAcc arch) aenv a
+            => PreOpenAccCommand  ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
 -- An AST annotated with compiled and linked functions in the target address
@@ -117,6 +117,7 @@ linkOpenAcc = travA
         Avar ix                 -> return (Avar ix)
         Use arrs                -> rnfArrs (arrays (undefined::arrs)) arrs `seq` return (Use arrs)
         Unit e                  -> Unit         <$> travE e
+        Alloc sh                -> Alloc        <$> travE sh
         Alet a b                -> Alet         <$> travA a  <*> travA b
         Apply f a               -> Apply        <$> travAF f <*> travA a
         Awhile p f a            -> Awhile       <$> travAF p <*> travAF f <*> travA a
@@ -124,7 +125,7 @@ linkOpenAcc = travA
         Atuple tup              -> Atuple       <$> travAtup tup
         Aprj ix tup             -> Aprj ix      <$> travA tup
         Reshape s ix            -> Reshape      <$> travE s <*> pure ix
-        Aforeign asm a          -> Aforeign asm <$> travA a
+        Aforeign s f a          -> Aforeign s f <$> travA a
 
     travA (BuildAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
       case pacc of
@@ -167,6 +168,7 @@ linkOpenAcc = travA
         Var ix                  -> return (Var ix)
         Const c                 -> return (Const c)
         PrimConst c             -> return (PrimConst c)
+        Undef                   -> return Undef
         IndexAny                -> return IndexAny
         IndexNil                -> return IndexNil
         Let a b                 -> Let                <$> travE a <*> travE b
@@ -188,6 +190,7 @@ linkOpenAcc = travA
         ShapeSize e             -> ShapeSize          <$> travE e
         Intersect x y           -> Intersect          <$> travE x <*> travE y
         Union x y               -> Union              <$> travE x <*> travE y
+        Coerce x                -> Coerce             <$> travE x
         Foreign asm _ x         -> Foreign asm err    <$> travE x
           where err = $internalError "link" "attempt to use fallback foreign expression"
 

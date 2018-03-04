@@ -153,9 +153,9 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
           Exchange
             -> writeArray arrOut j r
           --
-          _ | SingleTuple s <- eltType (undefined::e)
-            , Just adata    <- gcast (irArrayData arrOut)
-            , Just r'       <- gcast r
+          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
+            , Just adata                        <- gcast (irArrayData arrOut)
+            , Just r'                           <- gcast r
             -> do
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
@@ -172,7 +172,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                               RMW.Max -> atomicCAS_cmp s' A.gt ptr val
                               _       -> $internalError "mkPermute_rmw.integral" "unexpected transition"
                         where
-                          s'      = NumScalarType (IntegralNumType t)
+                          s'      = NumSingleType (IntegralNumType t)
                           primOk  = compute >= compute32
                                  || bytes == 4
                                  || case rmw of
@@ -192,7 +192,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                           _             -> $internalError "mkPermute_rmw.floating" "unexpected transition"
                         where
                           n       = FloatingNumType t
-                          s'      = NumScalarType n
+                          s'      = NumSingleType n
                           primAdd = bytes == 4
                                  -- Disabling due to missing support from llvm-4.0.
                                  -- <https://github.com/AccelerateHS/accelerate/issues/363>
@@ -206,9 +206,9 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                       rmw_nonnum _ _ _ = -- C character types are 8-bit, and thus not supported
                         $internalError "mkPermute_rmw.nonnum" "unexpected transition"
                   case s of
-                    NumScalarType (IntegralNumType t) -> rmw_integral t addr (op t r')
-                    NumScalarType (FloatingNumType t) -> rmw_floating t addr (op t r')
-                    NonNumScalarType t                -> rmw_nonnum   t addr (op t r')
+                    NumSingleType (IntegralNumType t) -> rmw_integral t addr (op t r')
+                    NumSingleType (FloatingNumType t) -> rmw_floating t addr (op t r')
+                    NonNumSingleType t                -> rmw_nonnum   t addr (op t r')
           --
           _ -> $internalError "mkPermute_rmw" "unexpected transition"
 
@@ -323,7 +323,7 @@ atomically barriers i action = do
   -- critical section, otherwise skip to the bottom of the critical section.
   setBlock spin
   old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
-  ok   <- A.eq scalarType old unlock'
+  ok   <- A.eq singleType old unlock'
   no   <- cbr ok crit skip
 
   -- If we just acquired the lock, execute the critical section
@@ -356,9 +356,11 @@ ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
 ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
   where
     go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
-    go UnitTuple           ()          OP_Unit        = return (lift True)
-    go (PairTuple tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
+    go TypeRunit           ()          OP_Unit        = return (lift True)
+    go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
                                                            y <- go tsz isz sz
                                                            land' x y
-    go (SingleTuple t)     ig         sz              = A.eq t (ir t (scalar t ig)) (ir t (op' t sz))
+    go (TypeRscalar s)     ig         sz              = case s of
+                                                          SingleScalarType t -> A.eq t (ir t (single t ig)) (ir t (op' t sz))
+                                                          VectorScalarType{} -> $internalError "ignore" "unexpected shape type"
 

@@ -28,9 +28,10 @@ import Foreign.C.Types
 
 import Data.Array.Accelerate.AST                                    ( tupleIdxToInt )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Type
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Constant        as Const
 
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Flags
@@ -131,42 +132,63 @@ tailcall = Nothing
 instance Downcast (Instruction a) L.Instruction where
   downcast (Add t x y) =
     case t of
-      IntegralNumType{}            -> L.Add nsw nuw (downcast x) (downcast y) md
-      FloatingNumType{}            -> L.FAdd fmf    (downcast x) (downcast y) md
+      IntegralNumType{}              -> L.Add nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}              -> L.FAdd fmf    (downcast x) (downcast y) md
   downcast (Sub t x y) =
     case t of
-      IntegralNumType{}            -> L.Sub nsw nuw (downcast x) (downcast y) md
-      FloatingNumType{}            -> L.FSub fmf    (downcast x) (downcast y) md
+      IntegralNumType{}              -> L.Sub nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}              -> L.FSub fmf    (downcast x) (downcast y) md
   downcast (Mul t x y) =
     case t of
-      IntegralNumType{}            -> L.Mul nsw nuw (downcast x) (downcast y) md
-      FloatingNumType{}            -> L.FMul fmf    (downcast x) (downcast y) md
+      IntegralNumType{}              -> L.Mul nsw nuw (downcast x) (downcast y) md
+      FloatingNumType{}              -> L.FMul fmf    (downcast x) (downcast y) md
   downcast (Quot t x y)
-    | signed t                      = L.SDiv False (downcast x) (downcast y) md
-    | otherwise                     = L.UDiv False (downcast x) (downcast y) md
+    | signed t                        = L.SDiv False (downcast x) (downcast y) md
+    | otherwise                       = L.UDiv False (downcast x) (downcast y) md
   downcast (Rem t x y)
-    | signed t                      = L.SRem (downcast x) (downcast y) md
-    | otherwise                     = L.URem (downcast x) (downcast y) md
-  downcast (Div _ x y)              = L.FDiv fmf (downcast x) (downcast y) md
-  downcast (ShiftL _ x i)           = L.Shl nsw nuw (downcast x) (downcast i) md
-  downcast (ShiftRL _ x i)          = L.LShr False (downcast x) (downcast i) md
-  downcast (ShiftRA _ x i)          = L.AShr False (downcast x) (downcast i) md
-  downcast (BAnd _ x y)             = L.And (downcast x) (downcast y) md
-  downcast (LAnd x y)               = L.And (downcast x) (downcast y) md
-  downcast (BOr _ x y)              = L.Or (downcast x) (downcast y) md
-  downcast (LOr x y)                = L.Or (downcast x) (downcast y) md
-  downcast (BXor _ x y)             = L.Xor (downcast x) (downcast y) md
-  downcast (LNot x)                 = L.Xor (downcast x) (downcast (scalar scalarType True)) md
-  downcast (ExtractValue _ tix tup) = L.ExtractValue (downcast tup) [fromIntegral $ sizeOfTuple - tupleIdxToInt tix - 1] md
+    | signed t                        = L.SRem (downcast x) (downcast y) md
+    | otherwise                       = L.URem (downcast x) (downcast y) md
+  downcast (Div _ x y)                = L.FDiv fmf (downcast x) (downcast y) md
+  downcast (ShiftL _ x i)             = L.Shl nsw nuw (downcast x) (downcast i) md
+  downcast (ShiftRL _ x i)            = L.LShr False (downcast x) (downcast i) md
+  downcast (ShiftRA _ x i)            = L.AShr False (downcast x) (downcast i) md
+  downcast (BAnd _ x y)               = L.And (downcast x) (downcast y) md
+  downcast (LAnd x y)                 = L.And (downcast x) (downcast y) md
+  downcast (BOr _ x y)                = L.Or (downcast x) (downcast y) md
+  downcast (LOr x y)                  = L.Or (downcast x) (downcast y) md
+  downcast (BXor _ x y)               = L.Xor (downcast x) (downcast y) md
+  downcast (LNot x)                   = L.Xor (downcast x) (downcast (Const.scalar scalarType True)) md
+
+  downcast (ExtractElement v tix vec) = L.ExtractElement (downcast vec) (downcast tix') md
+    where
+      tix' :: Operand Int32
+      tix' = Const.integral integralType $ sizeOfVec v - fromIntegral (tupleIdxToInt tix) - 1
+
+      sizeOfVec :: VectorType v -> Int32
+      sizeOfVec Vector2Type{}  = 2
+      sizeOfVec Vector3Type{}  = 3
+      sizeOfVec Vector4Type{}  = 4
+      sizeOfVec Vector8Type{}  = 8
+      sizeOfVec Vector16Type{} = 16
+
+  downcast (InsertElement tix vec x)  = L.InsertElement (downcast vec) (downcast x) (downcast tix') md
+    where
+      tix' :: Operand Int32
+      tix' = Const.integral integralType tix
+
+  downcast (ExtractValue _ tix tup)   = L.ExtractValue (downcast tup) [fromIntegral $ sizeOfTuple - tupleIdxToInt tix - 1] md
     where
       sizeOfTuple
-        | PrimType p  <- typeOf tup
-        , TupleType t <- p          = go t
-        | otherwise                 = $internalError "downcast" "unexpected operand type to ExtractValue"
+        | PrimType p       <- typeOf tup
+        , StructPrimType t <- p
+        = go t
+        | otherwise
+        = $internalError "downcast" "unexpected operand type to ExtractValue"
       --
       go :: TupleType t -> Int
-      go (PairTuple t _) = 1 + go t
+      go (TypeRpair t _) = 1 + go t
       go _               = 0
+
   downcast (Load _ v p)             = L.Load (downcast v) (downcast p) Nothing 0 md
   downcast (Store v p x)            = L.Store (downcast v) (downcast p) (downcast x) Nothing 0 md
   downcast (GetElementPtr n i)      = L.GetElementPtr False (downcast n) (downcast i) md            -- TLM: in bounds??
@@ -196,6 +218,7 @@ instance Downcast (Instruction a) L.Instruction where
         fp OEQ = FP.OEQ
     in
     L.FCmp (fp p) (downcast x) (downcast y) md
+
   downcast (Cmp t p x y)            =
     let
         fp EQ = FP.OEQ
@@ -220,7 +243,7 @@ instance Downcast (Instruction a) L.Instruction where
         ui GE = IP.UGE
     in
     case t of
-      NumScalarType FloatingNumType{} -> L.FCmp (fp p) (downcast x) (downcast y) md
+      NumSingleType FloatingNumType{} -> L.FCmp (fp p) (downcast x) (downcast y) md
       _ | signed t                    -> L.ICmp (si p) (downcast x) (downcast y) md
         | otherwise                   -> L.ICmp (ui p) (downcast x) (downcast y) md
 
@@ -272,32 +295,53 @@ instance Downcast a b => Downcast (L.Named a) (L.Named b) where
 -- ------------------------------
 
 instance Downcast (Constant a) LC.Constant where
-  downcast (ScalarConstant (NumScalarType (IntegralNumType t)) x)
-    | IntegralDict <- integralDict t
-    = LC.Int (L.typeBits (downcast t)) (fromIntegral x)
+  downcast (UndefConstant t)      = LC.Undef (downcast t)
+  downcast (GlobalReference t n)  = LC.GlobalReference (downcast t) (downcast n)
+  downcast (ScalarConstant t x)   = scalar t x
+    where
+      scalar :: ScalarType s -> s -> LC.Constant
+      scalar (SingleScalarType s) = single s
+      scalar (VectorScalarType s) = vector s
 
-  downcast (ScalarConstant (NumScalarType (FloatingNumType t)) x)
-    = LC.Float
-    $ case t of
-        TypeFloat{}   -> L.Single x
-        TypeDouble{}  -> L.Double x
-        TypeCFloat{}  -> L.Single $ case x of CFloat x' -> x'
-        TypeCDouble{} -> L.Double $ case x of CDouble x' -> x'
+      single :: SingleType s -> s -> LC.Constant
+      single (NumSingleType s)    = num s
+      single (NonNumSingleType s) = nonnum s
 
-  downcast (ScalarConstant (NonNumScalarType t) x)
-    = LC.Int (L.typeBits (downcast t))
-    $ case t of
-        TypeBool{}      -> fromIntegral (fromEnum x)
-        TypeChar{}      -> fromIntegral (fromEnum x)
-        TypeCChar{}     -> fromIntegral (fromEnum x)
-        TypeCUChar{}    -> fromIntegral (fromEnum x)
-        TypeCSChar{}    -> fromIntegral (fromEnum x)
+      vector :: VectorType s -> s -> LC.Constant
+      vector (Vector2Type s) (V2 a b)     = LC.Vector [single s a, single s b]
+      vector (Vector3Type s) (V3 a b c)   = LC.Vector [single s a, single s b, single s c]
+      vector (Vector4Type s) (V4 a b c d) = LC.Vector [single s a, single s b, single s c, single s d]
+      vector (Vector8Type s) (V8 a b c d e f g h) =
+        LC.Vector [ single s a, single s b, single s c, single s d
+                  , single s e, single s f, single s g, single s h ]
+      vector (Vector16Type s) (V16 a b c d e f g h i j k l m n o p) =
+        LC.Vector [ single s a, single s b, single s c, single s d
+                  , single s e, single s f, single s g, single s h
+                  , single s i, single s j, single s k, single s l
+                  , single s m, single s n, single s o, single s p ]
 
-  downcast (UndefConstant t)
-    = LC.Undef (downcast t)
+      num :: NumType s -> s -> LC.Constant
+      num (IntegralNumType s) v
+        | IntegralDict <- integralDict s
+        = LC.Int (L.typeBits (downcast s)) (fromIntegral v)
+      num (FloatingNumType s) v
+        = LC.Float
+        $ case s of
+            TypeFloat{}                            -> L.Single v
+            TypeDouble{}                           -> L.Double v
+            TypeCDouble{} | CDouble u <- v         -> L.Double u
+            TypeCFloat{}  | CFloat u <- v          -> L.Single u
+            TypeHalf{}    | Half (CUShort u) <- v  -> L.Half u
 
-  downcast (GlobalReference t n)
-    = LC.GlobalReference (downcast t) (downcast n)
+      nonnum :: NonNumType s -> s -> LC.Constant
+      nonnum s v
+        = LC.Int (L.typeBits (downcast s))
+        $ case s of
+            TypeBool{}   -> fromIntegral (fromEnum v)
+            TypeChar{}   -> fromIntegral (fromEnum v)
+            TypeCChar{}  -> fromIntegral (fromEnum v)
+            TypeCUChar{} -> fromIntegral (fromEnum v)
+            TypeCSChar{} -> fromIntegral (fromEnum v)
 
 
 -- LLVM.General.AST.Type.Operand
@@ -407,22 +451,33 @@ instance Downcast (Type a) L.Type where
   downcast (PrimType t) = downcast t
 
 instance Downcast (PrimType a) L.Type where
-  downcast (ScalarPrimType t) = downcast t
-  downcast (PtrPrimType t a)  = L.PointerType (downcast t) a
-  downcast (ArrayType n t)    = L.ArrayType n (downcast t)
-  downcast (TupleType t)      = L.StructureType False (go t)
+  downcast (ScalarPrimType t)   = downcast t
+  downcast (PtrPrimType t a)    = L.PointerType (downcast t) a
+  downcast (ArrayPrimType n t)  = L.ArrayType n (downcast t)
+  downcast (StructPrimType t)   = L.StructureType False (go t)
     where
       go :: TupleType t -> [L.Type]
-      go UnitTuple         = []
-      go (SingleTuple s)   = [downcast s]
-      go (PairTuple ta tb) = go ta ++ go tb
+      go TypeRunit         = []
+      go (TypeRscalar s)   = [downcast s]
+      go (TypeRpair ta tb) = go ta ++ go tb
 
 -- Data.Array.Accelerate.Type
 -- --------------------------
 
 instance Downcast (ScalarType a) L.Type where
-  downcast (NumScalarType t)    = downcast t
-  downcast (NonNumScalarType t) = downcast t
+  downcast (SingleScalarType t) = downcast t
+  downcast (VectorScalarType t) = downcast t
+
+instance Downcast (SingleType a) L.Type where
+  downcast (NumSingleType t)    = downcast t
+  downcast (NonNumSingleType t) = downcast t
+
+instance Downcast (VectorType a) L.Type where
+  downcast (Vector2Type t)  = L.VectorType 2 (downcast t)
+  downcast (Vector3Type t)  = L.VectorType 3 (downcast t)
+  downcast (Vector4Type t)  = L.VectorType 4 (downcast t)
+  downcast (Vector8Type t)  = L.VectorType 8 (downcast t)
+  downcast (Vector16Type t) = L.VectorType 16 (downcast t)
 
 instance Downcast (BoundedType t) L.Type where
   downcast (IntegralBoundedType t) = downcast t
@@ -453,6 +508,7 @@ instance Downcast (IntegralType a) L.Type where
   downcast TypeCULLong{} = L.IntegerType 64
 
 instance Downcast (FloatingType a) L.Type where
+  downcast TypeHalf{}    = L.FloatingPointType L.HalfFP
   downcast TypeFloat{}   = L.FloatingPointType L.FloatFP
   downcast TypeDouble{}  = L.FloatingPointType L.DoubleFP
   downcast TypeCFloat{}  = L.FloatingPointType L.FloatFP

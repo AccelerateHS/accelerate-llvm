@@ -163,7 +163,7 @@ Library
     Paths_accelerate_llvm
 
   build-depends:
-          base                          >= 4.7 && < 4.11
+          base                          >= 4.7 && < 4.12
         , abstract-deque                >= 0.3
         , accelerate                    == 1.2.*
         , bytestring                    >= 0.10.4

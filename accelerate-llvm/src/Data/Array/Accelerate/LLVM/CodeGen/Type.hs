@@ -33,8 +33,19 @@ class IsSigned dict where
   unsigned = not . signed
 
 instance IsSigned ScalarType where
-  signed (NumScalarType t)    = signed t
-  signed (NonNumScalarType t) = signed t
+  signed (SingleScalarType t) = signed t
+  signed (VectorScalarType t) = signed t
+
+instance IsSigned SingleType where
+  signed (NumSingleType t)    = signed t
+  signed (NonNumSingleType t) = signed t
+
+instance IsSigned VectorType where
+  signed (Vector2Type t)  = signed t
+  signed (Vector3Type t)  = signed t
+  signed (Vector4Type t)  = signed t
+  signed (Vector8Type t)  = signed t
+  signed (Vector16Type t) = signed t
 
 instance IsSigned BoundedType where
   signed (IntegralBoundedType t) = signed t
@@ -94,30 +105,38 @@ instance TypeOf Instruction where
       LAnd _ _              -> type'
       LOr _ _               -> type'
       LNot _                -> type'
+      ExtractElement v _ _  -> case v of
+                                 Vector2Type t  -> PrimType (ScalarPrimType (SingleScalarType t))
+                                 Vector3Type t  -> PrimType (ScalarPrimType (SingleScalarType t))
+                                 Vector4Type t  -> PrimType (ScalarPrimType (SingleScalarType t))
+                                 Vector8Type t  -> PrimType (ScalarPrimType (SingleScalarType t))
+                                 Vector16Type t -> PrimType (ScalarPrimType (SingleScalarType t))
+      InsertElement _ x _   -> typeOf x
       ExtractValue t _ _    -> PrimType (ScalarPrimType t)
       Load t _ _            -> PrimType (ScalarPrimType t)
       Store _ _ _           -> VoidType
       GetElementPtr x _     -> typeOf x
       Fence _               -> VoidType
-      CmpXchg t _ _ _ _ _ _ -> PrimType $ TupleType
-                             $ UnitTuple `PairTuple` SingleTuple (NumScalarType (IntegralNumType t))
-                                         `PairTuple` SingleTuple scalarType
+      CmpXchg t _ _ _ _ _ _ -> PrimType
+                             $ StructPrimType
+                             $ TypeRunit `TypeRpair` TypeRscalar (SingleScalarType (NumSingleType (IntegralNumType t)))
+                                         `TypeRpair` TypeRscalar scalarType
       AtomicRMW _ _ _ _ x _ -> typeOf x
-      FTrunc _ t _          -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
-      FExt _ t _            -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+      FTrunc _ t _          -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType t))))
+      FExt _ t _            -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType t))))
       Trunc _ t _           -> case t of
-                                 IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
-                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
+                                 IntegralBoundedType i -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i))))
+                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (SingleScalarType (NonNumSingleType n)))
       Ext _ t _             -> case t of
-                                 IntegralBoundedType i -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType i)))
-                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (NonNumScalarType n))
-      FPToInt _ t _         -> PrimType (ScalarPrimType (NumScalarType (IntegralNumType t)))
-      IntToFP _ t _         -> PrimType (ScalarPrimType (NumScalarType (FloatingNumType t)))
+                                 IntegralBoundedType i -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i))))
+                                 NonNumBoundedType n   -> PrimType (ScalarPrimType (SingleScalarType (NonNumSingleType n)))
+      FPToInt _ t _         -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t))))
+      IntToFP _ t _         -> PrimType (ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType t))))
       BitCast t _           -> PrimType (ScalarPrimType t)
       PtrCast t _           -> PrimType t
       FCmp{}                -> type'
       Cmp{}                 -> type'
-      Select t _ _ _        -> PrimType (ScalarPrimType t)
+      Select t _ _ _        -> PrimType (ScalarPrimType (SingleScalarType t))
       Phi t _               -> PrimType t
       Call f _              -> funResultType f
         where
@@ -145,9 +164,9 @@ instance TypeOf Constant where
 data EltDict a where
   EltDict :: Elt a => EltDict a
 
-scalarElt :: ScalarType a -> EltDict a
-scalarElt (NumScalarType    t) = numElt t
-scalarElt (NonNumScalarType t) = nonNumElt t
+singleElt :: SingleType a -> EltDict a
+singleElt (NumSingleType    t) = numElt t
+singleElt (NonNumSingleType t) = nonNumElt t
 
 numElt :: NumType a -> EltDict a
 numElt (IntegralNumType t) = integralElt t
@@ -174,6 +193,7 @@ integralElt TypeCLLong{}  = EltDict
 integralElt TypeCULLong{} = EltDict
 
 floatingElt :: FloatingType a -> EltDict a
+floatingElt TypeHalf{}    = EltDict
 floatingElt TypeFloat{}   = EltDict
 floatingElt TypeDouble{}  = EltDict
 floatingElt TypeCFloat{}  = EltDict
