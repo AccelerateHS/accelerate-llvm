@@ -22,6 +22,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.HashMap.Strict                                          ( HashMap )
 import Data.Monoid
 import qualified Data.HashMap.Strict                                as HashMap
+import Prelude                                                      as P
 
 
 instance Intrinsic PTX where

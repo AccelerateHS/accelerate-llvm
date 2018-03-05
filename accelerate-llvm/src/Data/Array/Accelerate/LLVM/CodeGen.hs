@@ -105,10 +105,6 @@ llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
     travD Manifest{}  = $internalError "llvmOfOpenAcc" "expected delayed array"
     travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
 
-    travM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
-    travM (Manifest (Avar ix)) = IRManifest ix
-    travM _                    = $internalError "llvmOfOpenAcc" "expected manifest array variable"
-
     -- scalar code generation
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
     travF1 f = llvmOfFun1 arch f aenv
