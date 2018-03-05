@@ -37,7 +37,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: f808a6e6cddf1d516851106da63cf00f11f2a9c0
+  commit: 148b304512bcbd97934966489d3be05206dd726d
 - 'abstract-deque-0.3'
 - 'adjunctions-4.4'
 - 'ansi-terminal-0.8.0.1'

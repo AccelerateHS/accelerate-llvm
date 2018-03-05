@@ -97,7 +97,7 @@ instance Execute Native where
   scanr1        = scan1Op
   scanr'        = scan'Op
   permute       = permuteOp
-  stencil1      = stencil1Op
+  stencil1      = simpleOp
   stencil2      = stencil2Op
   aforeign      = aforeignOp
 
@@ -439,28 +439,17 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
   return out
 
 
-stencil1Op
-    :: (Shape sh, Elt b)
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Array sh a
-    -> LLVM Native (Array sh b)
-stencil1Op kernel gamma aenv stream arr =
-  simpleOp kernel gamma aenv stream (shape arr)
-
 stencil2Op
-    :: (Shape sh, Elt c)
+    :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> Array sh a
-    -> Array sh b
-    -> LLVM Native (Array sh c)
-stencil2Op kernel gamma aenv stream arr brr =
-  simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+    -> sh
+    -> sh
+    -> LLVM Native (Array sh e)
+stencil2Op kernel gamma aenv stream sh1 sh2 =
+  simpleOp kernel gamma aenv stream (sh1 `intersect` sh2)
 
 
 aforeignOp

@@ -171,12 +171,12 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> acc                    arch  aenv (Array sh' e)    -- default values
               -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
 
-  Stencil     :: (Shape sh, Elt a, Elt b)
-              => Idx                         aenv (Array sh a)
-              -> PreOpenAccSkeleton acc arch aenv (Array sh b)
+  Stencil     :: (Shape sh, Elt e)
+              => PreExp            (acc arch) aenv sh
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
 
-  Stencil2    :: (Shape sh, Elt a, Elt b, Elt c)
-              => Idx                         aenv (Array sh a)
-              -> Idx                         aenv (Array sh b)
-              -> PreOpenAccSkeleton acc arch aenv (Array sh c)
+  Stencil2    :: (Shape sh, Elt e)
+              => PreExp            (acc arch) aenv sh
+              -> PreExp            (acc arch) aenv sh
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
 
