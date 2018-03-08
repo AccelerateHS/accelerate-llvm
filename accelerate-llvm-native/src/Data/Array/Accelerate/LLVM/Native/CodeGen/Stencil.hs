@@ -55,6 +55,7 @@ faceIndex =
 -- Parameters for inner region
 range
     :: (Shape sh)
+    -- => Proxy sh                 -- Dummy type
     => ( IR sh                  -- The multidimensional start index
        , IR sh                  -- The multidimensional end   index
        , [LLVM.Parameter]
@@ -106,59 +107,68 @@ mkStencil1_boundary
   -> IR Int
   -> CodeGen ()
 mkStencil1_boundary aenv arrOut f b1 ir1@(IRManifest v1) faceN =
-  let
-    (start, end) = calculateFace faceN (irArrayShape arrOut) (boundaryThickness (AST.stencil :: StencilR sh a stencil))
-  in
+  do
+    (start, end) <- calculateFace faceN (irArrayShape arrOut) (boundaryThickness (AST.stencil :: StencilR sh a stencil))
     mkStencil1_inner aenv arrOut f b1 ir1 start end
 
 
-calculateFace = undefined
---   :: forall sh. (Shape sh)
---   => Int
---   -> IR sh
---   -> IR sh
---   -> (IR sh, IR sh)
--- calculateFace n e t =
---   let
---     (start, end) = go n e t
---   in
---     (IR start, IR end)
---   where
---     go _ Z _ = (Z, Z)
---     go n extent@(extent' :. e) thickness@(thickness' :. t)
---       | n == 0 = (start' :.      0 , end' :.      t )
---       | n == 1 = (start' :. (e - t), end' :.  e     )
---       | n >  1 = (start' :.      t , end' :. (e - t))
---       where
---         (start', end') = calculateFace (n - 2) extent' thickness'
+calculateFace
+  :: forall sh. (Shape sh)
+  => IR Int
+  -> IR sh
+  -> IR sh
+  -> CodeGen (IR sh, IR sh)
+calculateFace n (IR e) (IR t) = do
+  (sh, sz) <- go n (eltType (undefined::sh)) e t
+  return (IR sh, IR sz)
+
+  where
+    go :: IR Int -> TupleType t -> Operands t -> Operands t -> CodeGen (Operands t, Operands t)
+    go _ TypeRunit OP_Unit OP_Unit
+      = return (OP_Unit, OP_Unit)
+    --
+    go n (TypeRpair tt' tt) (OP_Pair sh' sh) (OP_Pair sz' sz)
+      | Just Refl <- matchTupleType tt (eltType (undefined::Int))
+      = do
+            n' <- sub numType n (int (-2))
+            (start', end') <- go n' tt' sh' sz'
+            --
+            IR (OP_Pair (OP_Pair OP_Unit start) end) :: IR (Int, Int) <-
+              ifThenElse (lt singleType n (int 0)) (return $ pair     (int 0)                         (IR sh)                    ) $
+              ifThenElse (eq singleType n (int 0)) (return $ pair     (int 0)                         (IR sz)                    ) $
+              ifThenElse (eq singleType n (int 1)) (         pair <$> sub numType (IR sh) (IR sz) <*> return (IR sh)             ) $
+              {- else n > 1 -}                     (         pair <$> return (IR sz)              <*> sub numType (IR sh) (IR sz))
+            --
+            return (OP_Pair start' start, OP_Pair end' end)
 
 
-boundaryThickness = undefined
--- boundaryThickness
-  -- :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
-  -- => StencilR sh a stencil
-  -- -> IR sh
--- boundaryThickness stencilR = (undefined :: Shape sh => sh -> IR sh) (go [stencilR])
---   where
---     -- go :: forall sh a stencil. (Shape sh, Stencil sh a stencil)
---     --    => [StencilR sh a stencil]
---     --    -> sh
---     -- go [] = Z
---     go stencilRs =
---       let
---         (sizes, nested) = Prelude.unzip . Prelude.map aux $ stencilRs
---       in
---         go (Prelude.concat nested) :. maximum sizes
---     --
---     aux StencilRunit3 = (1, [])
---     aux StencilRunit5 = (2, [])
---     aux StencilRunit7 = (3, [])
---     aux StencilRunit9 = (4, [])
---     --
---     aux (StencilRtup3 a b c)             = (1, [a, b, c])
---     aux (StencilRtup5 a b c d e)         = (2, [a, b, c, d, e])
---     aux (StencilRtup7 a b c d e f g)     = (3, [a, b, c, d, e, f, g])
---     aux (StencilRtup9 a b c d e f g h i) = (4, [a, b, c, d, e, f, g, h, i])
+boundaryThickness
+  :: StencilR sh a stencil
+  -> IR sh
+boundaryThickness stencilR = undefined
+  where
+    go :: StencilR sh a stencil -> sh
+    go StencilRunit3 = Z :. 1
+    go StencilRunit5 = Z :. 2
+    go StencilRunit7 = Z :. 3
+    go StencilRunit9 = Z :. 4
+    --
+    go (StencilRtup3 a b c            ) = maxShapes [go a, go b, go c] :. 1
+    go (StencilRtup5 a b c d e        ) = maxShapes [go a, go b, go c, go d, go e] :. 2
+    go (StencilRtup7 a b c d e f g    ) = maxShapes [go a, go b, go c, go d, go e, go f, go g] :. 3
+    go (StencilRtup9 a b c d e f g h i) = maxShapes [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+
+
+maxShapes :: [shape] -> shape
+maxShapes = undefined
+
+
+maxShape :: shape -> shape -> shape
+maxShape a b = undefined
+
+
+magicshapetoir :: sh -> IR sh
+magicshapetoir = undefined
 
 
 mkStencil1_inner
