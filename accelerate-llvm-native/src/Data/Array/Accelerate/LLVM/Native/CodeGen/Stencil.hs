@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RebindableSyntax    #-}
 
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
@@ -16,7 +17,7 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Analysis.Match
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic hiding (negate)
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -35,6 +36,11 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
 
 import qualified LLVM.AST.Global                                          as LLVM
+
+import Data.Proxy
+import Data.String
+
+import Prelude
 
 
 -- Parameters for boundary region
@@ -134,10 +140,17 @@ calculateFace n (IR e) (IR t) = do
             (start', end') <- go n' tt' sh' sz'
             --
             IR (OP_Pair (OP_Pair OP_Unit start) end) :: IR (Int, Int) <-
-              ifThenElse (lt singleType n (int 0)) (return $ pair     (int 0)                         (IR sh)                    ) $
-              ifThenElse (eq singleType n (int 0)) (return $ pair     (int 0)                         (IR sz)                    ) $
-              ifThenElse (eq singleType n (int 1)) (         pair <$> sub numType (IR sh) (IR sz) <*> return (IR sh)             ) $
-              {- else n > 1 -}                     (         pair <$> return (IR sz)              <*> sub numType (IR sh) (IR sz))
+              if      lt singleType n (int 0) then pair <$> return (int 0)              <*> return (IR sh)
+              else if eq singleType n (int 0) then pair <$> return (int 0)              <*> return (IR sz)
+              else if eq singleType n (int 0) then pair <$> sub numType (IR sh) (IR sz) <*> return (IR sh)
+              else    {- n > 1 -}                  pair <$> return (IR sz)              <*> sub numType (IR sh) (IR sz)
+
+
+            -- IR (OP_Pair (OP_Pair OP_Unit start) end) :: IR (Int, Int) <-
+            --   ifThenElse (lt singleType n (int 0)) (return $ pair     (int 0)                         (IR sh)                    ) $
+            --   ifThenElse (eq singleType n (int 0)) (return $ pair     (int 0)                         (IR sz)                    ) $
+            --   ifThenElse (eq singleType n (int 1)) (         pair <$> sub numType (IR sh) (IR sz) <*> return (IR sh)             ) $
+            --   {- else n > 1 -}                     (         pair <$> return (IR sz)              <*> sub numType (IR sh) (IR sz))
             --
             return (OP_Pair start' start, OP_Pair end' end)
 
