@@ -139,7 +139,7 @@ calculateFace n (IR e) (IR t) = do
             n' <- sub numType n (int (-2))
             (start', end') <- go n' tt' sh' sz'
             --
-            IR (OP_Pair (OP_Pair OP_Unit start) end) :: IR (Int, Int) <-
+            (IR start, IR end) :: (IR Int, IR Int) <- unpair <$>
               if      lt singleType n (int 0) then pair <$> return (int 0)              <*> return (IR sh)
               else if eq singleType n (int 0) then pair <$> return (int 0)              <*> return (IR sz)
               else if eq singleType n (int 1) then pair <$> sub numType (IR sh) (IR sz) <*> return (IR sh)
