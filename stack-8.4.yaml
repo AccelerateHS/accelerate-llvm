@@ -1,34 +1,8 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: ghc-8.4.0.20180224 # 8.4.1-rc1
-compiler: ghc-8.4.0.20180224
-compiler-check: match-exact
-
+resolver: ghc-8.4.1
 allow-newer: true
-
-setup-info:
-  ghc:
-    macosx:
-      8.4.0.20180224:
-        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-apple-darwin.tar.xz
-        sha256: 4cf1afc5c6672e4628ba84c775a081fc4cf08bddd07f30fcc57d909fc5939c06
-    linux32:
-      8.4.0.20180224:
-        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-i386-deb8-linux.tar.xz
-        sha256: ce2f7583c64b700b22281a488e9a950ee50ec756a83520e3360748f67e14bfa2
-    linux64:
-      8.4.0.20180224:
-        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-deb8-linux.tar.xz
-        sha256: a83b57a600b513f689716e98b53badfb2e2aa1117bff7c5bab12c07854eecb07
-    windows32:
-      8.4.0.20180224:
-        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-i386-unknown-mingw32.tar.xz
-        sha256: 28799a8ceee197a050fa1ef0740a78b01bf93b13f5a7b8e7ef5061b231c270dc
-    windows64:
-      8.4.0.20180224:
-        url:    https://downloads.haskell.org/~ghc/8.4.1-rc1/ghc-8.4.0.20180224-x86_64-unknown-mingw32.tar.xz
-        sha256: 7d125b3bbaa2ec4022215787a259a41bf944ec02736c9555f2a19432eef21cad
 
 packages:
 - 'accelerate-llvm'
@@ -37,13 +11,14 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: f808a6e6cddf1d516851106da63cf00f11f2a9c0
+  commit: 378c9c18db0b58ae737918b257261122b790e500
+
 - 'abstract-deque-0.3'
 - 'adjunctions-4.4'
 - 'ansi-terminal-0.8.0.1'
 - 'ansi-wl-pprint-0.6.8.2'
 - 'async-2.2.1'
-- 'atomic-primops-0.8.1.1'
+- 'atomic-primops-0.8.2'
 - 'attoparsec-0.13.2.2'
 - 'base-compat-0.9.3'
 - 'base-orphans-0.6'
@@ -62,7 +37,7 @@ extra-deps:
 - 'constraints-0.10'
 - 'contravariant-1.4.1'
 - 'cryptonite-0.25'
-- 'cuda-0.9.0.1'
+- 'cuda-0.9.0.2'
 - 'data-default-class-0.1.2.0'
 - 'distributive-0.5.3'
 - 'dlist-0.8.0.4'
@@ -74,13 +49,13 @@ extra-deps:
 - 'free-5'
 - 'ghc-paths-0.1.0.9'
 - 'half-0.2.2.3'
-- 'hashable-1.2.6.1'
+- 'hashable-1.2.7.0'
 # - 'hashtables-1.2.2.1'
 - git:    https://github.com/deepfire/hashtables.git
   commit: b9eb4b10a50bd6250330422afecc065339a32412
 - 'haskell-lexer-1.0.1'
 - 'hedgehog-0.5.2'
-- 'integer-logarithms-1.0.2'
+- 'integer-logarithms-1.0.2.1'
 - 'kan-extensions-5.1'
 - 'language-c-0.7.2'
 - 'lens-4.16'
