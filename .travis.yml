@@ -101,6 +101,12 @@ before_install:
   - source .travis/update-ghc-settings.sh
   - travis_retry stack install c2hs --fast --no-terminal
 
+  # ghc bug? error while loading shared libraries: libffi.so.7
+  - |
+      case ${GHC} in
+        8.4.1) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.1/rts:$LD_LIBRARY_PATH ;;
+      esac
+
 install:
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
@@ -108,6 +114,9 @@ install:
   - c2hs --version
   - llc --version; true
   - opt --version; true
+
+  # how much do we have to do?
+  - stack build --no-terminal --dry-run
 
   # build accelerate with optimisations (required for nofib#286)
   # - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
