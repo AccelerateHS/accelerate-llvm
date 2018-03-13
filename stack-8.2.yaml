@@ -10,9 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 378c9c18db0b58ae737918b257261122b790e500
-
-- 'cuda-0.9.0.2'
+  commit: 7b6ac6e65497ac8dc9d5d1ea048b4a8cb20dd1c1
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
