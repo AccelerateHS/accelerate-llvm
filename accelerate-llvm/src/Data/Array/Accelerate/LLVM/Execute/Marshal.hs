@@ -33,7 +33,7 @@ import qualified Data.DList                                     as DL
 -- Marshalling arguments
 -- ---------------------
 
--- | Convert function arguments into stream a form suitable for CUDA function calls
+-- | Convert function arguments into stream a form suitable for function calls
 --
 marshal :: Marshalable t args => t -> StreamR t -> args -> IO [ArgR t]
 marshal target stream args = DL.toList `fmap` marshal' target stream args
