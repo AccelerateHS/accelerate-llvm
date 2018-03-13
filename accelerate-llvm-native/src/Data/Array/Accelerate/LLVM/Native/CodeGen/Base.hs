@@ -32,6 +32,7 @@ import qualified LLVM.AST.Type                                      as LLVM
 import Data.Monoid
 import Data.String
 import Text.Printf
+import Prelude                                                      as P
 
 
 -- | Generate function parameters that will specify the first and last (linear)

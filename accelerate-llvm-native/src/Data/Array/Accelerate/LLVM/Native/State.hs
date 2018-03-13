@@ -41,6 +41,7 @@ import System.Environment
 import System.IO.Unsafe
 import Text.Printf
 import Text.Read
+import Prelude                                                  as P
 
 import GHC.Conc
 

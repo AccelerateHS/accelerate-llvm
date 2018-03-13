@@ -128,6 +128,9 @@ pass guts = do
 #if __GLASGOW_HASKELL__ >= 800
               AixLD     opts -> AixLD     (nub (opts ++ allObjs))
 #endif
+#if __GLASGOW_HASKELL__ >= 804
+              LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
+#endif
               UnknownLD      -> UnknownLD  -- no linking performed?
 
       return ()
