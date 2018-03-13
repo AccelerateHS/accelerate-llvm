@@ -107,6 +107,13 @@ before_install:
         8.4.1) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.1/rts:$LD_LIBRARY_PATH ;;
       esac
 
+  # https://github.com/haskell/haddock/issues/775
+  - |
+      case ${GHC} in
+        8.4.*) ;;
+        *)     export HADDOCK="--haddock --no-haddock-deps" ;;
+      esac
+
 install:
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
@@ -126,9 +133,9 @@ install:
   - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
-  - travis_retry stack build accelerate-llvm        --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-native --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
-  - travis_retry stack build accelerate-llvm-ptx    --fast --test --haddock --no-terminal --no-haddock-deps --no-run-tests
+  - travis_retry stack build accelerate-llvm        --fast --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-native --fast --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --test --no-run-tests ${HADDOCK}
 
   # Run test suite(s)
   - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests 50'
