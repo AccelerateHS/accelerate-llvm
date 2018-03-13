@@ -62,13 +62,8 @@ extra-deps:
 - 'libffi-0.1'
 - 'lifted-async-0.10.0.1'
 - 'lifted-base-0.2.3.11'
-# - 'llvm-hs-5.1.3'
-# - 'llvm-hs-pure-5.1.2'
-- git:    https://github.com/llvm-hs/llvm-hs.git
-  commit: 5e219b0eac74761cc852d63a5c680103ec5baea3
-  subdirs:
-    - 'llvm-hs'
-    - 'llvm-hs-pure'
+- 'llvm-hs-6.0.0'
+- 'llvm-hs-pure-6.0.0'
 - 'math-functions-0.2.1.0'
 - 'memory-0.14.14'
 - 'mmorph-1.1.0'

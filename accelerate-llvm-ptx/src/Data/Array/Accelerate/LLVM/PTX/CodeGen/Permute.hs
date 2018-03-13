@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -133,7 +134,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
       bytes                     = sizeOf (eltType (undefined :: e))
       compute                   = computeCapability dev
       compute32                 = Compute 3 2
-      -- compute60                 = Compute 6 0
+      compute60                 = Compute 6 0
   in
   makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
 
@@ -194,9 +195,11 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                           n       = FloatingNumType t
                           s'      = NumSingleType n
                           primAdd = bytes == 4
-                                 -- Disabling due to missing support from llvm-4.0.
-                                 -- <https://github.com/AccelerateHS/accelerate/issues/363>
-                                 -- compute >= compute60
+                                 -- Available directly in LLVM-6 and later;
+                                 -- earlier versions could use inline assembly
+#if MIN_VERSION_llvm_hs_pure(6,0,0)
+                                 || compute >= compute60
+#endif
 
                       rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
                       rmw_nonnum TypeChar{} ptr val = do
