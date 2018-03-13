@@ -178,8 +178,8 @@ compileOpenAcc = traverseAcc
         Scanr' f z a                -> build =<< liftA3 scanr'        <$> travF f <*> travE z <*> travD a
         Scanr1 f a                  -> build =<< liftA2 scanr1        <$> travF f <*> travD a
         Permute f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
-        Stencil f x a               -> build =<< liftA3 stencil1      <$> travF f <*> travB x <*> travM a
-        Stencil2 f x a y b          -> build =<< liftA5 stencil2      <$> travF f <*> travB x <*> travM a <*> travB y <*> travM b
+        Stencil f x a               -> build =<< liftA3 stencil1      <$> travF f <*> travB x <*> travD a
+        Stencil2 f x a y b          -> build =<< liftA5 stencil2      <$> travF f <*> travB x <*> travD a <*> travB y <*> travD b
 
         -- Removed by fusion
         Replicate{}                 -> fusionError

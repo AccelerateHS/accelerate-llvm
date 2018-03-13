@@ -95,7 +95,7 @@ instance Execute PTX where
   scanr1        = scan1Op
   scanr'        = scan'Op
   permute       = permuteOp
-  stencil1      = stencil1Op
+  stencil1      = simpleOp
   stencil2      = stencil2Op
   aforeign      = aforeignOp
 
@@ -500,28 +500,17 @@ permuteOp exe gamma aenv stream inplace shIn dfs = withExecutable exe $ \ptxExec
 
 -- Using the defaulting instances for stencil operations (for now).
 --
-stencil1Op
-    :: (Shape sh, Elt b)
-    => ExecutableR PTX
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Array sh a
-    -> LLVM PTX (Array sh b)
-stencil1Op exe gamma aenv stream arr =
-  simpleOp exe gamma aenv stream (shape arr)
-
 stencil2Op
-    :: (Shape sh, Elt c)
+    :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
     -> Aval aenv
     -> Stream
-    -> Array sh a
-    -> Array sh b
-    -> LLVM PTX (Array sh c)
-stencil2Op exe gamma aenv stream arr brr =
-  simpleOp exe gamma aenv stream (shape arr `intersect` shape brr)
+    -> sh
+    -> sh
+    -> LLVM PTX (Array sh e)
+stencil2Op exe gamma aenv stream sh1 sh2 =
+  simpleOp exe gamma aenv stream (sh1 `intersect` sh2)
 
 
 -- Foreign functions

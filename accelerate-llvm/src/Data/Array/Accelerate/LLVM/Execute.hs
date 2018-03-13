@@ -177,22 +177,22 @@ class Remote arch => Execute arch where
                 -> Array sh' e
                 -> LLVM arch (Array sh' e)
 
-  stencil1      :: (Shape sh, Elt a, Elt b)
+  stencil1      :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> Array sh a
-                -> LLVM arch (Array sh b)
+                -> sh
+                -> LLVM arch (Array sh e)
 
-  stencil2      :: (Shape sh, Elt a, Elt b, Elt c)
+  stencil2      :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
-                -> Array sh a
-                -> Array sh b
-                -> LLVM arch (Array sh c)
+                -> sh
+                -> sh
+                -> LLVM arch (Array sh e)
 
   aforeign      :: (Arrays as, Arrays bs)
                 => String
@@ -340,8 +340,8 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
         Scanl' sh           -> scanl' kernel gamma aenv stream =<< travE sh
         Scanr' sh           -> scanr' kernel gamma aenv stream =<< travE sh
         Permute sh d        -> id =<< permute kernel gamma aenv stream (inplace d) <$> travE sh <*> travA d
-        Stencil2 a b        -> id =<< stencil2 kernel gamma aenv stream <$> avar a <*> avar b
-        Stencil a           -> stencil1 kernel gamma aenv stream =<< avar a
+        Stencil2 sh1 sh2    -> id =<< stencil2 kernel gamma aenv stream <$> travE sh1 <*> travE sh2
+        Stencil sh          -> stencil1 kernel gamma aenv stream =<< travE sh
 
     travAF :: ExecOpenAfun arch aenv (a -> b) -> AsyncR arch a -> LLVM arch b
     travAF (Alam (Abody f)) a = get =<< async (executeOpenAcc f (aenv `Apush` a))

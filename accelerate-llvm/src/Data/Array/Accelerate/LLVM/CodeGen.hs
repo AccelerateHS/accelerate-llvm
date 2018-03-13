@@ -79,8 +79,8 @@ llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
     Scanr' f z a            -> scanr' arch uid aenv (travF2 f) (travE z) (travD a)
     Scanr1 f a              -> scanr1 arch uid aenv (travF2 f) (travD a)
     Permute f _ p a         -> permute arch uid aenv (travPF f) (travF1 p) (travD a)
-    Stencil f b a           -> stencil arch uid aenv (travF1 f) (travB b) (travM a)
-    Stencil2 f b1 a1 b2 a2  -> stencil2 arch uid aenv (travF2 f) (travB b1) (travM a1) (travB b2) (travM a2)
+    Stencil f b a           -> stencil arch uid aenv (travF1 f) (travB b) (travD a)
+    Stencil2 f b1 a1 b2 a2  -> stencil2 arch uid aenv (travF2 f) (travB b1) (travD a1) (travB b2) (travD a2)
 
     -- Non-computation forms: sadness
     Alet{}                  -> unexpectedError
@@ -104,10 +104,6 @@ llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
     travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed arch aenv (Array sh e)
     travD Manifest{}  = $internalError "llvmOfOpenAcc" "expected delayed array"
     travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
-
-    travM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
-    travM (Manifest (Avar ix)) = IRManifest ix
-    travM _                    = $internalError "llvmOfOpenAcc" "expected manifest array variable"
 
     -- scalar code generation
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
