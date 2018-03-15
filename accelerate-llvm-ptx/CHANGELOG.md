@@ -16,12 +16,16 @@ Policy (PVP)](https://pvp.haskell.org)
 ### Added
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
+ * support 64-bit atomic-add instruction in forward permutations ([#363])
+ * support for LLVM-6.0
+ * support for GHC-8.4
 
 ### Contributors
 
 Special thanks to those who contributed patches as part of this release:
 
-  * Trevor L. McDonell (@tmcdonell)
+ * Trevor L. McDonell (@tmcdonell)
+ * Moritz Kiefer (@cocreature)
 
 
 ## [1.1.0.1] - 2018-01-08
@@ -40,15 +44,15 @@ Special thanks to those who contributed patches as part of this release:
 
 ### Fixed
  * Fixed synchronisation bug in multidimensional reduction
- 
+
 
 ## [1.0.0.1] - 2017-05-25
 ### Fixed
-  * [#386] (partial fix)
+ * device kernel image is invalid ([#386])
 
 
 ## [1.0.0.0] - 2017-03-31
-  * initial release
+ * initial release
 
 
 [next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-ptx...HEAD
@@ -58,6 +62,7 @@ Special thanks to those who contributed patches as part of this release:
 [1.0.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
 
 [#386]:                 https://github.com/AccelerateHS/accelerate/issues/386
+[#363]:                 https://github.com/AccelerateHS/accelerate/issues/363
 
 [accelerate-llvm#17]:   https://github.com/AccelerateHS/accelerate-llvm/issues/17
 

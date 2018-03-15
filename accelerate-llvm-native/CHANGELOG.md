@@ -8,20 +8,23 @@ Policy (PVP)](https://pvp.haskell.org)
 
 ## [next]
 ### Fixed
- * [#409]: LLVM native throws "SIGSEGV: invalid address" due to fused FP operation
+ * LLVM native throws "SIGSEGV: invalid address" due to fused FP operation ([#409])
 
 ### Added
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
+ * support for LLVM-6.0
+ * support for GHC-8.4
 
 ### Contributors
 
 Special thanks to those who contributed patches as part of this release:
 
-  * Trevor L. McDonell (@tmcdonell)
-  * @VorpalChoices
-  * Ryan Scott (@ryanglscott)
-  * Jesse Sigal (@jasigal)
+ * Trevor L. McDonell (@tmcdonell)
+ * @samft
+ * Ryan Scott (@ryanglscott)
+ * Jesse Sigal (@jasigal)
+ * Moritz Kiefer (@cocreature)
 
 
 ## [1.1.0.1] - 2017-10-04
@@ -44,7 +47,7 @@ Special thanks to those who contributed patches as part of this release:
 
 
 ## [1.0.0.0] - 2017-03-31
-  * initial release
+ * initial release
 
 
 [next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-native...HEAD

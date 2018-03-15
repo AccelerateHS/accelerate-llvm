@@ -10,13 +10,19 @@ Policy (PVP)](https://pvp.haskell.org)
 ### Added
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
+ * support for LLVM-6.0
+ * support for GHC-8.4
+
+### Fixed
+ * Fix for 32-bit `IsNan` and `IsInfinite` ([#407])
 
 ### Contributors
 
 Special thanks to those who contributed patches as part of this release:
 
-  * Trevor L. McDonell (@tmcdonell)
-  * Ryan Scott (@ryanglscott)
+ * Trevor L. McDonell (@tmcdonell)
+ * Ryan Scott (@ryanglscott)
+ * Moritz Kiefer (@cocreature)
 
 
 ## [1.1.0.0] - 2017-09-21
@@ -29,10 +35,12 @@ Special thanks to those who contributed patches as part of this release:
 
 
 ## [1.0.0.0] - 2017-03-31
-  * initial release
+ * initial release
 
 
 [next]:       https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...HEAD
 [1.1.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
+
+[#407]:       https://github.com/AccelerateHS/accelerate/issues/407
 
