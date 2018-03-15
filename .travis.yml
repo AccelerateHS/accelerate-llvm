@@ -130,7 +130,10 @@ install:
   # - travis_retry travis_wait 60 stack build accelerate --no-terminal
 
   # build dependencies
-  - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
+  # - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
+
+  # bootstrap
+  - travis_retry travis_wait 60 stack build --fast --no-terminal --only-dependencies accelerate
 
 script:
   - true
