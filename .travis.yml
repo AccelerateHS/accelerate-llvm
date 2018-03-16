@@ -11,8 +11,7 @@ sudo: required
 cache:
   timeout: 600
   directories:
-    - $HOME/.stack
-    - $HOME/llvm
+    - $HOME/.stack/snapshots
     - .stack-work/install
 
 before_cache:
