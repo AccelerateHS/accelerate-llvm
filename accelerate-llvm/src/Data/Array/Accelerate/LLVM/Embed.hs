@@ -27,6 +27,7 @@ import LLVM.AST.Type.Name
 
 import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftArrays, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun )
 import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -136,8 +137,8 @@ liftPreOpenAfun arch (Abody b) = [|| Abody $$(embedOpenAcc arch b) ||]
 liftPreOpenAccCommand
     :: forall arch aenv a. (Embed arch, Typeable arch, Typeable aenv)
     => arch
-    -> PreOpenAccCommand (CompiledOpenAcc arch) aenv a
-    -> Q (TExp (PreOpenAccCommand (ExecOpenAcc arch) aenv a))
+    -> PreOpenAccCommand CompiledOpenAcc arch aenv a
+    -> Q (TExp (PreOpenAccCommand ExecOpenAcc arch aenv a))
 liftPreOpenAccCommand arch pacc =
   let
       liftA :: (Typeable aenv', Typeable arrs) => CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
@@ -156,23 +157,24 @@ liftPreOpenAccCommand arch pacc =
   case pacc of
     Avar ix           -> [|| Avar $$(liftIdx ix) ||]
     Alet bnd body     -> [|| Alet $$(liftA bnd) $$(liftA body) ||]
+    Alloc sh          -> [|| Alloc $$(liftE sh) ||]
     Use a             -> [|| Use $$(liftArrays (arrays (undefined::a)) a) ||]
     Unit e            -> [|| Unit $$(liftE e) ||]
     Atuple tup        -> [|| Atuple $$(liftAtuple tup) ||]
     Aprj tix a        -> [|| Aprj $$(liftTupleIdx tix) $$(liftA a) ||]
     Apply f a         -> [|| Apply $$(liftAF f) $$(liftA a) ||]
-    Aforeign asm a    -> [|| Aforeign $$(liftForeign asm) $$(liftA a) ||]
     Acond p t e       -> [|| Acond $$(liftE p) $$(liftA t) $$(liftA e) ||]
     Awhile p f a      -> [|| Awhile $$(liftAF p) $$(liftAF f) $$(liftA a) ||]
     Reshape sh ix     -> [|| Reshape $$(liftE sh) $$(liftIdx ix) ||]
     Unzip tix ix      -> [|| Unzip $$(liftTupleIdx tix) $$(liftIdx ix) ||]
+    Aforeign{}        -> $internalError "liftPreOpenAcc" "using foreign functions from template-haskell is not supported yet"
 
 {-# INLINEABLE liftPreOpenAccSkeleton #-}
 liftPreOpenAccSkeleton
     :: forall arch aenv a. (Embed arch, Typeable arch, Typeable aenv)
     => arch
-    -> PreOpenAccSkeleton (CompiledOpenAcc arch) aenv a
-    -> Q (TExp (PreOpenAccSkeleton (ExecOpenAcc arch) aenv a))
+    -> PreOpenAccSkeleton CompiledOpenAcc arch aenv a
+    -> Q (TExp (PreOpenAccSkeleton ExecOpenAcc arch aenv a))
 liftPreOpenAccSkeleton arch pacc =
   let
       liftA :: Typeable arrs => CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
@@ -235,6 +237,7 @@ liftPreOpenExp arch pexp =
     Var ix                    -> [|| Var $$(liftIdx ix) ||]
     Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
     Const c                   -> [|| Const $$(liftConst (eltType (undefined::t)) c) ||]
+    Undef                     -> [|| Undef ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
     Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
     IndexNil                  -> [|| IndexNil ||]
@@ -256,6 +259,7 @@ liftPreOpenExp arch pexp =
     ShapeSize ix              -> [|| ShapeSize $$(liftE ix) ||]
     Intersect sh1 sh2         -> [|| Intersect $$(liftE sh1) $$(liftE sh2) ||]
     Union sh1 sh2             -> [|| Union $$(liftE sh1) $$(liftE sh2) ||]
+    Coerce x                  -> [|| Coerce $$(liftE x) ||]
 
 
 -- Utilities

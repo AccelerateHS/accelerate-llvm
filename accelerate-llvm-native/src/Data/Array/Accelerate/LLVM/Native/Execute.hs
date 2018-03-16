@@ -53,7 +53,9 @@ import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
+import Data.Time.Clock                                              ( getCurrentTime, diffUTCTime )
 import Data.Word                                                    ( Word8 )
+import Text.Printf                                                  ( printf )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Prelude                                            as P
@@ -97,6 +99,7 @@ instance Execute Native where
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op
+  aforeign      = aforeignOp
 
 
 -- Skeleton implementation
@@ -460,6 +463,21 @@ stencil2Op kernel gamma aenv stream arr brr =
   simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
 
 
+aforeignOp
+    :: (Arrays as, Arrays bs)
+    => String
+    -> (Stream -> as -> LLVM Native bs)
+    -> Stream
+    -> as
+    -> LLVM Native bs
+aforeignOp name asm stream arr = do
+  wallBegin <- liftIO $ getCurrentTime
+  result    <- Debug.timed Debug.dump_exec (\wall cpu -> printf "exec: %s %s" name (Debug.elapsedP wall cpu)) (asm stream arr)
+  wallEnd   <- liftIO $ getCurrentTime
+  liftIO $ Debug.addProcessorTime Debug.Native (realToFrac (diffUTCTime wallEnd wallBegin))
+  return result
+
+
 -- Skeleton execution
 -- ------------------
 
@@ -484,10 +502,12 @@ executeOp
     -> Range
     -> args
     -> IO ()
-executeOp ppt exe (name, f) gamma aenv r args =
-  runExecutable exe name ppt r $ \start end _tid ->
-  monitorProcTime              $
-    callFFI f retVoid =<< marshal (undefined::Native) () (start, end, args, (gamma, aenv))
+executeOp ppt exe (name, f) gamma aenv r args = do
+  args' <- marshal (undefined::Native) () (args, (gamma, aenv))
+  --
+  runExecutable exe name ppt r $ \start end _tid -> do
+   monitorProcTime             $
+    callFFI f retVoid (argInt start : argInt end : args')
 
 
 -- Standard C functions

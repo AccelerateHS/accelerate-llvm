@@ -101,6 +101,13 @@ instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
         marshalR (ArrayEltRpair aeR1 aeR2) ad =
           return DL.append `ap` marshalR aeR1 (fstArrayData ad)
                            `ap` marshalR aeR2 (sndArrayData ad)
+        --
+        marshalR (ArrayEltRvec2 aeR)  (AD_V2 ad)  = marshalR aeR ad
+        marshalR (ArrayEltRvec3 aeR)  (AD_V3 ad)  = marshalR aeR ad
+        marshalR (ArrayEltRvec4 aeR)  (AD_V4 ad)  = marshalR aeR ad
+        marshalR (ArrayEltRvec8 aeR)  (AD_V8 ad)  = marshalR aeR ad
+        marshalR (ArrayEltRvec16 aeR) (AD_V16 ad) = marshalR aeR ad
+        --
         marshalR ArrayEltRint     ad = marshalP ad
         marshalR ArrayEltRint8    ad = marshalP ad
         marshalR ArrayEltRint16   ad = marshalP ad
@@ -111,6 +118,7 @@ instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
         marshalR ArrayEltRword16  ad = marshalP ad
         marshalR ArrayEltRword32  ad = marshalP ad
         marshalR ArrayEltRword64  ad = marshalP ad
+        marshalR ArrayEltRhalf    ad = marshalP ad
         marshalR ArrayEltRfloat   ad = marshalP ad
         marshalR ArrayEltRdouble  ad = marshalP ad
         marshalR ArrayEltRchar    ad = marshalP ad

@@ -13,9 +13,21 @@ Policy (PVP)](https://pvp.haskell.org)
    specify the default set of GPUs to use with environment variable
    `ACCELERATE_LLVM_PTX_DEVICES` as a list of device ordinals.
 
+### Added
+ * support for half-precision floats
+ * support for struct-of-array-of-struct representations
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+
+
 ## [1.1.0.1] - 2018-01-08
 ### Fixed
  * add support for building with CUDA-9.x
+
 
 ## [1.1.0.0] - 2017-09-21
 ### Added
@@ -33,6 +45,7 @@ Policy (PVP)](https://pvp.haskell.org)
 ## [1.0.0.1] - 2017-05-25
 ### Fixed
   * [#386] (partial fix)
+
 
 ## [1.0.0.0] - 2017-03-31
   * initial release

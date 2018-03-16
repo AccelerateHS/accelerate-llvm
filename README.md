@@ -3,6 +3,8 @@ An LLVM backend for the Accelerate Array Language
 
 [![Travis](https://img.shields.io/travis/AccelerateHS/accelerate-llvm/master.svg?label=linux)](https://travis-ci.org/AccelerateHS/accelerate-llvm)
 [![AppVeyor](https://img.shields.io/appveyor/ci/tmcdonell/accelerate-llvm/master.svg?label=windows)](https://ci.appveyor.com/project/tmcdonell/accelerate-llvm)
+[![Stackage LTS](https://stackage.org/package/accelerate-llvm/badge/lts)](https://stackage.org/lts/package/accelerate-llvm)
+[![Stackage Nightly](https://stackage.org/package/accelerate-llvm/badge/nightly)](https://stackage.org/nightly/package/accelerate-llvm)
 [![Hackage](https://img.shields.io/hackage/v/accelerate-llvm.svg)](https://hackage.haskell.org/package/accelerate-llvm)
 [![Docker Automated build](https://img.shields.io/docker/automated/tmcdonell/accelerate-llvm.svg)](https://hub.docker.com/r/tmcdonell/accelerate-llvm/)
 [![Docker status](https://images.microbadger.com/badges/image/tmcdonell/accelerate-llvm.svg)](https://microbadger.com/images/tmcdonell/accelerate-llvm)

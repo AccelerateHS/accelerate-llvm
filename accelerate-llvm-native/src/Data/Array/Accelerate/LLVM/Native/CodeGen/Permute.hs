@@ -176,16 +176,16 @@ mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
           Exchange
             -> writeArray arrOut j r
           --
-          _ | SingleTuple s <- eltType (undefined::e)
-            , Just adata    <- gcast (irArrayData arrOut)
-            , Just r'       <- gcast r
+          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
+            , Just adata                        <- gcast (irArrayData arrOut)
+            , Just r'                           <- gcast r
             -> do
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   case s of
-                    NumScalarType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
-                    NumScalarType t | RMW.Add <- rmw  -> atomicCAS_rmw s (A.add t r') addr
-                    NumScalarType t | RMW.Sub <- rmw  -> atomicCAS_rmw s (A.sub t r') addr
+                    NumSingleType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+                    NumSingleType t | RMW.Add <- rmw  -> atomicCAS_rmw s (A.add t r') addr
+                    NumSingleType t | RMW.Sub <- rmw  -> atomicCAS_rmw s (A.sub t r') addr
                     _ -> case rmw of
                            RMW.Min                    -> atomicCAS_cmp s A.lt addr (op s r')
                            RMW.Max                    -> atomicCAS_cmp s A.gt addr (op s r')
@@ -270,7 +270,7 @@ atomically barriers i action = do
   -- we spin until it becomes available.
   setBlock spin
   old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
-  ok   <- A.eq scalarType old unlocked
+  ok   <- A.eq singleType old unlocked
   _    <- cbr ok crit spin
 
   -- We just acquired the lock; perform the critical section then release the
@@ -296,9 +296,11 @@ ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
 ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
   where
     go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
-    go UnitTuple           ()          OP_Unit        = return (lift True)
-    go (PairTuple tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
+    go TypeRunit           ()          OP_Unit        = return (lift True)
+    go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
                                                            y <- go tsz isz sz
                                                            land' x y
-    go (SingleTuple t)     ig         sz              = A.eq t (ir t (scalar t ig)) (ir t (op' t sz))
+    go (TypeRscalar s)     ig         sz              = case s of
+                                                          SingleScalarType t -> A.eq t (ir t (single t ig)) (ir t (op' t sz))
+                                                          VectorScalarType{} -> $internalError "ignore" "unexpected shape type"
 

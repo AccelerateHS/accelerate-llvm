@@ -31,9 +31,10 @@ import Control.Exception
 import Control.Monad
 import Data.Hashable
 import Text.PrettyPrint
+import Prelude                                                  hiding ( (<>) )
 
-import GHC.Base
-import GHC.Ptr
+import GHC.Base                                                 ( Int(..), addr2Int#, )
+import GHC.Ptr                                                  ( Ptr(..) )
 
 
 -- | An execution context, which is tied to a specific device and CUDA execution

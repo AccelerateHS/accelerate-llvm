@@ -21,6 +21,7 @@ import Data.Array.Accelerate.Debug                      hiding ( timed, elapsed 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event
 
+import Control.Monad.Trans
 import Control.Concurrent
 import Data.Time.Clock
 import System.CPUTime
@@ -43,31 +44,32 @@ timed f msg =
   monitorProcTime (getFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
 
 monitorProcTime
-    :: IO Bool
+    :: MonadIO m
+    => IO Bool
     -> (Double -> Double -> Double -> IO ())
     -> Maybe Stream
-    -> IO ()
-    -> IO ()
+    -> m a
+    -> m a
 {-# INLINE monitorProcTime #-}
 monitorProcTime enabled display stream action = do
-  yes <- if debuggingIsEnabled then enabled else return False
+  yes <- if debuggingIsEnabled then liftIO enabled else return False
   if yes
     then do
-      gpuBegin  <- Event.create []
-      gpuEnd    <- Event.create []
-      wallBegin <- getCurrentTime
-      cpuBegin  <- getCPUTime
-      Event.record gpuBegin stream
-      action
-      Event.record gpuEnd stream
-      cpuEnd    <- getCPUTime
-      wallEnd   <- getCurrentTime
+      gpuBegin  <- liftIO $ Event.create []
+      gpuEnd    <- liftIO $ Event.create []
+      wallBegin <- liftIO $ getCurrentTime
+      cpuBegin  <- liftIO $ getCPUTime
+      _         <- liftIO $ Event.record gpuBegin stream
+      result    <- action
+      _         <- liftIO $ Event.record gpuEnd stream
+      cpuEnd    <- liftIO $ getCPUTime
+      wallEnd   <- liftIO $ getCurrentTime
 
       -- Wait for the GPU to finish executing then display the timing execution
       -- message. Do this in a separate thread so that the remaining kernels can
       -- be queued asynchronously.
       --
-      _         <- forkIO $ do
+      _         <- liftIO . forkIO $ do
         Event.block gpuEnd
         diff    <- Event.elapsedTime gpuBegin gpuEnd
         let gpuTime  = float2Double $ diff * 1E-3                   -- milliseconds
@@ -79,7 +81,7 @@ monitorProcTime enabled display stream action = do
         --
         display wallTime cpuTime gpuTime
       --
-      return ()
+      return result
 
     else
       action

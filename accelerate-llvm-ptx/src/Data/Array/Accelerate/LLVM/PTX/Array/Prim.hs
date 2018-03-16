@@ -141,8 +141,8 @@ pokeArrayR
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-pokeArrayR !from !to !ad =
-  blocking $ \st -> pokeArrayAsyncR st from to ad
+pokeArrayR !from !n !ad =
+  blocking $ \st -> pokeArrayAsyncR st from n ad
 
 {-# INLINEABLE pokeArrayAsyncR #-}
 pokeArrayAsyncR
@@ -152,9 +152,8 @@ pokeArrayAsyncR
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-pokeArrayAsyncR !stream !from !to !ad = do
-  let !n        = to - from
-      !bytes    = n    * sizeOf (undefined :: a)
+pokeArrayAsyncR !stream !from !n !ad = do
+  let !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
       !src      = CUDA.HostPtr (ptrsOfArrayData ad)
       !st       = unsafeGetValue stream
@@ -167,7 +166,7 @@ pokeArrayAsyncR !stream !from !to !ad = do
   liftIO (Debug.didCopyBytesToRemote (fromIntegral bytes))
 
 
--- | Read a single element from an array at a given row-major index
+-- | Read elements from an array at the given row-major index
 --
 {-# INLINEABLE indexArray #-}
 indexArray
@@ -179,9 +178,11 @@ indexArray !ad !i =
   blocking                                          $ \stream  ->
   withDevicePtr ad                                  $ \src     -> liftIO $
   bracket (CUDA.mallocHostArray [] 1) CUDA.freeHost $ \dst     -> do
-    let !st = unsafeGetValue stream
-    message $ "indexArray: " ++ showBytes (sizeOf (undefined::a))
-    Debug.didCopyBytesFromRemote (fromIntegral (sizeOf (undefined::a)))
+    let !st     = unsafeGetValue stream
+        !bytes  = sizeOf (undefined::a)
+    --
+    message $ "indexArray: " ++ showBytes bytes
+    Debug.didCopyBytesFromRemote (fromIntegral bytes)
     CUDA.peekArrayAsync 1 (src `CUDA.advanceDevPtr` i) dst (Just st)
     CUDA.block st
     touchLifetime stream
@@ -225,8 +226,8 @@ peekArrayR
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-peekArrayR !from !to !ad =
-  blocking $ \st -> peekArrayAsyncR st from to ad
+peekArrayR !from !n !ad =
+  blocking $ \st -> peekArrayAsyncR st from n ad
 
 {-# INLINEABLE peekArrayAsyncR #-}
 peekArrayAsyncR
@@ -236,9 +237,8 @@ peekArrayAsyncR
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-peekArrayAsyncR !stream !from !to !ad = do
-  let !n        = to - from
-      !bytes    = n    * sizeOf (undefined :: a)
+peekArrayAsyncR !stream !from !n !ad = do
+  let !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
       !st       = unsafeGetValue stream
@@ -291,8 +291,8 @@ copyArrayR
     -> ArrayData e
     -> ArrayData e
     -> LLVM PTX ()
-copyArrayR !from !to !src !dst =
-  blocking $ \st -> copyArrayAsyncR st from to src dst
+copyArrayR !from !n !src !dst =
+  blocking $ \st -> copyArrayAsyncR st from n src dst
 
 {-# INLINEABLE copyArrayAsyncR #-}
 copyArrayAsyncR
@@ -303,9 +303,8 @@ copyArrayAsyncR
     -> ArrayData e
     -> ArrayData e
     -> LLVM PTX ()
-copyArrayAsyncR !stream !from !to !ad_src !ad_dst = do
-  let !n        = to - from
-      !bytes    = n    * sizeOf (undefined :: a)
+copyArrayAsyncR !stream !from !n !ad_src !ad_dst = do
+  let !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
       !st       = unsafeGetValue stream
   --
@@ -364,8 +363,8 @@ copyArrayPeerR
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-copyArrayPeerR !ctx2 !mt2 !from !to !ad =
-  blocking $ \st -> copyArrayPeerAsyncR ctx2 mt2 st from to ad
+copyArrayPeerR !ctx2 !mt2 !from !n !ad =
+  blocking $ \st -> copyArrayPeerAsyncR ctx2 mt2 st from n ad
 
 {-# INLINEABLE copyArrayPeerAsyncR #-}
 copyArrayPeerAsyncR
@@ -379,9 +378,8 @@ copyArrayPeerAsyncR
     -> LLVM PTX ()
 copyArrayPeerAsyncR = error "copyArrayPeerAsyncR"
 {--
-copyArrayPeerAsyncR !ctx2 !mt2 !st !from !to !ad = do
-  let !n        = to - from
-      !bytes    = n    * sizeOf (undefined :: a)
+copyArrayPeerAsyncR !ctx2 !mt2 !st !from !n !ad = do
+  let !bytes    = n    * sizeOf (undefined :: a)
       !offset   = from * sizeOf (undefined :: a)
   src <- devicePtr mt1 ad       :: IO (CUDA.DevicePtr a)
   dst <- devicePtr mt2 ad       :: IO (CUDA.DevicePtr a)
