@@ -56,11 +56,11 @@ imapNestedFromTo (IR start) (IR end) extent body = go (eltType (undefined::sh)) 
     body' ix = body ix =<< intOfIndex extent ix
 
     go :: TupleType t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
-    go UnitTuple OP_Unit OP_Unit k
+    go TypeRunit OP_Unit OP_Unit k
       = k OP_Unit
 
-    go (PairTuple tsh tsz) (OP_Pair ssh ssz) (OP_Pair esh esz) k
-      | SingleTuple t <- tsz
+    go (TypeRpair tsh tsz) (OP_Pair ssh ssz) (OP_Pair esh esz) k
+      | TypeRscalar t <- tsz
       , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = go tsh ssh esh
       $ \sz      -> imapFromTo (IR ssz) (IR esz)
