@@ -29,6 +29,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
@@ -510,8 +511,51 @@ executeOp ppt exe (name, f) gamma aenv r args = do
     callFFI f retVoid (argInt start : argInt end : args')
 
 
+executeOpMultiDimensional
+  :: forall sh args aenv. (Marshalable args, Shape sh)
+  => Int
+  -> Executable
+  -> Function
+  -> Gamma aenv
+  -> Aval aenv
+  -> sh
+  -> sh
+  -> args
+  -> IO ()
+executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args = do
+  let range = IE (innermost start) (innermost end)
+  runExecutable exe name ppt range $ \s e _tid -> do
+    let
+      start' = changeInnermost start s
+      end'   = changeInnermost end   e
+    monitorProcTime $
+      callFFI f retVoid =<< marshal (undefined::Native) () () -- (start', end', args, (gamma, aenv))
+
+  where
+    innermost :: Shape sh => sh -> Int
+    innermost sh = go (eltType (undefined::sh)) (fromElt sh)
+      where
+        go :: TupleType t -> t -> Int
+        go TypeRunit () = 0
+        go (TypeRpair TypeRunit (TypeRscalar s)) ((), n)
+          | Just Refl <- matchScalarType s (scalarType :: ScalarType Int) = n
+        go (TypeRpair tt _) (dims, _) = go tt dims
+
+    changeInnermost :: Shape sh => sh -> Int -> sh
+    changeInnermost sh = toElt . go (eltType (undefined::sh)) (fromElt sh)
+      where
+        go :: TupleType t -> t -> Int -> t
+        go TypeRunit () _ = ()
+        go (TypeRpair tt (TypeRscalar s)) (dims, d) n
+          | Just Refl <- matchScalarType s (scalarType :: ScalarType Int)
+          = case tt of
+            TypeRunit -> ((), n)
+            _         -> (go tt dims n, d)
+
+
+
 -- Standard C functions
--- --------------------
+-- -------------------- 
 
 memset :: Ptr Word8 -> Word8 -> Int -> IO ()
 memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
