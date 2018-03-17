@@ -17,6 +17,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
   -- References
   Name(..),
   local, global,
+  eltLocal,
 
   -- Arrays
   irArray,
@@ -61,6 +62,14 @@ import qualified Data.IntMap                                        as IM
 
 local :: ScalarType a -> Name a -> IR a
 local t x = ir t (LocalReference (PrimType (ScalarPrimType t)) x)
+
+
+eltLocal :: forall a. Elt a => Name a -> IR a
+eltLocal n = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (name n i))
+  where
+    name (Name   n) i = Name $ n <> fromString (printf ".%d" i)
+    name (UnName n) i = Name $ fromString (printf "x.%d.%d" n i)
+
 
 global :: ScalarType a -> Name a -> IR a
 global t x = ir t (ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) x))
