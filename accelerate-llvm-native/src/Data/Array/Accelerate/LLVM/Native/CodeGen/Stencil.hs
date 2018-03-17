@@ -41,6 +41,7 @@ import Data.Proxy
 import Data.String
 
 import Prelude
+import Control.Monad
 
 
 -- Parameters for boundary region
@@ -52,31 +53,30 @@ faceIndex =
   let
     faceIndex = "faceIndex"
   in
-    ( local scalarType faceIndex
-    , [ scalarParameter scalarType faceIndex
-      ]
+    ( localElt faceIndex
+    , eltParameter faceIndex
     )
 
 
 -- Parameters for inner region
 range
     :: (Shape sh)
-    -- => Proxy sh                 -- Dummy type
-    => ( IR sh                  -- The multidimensional start index
+    => Proxy sh                 -- Dummy type
+    -> ( IR sh                  -- The multidimensional start index
        , IR sh                  -- The multidimensional end   index
        , [LLVM.Parameter]
        )
-range =
+range _ =
   let
-    t     = undefined
     start = "start"
     end   = "end"
   in
-    ( local t start
-    , local t end
-    , [ scalarParameter t start
-      , scalarParameter t end
-      ]
+    ( localElt start
+    , localElt end
+    , join
+        [ eltParameter start
+        , eltParameter end
+        ]
     )
 
 
@@ -92,7 +92,7 @@ mkStencil1
 mkStencil1 _arch uid aenv f b1 ir1 =
   let
     (faceN, boundaryParams)                               = faceIndex
-    (innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range
+    (innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range (Proxy :: Proxy sh)
     (arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array sh b))
     paramEnv                                              = envParam aenv
   in foldr1 (+++) <$> sequence
