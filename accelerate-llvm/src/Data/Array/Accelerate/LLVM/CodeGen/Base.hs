@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
   -- Functions & parameters
   call,
   scalarParameter, ptrParameter,
+  eltParameter,
   envParam,
   arrayParam,
 
@@ -65,10 +66,7 @@ local t x = ir t (LocalReference (PrimType (ScalarPrimType t)) x)
 
 
 eltLocal :: forall a. Elt a => Name a -> IR a
-eltLocal n = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (name n i))
-  where
-    name (Name   n) i = Name $ n <> fromString (printf ".%d" i)
-    name (UnName n) i = Name $ fromString (printf "x.%d.%d" n i)
+eltLocal n = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
 
 global :: ScalarType a -> Name a -> IR a
@@ -89,6 +87,13 @@ arrayName (UnName n) i = arrayName (fromString (show n)) i
 shapeName :: Name (Array sh e) -> Int -> Name sh'       -- for the i-th component of the shape structure
 shapeName (Name n)   i = Name (n <> fromString (printf ".sh%d" i))
 shapeName (UnName n) i = shapeName (fromString (show n)) i
+
+
+-- | Names combined with traversing
+--
+rename :: Name t -> Int -> Name t'
+rename (Name   n) i = Name $ n <> fromString (printf ".%d" i)
+rename (UnName n) i = Name $ fromString (printf "x.%d.%d" n i)
 
 -- | Names of array data elements
 --
@@ -186,6 +191,9 @@ call f attrs = do
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
+
+eltParameter :: forall t. Elt t => Name t -> [LLVM.Parameter]
+eltParameter n = travTypeToList (undefined::t) (\s i -> scalarParameter s (rename n i))
 
 ptrParameter :: ScalarType t -> Name (Ptr t) -> LLVM.Parameter
 ptrParameter t x = downcast (Parameter (PtrPrimType (ScalarPrimType t) defaultAddrSpace) x)
