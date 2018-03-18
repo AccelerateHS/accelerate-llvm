@@ -575,7 +575,8 @@ executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args = do
       start' = changeInnermost start s
       end'   = changeInnermost end   e
     monitorProcTime $
-      callFFI f retVoid =<< marshal (undefined::Native) () () -- (start', end', args, (gamma, aenv))
+      callFFI f retVoid =<< marshal (undefined::Native) ()
+        (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
 
   where
     innermost :: Shape sh => sh -> Int
