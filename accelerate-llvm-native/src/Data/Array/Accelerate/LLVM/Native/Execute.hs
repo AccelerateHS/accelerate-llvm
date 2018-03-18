@@ -127,6 +127,35 @@ simpleOp exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
     executeOp defaultLargePPT fillP fun gamma aenv (IE 0 (size sh)) out
     return out
 
+simpleOpNestedLoops
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> LLVM Native (Array sh e)
+simpleOpNestedLoops exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
+  let fun = case functionTable nativeExecutable of
+              f:_ -> f
+              _   -> $internalError "simpleOpNestedLoops" "no functions found"
+  --
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray sh
+    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv (zeroes sh) sh out
+    return out
+
+--
+zeroes :: forall sh. (Shape sh) => sh -> sh
+zeroes sh = toElt $ go (eltType (undefined::sh)) (fromElt sh)
+  where
+    go :: TupleType t -> t -> t
+    go TypeRunit () = ()
+    go (TypeRpair tts (TypeRscalar s)) (dims, _)
+      | Just Refl <- matchScalarType s (scalarType :: ScalarType Int) = (go tts dims, 0) 
+
+--
 simpleNamed
     :: (Shape sh, Elt e)
     => ShortByteString
