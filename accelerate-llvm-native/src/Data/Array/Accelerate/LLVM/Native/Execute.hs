@@ -172,6 +172,23 @@ simpleNamed name exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -
     executeOp defaultLargePPT fillP (nativeExecutable !# name) gamma aenv (IE 0 (size sh)) out
     return out
 
+--
+simpleNamedNestedLoops
+    :: (Shape sh, Elt e)
+    => ShortByteString
+    -> ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> LLVM Native (Array sh e)
+simpleNamedNestedLoops name exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray sh
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv (zeroes sh) sh out
+    return out
+
 
 -- Note: [Reductions]
 --
