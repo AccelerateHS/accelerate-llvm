@@ -30,6 +30,8 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+import Data.Proxy
+
 
 -- C Code
 -- ======
@@ -94,3 +96,25 @@ mkMap uid aenv apply IRDelayed{..} =
 
     return_
 
+
+mkMapNested
+  :: forall aenv sh a b. Elt b
+  => UID
+  -> Gamma            aenv
+  -> IRFun1    Native aenv (a -> b)
+  -> IRDelayed Native aenv (Array sh a)
+  -> CodeGen (IROpenAcc Native aenv (Array sh b))
+mkMapNested uid aenv apply IRDelayed{..} =
+  let
+      (start, end, paramGang)   = gangParamNested (Proxy :: Proxy sh)
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc uid "mapNested" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
+      xs <- app1 delayedLinearIndex i
+      ys <- app1 apply xs
+      writeArray arrOut i ys
+
+    return_
