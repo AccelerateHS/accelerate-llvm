@@ -16,6 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
   where
 
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -29,7 +30,9 @@ import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
+import Control.Monad
 import Data.Monoid
+import Data.Proxy
 import Data.String
 import Text.Printf
 
@@ -44,6 +47,17 @@ gangParam =
       end       = "ix.end"
   in
   (local t start, local t end, [ scalarParameter t start, scalarParameter t end ] )
+
+
+-- | Generate function parameters that will specify the first and last (nested)
+-- index of the array this thread should evaluate.
+--
+gangParamNested :: Shape sh => Proxy sh -> (IR sh, IR sh, [LLVM.Parameter])
+gangParamNested Proxy =
+  let start     = "ix.start"
+      end       = "ix.end"
+  in
+  (eltLocal start, eltLocal end, join [ eltParameter start, eltParameter end ] )
 
 
 -- | The thread ID of a gang worker
