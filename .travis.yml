@@ -4,7 +4,7 @@
 # relevant version of LLVM as (a very old version of) the CUDA toolkit (4.0).
 # Caches the 'stack' build directory to speed subsequent compilations.
 #
-language: generic
+language: minimal
 dist: trusty
 sudo: required
 
