@@ -85,8 +85,8 @@ import Foreign.Ptr
 instance Execute Native where
   map           = simpleOpNestedLoops
   generate      = simpleOp
-  transform     = simpleOp
-  backpermute   = simpleOp
+  transform     = simpleOpNestedLoops
+  backpermute   = simpleOpNestedLoops
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
