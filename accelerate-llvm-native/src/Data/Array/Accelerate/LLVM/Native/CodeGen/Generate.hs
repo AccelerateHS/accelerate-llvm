@@ -29,6 +29,7 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
+import Data.Proxy
 
 -- Construct a new array by applying a function to each index. Each thread
 -- processes multiple adjacent elements.
@@ -54,3 +55,22 @@ mkGenerate uid aenv apply =
 
     return_
 
+mkGenerateNested
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => UID
+    -> Gamma aenv
+    -> IRFun1 Native aenv (sh -> e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+mkGenerateNested uid aenv apply =
+  let
+      (start, end, paramGang)   = gangParamNested (Proxy :: Proxy sh)
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+  in
+  makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
+      r  <- app1 apply ix                       -- apply generator function
+      writeArray arrOut i r                     -- store result
+
+    return_
