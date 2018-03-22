@@ -177,7 +177,7 @@ foldOp
     -> LLVM PTX (Array sh e)
 foldOp exe gamma aenv stream sh@(sx :. _)
   = case size sh of
-      0 -> simpleNamed "generate" exe gamma aenv stream (listToShape (P.map (max 1) (shapeToList sx)))
+      0 -> simpleNamed "generate" exe gamma aenv stream sx
       _ -> foldCore exe gamma aenv stream sh
 
 foldCore
