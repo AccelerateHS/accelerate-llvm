@@ -189,7 +189,7 @@ foldOp
     -> LLVM Native (Array sh e)
 foldOp kernel gamma aenv stream sh@(sx :. _) =
   case size sh of
-    0 -> simpleNamed "generate" kernel gamma aenv stream (listToShape (P.map (max 1) (shapeToList sx)))
+    0 -> simpleNamed "generate" kernel gamma aenv stream sx
     _ -> foldCore kernel gamma aenv stream sh
 
 foldCore

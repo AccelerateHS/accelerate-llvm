@@ -10,7 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 7b6ac6e65497ac8dc9d5d1ea048b4a8cb20dd1c1
+  commit: a4d3a875d4f4e80a237e87c92cd6f34a07bfc24e
 
 - git:    https://github.com/deepfire/hashtables.git
   commit: b9eb4b10a50bd6250330422afecc065339a32412
