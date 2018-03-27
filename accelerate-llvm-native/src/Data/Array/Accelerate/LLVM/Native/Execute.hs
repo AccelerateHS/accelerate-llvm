@@ -568,15 +568,21 @@ executeOpMultiDimensional
   -> sh
   -> args
   -> IO ()
-executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args = do
-  let range = IE (innermost start) (innermost end)
-  runExecutable exe name ppt range $ \s e _tid -> do
-    let
-      start' = changeInnermost start s
-      end'   = changeInnermost end   e
-    monitorProcTime $
-      callFFI f retVoid =<< marshal (undefined::Native) ()
-        (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
+executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args =
+  case rank (undefined::sh) of
+    0 -> do
+      runExecutable exe name ppt (IE 0 1) $ \_s _e _tid -> do
+        monitorProcTime $
+          callFFI f retVoid =<< marshal (undefined::Native) () (args, (gamma, aenv))
+    _ -> do
+      let range = IE (innermost start) (innermost end)
+      runExecutable exe name ppt range $ \s e _tid -> do
+        let
+          start' = changeInnermost start s
+          end'   = changeInnermost end   e
+        monitorProcTime $
+          callFFI f retVoid =<< marshal (undefined::Native) ()
+            (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
 
   where
     innermost :: Shape sh => sh -> Int
