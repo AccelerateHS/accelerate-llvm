@@ -14,12 +14,14 @@ module Data.Array.Accelerate.LLVM.PTX.Pool (
 
   Pool,
   create, with, take, put,
+  unsafeWith,
 
 ) where
 
-import Data.Maybe
 import Control.Concurrent.MVar
 import Control.Exception
+import Data.Maybe
+import System.IO.Unsafe
 import Prelude                                                      hiding ( take )
 
 #if __GLASGOW_HASKELL__ >= 800
@@ -45,6 +47,11 @@ create (x:xs) = Pool <$> newMVar (x :| xs)
 with :: Pool a -> (a -> IO b) -> IO b
 with pool action =
   bracket (take pool) (put pool) action
+
+unsafeWith :: Pool a -> (a -> b) -> b
+unsafeWith pool action =
+  unsafePerformIO $ with pool (pure . action)
+
 
 -- | Take an item from the pool. This will block until one is available.
 --
