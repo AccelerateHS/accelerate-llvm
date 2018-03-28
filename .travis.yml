@@ -118,8 +118,8 @@ install:
   - cabal --version
   - stack --version
   - c2hs --version
-  - llc --version; true
-  - opt --version; true
+  - llc-${LLVM:0:3} --version; true
+  - opt-${LLVM:0:3} --version; true
 
   # how much do we have to do?
   - stack build --no-terminal --dry-run
