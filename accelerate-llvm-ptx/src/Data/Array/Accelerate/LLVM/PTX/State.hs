@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.State (
   createTargetForDevice, createTargetFromContext,
 
   Pool(..),
-  withPool,
+  withPool, unsafeWithPool,
   defaultTarget,
   defaultTargetPool,
 
@@ -117,13 +117,16 @@ simpleIO = Executable $ \_name _ppt range action ->
 --
 data Pool a = Pool
     { managed   :: {-# UNPACK #-} !(Pool.Pool a)
-    , unsafeGet :: [a]
+    , unmanaged :: [a]
     }
 
 -- Evaluate a thing given an execution context from the default pool
 --
 withPool :: Pool a -> (a -> IO b) -> IO b
 withPool p = Pool.with (managed p)
+
+unsafeWithPool :: Pool a -> (a -> b) -> b
+unsafeWithPool p = Pool.unsafeWith (managed p)
 
 
 -- Top-level mutable state
@@ -138,7 +141,7 @@ withPool p = Pool.with (managed p)
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
-defaultTarget = head (unsafeGet defaultTargetPool)
+defaultTarget = head (unmanaged defaultTargetPool)
 
 -- | Create a shared resource pool of the available CUDA devices.
 --
