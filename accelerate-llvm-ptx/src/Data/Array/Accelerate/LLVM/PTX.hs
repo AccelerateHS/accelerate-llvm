@@ -235,9 +235,10 @@ runN f = exec
 -- | As 'runN', but execute using the specified target device.
 --
 runNWith :: Afunction f => PTX -> f -> AfunctionR f
-runNWith target f = runNWith' target acc
+runNWith target f = exec
   where
     !acc  = convertAfunWith config f
+    !exec = runNWith' target acc
 
 runNWith' :: PTX -> DelayedAfun f -> f
 runNWith' target acc = exec
@@ -289,9 +290,10 @@ runNAsync f = exec
 -- | As 'runNWith', but execute asynchronously.
 --
 runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => PTX -> f -> r
-runNAsyncWith target f = runNAsyncWith' target acc
+runNAsyncWith target f = exec
   where
     !acc  = convertAfunWith config f
+    !exec = runNAsyncWith' target acc
 
 runNAsyncWith' :: RunAsync f => PTX -> DelayedAfun (RunAsyncR f) -> f
 runNAsyncWith' target acc = runAsync' target afun (return Aempty)
