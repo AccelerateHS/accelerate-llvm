@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
-## [next]
+## [1.2.0.0] - 2018-04-03
 ### Changed
  * `run` variants which do not take an explicit execution context now execute on
    the first available device in an exclusive fashion. Multi-GPU systems can
@@ -55,7 +55,7 @@ Special thanks to those who contributed patches as part of this release:
  * initial release
 
 
-[next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-ptx...HEAD
+[1.2.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-ptx...v1.2.0.0
 [1.1.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...1.1.0.1-ptx
 [1.1.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.0.0.1

@@ -9,9 +9,7 @@ packages:
 - 'accelerate-llvm-ptx'
 
 extra-deps:
-- git:    https://github.com/tmcdonell/accelerate.git
-  commit: aaee256106530f106ed7dce160f7acde571de8eb
-
+- 'accelerate-1.2.0.0'
 - 'Cabal-2.0.1.1'
 - 'cuda-0.9.0.3'
 - 'hashtables-1.2.3.0'
@@ -28,7 +26,7 @@ extra-deps:
 # system-ghc: true
 
 # Require a specific version of stack, using version ranges
-require-stack-version: ">= 1.6"
+# require-stack-version: ">= 1.6"
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386

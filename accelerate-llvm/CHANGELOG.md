@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
-## [next]
+## [1.2.0.0] - 2018-04-03
 ### Added
  * support for half-precision floats
  * support for struct-of-array-of-struct representations
@@ -38,7 +38,7 @@ Special thanks to those who contributed patches as part of this release:
  * initial release
 
 
-[next]:       https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...HEAD
+[1.2.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...v1.2.0.0
 [1.1.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
 
