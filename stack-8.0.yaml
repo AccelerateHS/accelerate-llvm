@@ -9,10 +9,12 @@ packages:
 - 'accelerate-llvm-ptx'
 
 extra-deps:
-- 'accelerate-1.1.1.0'
-- 'Cabal-2.0.0.2'
-- 'cuda-0.9.0.0'
-- 'nvvm-0.8.0.2'
+- 'accelerate-1.2.0.0'
+- 'Cabal-2.0.1.1'
+- 'cuda-0.9.0.3'
+- 'hashtables-1.2.3.0'
+- 'nvvm-0.8.0.3'
+- 'tasty-hedgehog-0.2.0.0'
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -24,8 +26,7 @@ extra-deps:
 # system-ghc: true
 
 # Require a specific version of stack, using version ranges
-# require-stack-version: -any # Default
-# require-stack-version: >= 0.1.4.0
+# require-stack-version: ">= 1.6"
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386

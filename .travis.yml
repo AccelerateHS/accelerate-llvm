@@ -4,15 +4,14 @@
 # relevant version of LLVM as (a very old version of) the CUDA toolkit (4.0).
 # Caches the 'stack' build directory to speed subsequent compilations.
 #
-language: generic
+language: minimal
 dist: trusty
 sudo: required
 
 cache:
   timeout: 600
   directories:
-    - $HOME/.stack
-    - $HOME/llvm
+    - $HOME/.stack/snapshots
     - .stack-work/install
 
 before_cache:
@@ -25,10 +24,9 @@ addons:
       - hvr-ghc
       - ubuntu-toolchain-r-test
       - llvm-toolchain-trusty
-      - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-4.0 main'
-        key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
-      - sourceline: 'deb http://apt.llvm.org/trusty/ llvm-toolchain-trusty-5.0 main'
-        key_url: 'http://apt.llvm.org/llvm-snapshot.gpg.key'
+      - llvm-toolchain-trusty-4.0
+      - llvm-toolchain-trusty-5.0
+      - llvm-toolchain-trusty-6.0
 
     packages: &apt_packages
       - g++-4.8
@@ -58,7 +56,7 @@ matrix:
             - cabal-install-1.24
             - llvm-4.0-dev
 
-    - env: GHC=8.2.1 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
+    - env: GHC=8.2.2 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.2"
       addons:
         apt:
@@ -67,6 +65,16 @@ matrix:
             - *apt_packages
             - cabal-install-2.0
             - llvm-5.0-dev
+
+    - env: GHC=8.4.1 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.4"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-2.0
+            - llvm-6.0-dev
 
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
@@ -92,30 +100,45 @@ before_install:
   - source .travis/update-ghc-settings.sh
   - travis_retry stack install c2hs --fast --no-terminal
 
+  # ghc bug? error while loading shared libraries: libffi.so.7
+  - |
+      case ${GHC} in
+        8.4.1) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.1/rts:$LD_LIBRARY_PATH ;;
+      esac
+
+  # https://github.com/haskell/haddock/issues/775
+  - |
+      case ${GHC} in
+        8.4.*) ;;
+        *)     export HADDOCK="--haddock --no-haddock-deps" ;;
+      esac
+
 install:
-  - echo "$(ghc --version) [$(ghc --print-project-git-commit-id 2> /dev/null || echo '?')]"
+  - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
   - c2hs --version
-  - llc --version; true
-  - opt --version; true
-  - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install --only-dependencies || exit 1
-      else
-        travis_retry stack build --only-dependencies --fast --no-terminal --no-haddock-deps || exit 1
-      fi
+  - llc-${LLVM:0:3} --version; true
+  - opt-${LLVM:0:3} --version; true
+
+  # how much do we have to do?
+  - stack build --no-terminal --dry-run
+
+  # build accelerate with optimisations (required for nofib#286)
+  # - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
+  # - travis_retry travis_wait 60 stack build accelerate --no-terminal
+
+  # build dependencies
+  - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
-  - |
-      if [ ${GHC} == head -o ! -e stack.yaml ]; then
-        travis_retry cabal install || exit 1
-        travis_retry cabal haddock || exit 1
-      else
-        travis_retry stack build accelerate-llvm        --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-native --fast --no-terminal --haddock --no-haddock-deps || exit 1
-        travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --haddock --no-haddock-deps || exit 1
-      fi
+  - travis_retry stack build accelerate-llvm        --fast --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-native --fast --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --test --no-run-tests ${HADDOCK}
+
+  # Run test suite(s)
+  # retry due to intermittent failures \:
+  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
