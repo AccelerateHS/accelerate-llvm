@@ -67,7 +67,7 @@ mkGenerateNested uid aenv apply =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "generateNested" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
       r  <- app1 apply ix                       -- apply generator function
