@@ -143,17 +143,8 @@ simpleOpNestedLoops exe gamma aenv () sh = withExecutable exe $ \nativeExecutabl
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv (zeroes sh) sh out
+    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv empty sh out
     return out
-
---
-zeroes :: forall sh. (Shape sh) => sh -> sh
-zeroes sh = toElt $ go (eltType (undefined::sh)) (fromElt sh)
-  where
-    go :: TupleType t -> t -> t
-    go TypeRunit () = ()
-    go (TypeRpair tts (TypeRscalar s)) (dims, _)
-      | Just Refl <- matchScalarType s (scalarType :: ScalarType Int) = (go tts dims, 0) 
 
 --
 simpleNamed
@@ -186,7 +177,7 @@ simpleNamedNestedLoops name exe gamma aenv () sh = withExecutable exe $ \nativeE
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv (zeroes sh) sh out
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv empty sh out
     return out
 
 
@@ -509,16 +500,16 @@ permuteOpNested exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativ
   if ncpu == 1 || n <= defaultLargePPT
     then liftIO $ do
       -- sequential permutation
-      executeOpMultiDimensional 1 fillS (nativeExecutable !# "permuteSNested") gamma aenv (zeroes shIn) shIn out
+      executeOpMultiDimensional 1 fillS (nativeExecutable !# "permuteSNested") gamma aenv empty shIn out
 
     else liftIO $ do
       -- parallel permutation
       case lookupFunction "permuteP_rmwNested" nativeExecutable of
-        Just f  -> executeOpMultiDimensional defaultLargePPT fillP f gamma aenv (zeroes shIn) shIn out
+        Just f  -> executeOpMultiDimensional defaultLargePPT fillP f gamma aenv empty shIn out
         Nothing -> do
           barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
           memset (ptrsOfArrayData adb) 0 m
-          executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "permuteP_mutexNested") gamma aenv (zeroes shIn) shIn (out, barrier)
+          executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "permuteP_mutexNested") gamma aenv empty shIn (out, barrier)
 
   return out
 
