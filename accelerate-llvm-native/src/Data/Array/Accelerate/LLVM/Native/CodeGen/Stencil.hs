@@ -80,9 +80,9 @@ mkStencil1 _arch uid aenv f b1 ir1 =
     paramEnv                                              = envParam aenv
   in foldr1 (+++) <$> sequence
   [ makeOpenAcc uid "stencil1_boundary" (boundaryParams ++ paramOut ++ paramEnv) $
-        mkStencil1_boundary aenv arrOut f b1 ir1 faceN
+        mkStencil1_boundary aenv arrOut f  Nothing  ir1 faceN
   , makeOpenAcc uid "stencil1_inner"    (innerParams    ++ paramOut ++ paramEnv) $
-        mkStencil1_inner    aenv arrOut f b1 ir1 innerStart innerEnd
+        mkStencil1_inner    aenv arrOut f (Just b1) ir1 innerStart innerEnd
   ]
 
 
@@ -91,7 +91,7 @@ mkStencil1_boundary
   => Gamma aenv
   -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
-  -> IRBoundary Native aenv (Array sh a)
+  -> Maybe (IRBoundary Native aenv (Array sh a))
   -> IRManifest Native aenv (Array sh a)
   -> IR Int
   -> CodeGen ()
@@ -172,7 +172,7 @@ mkStencil1_inner
   => Gamma aenv
   -> IRArray (Array sh b)
   -> IRFun1 Native aenv (stencil -> b)
-  -> IRBoundary Native aenv (Array sh a)
+  -> Maybe (IRBoundary Native aenv (Array sh a))
   -> IRManifest Native aenv (Array sh a)
   -> IR sh
   -> IR sh

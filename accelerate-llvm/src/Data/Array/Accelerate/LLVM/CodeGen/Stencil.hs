@@ -42,11 +42,14 @@ import Prelude
 --
 stencilAccess
     :: Stencil sh e stencil
-    => IRBoundary arch aenv (Array sh e)
+    => Maybe (IRBoundary arch aenv (Array sh e))
     -> IRArray (Array sh e)
     -> IR sh
     -> CodeGen (IR stencil)
-stencilAccess bndy arr = goR stencil (bounded bndy arr)
+stencilAccess mbndy arr ix =
+  case mbndy of
+    Nothing   -> goR stencil (inbounds     arr) ix
+    Just bndy -> goR stencil (bounded bndy arr) ix
   where
     -- Base cases, nothing interesting to do here since we know the lower
     -- dimension is Z.
@@ -156,6 +159,18 @@ stencilAccess bndy arr = goR stencil (bounded bndy arr)
            <*> goR s7 (rf'   2)  ix'
            <*> goR s8 (rf'   3)  ix'
            <*> goR s9 (rf'   4)  ix'
+
+
+-- Assume that every index is inbounds of the array (bounds checks or boundary
+-- conditions).
+--
+inbounds
+    :: (Shape sh, Elt e)
+    => IRArray (Array sh e)
+    -> IR sh
+    -> CodeGen (IR e)
+inbounds arr@IRArray{..} ix = do
+  readArray arr =<< intOfIndex irArrayShape ix
 
 
 -- Apply boundary conditions to the given index

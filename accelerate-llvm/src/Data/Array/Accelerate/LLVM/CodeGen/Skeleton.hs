@@ -262,7 +262,7 @@ defaultStencil1
     -> CodeGen (IROpenAcc arch aenv (Array sh b))
 defaultStencil1 arch uid aenv f boundary (IRManifest v)
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten <- stencilAccess boundary (irArray (aprj v aenv)) ix
+      sten <- stencilAccess (Just boundary) (irArray (aprj v aenv)) ix
       app1 f sten
 
 {-# INLINEABLE defaultStencil2 #-}
@@ -279,7 +279,7 @@ defaultStencil2
     -> CodeGen (IROpenAcc arch aenv (Array sh c))
 defaultStencil2 arch uid aenv f boundary1 (IRManifest v1) boundary2 (IRManifest v2)
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten1 <- stencilAccess boundary1 (irArray (aprj v1 aenv)) ix
-      sten2 <- stencilAccess boundary2 (irArray (aprj v2 aenv)) ix
+      sten1 <- stencilAccess (Just boundary1) (irArray (aprj v1 aenv)) ix
+      sten2 <- stencilAccess (Just boundary2) (irArray (aprj v2 aenv)) ix
       app2 f sten1 sten2
 
