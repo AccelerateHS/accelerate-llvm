@@ -58,28 +58,7 @@ faceIndex =
     )
 
 
--- Parameters for inner region
-range
-    :: (Shape sh)
-    => Proxy sh                 -- Dummy type
-    -> ( IR sh                  -- The multidimensional start index
-       , IR sh                  -- The multidimensional end   index
-       , [LLVM.Parameter]
-       )
-range _ =
-  let
-    start = "start"
-    end   = "end"
-  in
-    ( eltLocal start
-    , eltLocal end
-    , join
-        [ eltParameter start
-        , eltParameter end
-        ]
-    )
-
-
+gangParamNested = undefined
 eltLocal = undefined
 eltParameter = undefined
 
@@ -96,7 +75,7 @@ mkStencil1
 mkStencil1 _arch uid aenv f b1 ir1 =
   let
     (faceN, boundaryParams)                               = faceIndex
-    (innerStart :: IR sh, innerEnd :: IR sh, innerParams) = range (Proxy :: Proxy sh)
+    (innerStart :: IR sh, innerEnd :: IR sh, innerParams) = gangParamNested (Proxy :: Proxy sh)
     (arrOut, paramOut)                                    = mutableArray ("out" :: Name (Array sh b))
     paramEnv                                              = envParam aenv
   in foldr1 (+++) <$> sequence
