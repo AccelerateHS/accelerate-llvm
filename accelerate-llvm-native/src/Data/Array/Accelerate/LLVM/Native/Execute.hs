@@ -486,6 +486,43 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
   return out
 
 
+permuteOpNested
+    :: (Shape sh, Shape sh', Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Bool
+    -> sh
+    -> Array sh' e
+    -> LLVM Native (Array sh' e)
+permuteOpNested exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  out        <- if inplace
+                  then return dfs
+                  else cloneArray dfs
+  let
+      ncpu    = gangSize
+      n       = size shIn
+      m       = size (shape out)
+  --
+  if ncpu == 1 || n <= defaultLargePPT
+    then liftIO $ do
+      -- sequential permutation
+      executeOpMultiDimensional 1 fillS (nativeExecutable !# "permuteSNested") gamma aenv (zeroes shIn) shIn out
+
+    else liftIO $ do
+      -- parallel permutation
+      case lookupFunction "permuteP_rmwNested" nativeExecutable of
+        Just f  -> executeOpMultiDimensional defaultLargePPT fillP f gamma aenv (zeroes shIn) shIn out
+        Nothing -> do
+          barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
+          memset (ptrsOfArrayData adb) 0 m
+          executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "permuteP_mutexNested") gamma aenv (zeroes shIn) shIn (out, barrier)
+
+  return out
+
+
 stencil1Op
     :: (Shape sh, Elt b)
     => ExecutableR Native
