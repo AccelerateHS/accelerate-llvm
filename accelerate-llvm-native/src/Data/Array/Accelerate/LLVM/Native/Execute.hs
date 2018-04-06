@@ -83,7 +83,7 @@ import Foreign.Ptr
 --     code.
 --
 instance Execute Native where
-  map           = simpleNamed "generate"
+  map           = simpleOp
   generate      = simpleNamedNestedLoops "generateNested"
   transform     = simpleNamedNestedLoops "generateNested"
   backpermute   = simpleNamedNestedLoops "generateNested"

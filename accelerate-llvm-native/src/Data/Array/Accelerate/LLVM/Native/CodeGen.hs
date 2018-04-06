@@ -30,7 +30,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where
-  map _         = mkMapNested
+  map _         = mkMap
   generate _    = mkGenerate
   fold _        = mkFold
   fold1 _       = mkFold1
