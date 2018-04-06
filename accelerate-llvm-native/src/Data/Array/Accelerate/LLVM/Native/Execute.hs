@@ -97,7 +97,7 @@ instance Execute Native where
   scanr         = scanOp
   scanr1        = scan1Op
   scanr'        = scan'Op
-  permute       = permuteOp
+  permute       = permuteOpNested
   stencil1      = stencil1Op
   stencil2      = stencil2Op
   aforeign      = aforeignOp
