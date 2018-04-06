@@ -83,10 +83,10 @@ import Foreign.Ptr
 --     code.
 --
 instance Execute Native where
-  map           = simpleOpNestedLoops
-  generate      = simpleOpNestedLoops
-  transform     = simpleOpNestedLoops
-  backpermute   = simpleOpNestedLoops
+  map           = simpleNamed "generate"
+  generate      = simpleNamedNestedLoops "generateNested"
+  transform     = simpleNamedNestedLoops "generateNested"
+  backpermute   = simpleNamedNestedLoops "generateNested"
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
@@ -532,7 +532,7 @@ stencil1Op
     -> Array sh a
     -> LLVM Native (Array sh b)
 stencil1Op kernel gamma aenv stream arr =
-  simpleOp kernel gamma aenv stream (shape arr)
+  simpleNamed "generate" kernel gamma aenv stream (shape arr)
 
 stencil2Op
     :: (Shape sh, Elt c)
@@ -544,7 +544,7 @@ stencil2Op
     -> Array sh b
     -> LLVM Native (Array sh c)
 stencil2Op kernel gamma aenv stream arr brr =
-  simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+  simpleNamed "generate" kernel gamma aenv stream (shape arr `intersect` shape brr)
 
 
 aforeignOp
