@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
   -- References
   Name(..),
-  local, localElt, global,
+  local, global,
 
   -- Arrays
   irArray,
@@ -24,7 +24,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
   -- Functions & parameters
   call,
-  scalarParameter, eltParameter, ptrParameter,
+  scalarParameter, ptrParameter,
   envParam,
   arrayParam,
 
@@ -61,10 +61,6 @@ import qualified Data.IntMap                                        as IM
 
 local :: ScalarType a -> Name a -> IR a
 local t x = ir t (LocalReference (PrimType (ScalarPrimType t)) x)
-
-
-localElt :: Elt a => Name a -> IR a
-localElt n = undefined
 
 
 global :: ScalarType a -> Name a -> IR a
@@ -182,10 +178,6 @@ call f attrs = do
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
-
-
-eltParameter :: Elt t => Name t -> [LLVM.Parameter]
-eltParameter n = undefined
 
 
 ptrParameter :: ScalarType t -> Name (Ptr t) -> LLVM.Parameter

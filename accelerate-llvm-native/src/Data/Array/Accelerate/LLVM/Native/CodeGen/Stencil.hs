@@ -53,7 +53,7 @@ faceIndex =
   let
     faceIndex = "faceIndex"
   in
-    ( localElt faceIndex
+    ( eltLocal faceIndex
     , eltParameter faceIndex
     )
 
@@ -71,13 +71,17 @@ range _ =
     start = "start"
     end   = "end"
   in
-    ( localElt start
-    , localElt end
+    ( eltLocal start
+    , eltLocal end
     , join
         [ eltParameter start
         , eltParameter end
         ]
     )
+
+
+eltLocal = undefined
+eltParameter = undefined
 
 
 mkStencil1
