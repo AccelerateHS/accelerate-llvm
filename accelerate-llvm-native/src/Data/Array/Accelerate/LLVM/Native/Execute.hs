@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
@@ -514,19 +515,46 @@ permuteOpNested exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativ
   return out
 
 
+boundaryThickness
+  :: StencilR sh a stencil
+  -> sh
+boundaryThickness = go
+  where
+    go :: StencilR sh a stencil -> sh
+    go StencilRunit3 = Z :. 1
+    go StencilRunit5 = Z :. 2
+    go StencilRunit7 = Z :. 3
+    go StencilRunit9 = Z :. 4
+    --
+    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c] :. 1
+    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e] :. 2
+    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g] :. 3
+    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+
+
 stencil1Op
-    :: (Shape sh, Elt b)
+    :: forall aenv sh a b. (Shape sh, Elt b)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Array sh a
     -> LLVM Native (Array sh b)
-stencil1Op kernel gamma aenv stream arr =
-  simpleNamed "generate" kernel gamma aenv stream (shape arr)
+stencil1Op exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray (shape arr)
+    let
+      start' = boundaryThickness undefined
+      end'   = rangeToShape (start', (shape arr))
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil1_inner") gamma aenv start' end' out
+    executeOp 1 fillS (nativeExecutable !# "stencil1_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) out
+
+    return out
+
 
 stencil2Op
-    :: (Shape sh, Elt c)
+    :: forall aenv sh a b c. (Shape sh, Elt c)
     => ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
@@ -534,8 +562,17 @@ stencil2Op
     -> Array sh a
     -> Array sh b
     -> LLVM Native (Array sh c)
-stencil2Op kernel gamma aenv stream arr brr =
-  simpleNamed "generate" kernel gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op exe gamma aenv stream arr brr = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray (shape arr `intersect` shape brr)
+    let
+      start' = boundaryThickness undefined
+      end'   = rangeToShape (start', (shape arr))
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil2_inner") gamma aenv start' end' out
+    executeOp 1 fillS (nativeExecutable !# "stencil2_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) out
+
+    return out
 
 
 aforeignOp

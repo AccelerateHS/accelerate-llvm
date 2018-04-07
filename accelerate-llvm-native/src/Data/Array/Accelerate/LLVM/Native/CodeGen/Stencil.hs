@@ -64,7 +64,7 @@ boundsParams Proxy =
         , eltParameter boundarySize
         ]
     )
-    
+
 
 mkStencil1
     :: forall aenv stencil a b sh. (Skeleton Native, Stencil sh a stencil, Elt b)
@@ -133,23 +133,6 @@ calculateFace n (IR e) (IR t) = do
               else    {- n > 1 -}                  pair <$> return (IR sz)              <*> sub numType (IR sh) (IR sz)
 
             return (OP_Pair start' start, OP_Pair end' end)
-
-
-boundaryThickness
-  :: StencilR sh a stencil
-  -> IR sh
-boundaryThickness = (undefined :: sh -> IR sh) . go
-  where
-    go :: StencilR sh a stencil -> sh
-    go StencilRunit3 = Z :. 1
-    go StencilRunit5 = Z :. 2
-    go StencilRunit7 = Z :. 3
-    go StencilRunit9 = Z :. 4
-    --
-    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c] :. 1
-    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e] :. 2
-    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g] :. 3
-    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
 
 
 mkStencil1_inner
