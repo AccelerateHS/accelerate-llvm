@@ -25,7 +25,7 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftArrays, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun )
+import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftArrays, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun, StencilR(..) )
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 
@@ -182,6 +182,16 @@ liftPreOpenAccSkeleton arch pacc =
 
       liftE :: PreExp (CompiledOpenAcc arch) aenv t -> Q (TExp (PreExp (ExecOpenAcc arch) aenv t))
       liftE = liftPreOpenExp arch
+
+      liftS :: StencilR sh e stencil -> Q (TExp (StencilR sh e stencil))
+      liftS StencilRunit3                    = [|| StencilRunit3 ||]
+      liftS StencilRunit5                    = [|| StencilRunit5 ||]
+      liftS StencilRunit7                    = [|| StencilRunit7 ||]
+      liftS StencilRunit9                    = [|| StencilRunit9 ||]
+      liftS (StencilRtup3 a b c)             = [|| StencilRtup3 $$(liftS a) $$(liftS b) $$(liftS c) ||]
+      liftS (StencilRtup5 a b c d e)         = [|| StencilRtup5 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) ||]
+      liftS (StencilRtup7 a b c d e f g)     = [|| StencilRtup7 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) $$(liftS f) $$(liftS g) ||]
+      liftS (StencilRtup9 a b c d e f g h i) = [|| StencilRtup9 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) $$(liftS f) $$(liftS g) $$(liftS h) $$(liftS i) ||]
   in
   case pacc of
     Map sh            -> [|| Map $$(liftE sh) ||]
@@ -199,8 +209,8 @@ liftPreOpenAccSkeleton arch pacc =
     Scanr1 sh         -> [|| Scanr1 $$(liftE sh) ||]
     Scanr' sh         -> [|| Scanr' $$(liftE sh) ||]
     Permute sh a      -> [|| Permute $$(liftE sh) $$(liftA a) ||]
-    Stencil a         -> [|| Stencil $$(liftIdx a) ||]
-    Stencil2 a1 a2    -> [|| Stencil2 $$(liftIdx a1) $$(liftIdx a2) ||]
+    Stencil1 s a      -> [|| Stencil1 $$(liftS s) $$(liftIdx a) ||]
+    Stencil2 s t a b  -> [|| Stencil2 $$(liftS s) $$(liftS t) $$(liftIdx a) $$(liftIdx b) ||]
 
 {-# INLINEABLE liftPreOpenFun #-}
 liftPreOpenFun

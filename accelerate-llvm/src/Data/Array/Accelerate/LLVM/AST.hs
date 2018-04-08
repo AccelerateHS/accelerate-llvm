@@ -25,6 +25,7 @@ module Data.Array.Accelerate.LLVM.AST (
 
 ) where
 
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
@@ -171,12 +172,15 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> acc                    arch  aenv (Array sh' e)    -- default values
               -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
 
-  Stencil     :: (Shape sh, Elt a, Elt b)
-              => Idx                         aenv (Array sh a)
+  Stencil1    :: (Shape sh, Elt a, Elt b)
+              => StencilR sh a stencil1
+              -> Idx                         aenv (Array sh a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
   Stencil2    :: (Shape sh, Elt a, Elt b, Elt c)
-              => Idx                         aenv (Array sh a)
+              => StencilR sh a stencil1
+              -> StencilR sh b stencil2
+              -> Idx                         aenv (Array sh a)
               -> Idx                         aenv (Array sh b)
               -> PreOpenAccSkeleton acc arch aenv (Array sh c)
 

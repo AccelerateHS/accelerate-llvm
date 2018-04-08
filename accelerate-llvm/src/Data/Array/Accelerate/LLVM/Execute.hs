@@ -28,6 +28,7 @@ module Data.Array.Accelerate.LLVM.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.AST                                ( StencilR() )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
@@ -178,7 +179,8 @@ class Remote arch => Execute arch where
                 -> LLVM arch (Array sh' e)
 
   stencil1      :: (Shape sh, Elt a, Elt b)
-                => ExecutableR arch
+                => StencilR sh a stencil1
+                -> ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
@@ -186,7 +188,9 @@ class Remote arch => Execute arch where
                 -> LLVM arch (Array sh b)
 
   stencil2      :: (Shape sh, Elt a, Elt b, Elt c)
-                => ExecutableR arch
+                => StencilR sh a stencil1
+                -> StencilR sh b stencil2
+                -> ExecutableR arch
                 -> Gamma aenv
                 -> AvalR arch aenv
                 -> StreamR arch
@@ -340,8 +344,8 @@ executeOpenAcc !topAcc !aenv !stream = travA topAcc
         Scanl' sh           -> scanl' kernel gamma aenv stream =<< travE sh
         Scanr' sh           -> scanr' kernel gamma aenv stream =<< travE sh
         Permute sh d        -> id =<< permute kernel gamma aenv stream (inplace d) <$> travE sh <*> travA d
-        Stencil2 a b        -> id =<< stencil2 kernel gamma aenv stream <$> avar a <*> avar b
-        Stencil a           -> stencil1 kernel gamma aenv stream =<< avar a
+        Stencil2 s t a b    -> id =<< stencil2 s t kernel gamma aenv stream <$> avar a <*> avar b
+        Stencil1 s a        -> stencil1 s kernel gamma aenv stream =<< avar a
 
     travAF :: ExecOpenAfun arch aenv (a -> b) -> AsyncR arch a -> LLVM arch b
     travAF (Alam (Abody f)) a = get =<< async (executeOpenAcc f (aenv `Apush` a))

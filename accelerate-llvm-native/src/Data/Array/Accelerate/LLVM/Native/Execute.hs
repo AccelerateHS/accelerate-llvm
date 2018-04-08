@@ -533,14 +533,15 @@ boundaryThickness = go
 
 
 stencil1Op
-    :: forall aenv sh a b. (Shape sh, Elt b)
-    => ExecutableR Native
+    :: forall aenv sh a b stencil. (Shape sh, Elt a, Elt b)
+    => StencilR sh a stencil
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Array sh a
     -> LLVM Native (Array sh b)
-stencil1Op exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable -> do
+stencil1Op s exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray (shape arr)
@@ -554,15 +555,17 @@ stencil1Op exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable ->
 
 
 stencil2Op
-    :: forall aenv sh a b c. (Shape sh, Elt c)
-    => ExecutableR Native
+    :: forall aenv sh a b c stencil1 stencil2. (Shape sh, Elt a, Elt b, Elt c)
+    => StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Array sh a
     -> Array sh b
     -> LLVM Native (Array sh c)
-stencil2Op exe gamma aenv stream arr brr = withExecutable exe $ \nativeExecutable -> do
+stencil2Op s1 s2 exe gamma aenv stream arr brr = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray (shape arr `intersect` shape brr)
