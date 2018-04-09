@@ -135,6 +135,7 @@ Library
         , bytestring                    >= 0.10.4
         , Cabal                         >= 2.0
         , cereal                        >= 0.4
+        , chaselev-deque                >= 0.5
         , containers                    >= 0.5 && < 0.6
         , deepseq                       >= 1.4
         , directory                     >= 1.0

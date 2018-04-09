@@ -27,8 +27,9 @@ import Control.Concurrent
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad
+import Data.Concurrent.Deque.ChaseLev
 import Data.IORef
-import Data.Sequence                                                ( Seq, ViewL(..) )
+import Data.Sequence                                                ( Seq )
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
 
@@ -49,8 +50,9 @@ data Job = Job
 
 data Workers = Workers
   { workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
+  , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
   , workerJobQueue    :: !(MVar (Seq Job))      -- pending jobs
-  , workerTaskQueue   :: !(MVar (Seq Task))     -- tasks currently being executed; may be from different jobs
+  , workerTaskQueue   :: !(ChaseLevDeque Task)  -- tasks currently being executed; may be from different jobs
   , workerException   :: !(MVar SomeException)  -- if full, worker received an exception
   }
 
@@ -73,31 +75,54 @@ schedule workers Job{..} = do
   --
   submit workers tasks
 
--- Submit the tasks to the queue to be executed by the worker threads.
+
+-- Submit the tasks to the queue to be executed by the worker threads. Note that
+-- only the main thread (which owns the workers) may call this.
 --
--- TODO: This is a single MVar shared by all worker threads, which means there
---       will be high contention for work stealing, especially at higher thread
---       counts. Use something like a chase-lev dequeue instead?
+-- The signal MVar is filled to indicate to workers that new tasks are
+-- available. We signal twice so that threads can start work immediately. Note
+-- that this is racey, so signal again after adding all the items to make sure
+-- threads are still active.
 --
 submit :: Workers -> Seq Task -> IO ()
-submit Workers{..} tasks =
-  mask_ $ do
-    mq <- tryTakeMVar workerTaskQueue
-    case mq of
-      Nothing    -> putMVar workerTaskQueue tasks
-      Just queue -> putMVar workerTaskQueue (queue Seq.>< tasks)
+submit Workers{..} tasks = do
+  _ <- tryPutMVar workerActive ()
+  mapM_ (pushL workerTaskQueue) tasks
+  _ <- tryPutMVar workerActive ()
+  return ()
 
 
 -- Workers can either be executing tasks (real work), waiting for work, or going
 -- into retirement (whence the thread will exit).
 --
-runWorker :: MVar (Seq Task) -> IO ()
-runWorker ref = do
-  tasks <- takeMVar ref
-  case Seq.viewl tasks of
-    Work io :< rest -> putMVar ref rest >> io >> runWorker ref
-    Retire  :< rest -> putMVar ref rest
-    EmptyL          -> runWorker ref
+-- So that threads don't spin endlessly on an empty deque waiting for work, they
+-- will automatically sleep waiting on the signal MVar after several failed
+-- retries. Note that 'readMVar' is multiple wake up, so all threads will be
+-- efficiently woken up when new work is added via 'submit'.
+--
+runWorker :: MVar () -> ChaseLevDeque Task -> IO ()
+runWorker active deq = loop 0
+  where
+    loop :: Int -> IO ()
+    loop !retries = do
+      mio <- tryPopR deq
+      case mio of
+        -- The number of retries and thread delay on failure are knobs which can
+        -- be tuned. Having these values too small results in busy work which
+        -- will detract from time spent adding new work thus reducing
+        -- productivity, whereas high values will reduce responsiveness and thus
+        -- also reduce productivity.
+        --
+        Nothing   -> if retries < 3
+                       then threadDelay 5 >> loop (retries+1)
+                       else do
+                         _  <- tryTakeMVar active -- another worker might have already signalled sleep
+                         () <- readMVar active    -- blocking, multiple wake-up
+                         loop 0
+        Just task -> case task of
+                       Work io -> io >> loop 0
+                       Retire  -> return ()
+
 
 -- Spawn a new worker thread for each capability
 --
@@ -112,12 +137,13 @@ hireWorkers = do
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
   workerJobQueue  <- newEmptyMVar
-  workerTaskQueue <- newEmptyMVar
   workerException <- newEmptyMVar
+  workerActive    <- newEmptyMVar
+  workerTaskQueue <- newQ
   workerThreadIds <- forM caps $ \cpu -> do
                        tid <- mask_ $ forkOnWithUnmask cpu $ \restore ->
                                 catch
-                                  (restore $ runWorker workerTaskQueue)
+                                  (restore $ runWorker workerActive workerTaskQueue)
                                   (restore . putMVar workerException)   -- tryPutMVar?
                        message $ printf "fork %s on capability %d" (show tid) cpu
                        return tid
