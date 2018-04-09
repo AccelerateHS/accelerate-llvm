@@ -34,7 +34,8 @@ import qualified Data.Vector.Unboxed.Mutable                        as M
 --
 -- No dimension will be made smaller than the given minimum.
 --
--- The number of subdivisions just a hint.
+-- The number of subdivisions a hint (at most, it should generate a number of
+-- pieces rounded up to the next power-of-two).
 --
 -- Full pieces will occur first in the resulting sequence, with smaller pieces
 -- at the end (suitable for work-stealing).
@@ -55,7 +56,10 @@ divideWork
   | Just Refl <- matchShapeType (undefined::DIM0) (undefined::sh) = divideWork0
   | Just Refl <- matchShapeType (undefined::DIM1) (undefined::sh) = divideWork1
   | otherwise                                                     = divideWorkN
-
+  --
+  -- It is slightly faster to use lists instead of a Sequence here (though the
+  -- difference is <1us on 'divideWork empty (Z:.2000) nop 8 32'). However,
+  -- later operations will benefit from more efficient append, etc.
 
 divideWork0 :: DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Int -> Int -> Seq a
 divideWork0 Z Z action !_ !_ = Seq.singleton (action Z Z)
@@ -63,22 +67,22 @@ divideWork0 Z Z action !_ !_ = Seq.singleton (action Z Z)
 divideWork1 :: DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Int -> Int -> Seq a
 divideWork1 (Z :. from) (Z :. to) action !pieces !sz =
   let
-      split 0 u v
-        | v - u < sz  = (Seq.empty, Seq.singleton (apply u v))
-        | otherwise   = (Seq.singleton (apply u v), Seq.empty)
+      split 0  !u !v !f0 !s0
+        | v - u < sz  = (f0, s0 Seq.|> apply u v)
+        | otherwise   = (f0 Seq.|> apply u v, s0)
       --
-      split !s u v =
+      split !s !u !v !f0 !s0 =
         case findSplitPoint1 u v sz of
-          Nothing       -> (Seq.empty, Seq.singleton (apply u v))
+          Nothing       -> (f0, s0 Seq.|> apply u v)
           Just (u', v') ->
             let s'      = unsafeShiftR s 1
-                (f1,s1) = split s' u  v'
-                (f2,s2) = split s' u' v
+                (f1,s1) = split s' u  v' f0 s0
+                (f2,s2) = split s' u' v  f1 s1
             in
-            (f1 Seq.>< f2, s1 Seq.>< s2)
+            (f2, s2)
 
       apply u v = action (Z:.u) (Z:.v)
-      (fs, ss)  = split pieces from to
+      (fs, ss)  = split pieces from to Seq.empty Seq.empty
   in
   fs Seq.>< ss
 
@@ -107,22 +111,22 @@ divideWorkN from to action !pieces !sz =
       -- full pieces are assigned to threads first, with the non-full blocks
       -- being the ones at the end of the work queue to be stolen.
       --
-      split 0 u v
-        | U.any (< sz) (U.zipWith (-) v u)  = (Seq.empty, Seq.singleton (apply u v))
-        | otherwise                         = (Seq.singleton (apply u v), Seq.empty)
+      split 0  !u !v !f0 !s0
+        | U.any (< sz) (U.zipWith (-) v u)  = (f0, s0 Seq.|> apply u v)
+        | otherwise                         = (f0 Seq.|> apply u v, s0)
       --
-      split !s u v =
+      split !s !u !v !f0 !s0 =
         case findSplitPointN u v sz of
-          Nothing       -> (Seq.empty, Seq.singleton (apply u v))
+          Nothing       -> (f0, s0 Seq.|> apply u v)
           Just (u', v') ->
             let s'      = unsafeShiftR s 1
-                (f1,s1) = split s' u  v'
-                (f2,s2) = split s' u' v
+                (f1,s1) = split s' u  v' f0 s0
+                (f2,s2) = split s' u' v  f1 s1
             in
-            (f1 Seq.>< f2, s1 Seq.>< s2)
+            (f2, s2)
 
       apply u v   = action (vecToShape u) (vecToShape v)
-      (fs, ss)    = split pieces (shapeToVec from) (shapeToVec to)
+      (fs, ss)    = split pieces (shapeToVec from) (shapeToVec to) Seq.empty Seq.empty
   in
   fs Seq.>< ss
 
