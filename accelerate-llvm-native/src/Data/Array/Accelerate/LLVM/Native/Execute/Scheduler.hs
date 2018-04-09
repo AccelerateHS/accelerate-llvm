@@ -117,12 +117,20 @@ runWorker active deq = loop 0
         Nothing   -> if retries < 3
                        then threadDelay 5 >> loop (retries+1)
                        else do
+                         D.when D.dump_sched $ do
+                           tid <- myThreadId
+                           message $ printf "sched: %s sleeping" (show tid)
+                         --
                          _  <- tryTakeMVar active -- another worker might have already signalled sleep
                          () <- readMVar active    -- blocking, multiple wake-up
                          loop 0
+        --
         Just task -> case task of
                        Work io -> io >> loop 0
-                       Retire  -> return ()
+                       Retire  ->
+                         D.when D.dump_sched $ do
+                           tid <- myThreadId
+                           message $ printf "sched: %s shutting down" (show tid)
 
 
 -- Spawn a new worker thread for each capability
@@ -146,7 +154,8 @@ hireWorkersOn caps = do
                                 catch
                                   (restore $ runWorker workerActive workerTaskQueue)
                                   (restore . putMVar workerException)   -- tryPutMVar?
-                       message $ printf "fork %s on capability %d" (show tid) cpu
+                       --
+                       message $ printf "sched: fork %s on capability %d" (show tid) cpu
                        return tid
   --
   workerThreadIds `deepseq` return Workers {..}
