@@ -117,6 +117,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
     Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+    Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 
     Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
     Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
@@ -135,6 +136,7 @@ Library
         , Cabal                         >= 2.0
         , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.6
+        , deepseq                       >= 1.4
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , filepath                      >= 1.0
