@@ -38,7 +38,9 @@ import qualified Data.Vector.Unboxed.Mutable                        as M
 -- pieces rounded up to the next power-of-two).
 --
 -- Full pieces will occur first in the resulting sequence, with smaller pieces
--- at the end (suitable for work-stealing).
+-- at the end (suitable for work-stealing). Note that the pieces are not sorted
+-- according by size, only whether all dimensions are above the minimum
+-- threshold or not.
 --
 {-# SPECIALISE divideWork :: DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Int -> Int -> (Seq a) #-}
 {-# SPECIALISE divideWork :: DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Int -> Int -> (Seq a) #-}

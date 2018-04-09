@@ -80,9 +80,10 @@ schedule workers Job{..} = do
 -- only the main thread (which owns the workers) may call this.
 --
 -- The signal MVar is filled to indicate to workers that new tasks are
--- available. We signal twice so that threads can start work immediately. Note
--- that this is racey, so signal again after adding all the items to make sure
--- threads are still active.
+-- available. We signal twice so that threads can start work immediately, but
+-- since this is racey we signal again after adding all items to the queue, just
+-- in case a thread woke up and failed too many times before being able to
+-- successfully pop an item from the queue.
 --
 submit :: Workers -> Seq Task -> IO ()
 submit Workers{..} tasks = do
