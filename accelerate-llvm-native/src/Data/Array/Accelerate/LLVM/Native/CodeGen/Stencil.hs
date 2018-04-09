@@ -48,21 +48,15 @@ import Control.Monad
 boundsParams
     :: Shape sh
     => Proxy sh
-    -> ( IR Int                 -- The face index
-       , IR sh                  -- The thickness of each boundary dimension - e.g. ceiling (stencil size / 2)
+    -> ( IR sh                  -- The thickness of each boundary dimension - e.g. ceiling (stencil size / 2)
        , [LLVM.Parameter]
        )
 boundsParams Proxy =
   let
-    faceIndex    = "faceIndex"
     boundarySize = "boundarySize"
   in
-    ( eltLocal faceIndex
-    , eltLocal boundarySize
-    , join
-        [ eltParameter faceIndex
-        , eltParameter boundarySize
-        ]
+    ( eltLocal boundarySize
+    , eltParameter boundarySize
     )
 
 
@@ -77,15 +71,19 @@ mkStencil1
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkStencil1 _arch uid aenv f b1 ir1 =
   let
-    (faceN, boundaryThickness, paramsBounds) = boundsParams    (Proxy :: Proxy sh)
+    (start, end, paramGang)                  = gangParam
+    (boundaryThickness, paramsBounds)        = boundsParams    (Proxy :: Proxy sh)
     (innerStart, innerEnd, innerParams)      = gangParamNested (Proxy :: Proxy sh)
     (arrOut, paramOut)                       = mutableArray    ("out" :: Name (Array sh b))
     paramEnv                                 = envParam aenv
   in foldr1 (+++) <$> sequence
-  [ makeOpenAcc uid "stencil1_boundary" (paramsBounds ++ paramOut ++ paramEnv) $
-        mkStencil1_boundary aenv arrOut boundaryThickness f  Nothing  ir1 faceN
-  , makeOpenAcc uid "stencil1_inner"    (innerParams  ++ paramOut ++ paramEnv) $
-        mkStencil1_inner    aenv arrOut f (Just b1) ir1 innerStart innerEnd
+  [ makeOpenAcc uid "stencil1_boundary" (paramGang ++ paramsBounds ++ paramOut ++ paramEnv) $ do
+      imapFromTo start end $ \n ->
+        mkStencil1_boundary aenv arrOut boundaryThickness f (Just b1) ir1 n
+      return_
+  , makeOpenAcc uid "stencil1_inner" (innerParams ++ paramOut ++ paramEnv) $ do
+      mkStencil1_inner aenv arrOut f Nothing ir1 innerStart innerEnd
+      return_
   ]
 
 
@@ -123,7 +121,7 @@ calculateFace n (IR e) (IR t) = do
     go n (TypeRpair tt' tt) (OP_Pair sh' sh) (OP_Pair sz' sz)
       | Just Refl <- matchTupleType tt (eltType (undefined::Int))
       = do
-            n' <- sub numType n (int (-2))
+            n' <- sub numType n (int 2)
             (start', end') <- go n' tt' sh' sz'
             --
             (IR start, IR end) :: (IR Int, IR Int) <- unpair <$>
@@ -145,7 +143,7 @@ mkStencil1_inner
   -> IR sh
   -> IR sh
   -> CodeGen ()
-mkStencil1_inner aenv arrOut f b1 ir1@(IRManifest v1) start end =
+mkStencil1_inner aenv arrOut f b1 ir1@(IRManifest v1) start end = do
   imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
       s <- stencilAccess b1 (irArray (aprj v1 aenv)) ix
       r <- app1 f s
@@ -165,15 +163,19 @@ mkStencil2
     -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkStencil2 _arch uid aenv f b1 ir1 b2 ir2 =
   let
-    (faceN, boundaryThickness, paramsBounds) = boundsParams    (Proxy :: Proxy sh)
+    (start, end, paramGang)                  = gangParam
+    (boundaryThickness, paramsBounds)        = boundsParams    (Proxy :: Proxy sh)
     (innerStart, innerEnd, innerParams)      = gangParamNested (Proxy :: Proxy sh)
     (arrOut, paramOut)                       = mutableArray    ("out" :: Name (Array sh b))
     paramEnv                                 = envParam aenv
   in foldr1 (+++) <$> sequence
-  [ makeOpenAcc uid "stencil1_boundary" (paramsBounds ++ paramOut ++ paramEnv) $
-        mkStencil2_boundary aenv arrOut boundaryThickness f  Nothing  ir1  Nothing  ir2 faceN
-  , makeOpenAcc uid "stencil1_inner"    (innerParams  ++ paramOut ++ paramEnv) $
-        mkStencil2_inner    aenv arrOut f (Just b1) ir1 (Just b2) ir2 innerStart innerEnd
+  [ makeOpenAcc uid "stencil1_boundary" (paramGang ++ paramsBounds ++ paramOut ++ paramEnv) $ do
+      imapFromTo start end $ \n ->
+        mkStencil2_boundary aenv arrOut boundaryThickness f (Just b1) ir1 (Just b2) ir2 n
+      return_
+  , makeOpenAcc uid "stencil1_inner" (innerParams ++ paramOut ++ paramEnv) $ do
+      mkStencil2_inner aenv arrOut f Nothing ir1 Nothing ir2 innerStart innerEnd
+      return_
   ]
 
 
@@ -189,7 +191,7 @@ mkStencil2_inner
   -> IR sh
   -> IR sh
   -> CodeGen ()
-mkStencil2_inner aenv arrOut f b1 ir1@(IRManifest v1) b2 ir2@(IRManifest v2) start end =
+mkStencil2_inner aenv arrOut f b1 ir1@(IRManifest v1) b2 ir2@(IRManifest v2) start end = do
   imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
       s1 <- stencilAccess b1 (irArray (aprj v1 aenv)) ix
       s2 <- stencilAccess b2 (irArray (aprj v2 aenv)) ix

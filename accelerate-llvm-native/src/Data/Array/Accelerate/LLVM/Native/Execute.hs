@@ -546,10 +546,10 @@ stencil1Op s exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable 
   liftIO $ do
     out <- allocateArray (shape arr)
     let
-      start' = boundaryThickness undefined
-      end'   = rangeToShape (start', (shape arr))
+      start' = boundaryThickness s
+      end'   = listToShape (zipWith (-) (shapeToList $ shape arr) (shapeToList start'))
     executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil1_inner") gamma aenv start' end' out
-    executeOp 1 fillS (nativeExecutable !# "stencil1_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) out
+    executeOp 1 fillP (nativeExecutable !# "stencil1_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
 
     return out
 
@@ -570,10 +570,10 @@ stencil2Op s1 s2 exe gamma aenv stream arr brr = withExecutable exe $ \nativeExe
   liftIO $ do
     out <- allocateArray (shape arr `intersect` shape brr)
     let
-      start' = boundaryThickness undefined
+      start' = boundaryThickness s1 `intersect` boundaryThickness s2
       end'   = rangeToShape (start', (shape arr))
     executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil2_inner") gamma aenv start' end' out
-    executeOp 1 fillS (nativeExecutable !# "stencil2_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) out
+    executeOp 1 fillS (nativeExecutable !# "stencil2_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
 
     return out
 
