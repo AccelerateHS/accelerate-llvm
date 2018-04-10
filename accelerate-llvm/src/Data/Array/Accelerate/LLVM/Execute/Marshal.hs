@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -99,4 +100,12 @@ instance (Shape sh, Marshalable t Int, Marshalable t (ArrayData (EltRepr e)))
     => Marshalable t (Array sh e) where
   marshal' t s (Array sh adata) =
     marshal' t s (adata, reverse (R.shapeToList sh))
+
+instance Marshalable t Z where
+  marshal' _ _ Z = return DL.empty
+
+instance (Shape sh, Marshalable t sh, Marshalable t Int)
+    => Marshalable t (sh :. Int) where
+  marshal' t s (sh :. sz) =
+    DL.concat `fmap` sequence [marshal' t s sh, marshal' t s sz]
 
