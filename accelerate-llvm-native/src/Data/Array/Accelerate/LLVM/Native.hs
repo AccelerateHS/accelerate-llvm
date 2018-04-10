@@ -49,8 +49,8 @@ module Data.Array.Accelerate.LLVM.Native (
   runQAsync, runQAsyncWith,
 
   -- * Execution targets
-  Native, Strategy,
-  createTarget, balancedParIO, unbalancedParIO,
+  Native,
+  createTarget,
 
 ) where
 

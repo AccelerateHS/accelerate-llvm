@@ -42,17 +42,17 @@ import qualified Data.Vector.Unboxed.Mutable                        as M
 -- according by size, only whether all dimensions are above the minimum
 -- threshold or not.
 --
-{-# SPECIALISE divideWork :: DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Int -> Int -> (Seq a) #-}
-{-# SPECIALISE divideWork :: DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Int -> Int -> (Seq a) #-}
--- {-# SPECIALISE divideWork :: DIM2 -> DIM2 -> (DIM2 -> DIM2 -> a) -> Int -> Int -> (Seq a) #-}
--- {-# SPECIALISE divideWork :: DIM3 -> DIM3 -> (DIM3 -> DIM3 -> a) -> Int -> Int -> (Seq a) #-}
+{-# SPECIALISE divideWork :: Int -> Int -> DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Seq a #-}
+{-# SPECIALISE divideWork :: Int -> Int -> DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Seq a #-}
+-- {-# SPECIALISE divideWork :: Int -> Int -> DIM2 -> DIM2 -> (DIM2 -> DIM2 -> a) -> Seq a #-}
+-- {-# SPECIALISE divideWork :: Int -> Int -> DIM3 -> DIM3 -> (DIM3 -> DIM3 -> a) -> Seq a #-}
 divideWork
     :: forall sh a. Shape sh
-    => sh                   -- start index (e.g. top-left)
+    => Int                  -- #subdivisions (hint)
+    -> Int                  -- minimum size of a dimension (must be a power of two)
+    -> sh                   -- start index (e.g. top-left)
     -> sh                   -- end index   (e.g. bottom-right)
     -> (sh -> sh -> a)      -- action given start/end index range
-    -> Int                  -- #subdivisions (hint)
-    -> Int                  -- minimum size of a dimension (must be a power of two)
     -> Seq a
 divideWork
   | Just Refl <- matchShapeType (undefined::DIM0) (undefined::sh) = divideWork0
@@ -63,18 +63,18 @@ divideWork
   -- difference is <1us on 'divideWork empty (Z:.2000) nop 8 32'). However,
   -- later operations will benefit from more efficient append, etc.
 
-divideWork0 :: DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Int -> Int -> Seq a
-divideWork0 Z Z action !_ !_ = Seq.singleton (action Z Z)
+divideWork0 :: Int -> Int -> DIM0 -> DIM0 -> (DIM0 -> DIM0 -> a) -> Seq a
+divideWork0 _ _ Z Z action = Seq.singleton (action Z Z)
 
-divideWork1 :: DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Int -> Int -> Seq a
-divideWork1 (Z :. from) (Z :. to) action !pieces !sz =
+divideWork1 :: Int -> Int -> DIM1 -> DIM1 -> (DIM1 -> DIM1 -> a) -> Seq a
+divideWork1 !pieces !minsize (Z :. (!from)) (Z :. (!to)) action =
   let
-      split 0  !u !v !f0 !s0
-        | v - u < sz  = (f0, s0 Seq.|> apply u v)
-        | otherwise   = (f0 Seq.|> apply u v, s0)
+      split 0 !u !v !f0 !s0
+        | v - u < minsize = (f0, s0 Seq.|> apply u v)
+        | otherwise       = (f0 Seq.|> apply u v, s0)
       --
       split !s !u !v !f0 !s0 =
-        case findSplitPoint1 u v sz of
+        case findSplitPoint1 u v minsize of
           Nothing       -> (f0, s0 Seq.|> apply u v)
           Just (u', v') ->
             let s'      = unsafeShiftR s 1
@@ -94,31 +94,31 @@ findSplitPoint1
     -> Int
     -> Int
     -> Maybe (Int, Int)
-findSplitPoint1 !u !v !sz =
-  let !a = v - u in
-  if a <= sz
+findSplitPoint1 !u !v !minsize =
+  let a = v - u in
+  if a <= minsize
     then Nothing
     else
-      let !b = unsafeShiftR (a+1) 1
-          !c = sz - 1
-          !d = (b+c) .&. complement c
+      let b = unsafeShiftR (a+1) 1
+          c = minsize - 1
+          d = (b+c) .&. complement c
       in
       Just (d+u, v-a+d)
 
 
-divideWorkN :: Shape sh => sh -> sh -> (sh -> sh -> a) -> Int -> Int -> Seq a
-divideWorkN from to action !pieces !sz =
+divideWorkN :: Shape sh => Int -> Int -> sh -> sh -> (sh -> sh -> a) -> Seq a
+divideWorkN !pieces !minsize !from !to action =
   let
       -- Is it worth checking whether the piece is full? Doing so ensures that
       -- full pieces are assigned to threads first, with the non-full blocks
       -- being the ones at the end of the work queue to be stolen.
       --
-      split 0  !u !v !f0 !s0
-        | U.any (< sz) (U.zipWith (-) v u)  = (f0, s0 Seq.|> apply u v)
-        | otherwise                         = (f0 Seq.|> apply u v, s0)
+      split 0 !u !v !f0 !s0
+        | U.any (< minsize) (U.zipWith (-) v u) = (f0, s0 Seq.|> apply u v)
+        | otherwise                             = (f0 Seq.|> apply u v, s0)
       --
       split !s !u !v !f0 !s0 =
-        case findSplitPointN u v sz of
+        case findSplitPointN u v minsize of
           Nothing       -> (f0, s0 Seq.|> apply u v)
           Just (u', v') ->
             let s'      = unsafeShiftR s 1
@@ -142,13 +142,13 @@ findSplitPointN
     -> U.Vector Int           -- end
     -> Int                    -- minimum size of a dimension (must be power of 2)
     -> Maybe (U.Vector Int, U.Vector Int)
-findSplitPointN !from !to !sz =
+findSplitPointN !from !to !minsize =
   let
       mix = U.ifoldr' combine Nothing
           $ U.zipWith (-) to from
 
       combine i v old =
-        if v <= sz
+        if v <= minsize
           then old
           else case old of
                  Nothing    -> Just (i,v)
@@ -160,7 +160,7 @@ findSplitPointN !from !to !sz =
     Nothing     -> Nothing
     Just (i,a)  ->
       let b     = unsafeShiftR (a+1) 1    -- divide by 2 (rounded up)
-          c     = sz - 1
+          c     = minsize - 1
           d     = (b+c) .&. complement c  -- round up to next multiple of chunk size
           e     = U.unsafeIndex from i
           f     = U.unsafeIndex to   i

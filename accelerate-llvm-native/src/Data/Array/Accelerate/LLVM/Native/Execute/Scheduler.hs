@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
   Action, Task(..), Job(..), Workers,
 
   schedule, divideWork,
-  hireWorkers, hireWorkersOn, retireWorkers, fireWorkers,
+  hireWorkers, hireWorkersOn, retireWorkers, fireWorkers, numWorkers,
 
 ) where
 
@@ -49,9 +49,10 @@ data Job = Job
   }
 
 data Workers = Workers
-  { workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
+  { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreadIds)
+  , workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
   , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
-  , workerJobQueue    :: !(MVar (Seq Job))      -- pending jobs
+  -- , workerJobQueue    :: !(MVar (Seq Job))      -- pending jobs
   , workerTaskQueue   :: !(ChaseLevDeque Task)  -- tasks currently being executed; may be from different jobs
   , workerException   :: !(MVar SomeException)  -- if full, worker received an exception
   }
@@ -145,7 +146,7 @@ hireWorkers = do
 --
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
-  workerJobQueue  <- newEmptyMVar
+  -- workerJobQueue  <- newEmptyMVar
   workerException <- newEmptyMVar
   workerActive    <- newEmptyMVar
   workerTaskQueue <- newQ
@@ -158,7 +159,7 @@ hireWorkersOn caps = do
                        message $ printf "sched: fork %s on capability %d" (show tid) cpu
                        return tid
   --
-  workerThreadIds `deepseq` return Workers {..}
+  workerThreadIds `deepseq` return Workers { workerCount = length workerThreadIds, ..}
 
 
 -- Submit a job telling every worker to retire. Currently pending tasks will be
@@ -166,13 +167,18 @@ hireWorkersOn caps = do
 --
 retireWorkers :: Workers -> IO ()
 retireWorkers workers@Workers{..} =
-  submit workers (Seq.replicate (length workerThreadIds) Retire)
+  submit workers (Seq.replicate workerCount Retire)
 
 -- Kill worker threads immediately
 --
 fireWorkers :: Workers -> IO ()
 fireWorkers Workers{..} =
   mapM_ killThread workerThreadIds
+
+-- Number of workers
+--
+numWorkers :: Workers -> Int
+numWorkers = workerCount
 
 
 -- Debug

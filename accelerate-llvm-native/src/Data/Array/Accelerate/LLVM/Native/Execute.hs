@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GADTs                    #-}
@@ -35,29 +36,28 @@ import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
+import Data.Array.Accelerate.LLVM.Native.Execute.Divide
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
+import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
+import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
-
--- Use work-stealing scheduler
-import Data.Range                                                   ( Range(..) )
-import Control.Parallel.Meta                                        ( Executable(..) )
-import Data.Array.Accelerate.LLVM.Native.Execute.LBS
 
 -- library
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
-import Data.Time.Clock                                              ( getCurrentTime, diffUTCTime )
 import Data.Word                                                    ( Word8 )
+import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.Sequence                                      as Seq
 import qualified Prelude                                            as P
 
 import Foreign.C
@@ -115,7 +115,7 @@ simpleOp
     -> Stream
     -> sh
     -> LLVM Native (Array sh e)
-simpleOp exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
+simpleOp exe gamma aenv stream sh = withExecutable exe $ \nativeExecutable -> do
   let fun = case functionTable nativeExecutable of
               f:_ -> f
               _   -> $internalError "simpleOp" "no functions found"
@@ -123,8 +123,9 @@ simpleOp exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOp defaultLargePPT fillP fun gamma aenv (IE 0 (size sh)) out
+    scheduleOp workers fun gamma aenv stream (Z :. size sh) out -- XXX: nested loops
     return out
+
 
 simpleNamed
     :: (Shape sh, Elt e)
@@ -135,11 +136,11 @@ simpleNamed
     -> Stream
     -> sh
     -> LLVM Native (Array sh e)
-simpleNamed name exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
+simpleNamed name exe gamma aenv stream sh = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOp defaultLargePPT fillP (nativeExecutable !# name) gamma aenv (IE 0 (size sh)) out
+    scheduleOp workers (nativeExecutable !# name) gamma aenv stream (Z :. size sh) out -- XXX: nested loops
     return out
 
 
@@ -215,6 +216,8 @@ foldAllOp
     -> Stream
     -> DIM1
     -> LLVM Native (Scalar e)
+foldAllOp = error "foldAllOp"
+{--
 foldAllOp exe gamma aenv () (Z :. sz) = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let
@@ -236,6 +239,7 @@ foldAllOp exe gamma aenv () (Z :. sz) = withExecutable exe $ \nativeExecutable -
       executeOp 1 fillP (nativeExecutable !# "foldAllP1") gamma aenv (IE 0 steps) (sz, stride, tmp)
       executeOp 1 fillS (nativeExecutable !# "foldAllP2") gamma aenv (IE 0 steps) (tmp, out)
       return out
+--}
 
 foldDimOp
     :: (Shape sh, Elt e)
@@ -245,6 +249,8 @@ foldDimOp
     -> Stream
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
+foldDimOp = error "foldDimOp"
+{--
 foldDimOp exe gamma aenv () (sh :. sz) = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let ppt = defaultSmallPPT `max` (defaultLargePPT `quot` (max 1 sz))
@@ -252,6 +258,7 @@ foldDimOp exe gamma aenv () (sh :. sz) = withExecutable exe $ \nativeExecutable 
     out <- allocateArray sh
     executeOp ppt fillP (nativeExecutable !# "fold") gamma aenv (IE 0 (size sh)) (sz, out)
     return out
+--}
 
 foldSegOp
     :: (Shape sh, Elt e)
@@ -262,6 +269,8 @@ foldSegOp
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
+foldSegOp = error "foldSegOp"
+{--
 foldSegOp exe gamma aenv () (sh :. _) (Z :. ss) = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let
@@ -276,6 +285,7 @@ foldSegOp exe gamma aenv () (sh :. _) (Z :. ss) = withExecutable exe $ \nativeEx
     out <- allocateArray (sh :. n)
     executeOp ppt fillP (nativeExecutable !# kernel) gamma aenv (IE 0 (size (sh :. n))) out
     return out
+--}
 
 
 scanOp
@@ -313,6 +323,8 @@ scanCore
     -> Int
     -> Int
     -> LLVM Native (Array (sh:.Int) e)
+scanCore = error "scanCore"
+{--
 scanCore exe gamma aenv () sz n m = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let
@@ -347,6 +359,7 @@ scanCore exe gamma aenv () sz n m = withExecutable exe $ \nativeExecutable -> do
       executeOp 1 fillS (nativeExecutable !# "scanP2") gamma aenv (IE 0 steps) tmp
       executeOp 1 fillP (nativeExecutable !# "scanP3") gamma aenv (IE 0 steps') (stride, out, tmp)
       return out
+--}
 
 
 scan'Op
@@ -357,6 +370,8 @@ scan'Op
     -> Stream
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e, Array sh e)
+scan'Op = error "scan'Op"
+{--
 scan'Op native gamma aenv stream sh@(sz :. n) =
   case n of
     0 -> do
@@ -365,6 +380,7 @@ scan'Op native gamma aenv stream sh@(sz :. n) =
       return (out, sum)
     --
     _ -> scan'Core native gamma aenv stream sh
+--}
 
 scan'Core
     :: forall aenv sh e. (Shape sh, Elt e)
@@ -374,6 +390,8 @@ scan'Core
     -> Stream
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e, Array sh e)
+scan'Core = error "scan'Core"
+{--
 scan'Core exe gamma aenv () sh@(sz :. n) = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   let
@@ -397,6 +415,7 @@ scan'Core exe gamma aenv () sh@(sz :. n) = withExecutable exe $ \nativeExecutabl
       executeOp 1 fillS (nativeExecutable !# "scanP2") gamma aenv (IE 0 steps)  (sum, tmp)
       executeOp 1 fillP (nativeExecutable !# "scanP3") gamma aenv (IE 0 steps') (stride, out, tmp)
       return (out,sum)
+--}
 
 
 -- Forward permutation, specified by an indexing mapping into an array and a
@@ -412,6 +431,8 @@ permuteOp
     -> sh
     -> Array sh' e
     -> LLVM Native (Array sh' e)
+permuteOp = error "permuteOp"
+{--
 permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecutable -> do
   Native{..} <- gets llvmTarget
   out        <- if inplace
@@ -437,6 +458,7 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
           executeOp defaultLargePPT fillP (nativeExecutable !# "permuteP_mutex") gamma aenv (IE 0 n) (out, barrier)
 
   return out
+--}
 
 
 stencil2Op
@@ -460,10 +482,10 @@ aforeignOp
     -> as
     -> LLVM Native bs
 aforeignOp name asm stream arr = do
-  wallBegin <- liftIO $ getCurrentTime
+  wallBegin <- liftIO getMonotonicTime
   result    <- Debug.timed Debug.dump_exec (\wall cpu -> printf "exec: %s %s" name (Debug.elapsedP wall cpu)) (asm stream arr)
-  wallEnd   <- liftIO $ getCurrentTime
-  liftIO $ Debug.addProcessorTime Debug.Native (realToFrac (diffUTCTime wallEnd wallBegin))
+  wallEnd   <- liftIO getMonotonicTime
+  liftIO $ Debug.addProcessorTime Debug.Native (wallEnd - wallBegin)
   return result
 
 
@@ -479,24 +501,64 @@ lookupFunction :: ShortByteString -> FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
   find (\(n,_) -> n == name) (functionTable nativeExecutable)
 
--- Execute the given function distributed over the available threads.
---
-executeOp
-    :: Marshalable args
-    => Int
-    -> Executable
+
+
+{-# SPECIALISE scheduleOp :: Marshalable args => Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM0 -> args -> IO () #-}
+{-# SPECIALISE scheduleOp :: Marshalable args => Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM1 -> args -> IO () #-}
+scheduleOp
+    :: forall sh aenv args. (Shape sh, Marshalable sh, Marshalable args)
+    => Workers
     -> Function
     -> Gamma aenv
     -> Aval aenv
-    -> Range
+    -> Stream
+    -> sh
     -> args
     -> IO ()
-executeOp ppt exe (name, f) gamma aenv r args = do
-  args' <- marshal (undefined::Native) () (args, (gamma, aenv))
-  --
-  runExecutable exe name ppt r $ \start end _tid -> do
-   monitorProcTime             $
-    callFFI f retVoid (argInt start : argInt end : args')
+scheduleOp gang fun gamma aenv stream sz args =
+  let
+      splits  = numWorkers gang
+      minsize = case rank (undefined::sh) of
+                  1 -> 4096
+                  2 -> 64
+                  _ -> 16
+  in
+  scheduleOpWith splits minsize gang fun gamma aenv stream sz args
+
+-- Schedule an operation over the entire iteration space, specifying the number
+-- of partitions and minimum dimension size.
+--
+{-# SPECIALISE scheduleOpWith :: Marshalable args => Int -> Int -> Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM0 -> args -> IO () #-}
+{-# SPECIALISE scheduleOpWith :: Marshalable args => Int -> Int -> Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM1 -> args -> IO () #-}
+scheduleOpWith
+    :: (Shape sh, Marshalable sh, Marshalable args)
+    => Int            -- # subdivisions (hint)
+    -> Int            -- minimum size of a dimension (must be a power of two)
+    -> Workers        -- worker threads
+    -> Function       -- function to execute
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> sh
+    -> args
+    -> IO ()
+scheduleOpWith splits minsize gang (name, f) gamma aenv stream sz args =
+  let
+      finish  = return ()
+      actions = divideWork splits minsize empty sz $ \from to ->
+                  callFFI f retVoid =<< marshal (undefined::Native) stream (from, to, args, (gamma, aenv))
+  in
+  schedule gang =<< timed name (Job actions finish)
+
+{--
+mkJob splits minsize (_, f) gamma aenv stream from to args =
+  let
+      jobDone  = return ()
+      jobTasks = divideWork splits minsize from to $ \u v ->
+                  callFFI f retVoid =<< marshal (undefined::Native) stream (u, v, args, (gamma, aenv))
+  in
+  Job {..}
+--}
 
 
 -- Standard C functions
@@ -512,6 +574,47 @@ foreign import ccall unsafe "string.h memset" c_memset
 -- Debugging
 -- ---------
 
-monitorProcTime :: IO a -> IO a
-monitorProcTime = Debug.withProcessor Debug.Native
+-- Since the (new) thread scheduler does not operate in block-synchronous mode,
+-- it is a bit more difficult to track how long an individual operation took to
+-- execute as we won't know when exactly it will begin. The following method
+-- (where initial timing information is recorded as the first task) should give
+-- reasonable results.
+--
+-- TLM: missing GC stats information (verbose mode) since we aren't using the
+--      the default 'timed' helper.
+--
+timed :: ShortByteString -> Job -> IO Job
+timed name job =
+  case Debug.debuggingIsEnabled of
+    False -> return job
+    True  -> do
+      yes <- if Debug.monitoringIsEnabled
+               then return True
+               else Debug.getFlag Debug.dump_exec
+      --
+      if yes
+        then do
+          ref <- newIORef (0,0)
+          let start = do !wall0 <- getMonotonicTime
+                         !cpu0  <- getCPUTime
+                         writeIORef ref (wall0, cpu0)
+
+              end   = do !cpu1  <- getCPUTime
+                         !wall1 <- getMonotonicTime
+                         (wall0, cpu0) <- readIORef ref
+                         --
+                         let wallTime = wall1 - wall0
+                             cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+                         --
+                         Debug.addProcessorTime Debug.Native cpuTime
+                         Debug.traceIO Debug.dump_exec $ printf "exec: %s %s" (S8.unpack name) (Debug.elapsedP wallTime cpuTime)
+              --
+          return $ Job { jobTasks = start Seq.<| jobTasks job
+                       , jobDone  = jobDone job >> end
+                       }
+        else
+          return job
+
+-- accelerate/cbits/clock.c
+foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
 
