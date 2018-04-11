@@ -50,48 +50,70 @@ data Job = Job
 
 data Workers = Workers
   { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreadIds)
+  , masterThreadId    :: !ThreadId              -- master thread
   , workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
   , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
-  -- , workerJobQueue    :: !(MVar (Seq Job))      -- pending jobs
-  , workerTaskQueue   :: !(ChaseLevDeque Task)  -- tasks currently being executed; may be from different jobs
-  , workerException   :: !(MVar SomeException)  -- if full, worker received an exception
+  , workerJobQueue    :: !WorkerJobQueue        -- pending jobs
+  , workerTaskQueue   :: !WorkerTaskQueue       -- tasks currently being executed; may be from different jobs
+  , workerException   :: !(MVar (Seq (ThreadId, SomeException)))
   }
 
--- instance NFData Task where
---   rnf Retire = ()
---   rnf Work{} = ()
+type WorkerJobQueue   = MVar (Seq Job)
+type WorkerTaskQueue  = ChaseLevDeque Task
 
 
--- Schedule a job to be executed by the workers. The thread which finishes the
--- last action in this job runs the final jobDone action.
+-- Schedule a job to be executed by the worker threads
 --
 schedule :: Workers -> Job -> IO ()
-schedule workers Job{..} = do
-  count <- newIORef (force $ Seq.length jobTasks)
-  let
-      tasks = flip fmap jobTasks $ \io -> Work $ do
-                _result   <- io
-                remaining <- atomicModifyIORef' count (\i -> let !i' = i-1 in (i', i'))
-                when (remaining == 0) jobDone -- reschedule next job?
-  --
-  submit workers tasks
+schedule Workers{..} = appendMVar workerJobQueue
 
 
--- Submit the tasks to the queue to be executed by the worker threads. Note that
--- only the main thread (which owns the workers) may call this.
+-- The master thread "owns" the work stealing queue, and thus is the only one
+-- which can push new jobs onto it (pushing is not thread-safe).
 --
--- The signal MVar is filled to indicate to workers that new tasks are
--- available. We signal twice so that threads can start work immediately, but
--- since this is racey we signal again after adding all items to the queue, just
--- in case a thread woke up and failed too many times before being able to
--- successfully pop an item from the queue.
+-- So that worker threads can reschedule new work concurrently (e.g. as part of
+-- the 'jobDone' action), jobs are first placed onto the 'workerJobQueue' to be
+-- rescheduled onto the worker threads by the master thread.
 --
-submit :: Workers -> Seq Task -> IO ()
-submit Workers{..} tasks = do
-  _ <- tryPutMVar workerActive ()
-  mapM_ (pushL workerTaskQueue) tasks
-  _ <- tryPutMVar workerActive ()
-  return ()
+-- TODO: A nice way to shutdown the workers (without using exceptions).
+--
+-- TODO: Check performance of this two-step scheduling. We have an additional
+-- thread now competing for cycles with both the main thread as well as all the
+-- worker threads; we want to make sure that the latter don't get starved.
+--
+runMaster :: MVar () -> WorkerJobQueue -> WorkerTaskQueue -> IO ()
+runMaster activate pending queue = loop
+  where
+    loop :: IO ()
+    loop = do
+      jobs <- takeMVar pending
+      mapM_ submit jobs
+      loop
+
+    submit :: Job -> IO ()
+    submit Job{..} = do
+      -- The thread which finishes the last action in this job runs the final
+      -- 'jobDone' action, so keep track of how many items have been completed.
+      --
+      count <- newIORef (force $ Seq.length jobTasks)
+      let
+          tasks = flip fmap jobTasks $ \io -> Work $ do
+                    _result   <- io
+                    remaining <- atomicModifyIORef' count (\i -> let i' = i-1 in (i', i'))
+                    when (remaining == 0) jobDone
+
+      -- Submit the tasks to the queue to be executed by the worker threads.
+      --
+      -- The signal MVar is filled to indicate to workers that new tasks are
+      -- available. We signal twice so that threads can start work immediately,
+      -- but since this is racey we signal again after adding all items to the
+      -- queue, just in case a thread woke up and failed too many times before
+      -- being able to successfully pop an item from the queue.
+      --
+      _ <- tryPutMVar activate ()
+      mapM_ (pushL queue) tasks
+      _ <- tryPutMVar activate ()
+      return ()
 
 
 -- Workers can either be executing tasks (real work), waiting for work, or going
@@ -102,13 +124,13 @@ submit Workers{..} tasks = do
 -- retries. Note that 'readMVar' is multiple wake up, so all threads will be
 -- efficiently woken up when new work is added via 'submit'.
 --
-runWorker :: MVar () -> ChaseLevDeque Task -> IO ()
-runWorker active deq = loop 0
+runWorker :: MVar () -> WorkerTaskQueue -> IO ()
+runWorker activate queue = loop 0
   where
     loop :: Int -> IO ()
     loop !retries = do
-      mio <- tryPopR deq
-      case mio of
+      req <- tryPopR queue
+      case req of
         -- The number of retries and thread delay on failure are knobs which can
         -- be tuned. Having these values too small results in busy work which
         -- will detract from time spent adding new work thus reducing
@@ -122,8 +144,8 @@ runWorker active deq = loop 0
                            tid <- myThreadId
                            message $ printf "sched: %s sleeping" (show tid)
                          --
-                         _  <- tryTakeMVar active -- another worker might have already signalled sleep
-                         () <- readMVar active    -- blocking, multiple wake-up
+                         _  <- tryTakeMVar activate -- another worker might have already signalled sleep
+                         () <- readMVar activate    -- blocking, multiple wake-up
                          loop 0
         --
         Just task -> case task of
@@ -146,15 +168,17 @@ hireWorkers = do
 --
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
-  -- workerJobQueue  <- newEmptyMVar
-  workerException <- newEmptyMVar
   workerActive    <- newEmptyMVar
+  workerException <- newEmptyMVar
+  workerJobQueue  <- newEmptyMVar
   workerTaskQueue <- newQ
+  masterThreadId  <- forkIO $ runMaster workerActive workerJobQueue workerTaskQueue
   workerThreadIds <- forM caps $ \cpu -> do
                        tid <- mask_ $ forkOnWithUnmask cpu $ \restore ->
                                 catch
                                   (restore $ runWorker workerActive workerTaskQueue)
-                                  (restore . putMVar workerException)   -- tryPutMVar?
+                                  (\e -> do tid <- myThreadId
+                                            appendMVar workerException (tid, e))
                        --
                        message $ printf "sched: fork %s on capability %d" (show tid) cpu
                        return tid
@@ -166,19 +190,34 @@ hireWorkersOn caps = do
 -- completed first.
 --
 retireWorkers :: Workers -> IO ()
-retireWorkers workers@Workers{..} =
-  submit workers (Seq.replicate workerCount Retire)
+retireWorkers = error "TODO: retireWorkers"
+-- retireWorkers Workers{..} =
+  -- submit workers (Seq.replicate workerCount Retire)
+  -- just unsafely push to the deque from this thread?
 
 -- Kill worker threads immediately
 --
 fireWorkers :: Workers -> IO ()
 fireWorkers Workers{..} =
-  mapM_ killThread workerThreadIds
+  mapM_ killThread (masterThreadId : workerThreadIds)
 
 -- Number of workers
 --
 numWorkers :: Workers -> Int
 numWorkers = workerCount
+
+
+-- Utility
+-- -------
+
+{-# INLINE appendMVar #-}
+appendMVar :: MVar (Seq a) -> a -> IO ()
+appendMVar mvar a =
+  mask_ $ do
+    ma <- tryTakeMVar mvar
+    case ma of
+      Nothing -> putMVar mvar (Seq.singleton a)
+      Just as -> putMVar mvar (as Seq.|> a)
 
 
 -- Debug
