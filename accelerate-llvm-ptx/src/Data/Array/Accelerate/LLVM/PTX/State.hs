@@ -44,7 +44,7 @@ import Control.Concurrent                                           ( runInBound
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.Environment                                           ( lookupEnv )
-import System.IO.Unsafe                                             ( unsafePerformIO )
+import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
 import Text.Printf                                                  ( printf )
 import Text.Read                                                    ( readMaybe )
 import Foreign.CUDA.Driver.Error
@@ -166,7 +166,7 @@ defaultTargetPool = unsafePerformIO $! do
       -- Spin up the GPU at the given ordinal.
       --
       boot :: Int -> IO (Maybe PTX)
-      boot i = do
+      boot i = unsafeInterleaveIO $ do
         dev <- CUDA.device i
         prp <- CUDA.props dev
         r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
