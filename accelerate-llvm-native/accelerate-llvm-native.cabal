@@ -115,7 +115,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.Execute.Async
     Data.Array.Accelerate.LLVM.Native.Execute.Divide
     Data.Array.Accelerate.LLVM.Native.Execute.Environment
-    Data.Array.Accelerate.LLVM.Native.Execute.LBS
     Data.Array.Accelerate.LLVM.Native.Execute.Marshal
     Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 
