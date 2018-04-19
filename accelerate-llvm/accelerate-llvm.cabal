@@ -80,14 +80,6 @@ extra-source-files:
     README.md
 
 
--- Configuration flags
--- -------------------
-
-Flag chase-lev
-  Default:              True
-  Description:          Use a Chase-Lev deque for work stealing
-
-
 -- Build configuration
 -- -------------------
 
@@ -146,18 +138,9 @@ Library
     LLVM.AST.Type.Representation
     LLVM.AST.Type.Terminator
 
-    -- Scheduler
-    Control.Parallel.Meta
-    Control.Parallel.Meta.Worker
-    Control.Parallel.Meta.Resource.Backoff
-    Control.Parallel.Meta.Resource.Single
-    Control.Parallel.Meta.Resource.SMP
-    Control.Parallel.Meta.Trans.LBS
-
     -- Extras
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
-    Data.Range
 
   other-modules:
     Paths_accelerate_llvm
@@ -201,13 +184,6 @@ Library
   if impl(ghc >= 8.0)
     ghc-options:
         -Wmissed-specialisations
-
-  if flag(chase-lev)
-    cpp-options:
-        -DCHASELEV_DEQUE
-
-    build-depends:
-          chaselev-deque                >= 0.5
 
 source-repository head
   type:                 git
