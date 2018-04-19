@@ -44,8 +44,8 @@ data Task
   | Retire
 
 data Job = Job
-  { jobTasks  :: !(Seq Action)  -- actions required to complete this job
-  , jobDone   :: !Action        -- execute after the last action is completed
+  { jobTasks  :: !(Seq Action)    -- actions required to complete this job
+  , jobDone   :: !(Maybe Action)  -- execute after the last action is completed
   }
 
 data Workers = Workers
@@ -62,15 +62,20 @@ data Workers = Workers
 --
 schedule :: Workers -> Job -> IO ()
 schedule Workers{..} Job{..} = do
-  -- The thread which finishes the last task runs the final 'jobDone' action, so
-  -- keep track of how many items have been completed so far.
+  -- Generate the work list. If there is a finalisation action, there is a bit
+  -- of extra work to do at each step.
   --
-  count <- newIORef (Seq.length jobTasks)
-  let
-      tasks = flip fmap jobTasks $ \io -> Work $ do
-                _result   <- io
-                remaining <- atomicModifyIORef' count (\i -> let i' = i-1 in (i', i'))
-                when (remaining == 0) jobDone
+  tasks <- case jobDone of
+             Nothing    -> return $ fmap Work jobTasks
+             Just done  -> do
+                -- The thread which finishes the last task runs the finalisation
+                -- action, so keep track of how many items have been completed.
+                --
+                count <- newIORef (Seq.length jobTasks)
+                return $ flip fmap jobTasks $ \io -> Work $ do
+                  _result   <- io
+                  remaining <- atomicModifyIORef' count (\i -> let i' = i-1 in (i',i'))
+                  when (remaining == 0) done
 
   -- Submit the tasks to the queue to be executed by the worker threads.
   --
