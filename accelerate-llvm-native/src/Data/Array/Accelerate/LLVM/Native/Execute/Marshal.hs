@@ -12,7 +12,7 @@
 #endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -23,7 +23,8 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Marshal (
 
-  Marshalable, M.marshal
+  Marshalable,
+  M.marshal', M.marshal,
 
 ) where
 
@@ -35,6 +36,7 @@ import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment
 import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.State
 
 -- libraries
 import Data.DList                                               ( DList )
@@ -43,27 +45,35 @@ import qualified Data.IntMap                                    as IM
 import qualified Foreign.LibFFI                                 as FFI
 
 
--- Instances for the Native backend
+-- Instances for handling concrete types in the Native backend
 --
-type Marshalable args       = M.Marshalable Native args
+type Marshalable m args     = M.Marshalable Native m args
 type instance M.ArgR Native = FFI.Arg
 
 
--- Instances for handling concrete types in this backend, namely shapes and
--- array data.
---
-instance M.Marshalable Native Int where
-  marshal' _ _ x = return $ DL.singleton (FFI.argInt x)
+instance Monad m => M.Marshalable Native m (DList FFI.Arg) where
+  marshal' _ = return
 
-instance {-# OVERLAPS #-} M.Marshalable Native (Gamma aenv, Aval aenv) where
-  marshal' t s (gamma, aenv)
+instance Monad m => M.Marshalable Native m Int where
+  marshal' _ x = return $ DL.singleton (FFI.argInt x)
+
+instance {-# OVERLAPS #-} M.Marshalable Native (Par Native) (Gamma aenv, Val aenv) where
+  marshal' proxy (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> M.marshal' t s (sync (aprj idx aenv))) (IM.elems gamma)
-    where
-      sync (AsyncR () a) = a
+    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' proxy =<< get (prj idx aenv)) (IM.elems gamma)
 
-instance ArrayElt e => M.Marshalable Native (ArrayData e) where
-  marshal' _ _ adata = return $ marshalR arrayElt adata
+-- instance M.Marshalable Native (Gamma aenv, Val aenv) where
+--   marshal' t s (gamma, aenv)
+--     = fmap DL.concat
+--     $ mapM (\(_, Idx' idx) -> M.marshal' t s (sync (aprj idx aenv))) (IM.elems gamma)
+--     where
+--       sync (AsyncR () a) = a
+
+instance ArrayElt e => M.Marshalable Native (Par Native) (ArrayData e) where
+  marshal' proxy adata = liftPar (M.marshal' proxy adata)
+
+instance ArrayElt e => M.Marshalable Native (LLVM Native) (ArrayData e) where
+  marshal' _ adata = return $ marshalR arrayElt adata
     where
       marshalR :: ArrayEltR e' -> ArrayData e' -> DList FFI.Arg
       marshalR ArrayEltRunit             _  = DL.empty

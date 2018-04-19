@@ -1,6 +1,7 @@
+{-# LANGUAGE ForeignFunctionInterface #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Debug
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -23,7 +24,6 @@ import qualified Foreign.CUDA.Driver.Event              as Event
 
 import Control.Monad.Trans
 import Control.Concurrent
-import Data.Time.Clock
 import System.CPUTime
 import Text.Printf
 
@@ -57,13 +57,13 @@ monitorProcTime enabled display stream action = do
     then do
       gpuBegin  <- liftIO $ Event.create []
       gpuEnd    <- liftIO $ Event.create []
-      wallBegin <- liftIO $ getCurrentTime
+      wallBegin <- liftIO $ getMonotonicTime
       cpuBegin  <- liftIO $ getCPUTime
       _         <- liftIO $ Event.record gpuBegin stream
       result    <- action
       _         <- liftIO $ Event.record gpuEnd stream
       cpuEnd    <- liftIO $ getCPUTime
-      wallEnd   <- liftIO $ getCurrentTime
+      wallEnd   <- liftIO $ getMonotonicTime
 
       -- Wait for the GPU to finish executing then display the timing execution
       -- message. Do this in a separate thread so that the remaining kernels can
@@ -74,7 +74,7 @@ monitorProcTime enabled display stream action = do
         diff    <- Event.elapsedTime gpuBegin gpuEnd
         let gpuTime  = float2Double $ diff * 1E-3                   -- milliseconds
             cpuTime  = fromIntegral (cpuEnd - cpuBegin) * 1E-12     -- picoseconds
-            wallTime = realToFrac (diffUTCTime wallEnd wallBegin)
+            wallTime = wallEnd - wallBegin                          -- seconds
 
         Event.destroy gpuBegin
         Event.destroy gpuEnd
@@ -94,4 +94,7 @@ elapsed wallTime cpuTime gpuTime =
     (showFFloatSIBase (Just 3) 1000 wallTime "s")
     (showFFloatSIBase (Just 3) 1000 cpuTime "s")
     (showFFloatSIBase (Just 3) 1000 gpuTime "s")
+
+-- accelerate/cbits/clock.c
+foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
 

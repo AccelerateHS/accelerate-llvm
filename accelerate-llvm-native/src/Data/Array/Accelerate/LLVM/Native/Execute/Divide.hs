@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Divide
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>

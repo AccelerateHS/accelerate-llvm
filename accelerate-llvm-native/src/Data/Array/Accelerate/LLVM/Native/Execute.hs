@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GADTs                    #-}
+{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
@@ -10,7 +11,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,7 +22,7 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute (
 
-  executeAcc, executeAfun,
+  executeAcc,
   executeOpenAcc
 
 ) where
@@ -37,8 +38,7 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
-import Data.Array.Accelerate.LLVM.Native.Execute.Divide
-import Data.Array.Accelerate.LLVM.Native.Execute.Environment
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Val )
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 import Data.Array.Accelerate.LLVM.Native.Link
@@ -49,16 +49,17 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
-import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
+import Data.IORef                                                   ( newIORef, readIORef, writeIORef, atomicModifyIORef' )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
+import Data.Proxy                                                   ( Proxy(..) )
 import Data.Word                                                    ( Word8 )
 import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
-import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Prelude                                            as P
+import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 
 import Foreign.C
 import Foreign.LibFFI
@@ -86,20 +87,20 @@ instance Execute Native where
   generate      = simpleOp
   transform     = simpleOp
   backpermute   = simpleOp
-  fold          = foldOp
-  fold1         = fold1Op
-  foldSeg       = foldSegOp
-  fold1Seg      = foldSegOp
-  scanl         = scanOp
-  scanl1        = scan1Op
-  scanl'        = scan'Op
-  scanr         = scanOp
-  scanr1        = scan1Op
-  scanr'        = scan'Op
-  permute       = permuteOp
-  stencil1      = simpleOp
-  stencil2      = stencil2Op
-  aforeign      = aforeignOp
+  -- fold          = foldOp
+  -- fold1         = fold1Op
+  -- foldSeg       = foldSegOp
+  -- fold1Seg      = foldSegOp
+  -- scanl         = scanOp
+  -- scanl1        = scan1Op
+  -- scanl'        = scan'Op
+  -- scanr         = scanOp
+  -- scanr1        = scan1Op
+  -- scanr'        = scan'Op
+  -- permute       = permuteOp
+  -- stencil1      = simpleOp
+  -- stencil2      = stencil2Op
+  -- aforeign      = aforeignOp
 
 
 -- Skeleton implementation
@@ -111,11 +112,20 @@ simpleOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
-    -> LLVM Native (Array sh e)
-simpleOp exe gamma aenv stream sh = withExecutable exe $ \nativeExecutable -> do
+    -> Par Native (Future (Array sh e))
+simpleOp exe gamma aenv sh = withExecutable exe $ \nativeExecutable -> do
+  let fun = case functionTable nativeExecutable of
+              f:_ -> f
+              _   -> $internalError "simpleOp" "no functions found"
+  --
+  future <- new
+  result <- liftIO $ allocateArray sh
+  scheduleOp fun gamma aenv (Z :. size sh) result `andThen` putIO future result
+  return future
+
+{--
   let fun = case functionTable nativeExecutable of
               f:_ -> f
               _   -> $internalError "simpleOp" "no functions found"
@@ -125,15 +135,15 @@ simpleOp exe gamma aenv stream sh = withExecutable exe $ \nativeExecutable -> do
     out <- allocateArray sh
     scheduleOp workers fun gamma aenv stream (Z :. size sh) out -- XXX: nested loops
     return out
+--}
 
-
+{--
 simpleNamed
     :: (Shape sh, Elt e)
     => ShortByteString
     -> ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> LLVM Native (Array sh e)
 simpleNamed name exe gamma aenv stream sh = withExecutable exe $ \nativeExecutable -> do
@@ -170,8 +180,7 @@ fold1Op
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 fold1Op kernel gamma aenv stream sh@(sx :. sz)
@@ -184,8 +193,7 @@ foldOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldOp kernel gamma aenv stream sh@(sx :. _) =
@@ -197,8 +205,7 @@ foldCore
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldCore kernel gamma aenv stream sh
@@ -212,8 +219,7 @@ foldAllOp
     :: forall aenv e. Elt e
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> DIM1
     -> LLVM Native (Scalar e)
 foldAllOp = error "foldAllOp"
@@ -245,8 +251,7 @@ foldDimOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> LLVM Native (Array sh e)
 foldDimOp = error "foldDimOp"
@@ -264,8 +269,7 @@ foldSegOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> (Z  :. Int)
     -> LLVM Native (Array (sh :. Int) e)
@@ -292,8 +296,7 @@ scanOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e)
 scanOp kernel gamma aenv stream (sz :. n) =
@@ -305,8 +308,7 @@ scan1Op
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e)
 scan1Op kernel gamma aenv stream (sz :. n)
@@ -317,8 +319,7 @@ scanCore
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> Int
     -> Int
@@ -366,8 +367,7 @@ scan'Op
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e, Array sh e)
 scan'Op = error "scan'Op"
@@ -386,8 +386,7 @@ scan'Core
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
     -> LLVM Native (Array (sh:.Int) e, Array sh e)
 scan'Core = error "scan'Core"
@@ -425,8 +424,7 @@ permuteOp
     :: (Shape sh, Shape sh', Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> Bool
     -> sh
     -> Array sh' e
@@ -465,8 +463,7 @@ stencil2Op
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> sh
     -> LLVM Native (Array sh e)
@@ -477,8 +474,7 @@ stencil2Op kernel gamma aenv stream sh1 sh2 =
 aforeignOp
     :: (Arrays as, Arrays bs)
     => String
-    -> (Stream -> as -> LLVM Native bs)
-    -> Stream
+    -> (as -> Par Native (Future bs))
     -> as
     -> LLVM Native bs
 aforeignOp name asm stream arr = do
@@ -487,6 +483,7 @@ aforeignOp name asm stream arr = do
   wallEnd   <- liftIO getMonotonicTime
   liftIO $ Debug.addProcessorTime Debug.Native (wallEnd - wallBegin)
   return result
+--}
 
 
 -- Skeleton execution
@@ -501,64 +498,84 @@ lookupFunction :: ShortByteString -> FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
   find (\(n,_) -> n == name) (functionTable nativeExecutable)
 
+andThen :: (Maybe a -> t) -> a -> t
+andThen f g = f (Just g)
 
 
-{-# SPECIALISE scheduleOp :: Marshalable args => Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM0 -> args -> IO () #-}
-{-# SPECIALISE scheduleOp :: Marshalable args => Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM1 -> args -> IO () #-}
+{-# SPECIALISE scheduleOp :: Marshalable (Par Native) args => Function -> Gamma aenv -> Val aenv -> DIM0 -> args -> Maybe Action -> Par Native () #-}
+{-# SPECIALISE scheduleOp :: Marshalable (Par Native) args => Function -> Gamma aenv -> Val aenv -> DIM1 -> args -> Maybe Action -> Par Native () #-}
 scheduleOp
-    :: forall sh aenv args. (Shape sh, Marshalable sh, Marshalable args)
-    => Workers
-    -> Function
+    :: forall sh aenv args. (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+    => Function
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> args
-    -> IO ()
-scheduleOp gang fun gamma aenv stream sz args =
+    -> Maybe Action
+    -> Par Native ()
+scheduleOp fun gamma aenv sz args done = do
+  Native{..} <- gets llvmTarget
   let
-      splits  = numWorkers gang
+      splits  = numWorkers workers
       minsize = case rank (undefined::sh) of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
-  in
-  scheduleOpWith splits minsize gang fun gamma aenv stream sz args
+  --
+  scheduleOpWith splits minsize fun gamma aenv sz args done
 
 -- Schedule an operation over the entire iteration space, specifying the number
 -- of partitions and minimum dimension size.
 --
-{-# SPECIALISE scheduleOpWith :: Marshalable args => Int -> Int -> Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM0 -> args -> IO () #-}
-{-# SPECIALISE scheduleOpWith :: Marshalable args => Int -> Int -> Workers -> Function -> Gamma aenv -> Aval aenv -> Stream -> DIM1 -> args -> IO () #-}
 scheduleOpWith
-    :: (Shape sh, Marshalable sh, Marshalable args)
+    :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
     => Int            -- # subdivisions (hint)
     -> Int            -- minimum size of a dimension (must be a power of two)
-    -> Workers        -- worker threads
     -> Function       -- function to execute
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> args
-    -> IO ()
-scheduleOpWith splits minsize gang (name, f) gamma aenv stream sz args =
-  let
-      finish  = return ()
-      actions = divideWork splits minsize empty sz $ \from to ->
-                  callFFI f retVoid =<< marshal (undefined::Native) stream (from, to, args, (gamma, aenv))
-  in
-  schedule gang =<< timed name (Job actions finish)
+    -> Maybe Action   -- run after the last piece completes
+    -> Par Native ()
+scheduleOpWith splits minsize (name, f) gamma aenv sz args done = do
+  Native{..} <- gets llvmTarget
+  job        <- mkJob splits minsize f gamma aenv empty sz args done
+  liftIO $ schedule workers =<< timed name job
 
-{--
-mkJob splits minsize (_, f) gamma aenv stream from to args =
+mkJob :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+      => Int
+      -> Int
+      -> FunPtr ()
+      -> Gamma aenv
+      -> Val aenv
+      -> sh
+      -> sh
+      -> args
+      -> Maybe Action
+      -> Par Native Job
+mkJob splits minsize f gamma aenv from to args jobDone = do
+  argv <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
   let
-      jobDone  = return ()
       jobTasks = divideWork splits minsize from to $ \u v ->
-                  callFFI f retVoid =<< marshal (undefined::Native) stream (u, v, args, (gamma, aenv))
-  in
-  Job {..}
---}
+                  callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
+  --
+  return $ Job {..}
+
+
+-- This is Async.put, but reimplemented in IO.
+--
+putIO :: Future a -> a -> IO ()
+putIO (Future ref) v = do
+  ks <- atomicModifyIORef' ref $ \case
+          Empty      -> (Full v, Seq.empty)
+          Blocked ks -> (Full v, ks)
+          _          -> $internalError "put" "multiple put"
+
+  -- Should we put these onto the thread work queues? Probably they are too
+  -- small to be useful, but might spawn further work?
+  --
+  mapM_ ($ v) ks
 
 
 -- Standard C functions
@@ -610,7 +627,9 @@ timed name job =
                          Debug.traceIO Debug.dump_exec $ printf "exec: %s %s" (S8.unpack name) (Debug.elapsedP wallTime cpuTime)
               --
           return $ Job { jobTasks = start Seq.<| jobTasks job
-                       , jobDone  = jobDone job >> end
+                       , jobDone  = case jobDone job of
+                                      Nothing       -> Just end
+                                      Just finished -> Just (finished >> end)
                        }
         else
           return job

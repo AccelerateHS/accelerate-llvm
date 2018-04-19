@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE GADTs           #-}
+{-# LANGUAGE RankNTypes      #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Data
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,6 +23,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Array.Unique                       ( UniqueArray(..) )
 import Data.Array.Accelerate.Lifetime                           ( Lifetime(..) )
@@ -37,6 +40,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 -- standard library
 import Control.Applicative
 import Control.Monad.State                                      ( liftIO, gets )
+import Control.Monad.Reader
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
@@ -44,43 +48,25 @@ import System.IO.Unsafe
 import Prelude
 
 
--- Instance of remote array memory management for the PTX target
+-- | Remote memory management for the PTX target. Data can be copied
+-- asynchronously using multiple execution engines whenever possible.
 --
 instance Remote PTX where
-
-  {-# INLINEABLE allocateRemote #-}
+  {-# INLINEABLE allocateRemote   #-}
+  {-# INLINEABLE indexRemoteAsync #-}
+  {-# INLINEABLE useRemoteR       #-}
+  {-# INLINEABLE copyToHostR      #-}
+  {-# INLINEABLE copyToRemoteR    #-}
   allocateRemote !sh = do
     let !n = size sh
-    arr <- liftIO $ allocateArray sh
+    arr <- liftIO $ allocateArray sh  -- shadow array on the host
     runArray arr (\m ad -> Prim.mallocArray (n*m) ad >> return ad)
 
-  {-# INLINEABLE useRemoteR #-}
-  useRemoteR !n !mst !ad = do
-    case mst of
-      Nothing -> Prim.useArray         n ad
-      Just st -> Prim.useArrayAsync st n ad
-
-  {-# INLINEABLE copyToRemoteR #-}
-  copyToRemoteR !from !n !mst !ad = do
-    case mst of
-      Nothing -> Prim.pokeArrayR         from n ad
-      Just st -> Prim.pokeArrayAsyncR st from n ad
-
-  {-# INLINEABLE copyToHostR #-}
-  copyToHostR !from !n !mst !ad = do
-    case mst of
-      Nothing -> Prim.peekArrayR         from n ad
-      Just st -> Prim.peekArrayAsyncR st from n ad
-
-  {-# INLINEABLE copyToPeerR #-}
-  copyToPeerR !from !n !dst !mst !ad = do
-    case mst of
-      Nothing -> Prim.copyArrayPeerR      (ptxContext dst) (ptxMemoryTable dst)    from n ad
-      Just st -> Prim.copyArrayPeerAsyncR (ptxContext dst) (ptxMemoryTable dst) st from n ad
-
-  {-# INLINEABLE indexRemote #-}
-  indexRemote arr i =
-    runIndexArray Prim.indexArray arr i
+  indexRemoteAsync  = runIndexArrayAsync Prim.indexArrayAsync
+  useRemoteR        = Prim.useArrayAsync
+  copyToHostR       = Prim.peekArrayAsync
+  copyToRemoteR     = Prim.pokeArrayAsync
+  copyToPeerR       = $internalError "copyToPeerR" "not supported yet"
 
 
 -- | Copy an array from the remote device to the host. Although the Accelerate
@@ -97,6 +83,7 @@ instance Remote PTX where
 --      an array element or using 'deepseq' to force to normal form is required
 --      to actually transfer the data.
 --
+{-# INLINEABLE copyToHostLazy #-}
 copyToHostLazy
     :: Arrays arrs
     => arrs
@@ -113,13 +100,11 @@ copyToHostLazy arrs = do
         peekR ad (UniqueArray uid (Lifetime ref weak fp)) n = do
           fp' <- unsafeInterleaveIO $
             evalPTX ptx $ do
-              s <- fork
-              copyToHostR 0 n (Just s) ad
-              e <- checkpoint s
-              block e
-              join s
+              r  <- evalPar $ Prim.peekArrayAsync n ad
+              !_ <- liftIO  $ wait r
               return fp
-          return $ UniqueArray uid (Lifetime ref weak fp')
+          --
+          return $ UniqueArray uid (Lifetime ref weak fp')  -- not directly reusing 'fp'
 
         runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
         runR ArrayEltRunit              AD_Unit          _ = return AD_Unit
@@ -162,6 +147,69 @@ copyToHostLazy arrs = do
     Array sh <$> runR arrayElt adata (R.size sh)
 
 
+{-# INLINE runIndexArrayAsync #-}
+runIndexArrayAsync
+    :: (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => ArrayData e' -> Int -> Int -> Par PTX (Future (ArrayData e')))
+    -> Array sh e
+    -> Int
+    -> Par PTX (Future e)
+runIndexArrayAsync worker (Array _ adata) i = (toElt . flip unsafeIndexArrayData 0) `liftF` runR arrayElt adata 1
+  where
+    runR :: ArrayEltR e' -> ArrayData e' -> Int -> Par PTX (Future (ArrayData e'))
+    runR ArrayEltRint              ad                n = worker ad i n
+    runR ArrayEltRint8             ad                n = worker ad i n
+    runR ArrayEltRint16            ad                n = worker ad i n
+    runR ArrayEltRint32            ad                n = worker ad i n
+    runR ArrayEltRint64            ad                n = worker ad i n
+    runR ArrayEltRword             ad                n = worker ad i n
+    runR ArrayEltRword8            ad                n = worker ad i n
+    runR ArrayEltRword16           ad                n = worker ad i n
+    runR ArrayEltRword32           ad                n = worker ad i n
+    runR ArrayEltRword64           ad                n = worker ad i n
+    runR ArrayEltRhalf             ad                n = worker ad i n
+    runR ArrayEltRfloat            ad                n = worker ad i n
+    runR ArrayEltRdouble           ad                n = worker ad i n
+    runR ArrayEltRbool             ad                n = worker ad i n
+    runR ArrayEltRchar             ad                n = worker ad i n
+    runR ArrayEltRcshort           ad                n = worker ad i n
+    runR ArrayEltRcushort          ad                n = worker ad i n
+    runR ArrayEltRcint             ad                n = worker ad i n
+    runR ArrayEltRcuint            ad                n = worker ad i n
+    runR ArrayEltRclong            ad                n = worker ad i n
+    runR ArrayEltRculong           ad                n = worker ad i n
+    runR ArrayEltRcllong           ad                n = worker ad i n
+    runR ArrayEltRcullong          ad                n = worker ad i n
+    runR ArrayEltRcfloat           ad                n = worker ad i n
+    runR ArrayEltRcdouble          ad                n = worker ad i n
+    runR ArrayEltRcchar            ad                n = worker ad i n
+    runR ArrayEltRcschar           ad                n = worker ad i n
+    runR ArrayEltRcuchar           ad                n = worker ad i n
+    runR (ArrayEltRvec2 ae)        (AD_V2 ad)        n = liftF  AD_V2   (runR ae ad (n*2))
+    runR (ArrayEltRvec3 ae)        (AD_V3 ad)        n = liftF  AD_V3   (runR ae ad (n*3))
+    runR (ArrayEltRvec4 ae)        (AD_V4 ad)        n = liftF  AD_V4   (runR ae ad (n*4))
+    runR (ArrayEltRvec8 ae)        (AD_V8 ad)        n = liftF  AD_V8   (runR ae ad (n*8))
+    runR (ArrayEltRvec16 ae)       (AD_V16 ad)       n = liftF  AD_V16  (runR ae ad (n*16))
+    runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) n = liftF2 AD_Pair (runR aeR2 ad2 n) (runR aeR1 ad1 n)
+    runR ArrayEltRunit             AD_Unit           _ = newFull AD_Unit
+
+    -- Don't create a new execution stream for these sub transfers
+    liftF :: (a -> b) -> Par PTX (Future a) -> Par PTX (Future b)
+    liftF f x = do
+      r  <- new
+      x' <- x
+      put r . f =<< get x'
+      return r
+
+    liftF2 :: (a -> b -> c) -> Par PTX (Future a) -> Par PTX (Future b) -> Par PTX (Future c)
+    liftF2 f x y = do
+      r  <- new
+      x' <- x
+      y' <- y
+      put r =<< liftM2 f (get x') (get y')
+      return r
+
+
+{--
 -- | Clone an array into a newly allocated array on the device.
 --
 cloneArrayAsync
@@ -223,4 +271,5 @@ cloneArrayAsync stream arr@(Array _ src) = do
         -> Int
         -> LLVM PTX ()
     copyPrim !a1 !a2 !m = Prim.copyArrayAsync stream m a1 a2
+--}
 

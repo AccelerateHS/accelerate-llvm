@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -45,8 +45,8 @@ module Data.Array.Accelerate.LLVM.Native (
   runNAsync, runNAsyncWith,
 
   -- * Ahead-of-time compilation
-  runQ, runQWith,
-  runQAsync, runQAsyncWith,
+  -- runQ, runQWith,
+  -- runQAsync, runQAsyncWith,
 
   -- * Execution targets
   Native,
@@ -55,29 +55,29 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
-import Data.Array.Accelerate.Async
+import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
-import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
-import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
+import Data.Array.Accelerate.LLVM.Native.Execute.Async              ( Par, evalPar, get )
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Val, ValR(..) )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
-import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
 -- standard library
-import Data.Typeable
 import Control.Monad.Trans
+import Data.IORef
+import Data.Typeable
 import System.IO.Unsafe
 import Text.Printf
 import qualified Language.Haskell.TH                                as TH
@@ -97,8 +97,7 @@ run = runWith defaultTarget
 -- | As 'run', but execute using the specified target (thread gang).
 --
 runWith :: Arrays a => Native -> Acc a -> a
-runWith target a = unsafePerformIO (run' target a)
-
+runWith target a = unsafePerformIO (runWithIO target a)
 
 -- | As 'run', but allow the computation to run asynchronously and return
 -- immediately without waiting for the result. The status of the computation can
@@ -110,18 +109,18 @@ runAsync = runAsyncWith defaultTarget
 -- | As 'runAsync', but execute using the specified target (thread gang).
 --
 runAsyncWith :: Arrays a => Native -> Acc a -> IO (Async a)
-runAsyncWith target a = async (run' target a)
+runAsyncWith target a = async (runWithIO target a)
 
-run' :: Arrays a => Native -> Acc a -> IO a
-run' target a = execute
+runWithIO :: Arrays a => Native -> Acc a -> IO a
+runWithIO target a = execute
   where
-    !acc        = convertAccWith (config target) a
-    execute     = do
+    !acc    = convertAccWith (config target) a
+    execute = do
       dumpGraph acc
       evalNative target $ do
         build <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    elapsedS (linkAcc build)
-        res   <- phase "execute" elapsedP (executeAcc exec)
+        res   <- phase "execute" elapsedP (evalPar (executeAcc exec >>= get))
         return res
 
 
@@ -192,17 +191,18 @@ runNWith target f = exec
                 build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
-    !exec = go afun (return Aempty)
+    !exec = go afun (return Empty)
 
-    go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
+    go :: ExecOpenAfun Native aenv t -> Par Native (Val aenv) -> t
     go (Alam l) k = \arrs ->
-      let k' = do aenv       <- k
-                  AsyncR _ a <- E.async (useRemoteAsync arrs)
-                  return (aenv `Apush` a)
+      let k' = do aenv  <- k
+                  a     <- useRemoteAsync arrs
+                  return (aenv `Push` a)
       in go l k'
-    go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target $ do
-      aenv   <- k
-      E.get =<< E.async (executeOpenAcc b aenv)
+    go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target . evalPar $ do
+      aenv <- k
+      res  <- executeOpenAcc b aenv
+      get res
 
 
 -- | As 'run1', but execute asynchronously.
@@ -224,7 +224,7 @@ runNAsync = runNAsyncWith defaultTarget
 -- | As 'runNWith', but execute asynchronously.
 --
 runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => Native -> f -> r
-runNAsyncWith target f = runAsync' target afun (return Aempty)
+runNAsyncWith target f = exec
   where
     !acc  = convertAfunWith (config target) f
     !afun = unsafePerformIO $ do
@@ -233,26 +233,28 @@ runNAsyncWith target f = runAsync' target afun (return Aempty)
                 build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
+    !exec = runAsync' target afun (return Empty)
 
 class RunAsync f where
   type RunAsyncR f
-  runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> LLVM Native (Aval aenv) -> f
+  runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> Par Native (Val aenv) -> f
 
 instance RunAsync b => RunAsync (a -> b) where
   type RunAsyncR (a -> b) = a -> RunAsyncR b
   runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
   runAsync' target (Alam l) k arrs =
-    let k' = do aenv       <- k
-                AsyncR _ a <- E.async (useRemoteAsync arrs)
-                return (aenv `Apush` a)
+    let k' = do aenv  <- k
+                a     <- useRemoteAsync arrs
+                return (aenv `Push` a)
     in runAsync' target l k'
 
 instance RunAsync (IO (Async b)) where
   type RunAsyncR  (IO (Async b)) = b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
-  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target $ do
-    aenv   <- k
-    E.get =<< E.async (executeOpenAcc b aenv)
+  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target . evalPar $ do
+    aenv  <- k
+    ans   <- executeOpenAcc b aenv
+    get ans
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -268,7 +270,7 @@ streamWith target f arrs = map go arrs
   where
     !go = run1With target f
 
-
+{--
 -- | Ahead-of-time compilation for an embedded array program.
 --
 -- This function will generate, compile, and link into the final executable,
@@ -411,13 +413,14 @@ runQ' using target f = do
         go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
 
       go (Abody body) xs as stmts =
-        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
+        let aenv = foldr (\a gamma -> [| $gamma `Push` $a |] ) [| Empty |] as
             eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
         in
         TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) $
                                   $(TH.doE (reverse (eval : stmts))) |]
   --
   go afun [] [] []
+--}
 
 
 -- How the Accelerate program should be evaluated.

@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Environment
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.AST                                    ( Idx(..) )
 #if __GLASGOW_HASKELL__ < 800
 import Data.Array.Accelerate.Error
 #endif
@@ -26,22 +26,22 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 
--- Array environments
--- ------------------
+-- Environments
+-- ------------
 
--- Valuation for an environment of array computations
+-- Valuation for an environment of futures
 --
-data AvalR arch env where
-  Aempty :: AvalR arch ()
-  Apush  :: AvalR arch env -> AsyncR arch t -> AvalR arch (env, t)
+data ValR arch env where
+  Empty :: ValR arch ()
+  Push  :: ValR arch env -> FutureR arch t -> ValR arch (env, t)
 
 
 -- Projection of a value from a valuation using a de Bruijn index.
 --
-aprj :: Idx env t -> AvalR arch env -> AsyncR arch t
-aprj ZeroIdx       (Apush _   x) = x
-aprj (SuccIdx idx) (Apush val _) = aprj idx val
+prj :: Idx env t -> ValR arch env -> FutureR arch t
+prj ZeroIdx       (Push _   x) = x
+prj (SuccIdx idx) (Push val _) = prj idx val
 #if __GLASGOW_HASKELL__ < 800
-aprj _             _             = $internalError "aprj" "inconsistent valuation"
+prj _             _            = $internalError "prj" "inconsistent valuation"
 #endif
 

@@ -147,7 +147,6 @@ Library
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
         , template-haskell
-        , time                          >= 1.4
         , unique
 
   hs-source-dirs:

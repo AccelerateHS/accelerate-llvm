@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.AST
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -21,17 +21,16 @@ module Data.Array.Accelerate.LLVM.AST (
   PreAfun, PreOpenAfun(..),
   PreFun,  PreOpenFun(..),
   PreExp,  PreOpenExp(..),
-  Idx(..), Val(..), prj,
+  Idx(..),
 
 ) where
 
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), Val(..), PreAfun, PreFun, PreExp, prj )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -76,7 +75,7 @@ data PreOpenAccCommand acc arch aenv a where
 
   Aforeign    :: (Arrays as, Arrays bs)
               => String
-              -> (StreamR arch -> as -> LLVM arch bs)
+              -> (as -> Par arch (FutureR arch bs))
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 

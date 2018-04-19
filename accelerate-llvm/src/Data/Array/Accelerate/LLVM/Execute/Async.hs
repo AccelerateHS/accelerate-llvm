@@ -1,8 +1,10 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -16,72 +18,92 @@ module Data.Array.Accelerate.LLVM.Execute.Async
 
 import Data.Array.Accelerate.LLVM.State
 
+-- import Control.Applicative                              ( Applicative )
+-- import Control.Monad.Reader                             ( ReaderT(..) )
+-- import Control.Monad.Trans                              ( MonadIO, lift )
+-- import Prelude
 
--- Asynchronous operations
--- -----------------------
 
--- | The result of a potentially parallel computation which will be available at
--- some point (presumably, in the future). This is essentially a write-once
--- IVar.
+{--
+-- | Monad for evaluating a LLVM computation in parallel
 --
-data AsyncR arch a = AsyncR !(EventR arch) !a
+newtype Par arch a = Par { runPar :: ReaderT (ThreadR arch) (LLVM arch) a }
+  deriving (Functor, Applicative, Monad, MonadIO)
 
-class Async arch where
-  -- | Streams (i.e. threads) can execute concurrently with other streams, but
-  -- operations within the same stream proceed sequentially.
-  --
-  type StreamR arch
+-- -XUndecidableInstances
+-- instance (r ~ ThreadR arch) => MonadReader r (Par arch) where
+--   {-# INLINE ask   #-}
+--   {-# INLINE local #-}
+--   ask       = Par $ ask
+--   local f m = Par $ local f (runPar m)
 
-  -- | An Event marks a point in the execution stream, possibly in the future.
-  -- Since execution within a stream is sequential, events can be used to test
-  -- the progress of a computation and synchronise between different streams.
-  --
-  type EventR arch
-
-  -- | Create a new execution stream that can be used to track (potentially
-  -- parallel) computations
-  --
-  fork        :: LLVM arch (StreamR arch)
-
-  -- | Mark the given execution stream as closed. The stream may still be
-  -- executing in the background, but no new work may be submitted to it.
-  --
-  join        :: StreamR arch -> LLVM arch ()
-
-  -- | Generate a new event at the end of the given execution stream. It will be
-  -- filled once all prior work submitted to the stream has completed.
-  --
-  checkpoint  :: StreamR arch -> LLVM arch (EventR arch)
-
-  -- | Make all future work submitted to the given execution stream wait until
-  -- the given event has passed. Typically the event is from a different
-  -- execution stream, therefore this function is intended to enable
-  -- non-blocking cross-stream coordination.
-  --
-  after       :: StreamR arch -> EventR arch -> LLVM arch ()
-
-  -- | Block execution of the calling thread until the given event has been
-  -- recorded.
-  --
-  block       :: EventR arch -> LLVM arch ()
-
-
--- | Wait for an asynchronous operation to complete, then return it.
+-- | Evaluate a parallel computation
 --
-{-# INLINEABLE get #-}
-get :: Async arch => AsyncR arch a -> LLVM arch a
-get (AsyncR e a) = block e >> return a
+{-# INLINE evalPar #-}
+evalPar :: ThreadR arch -> Par arch a -> LLVM arch a
+evalPar t p = runReaderT (runPar p) t
 
--- | Execute the given operation asynchronously in a new execution stream.
+-- | Lift from the LLVM monad into the Par monad
 --
-{-# INLINEABLE async #-}
-async :: Async arch
-      => (StreamR arch -> LLVM arch a)
-      -> LLVM arch (AsyncR arch a)
-async f = do
-  s <- fork
-  r <- f s
-  e <- checkpoint s
-  join s
-  return $ AsyncR e r
+{-# INLINE liftPar #-}
+liftPar :: LLVM arch a -> Par arch a
+liftPar = Par . lift
+--}
+
+class Monad (Par arch) => Async arch where
+
+  -- -- | Threads execute in parallel with other threads, and may have a unique
+  -- -- read-only identifier of this type.
+  -- --
+  -- type ThreadR arch
+
+  -- | Monad parallel computations will be executed in. Presumably a stack with
+  -- the LLVM monad at the base.
+  --
+  data Par arch :: * -> *
+
+  -- | Parallel computations can communicate via futures.
+  --
+  type FutureR arch :: * -> *
+
+  -- | Create a new (empty) promise, to be fulfilled at some future point.
+  --
+  new :: Par arch (FutureR arch a)
+
+  -- | The future is here. Multiple 'put's to the same future are not allowed
+  -- and (presumably) result in a runtime error.
+  --
+  put :: FutureR arch a -> a -> Par arch ()
+
+  -- | Read the value stored in a future, once it is available. This is
+  -- (presumably) a blocking operation.
+  --
+  get :: FutureR arch a -> Par arch a
+
+  -- | Fork a computation to happen in parallel. The forked computation may
+  -- exchange values with other computations using Futures.
+  --
+  fork :: Par arch () -> Par arch ()
+
+  -- | Lift an operation from the base LLVM monad into the Par monad
+  --
+  liftPar :: LLVM arch a -> Par arch a
+
+  -- | Evaluate a computation in a new thread. This might be implemented more
+  -- efficiently than the default implementation.
+  --
+  spawn :: Par arch (FutureR arch a) -> Par arch (FutureR arch a)
+  spawn m = do
+    r <- new              -- Future (Future a)  |:
+    fork $ put r =<< m
+    get r
+
+  -- | Create a new "future" where the value is available immediately. This
+  -- might be implemented more efficiently than the default implementation.
+  --
+  newFull :: a -> Par arch (FutureR arch a)
+  newFull a = do
+    r <- new
+    put r a
+    return r
 

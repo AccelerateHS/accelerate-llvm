@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -35,9 +35,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
-
-import Data.Range                                                   ( Range(..) )
-import Control.Parallel.Meta                                        ( Executable(..) )
 
 -- standard library
 import Control.Concurrent                                           ( runInBoundThread )
@@ -98,15 +95,7 @@ createTarget dev prp raw = do
   mt  <- MT.new ctx
   lc  <- LC.new
   st  <- ST.new ctx
-  return $! PTX ctx mt lc st simpleIO
-
-
-{-# INLINE simpleIO #-}
-simpleIO :: Executable
-simpleIO = Executable $ \_name _ppt range action ->
-  case range of
-    Empty       -> return ()
-    IE u v      -> action u v 0
+  return $! PTX ctx mt lc st
 
 
 -- Shared execution contexts

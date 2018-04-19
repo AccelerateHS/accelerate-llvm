@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Array.Data
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -15,7 +15,6 @@
 module Data.Array.Accelerate.LLVM.Native.Array.Data (
 
   module Data.Array.Accelerate.LLVM.Array.Data,
-
   cloneArray,
 
 ) where
@@ -25,8 +24,8 @@ import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
+import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Target
-import Data.Array.Accelerate.LLVM.Native.Execute.Async ()
 
 -- standard library
 import Control.Monad.Trans
@@ -39,7 +38,27 @@ import Foreign.Storable
 -- | Data instance for arrays in the native backend. We assume a shared-memory
 -- machine, and just manipulate the underlying Haskell array directly.
 --
-instance Remote Native
+instance Remote Native where
+  {-# INLINE allocateRemote    #-}
+  {-# INLINE useRemoteR        #-}
+  {-# INLINE copyToRemoteR     #-}
+  {-# INLINE copyToHostR       #-}
+  {-# INLINE copyToPeerR       #-}
+  {-# INLINE useRemoteAsync    #-}
+  {-# INLINE copyToRemoteAsync #-}
+  {-# INLINE copyToHostAsync   #-}
+  {-# INLINE copyToPeerAsync   #-}
+  {-# INLINE indexRemoteAsync  #-}
+  allocateRemote    = liftIO . allocateArray
+  useRemoteR _      = newFull
+  copyToRemoteR _   = newFull
+  copyToHostR _     = newFull
+  copyToPeerR _ _   = newFull
+  useRemoteAsync    = newFull
+  copyToRemoteAsync = newFull
+  copyToHostAsync   = newFull
+  copyToPeerAsync _ = newFull
+  indexRemoteAsync (Array _ ad) i = newFull (toElt $ unsafeIndexArrayData ad i)
 
 
 -- | Copy an array into a newly allocated array. This uses 'memcpy'.

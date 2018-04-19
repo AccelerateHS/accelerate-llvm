@@ -1,11 +1,12 @@
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE BangPatterns          #-}
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 #if __GLASGOW_HASKELL__ <= 708
@@ -14,7 +15,7 @@
 #endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -25,20 +26,20 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal (
 
-  Marshalable, M.marshal
+  Marshalable,
+  M.marshal, M.marshal',
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
 import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
 
-import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async             ( Async, AsyncR(..) )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Event             ( after )
-import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async
+import Data.Array.Accelerate.LLVM.PTX.Execute.Environment       ( Val, prj )
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 
 -- cuda
@@ -46,8 +47,8 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- libraries
 import Control.Monad
-import Data.Int
 import Data.DList                                               ( DList )
+import Data.Int
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable                                         ( Storable )
@@ -55,101 +56,91 @@ import qualified Data.DList                                     as DL
 import qualified Data.IntMap                                    as IM
 
 
--- Instances for the PTX backend
+-- Instances for handling concrete types in the PTX backend
 --
-type Marshalable args       = M.Marshalable PTX args
-type instance M.ArgR PTX    = CUDA.FunParam
+type Marshalable m args   = M.Marshalable PTX m args
+type instance M.ArgR PTX  = CUDA.FunParam
 
 
--- Instances for handling concrete types in this backend, namely shapes and
--- array data.
---
-instance M.Marshalable PTX Int where
-  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
+instance Monad m => M.Marshalable PTX m (DList CUDA.FunParam) where
+  marshal' _ = return
 
-instance M.Marshalable PTX Int32 where
-  marshal' _ _ x = return $ DL.singleton (CUDA.VArg x)
+instance Monad m => M.Marshalable PTX m Int where
+  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
 
-instance {-# OVERLAPS #-} M.Marshalable PTX (Gamma aenv, Aval aenv) where
-  marshal' ptx stream (gamma, aenv)
+instance Monad m => M.Marshalable PTX m Int32 where
+  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+
+instance {-# OVERLAPS #-} M.Marshalable PTX (Par PTX) (Gamma aenv, Val aenv) where
+  marshal' proxy (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> M.marshal' ptx stream =<< sync (aprj idx aenv)) (IM.elems gamma)
+    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' proxy =<< get (prj idx aenv)) (IM.elems gamma)
+
+instance ArrayElt e => M.Marshalable PTX (Par PTX) (ArrayData e) where
+  marshal' proxy adata = liftPar (M.marshal' proxy adata)
+
+instance ArrayElt e => M.Marshalable PTX (LLVM PTX) (ArrayData e) where
+  marshal' _ adata = go arrayElt adata
     where
-      -- HAXORZ~ D:
-      --
-      -- The 'Async' class functions need to run in the LLVM monad, but the
-      -- marshalling functions must run in IO because they will be executed in
-      -- the lower-level scheduling code.
-      --
-      -- We hack around this impedance mismatch by calling the 'after'
-      -- implementation directly.
-      --
-      sync :: Async a -> IO a
-      sync (AsyncR event arr) = after event stream >> return arr
+      wrap :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
+           => ArrayData e'
+           -> LLVM PTX (DList CUDA.FunParam)
+      wrap ad =
+        fmap (DL.singleton . CUDA.VArg)
+             (unsafeGetDevicePtr ad :: LLVM PTX (CUDA.DevicePtr a))
 
-instance ArrayElt e => M.Marshalable PTX (ArrayData e) where
-  marshal' ptx _ adata = do
-    let marshalP :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
-                 => ArrayData e'
-                 -> IO (DList CUDA.FunParam)
-        marshalP ad =
-          fmap (DL.singleton . CUDA.VArg)
-               (unsafeGetDevicePtr ptx ad :: IO (CUDA.DevicePtr a))
-
-        marshalR :: ArrayEltR e' -> ArrayData e' -> IO (DList CUDA.FunParam)
-        marshalR ArrayEltRunit             _  = return DL.empty
-        marshalR (ArrayEltRpair aeR1 aeR2) ad =
-          return DL.append `ap` marshalR aeR1 (fstArrayData ad)
-                           `ap` marshalR aeR2 (sndArrayData ad)
-        --
-        marshalR (ArrayEltRvec2 aeR)  (AD_V2 ad)  = marshalR aeR ad
-        marshalR (ArrayEltRvec3 aeR)  (AD_V3 ad)  = marshalR aeR ad
-        marshalR (ArrayEltRvec4 aeR)  (AD_V4 ad)  = marshalR aeR ad
-        marshalR (ArrayEltRvec8 aeR)  (AD_V8 ad)  = marshalR aeR ad
-        marshalR (ArrayEltRvec16 aeR) (AD_V16 ad) = marshalR aeR ad
-        --
-        marshalR ArrayEltRint     ad = marshalP ad
-        marshalR ArrayEltRint8    ad = marshalP ad
-        marshalR ArrayEltRint16   ad = marshalP ad
-        marshalR ArrayEltRint32   ad = marshalP ad
-        marshalR ArrayEltRint64   ad = marshalP ad
-        marshalR ArrayEltRword    ad = marshalP ad
-        marshalR ArrayEltRword8   ad = marshalP ad
-        marshalR ArrayEltRword16  ad = marshalP ad
-        marshalR ArrayEltRword32  ad = marshalP ad
-        marshalR ArrayEltRword64  ad = marshalP ad
-        marshalR ArrayEltRhalf    ad = marshalP ad
-        marshalR ArrayEltRfloat   ad = marshalP ad
-        marshalR ArrayEltRdouble  ad = marshalP ad
-        marshalR ArrayEltRchar    ad = marshalP ad
-        marshalR ArrayEltRcshort  ad = marshalP ad
-        marshalR ArrayEltRcushort ad = marshalP ad
-        marshalR ArrayEltRcint    ad = marshalP ad
-        marshalR ArrayEltRcuint   ad = marshalP ad
-        marshalR ArrayEltRclong   ad = marshalP ad
-        marshalR ArrayEltRculong  ad = marshalP ad
-        marshalR ArrayEltRcllong  ad = marshalP ad
-        marshalR ArrayEltRcullong ad = marshalP ad
-        marshalR ArrayEltRcchar   ad = marshalP ad
-        marshalR ArrayEltRcschar  ad = marshalP ad
-        marshalR ArrayEltRcuchar  ad = marshalP ad
-        marshalR ArrayEltRcfloat  ad = marshalP ad
-        marshalR ArrayEltRcdouble ad = marshalP ad
-        marshalR ArrayEltRbool    ad = marshalP ad
-
-    marshalR arrayElt adata
+      go :: ArrayEltR e' -> ArrayData e' -> LLVM PTX (DList CUDA.FunParam)
+      go ArrayEltRunit             _  = return DL.empty
+      go (ArrayEltRpair aeR1 aeR2) ad =
+        return DL.append `ap` go aeR1 (fstArrayData ad)
+                         `ap` go aeR2 (sndArrayData ad)
+      --
+      go (ArrayEltRvec2 aeR)  (AD_V2 ad)  = go aeR ad
+      go (ArrayEltRvec3 aeR)  (AD_V3 ad)  = go aeR ad
+      go (ArrayEltRvec4 aeR)  (AD_V4 ad)  = go aeR ad
+      go (ArrayEltRvec8 aeR)  (AD_V8 ad)  = go aeR ad
+      go (ArrayEltRvec16 aeR) (AD_V16 ad) = go aeR ad
+      --
+      go ArrayEltRint     ad = wrap ad
+      go ArrayEltRint8    ad = wrap ad
+      go ArrayEltRint16   ad = wrap ad
+      go ArrayEltRint32   ad = wrap ad
+      go ArrayEltRint64   ad = wrap ad
+      go ArrayEltRword    ad = wrap ad
+      go ArrayEltRword8   ad = wrap ad
+      go ArrayEltRword16  ad = wrap ad
+      go ArrayEltRword32  ad = wrap ad
+      go ArrayEltRword64  ad = wrap ad
+      go ArrayEltRhalf    ad = wrap ad
+      go ArrayEltRfloat   ad = wrap ad
+      go ArrayEltRdouble  ad = wrap ad
+      go ArrayEltRchar    ad = wrap ad
+      go ArrayEltRcshort  ad = wrap ad
+      go ArrayEltRcushort ad = wrap ad
+      go ArrayEltRcint    ad = wrap ad
+      go ArrayEltRcuint   ad = wrap ad
+      go ArrayEltRclong   ad = wrap ad
+      go ArrayEltRculong  ad = wrap ad
+      go ArrayEltRcllong  ad = wrap ad
+      go ArrayEltRcullong ad = wrap ad
+      go ArrayEltRcchar   ad = wrap ad
+      go ArrayEltRcschar  ad = wrap ad
+      go ArrayEltRcuchar  ad = wrap ad
+      go ArrayEltRcfloat  ad = wrap ad
+      go ArrayEltRcdouble ad = wrap ad
+      go ArrayEltRbool    ad = wrap ad
 
 
 -- TODO FIXME !!!
 --
--- We will probably need to change marshal to be a bracketed function. We may
--- also want to reconsider whether to continue to restrict it to IO.
+-- We will probably need to change marshal to be a bracketed function, so that
+-- the garbage collector does not try to evict the array in the middle of
+-- a computation.
 --
 unsafeGetDevicePtr
     :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => PTX
-    -> ArrayData e
-    -> IO (CUDA.DevicePtr a)
-unsafeGetDevicePtr !ptx !ad =
-  evalPTX ptx $ Prim.withDevicePtr ad (\p -> return (Nothing,p))
+    => ArrayData e
+    -> LLVM PTX (CUDA.DevicePtr a)
+unsafeGetDevicePtr !ad =
+  Prim.withDevicePtr ad (\p -> return (Nothing,p))
 

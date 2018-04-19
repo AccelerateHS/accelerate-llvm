@@ -160,7 +160,6 @@ Library
         , pretty                        >= 1.1
         , process                       >= 1.4.3
         , template-haskell
-        , time                          >= 1.4
         , unordered-containers          >= 0.2
 
   hs-source-dirs:
