@@ -65,17 +65,18 @@ instance Remote Native where
 --
 cloneArray :: (Shape sh, Elt e) => Array sh e -> LLVM Native (Array sh e)
 cloneArray arr@(Array _ src) = liftIO $ do
-  out@(Array _ dst)    <- allocateArray sh
+  out@(Array _ dst) <- allocateArray sh
   copyR arrayElt src dst
   return out
   where
-    sh                  = shape arr
-    n                   = size sh
+    sh  = shape arr
+    n   = size sh
 
     copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> IO ()
     copyR ArrayEltRunit             _   _   = return ()
-    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 = copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
-                                              copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
+    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 =
+      copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
+      copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
     --
     copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)   = copyR aeR ad1 ad2
     copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad3)   = copyR aeR ad1 ad3
@@ -83,34 +84,34 @@ cloneArray arr@(Array _ src) = liftIO $ do
     copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad8)   = copyR aeR ad1 ad8
     copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad16) = copyR aeR ad1 ad16
     --
-    copyR ArrayEltRint              ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint8             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint16            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint32            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint64            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword8            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword16           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword32           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword64           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRhalf             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRfloat            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRdouble           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRbool             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRchar             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcshort           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcushort          ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcint             ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcuint            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRclong            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRculong           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcllong           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcullong          ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcfloat           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcdouble          ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcchar            ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcschar           ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcuchar           ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint     ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint8    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint16   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint32   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRint64   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword8   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword16  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword32  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRword64  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRhalf    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRfloat   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRdouble  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRbool    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRchar    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcshort  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcushort ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcint    ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcuint   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRclong   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRculong  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcllong  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcullong ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcfloat  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcdouble ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcchar   ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcschar  ad1 ad2 = copyPrim ad1 ad2
+    copyR ArrayEltRcuchar  ad1 ad2 = copyPrim ad1 ad2
 
     copyPrim :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a) => ArrayData e -> ArrayData e -> IO ()
     copyPrim a1 a2 = do

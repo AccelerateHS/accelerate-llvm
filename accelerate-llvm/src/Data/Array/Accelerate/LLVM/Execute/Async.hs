@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -16,49 +16,11 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
-import Data.Array.Accelerate.LLVM.State
-
--- import Control.Applicative                              ( Applicative )
--- import Control.Monad.Reader                             ( ReaderT(..) )
--- import Control.Monad.Trans                              ( MonadIO, lift )
--- import Prelude
-
-
-{--
--- | Monad for evaluating a LLVM computation in parallel
---
-newtype Par arch a = Par { runPar :: ReaderT (ThreadR arch) (LLVM arch) a }
-  deriving (Functor, Applicative, Monad, MonadIO)
-
--- -XUndecidableInstances
--- instance (r ~ ThreadR arch) => MonadReader r (Par arch) where
---   {-# INLINE ask   #-}
---   {-# INLINE local #-}
---   ask       = Par $ ask
---   local f m = Par $ local f (runPar m)
-
--- | Evaluate a parallel computation
---
-{-# INLINE evalPar #-}
-evalPar :: ThreadR arch -> Par arch a -> LLVM arch a
-evalPar t p = runReaderT (runPar p) t
-
--- | Lift from the LLVM monad into the Par monad
---
-{-# INLINE liftPar #-}
-liftPar :: LLVM arch a -> Par arch a
-liftPar = Par . lift
---}
 
 class Monad (Par arch) => Async arch where
 
-  -- -- | Threads execute in parallel with other threads, and may have a unique
-  -- -- read-only identifier of this type.
-  -- --
-  -- type ThreadR arch
-
-  -- | Monad parallel computations will be executed in. Presumably a stack with
-  -- the LLVM monad at the base.
+  -- | The monad parallel computations will be executed in. Presumably a stack
+  -- with the LLVM monad at the base.
   --
   data Par arch :: * -> *
 
@@ -86,9 +48,6 @@ class Monad (Par arch) => Async arch where
   --
   fork :: Par arch () -> Par arch ()
 
-  -- | Lift an operation from the base LLVM monad into the Par monad
-  --
-  liftPar :: LLVM arch a -> Par arch a
   -- | Read a value stored in a future, once it is available. This is blocking
   -- with respect to both the host and remote device.
   {-# INLINEABLE block #-}

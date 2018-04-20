@@ -118,7 +118,7 @@ simpleOp exe gamma aenv sh = withExecutable exe $ \ptxExecutable -> do
                  _   -> $internalError "simpleOp" "no kernels found"
   --
   future <- new
-  result <- liftPar $ allocateRemote sh
+  result <- allocateRemote sh
   --
   executeOp kernel gamma aenv sh result
   put future result
@@ -135,7 +135,7 @@ simpleNamed
     -> Par PTX (Future (Array sh e))
 simpleNamed fun exe gamma aenv sh = withExecutable exe $ \ptxExecutable -> do
   future <- new
-  result <- liftPar $ allocateRemote sh
+  result <- allocateRemote sh
   --
   executeOp (ptxExecutable !# fun) gamma aenv sh result
   put future result

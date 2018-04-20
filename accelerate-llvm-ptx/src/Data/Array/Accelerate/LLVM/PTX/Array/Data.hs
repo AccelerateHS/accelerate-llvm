@@ -59,8 +59,8 @@ instance Remote PTX where
   {-# INLINEABLE copyToRemoteR    #-}
   allocateRemote !sh = do
     let !n = size sh
-    arr <- liftIO $ allocateArray sh  -- shadow array on the host
-    runArray arr (\m ad -> Prim.mallocArray (n*m) ad >> return ad)
+    arr    <- liftIO $ allocateArray sh  -- shadow array on the host
+    liftPar $ runArray arr (\m ad -> Prim.mallocArray (n*m) ad >> return ad)
 
   indexRemoteAsync  = runIndexArrayAsync Prim.indexArrayAsync
   useRemoteR        = Prim.useArrayAsync
@@ -235,34 +235,34 @@ cloneArrayAsync stream arr@(Array _ src) = do
     copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad2)  n = copyR aeR ad1 ad2 (n*8)
     copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad2) n = copyR aeR ad1 ad2 (n*16)
     --
-    copyR ArrayEltRint              ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRint8             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRint16            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRint32            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRint64            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRword             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRword8            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRword16           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRword32           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRword64           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRhalf             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRfloat            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRdouble           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRbool             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRchar             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcshort           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcushort          ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcint             ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcuint            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRclong            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRculong           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcllong           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcullong          ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcfloat           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcdouble          ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcchar            ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcschar           ad1 ad2 n = copyPrim ad1 ad2 n
-    copyR ArrayEltRcuchar           ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRint     ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRint8    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRint16   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRint32   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRint64   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRword    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRword8   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRword16  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRword32  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRword64  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRhalf    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRfloat   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRdouble  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRbool    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRchar    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcshort  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcushort ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcint    ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcuint   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRclong   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRculong  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcllong  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcullong ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcfloat  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcdouble ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcchar   ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcschar  ad1 ad2 n = copyPrim ad1 ad2 n
+    copyR ArrayEltRcuchar  ad1 ad2 n = copyPrim ad1 ad2 n
 
     copyPrim
         :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)

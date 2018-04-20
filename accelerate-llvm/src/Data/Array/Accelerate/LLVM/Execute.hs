@@ -381,7 +381,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       r    <- new
       sh'  <- travE sh
       fork $ do
-        arr <- liftPar . allocateRemote =<< get sh'
+        arr <- allocateRemote =<< get sh'
         put r arr
       return r
 

@@ -86,9 +86,6 @@ instance Async PTX where
     () <- local (const s') m
     liftIO (Stream.destroy s')
 
-  {-# INLINEABLE liftPar #-}
-  liftPar = Par . lift
-
   -- When we call 'put' the actual work may not have been evaluated yet; get
   -- a new event in the current execution stream and once that is filled we can
   -- transition the IVar to Full.
@@ -126,6 +123,12 @@ instance Async PTX where
   {-# INLINEABLE block #-}
   block = liftIO . wait
 
+
+-- | Lift an operation from the base LLVM monad into the Par monad
+--
+{-# INLINE liftPar #-}
+liftPar :: LLVM PTX a -> Par PTX a
+liftPar = Par . lift
 
 -- | Block the calling _host_ thread until the value offered by the future is
 -- available.

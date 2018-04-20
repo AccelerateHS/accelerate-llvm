@@ -100,9 +100,12 @@ instance Async Native where
   {-# INLINEABLE spawn #-}
   spawn = id
 
-  {-# INLINEABLE liftPar #-}
-  liftPar = Par . lift . lift
 
+-- | Lift and operation from the base LLVM monad into the Par monad
+--
+{-# INLINE liftPar #-}
+liftPar :: LLVM Native a -> Par Native a
+liftPar = Par . lift . lift
 
 -- The reschedule loop waits for new work to become available as a result of
 -- a thread calling 'put' on an IVar with blocked continuations.

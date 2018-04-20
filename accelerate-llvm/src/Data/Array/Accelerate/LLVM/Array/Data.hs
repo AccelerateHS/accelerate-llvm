@@ -38,7 +38,6 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Representation         as R
 
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- standard library
@@ -54,7 +53,7 @@ class Async arch => Remote arch where
 
   -- | Allocate a new uninitialised array on the remote device.
   --
-  allocateRemote :: (Shape sh, Elt e) => sh -> LLVM arch (Array sh e)
+  allocateRemote :: (Shape sh, Elt e) => sh -> Par arch (Array sh e)
 
   -- | Use the given immutable array on the remote device. Since the source
   -- array is immutable, the garbage collector can evict and re-upload the data
