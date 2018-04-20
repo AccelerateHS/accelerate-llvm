@@ -40,18 +40,13 @@ import Data.Array.Accelerate.Interpreter                        ( evalPrim, eval
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Array.Data
-import Data.Array.Accelerate.LLVM.Link
-import Data.Array.Accelerate.LLVM.State
-
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
-
-import Data.Array.Accelerate.LLVM.Execute.Async                 hiding ( join )
+import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.Execute.Environment
+import Data.Array.Accelerate.LLVM.Link
 
 -- library
 import Control.Monad
-import Control.Monad.Trans                                      ( lift )
-import Control.Applicative                                      hiding ( Const )
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
 
 
@@ -394,7 +389,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
     acond yes no p =
       spawn $ do
-        c <- get p
+        c <- block p
         if c then travA yes
              else travA no
 
@@ -461,10 +456,8 @@ executeOpenExp rootExp env aenv = travE rootExp
       PrimApp f x               -> lift1 (newFull . evalPrim f) (travE x)
       Tuple t                   -> lift1 (newFull . toTuple) (travT t)
       Prj ix e                  -> lift1 (newFull . evalPrj ix . fromTuple) (travE e)
-
-      -- Cond p t e                -> travE p >>= \x -> if x then travE t else travE e
-      -- While p f x               -> while p f =<< travE x
-
+      Cond p t e                -> cond t e =<< travE p
+      While p f x               -> while p f =<< travE x
       IndexAny                  -> newFull Any
       IndexNil                  -> newFull Z
       IndexCons sh sz           -> lift2 (newFull $$ (:.)) (travE sh) (travE sz)
@@ -498,15 +491,22 @@ executeOpenExp rootExp env aenv = travE rootExp
     foreignE (Lam (Body f)) x = travE x >>= \e -> executeOpenExp f (Empty `Push` e) Empty
     foreignE _              _ = error "I bless the rains down in Africa"
 
-    -- travF1 :: ExecOpenFun arch env aenv (a -> b) -> a -> LLVM arch b
-    -- travF1 (Lam (Body f)) x = executeOpenExp f (env `Push` x) aenv stream
-    -- travF1 _              _ = error "LANAAAAAAAA!"
+    travF1 :: ExecOpenFun arch env aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
+    travF1 (Lam (Body f)) x = executeOpenExp f (env `Push` x) aenv
+    travF1 _              _ = error "LANAAAAAAAA!"
 
-    -- while :: ExecOpenFun arch env aenv (a -> Bool) -> ExecOpenFun arch env aenv (a -> a) -> a -> LLVM arch a
-    -- while p f x = do
-    --   ok <- travF1 p x
-    --   if ok then while p f =<< travF1 f x
-    --         else return x
+    while :: ExecOpenFun arch env aenv (a -> Bool) -> ExecOpenFun arch env aenv (a -> a) -> FutureR arch a -> Par arch (FutureR arch a)
+    while p f x = do
+      ok <- block =<< travF1 p x
+      if ok then while p f =<< travF1 f x
+            else return x
+
+    cond :: ExecOpenExp arch env aenv a -> ExecOpenExp arch env aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
+    cond yes no p =
+      spawn $ do
+        c <- block p
+        if c then travE yes
+             else travE no
 
     indexSlice :: (Elt slix, Elt sh, Elt sl)
                => SliceIndex (EltRepr slix) (EltRepr sl) co (EltRepr sh)

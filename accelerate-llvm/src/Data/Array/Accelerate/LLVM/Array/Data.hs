@@ -211,12 +211,13 @@ copyToPeer :: (Remote arch, Arrays a) => arch -> a -> Par arch a
 copyToPeer peer arrs = do
   get =<< copyToPeerAsync peer arrs
 
--- | Read a single element from the remote array at the given row-major index
+-- | Read a single element from the remote array at the given row-major index.
+-- This is synchronous with respect to both the host and remote device.
 --
 {-# INLINEABLE indexRemote #-}
 indexRemote :: Remote arch => Array sh e -> Int -> Par arch e
 indexRemote arr i =
-  get =<< indexRemoteAsync arr i
+  block =<< indexRemoteAsync arr i
 
 
 -- Helpers for traversing the Arrays data structure

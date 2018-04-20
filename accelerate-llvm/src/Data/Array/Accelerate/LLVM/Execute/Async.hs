@@ -75,8 +75,9 @@ class Monad (Par arch) => Async arch where
   --
   put :: FutureR arch a -> a -> Par arch ()
 
-  -- | Read the value stored in a future, once it is available. This is
-  -- (presumably) a blocking operation.
+  -- | Read the value stored in a future, once it is available. It is _not_
+  -- required that this is a blocking operation on the host, only that it is
+  -- blocking with respect to computations on the remote device.
   --
   get :: FutureR arch a -> Par arch a
 
@@ -88,10 +89,16 @@ class Monad (Par arch) => Async arch where
   -- | Lift an operation from the base LLVM monad into the Par monad
   --
   liftPar :: LLVM arch a -> Par arch a
+  -- | Read a value stored in a future, once it is available. This is blocking
+  -- with respect to both the host and remote device.
+  {-# INLINEABLE block #-}
+  block :: FutureR arch a -> Par arch a
+  block = get
 
   -- | Evaluate a computation in a new thread. This might be implemented more
   -- efficiently than the default implementation.
   --
+  {-# INLINEABLE spawn #-}
   spawn :: Par arch (FutureR arch a) -> Par arch (FutureR arch a)
   spawn m = do
     r <- new              -- Future (Future a)  |:
@@ -101,6 +108,7 @@ class Monad (Par arch) => Async arch where
   -- | Create a new "future" where the value is available immediately. This
   -- might be implemented more efficiently than the default implementation.
   --
+  {-# INLINEABLE newFull #-}
   newFull :: a -> Par arch (FutureR arch a)
   newFull a = do
     r <- new

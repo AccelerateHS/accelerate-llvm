@@ -123,10 +123,14 @@ instance Async PTX where
           return v
         Empty           -> $internalError "get" "blocked on an IVar"
 
+  {-# INLINEABLE block #-}
+  block = liftIO . wait
 
--- | Block the calling thread until the value offered by the future is
+
+-- | Block the calling _host_ thread until the value offered by the future is
 -- available.
 --
+{-# INLINEABLE wait #-}
 wait :: Future a -> IO a
 wait (Future ref) = do
   ivar <- readIORef ref
