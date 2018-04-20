@@ -17,7 +17,7 @@
 module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 
   Async(..), Future(..), IVar(..),
-  evalPar,
+  evalPar, liftPar, putIO,
 
 ) where
 
@@ -28,21 +28,19 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
-import Control.Concurrent.MVar
-import Control.Exception
+import Control.Concurrent
 import Control.Monad.Cont
 import Control.Monad.Reader
 import Control.Monad.State
+import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
-import Data.Sequence                                                ( Seq )
-import qualified Data.Sequence                                      as Seq
 
 
 -- | Evaluate a parallel computation
 --
 evalPar :: Par Native a -> LLVM Native a
 evalPar work = do
-  queue   <- liftIO newEmptyMVar
+  queue   <- liftIO newQ
   result  <- liftIO newEmptyMVar
   runReaderT (runContT (runPar work) (liftIO . putMVar result)) queue
   liftIO $ takeMVar result
@@ -52,44 +50,37 @@ evalPar work = do
 -- --------------
 
 data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
+type Schedule = LinkedQueue (Par Native ())
 
 data IVar a
     = Full !a
-    | Blocked (Seq (a -> IO ()))
+    | Blocked [a -> IO ()]
     | Empty
-
-type Schedule = MVar (Seq (Par Native ()))
 
 instance Async Native where
   type FutureR Native  = Future
   newtype Par Native a = Par { runPar :: ContT () (ReaderT Schedule (LLVM Native)) a }
     deriving ( Functor, Applicative, Monad, MonadIO, MonadCont, MonadReader Schedule, MonadState Native )
 
-  {-# INLINEABLE new     #-}
-  {-# INLINEABLE newFull #-}
+  {-# INLINE new     #-}
+  {-# INLINE newFull #-}
   new       = Future <$> liftIO (newIORef Empty)
   newFull v = Future <$> liftIO (newIORef (Full v))
 
-  {-# INLINEABLE get #-}
+  {-# INLINE get #-}
   get (Future ref) =
     callCC $ \k -> do
       queue  <- ask
       next   <- liftIO . atomicModifyIORef' ref $ \case
-                  Empty      -> (Blocked (Seq.singleton (pushL queue . k)), reschedule)
-                  Blocked ks -> (Blocked (ks Seq.|>      pushL queue . k),  reschedule)
-                  Full a     -> (Full a,                                    return a)
+                  Empty      -> (Blocked [pushL queue . k],      reschedule)
+                  Blocked ks -> (Blocked (pushL queue . k : ks), reschedule)
+                  Full a     -> (Full a,                         return a)
       next
 
-  {-# INLINEABLE put #-}
-  put (Future ref) v =
-    liftIO $ do
-      ks <- atomicModifyIORef' ref $ \case
-              Empty      -> (Full v, Seq.empty)
-              Blocked ks -> (Full v, ks)
-              _          -> $internalError "put" "multiple put"
-      mapM_ ($ v) ks
+  {-# INLINE put #-}
+  put future ref = liftIO (putIO future ref)
 
-  {-# INLINEABLE fork #-}
+  {-# INLINE fork #-}
   fork child = do
     queue <- ask
     callCC $ \parent -> do
@@ -97,7 +88,7 @@ instance Async Native where
       child
       reschedule
 
-  {-# INLINEABLE spawn #-}
+  {-# INLINE spawn #-}
   spawn = id
 
 
@@ -107,35 +98,46 @@ instance Async Native where
 liftPar :: LLVM Native a -> Par Native a
 liftPar = Par . lift . lift
 
--- The reschedule loop waits for new work to become available as a result of
+-- | The value represented by a future is now available. This version in IO is
+-- callable by scheduler threads.
+--
+{-# INLINE putIO #-}
+putIO :: Future a -> a -> IO ()
+putIO (Future ref) v = do
+  ks <- atomicModifyIORef' ref $ \case
+          Empty      -> (Full v, [])
+          Blocked ks -> (Full v, ks)
+          _          -> $internalError "put" "multiple put"
+  mapM_ ($ v) (reverse ks)
+
+
+-- The reschedule loop checks for new work to become available as a result of
 -- a thread calling 'put' on an IVar with blocked continuations.
 --
--- Assuming that this queue is not under contention, and thus is acceptable to
--- use a pure data structure in an MVar. If there is contention here, we can
--- switch to a lock-free queue, but then we need to poll the end looking for new
--- work, which consumes cycles which could be used by the worker threads.
---
+{-# INLINE reschedule #-}
 reschedule :: Par Native a
 reschedule = Par $ ContT loop
   where
     loop :: unused -> ReaderT Schedule (LLVM Native) ()
     loop unused = do
       queue <- ask
-      work  <- liftIO $ popR queue
-      runContT (runPar work) (\_ -> loop unused)
+      mwork <- liftIO $ tryPopR queue
+      case mwork of
+        Just work -> runContT (runPar work) (\_ -> loop unused)
+        Nothing   -> liftIO yield >> loop unused
 
-pushL :: MVar (Seq a) -> a -> IO ()
-pushL ref a =
-  mask_ $ do
-    ma <- tryTakeMVar ref
-    case ma of
-      Nothing -> putMVar ref (Seq.singleton a)
-      Just as -> putMVar ref (a Seq.<| as)
+-- pushL :: MVar (Seq a) -> a -> IO ()
+-- pushL ref a =
+--   mask_ $ do
+--     ma <- tryTakeMVar ref
+--     case ma of
+--       Nothing -> putMVar ref (Seq.singleton a)
+--       Just as -> putMVar ref (a Seq.<| as)
 
-popR :: MVar (Seq a) -> IO a
-popR ref = do
-  q <- takeMVar ref
-  case Seq.viewr q of
-    Seq.EmptyR  -> popR ref   -- should be impossible
-    as Seq.:> a -> putMVar ref as >> return a
+-- popR :: MVar (Seq a) -> IO a
+-- popR ref = do
+--   q <- takeMVar ref
+--   case Seq.viewr q of
+--     Seq.EmptyR  -> popR ref   -- should be impossible
+--     as Seq.:> a -> putMVar ref as >> return a
 
