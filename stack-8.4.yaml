@@ -19,7 +19,6 @@ extra-deps:
 flags:
   accelerate:
     debug: true
-    nofib: false
 
 # Extra global and per-package GHC options
 # ghc-options: {}
