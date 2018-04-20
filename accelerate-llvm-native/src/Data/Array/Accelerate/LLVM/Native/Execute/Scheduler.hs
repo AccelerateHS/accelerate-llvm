@@ -29,6 +29,7 @@ import Control.Exception
 import Control.Monad
 import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
+import Data.Int
 import Data.Sequence                                                ( Seq )
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
@@ -102,7 +103,7 @@ schedule Workers{..} Job{..} = do
 runWorker :: MVar () -> LinkedQueue Task -> IO ()
 runWorker activate queue = loop 0
   where
-    loop :: Int -> IO ()
+    loop :: Int16 -> IO ()
     loop !retries = do
       req <- tryPopR queue
       case req of
@@ -114,8 +115,8 @@ runWorker activate queue = loop 0
         --
         -- TODO: Tune these values a bit
         --
-        Nothing   -> if retries < 3
-                       then threadDelay 5 >> loop (retries+1)
+        Nothing   -> if retries < 1024
+                       then yield >> loop (retries+1)
                        else do
                          D.when D.dump_sched $ do
                            tid <- myThreadId
