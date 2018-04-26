@@ -206,6 +206,7 @@ test-suite nofib-llvm-ptx
         -rtsopts
         -with-rtsopts=-A128M
         -with-rtsopts=-n4M
+        -with-rtsopts=-N
 
 
 source-repository head

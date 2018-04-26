@@ -1,8 +1,9 @@
-{-# LANGUAGE BangPatterns    #-}
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE RankNTypes      #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Data
@@ -209,31 +210,28 @@ runIndexArrayAsync worker (Array _ adata) i = (toElt . flip unsafeIndexArrayData
       return r
 
 
-{--
 -- | Clone an array into a newly allocated array on the device.
 --
 cloneArrayAsync
-    :: (Shape sh, Elt e)
-    => Stream
-    -> Array sh e
-    -> LLVM PTX (Array sh e)
-cloneArrayAsync stream arr@(Array _ src) = do
-  out@(Array _ dst) <- allocateRemote sh
-  copyR arrayElt src dst (size sh)
-  return out
+    :: forall sh e. (Shape sh, Elt e)
+    => Array sh e
+    -> Par PTX (Future (Array sh e))
+cloneArrayAsync arr@(Array _ src) = do
+  Array _ dst <- allocateRemote sh  :: Par PTX (Array sh e)
+  Array (fromElt sh) `liftF` copyR arrayElt src dst (size sh)
   where
     sh  = shape arr
 
-    copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> Int -> LLVM PTX ()
-    copyR ArrayEltRunit             _   _   _ = return ()
-    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 n = copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) n >>
-                                                copyR aeR2 (sndArrayData ad1) (sndArrayData ad2) n
+    copyR :: ArrayEltR s -> ArrayData s -> ArrayData s -> Int -> Par PTX (Future (ArrayData s))
+    copyR ArrayEltRunit             _   _   _ = newFull AD_Unit
+    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 n = liftF2 AD_Pair (copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) n)
+                                                               (copyR aeR2 (sndArrayData ad1) (sndArrayData ad2) n)
     --
-    copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)  n = copyR aeR ad1 ad2 (n*2)
-    copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad2)  n = copyR aeR ad1 ad2 (n*3)
-    copyR (ArrayEltRvec4 aeR)  (AD_V4 ad1)  (AD_V4 ad2)  n = copyR aeR ad1 ad2 (n*4)
-    copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad2)  n = copyR aeR ad1 ad2 (n*8)
-    copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad2) n = copyR aeR ad1 ad2 (n*16)
+    copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)  n = AD_V2  `liftF` copyR aeR ad1 ad2 (n*2)
+    copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad2)  n = AD_V3  `liftF` copyR aeR ad1 ad2 (n*3)
+    copyR (ArrayEltRvec4 aeR)  (AD_V4 ad1)  (AD_V4 ad2)  n = AD_V4  `liftF` copyR aeR ad1 ad2 (n*4)
+    copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad2)  n = AD_V8  `liftF` copyR aeR ad1 ad2 (n*8)
+    copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad2) n = AD_V16 `liftF` copyR aeR ad1 ad2 (n*16)
     --
     copyR ArrayEltRint     ad1 ad2 n = copyPrim ad1 ad2 n
     copyR ArrayEltRint8    ad1 ad2 n = copyPrim ad1 ad2 n
@@ -265,11 +263,32 @@ cloneArrayAsync stream arr@(Array _ src) = do
     copyR ArrayEltRcuchar  ad1 ad2 n = copyPrim ad1 ad2 n
 
     copyPrim
-        :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
-        => ArrayData e
-        -> ArrayData e
+        :: (ArrayElt s, ArrayPtrs s ~ Ptr a, Typeable s, Storable a, Typeable a)
+        => ArrayData s
+        -> ArrayData s
         -> Int
-        -> LLVM PTX ()
-    copyPrim !a1 !a2 !m = Prim.copyArrayAsync stream m a1 a2
---}
+        -> Par PTX (Future (ArrayData s))
+    copyPrim !a1 !a2 !m = Prim.copyArrayAsync m a1 a2
+
+    liftF :: Async arch
+          => (a -> b)
+          -> Par arch (FutureR arch a)
+          -> Par arch (FutureR arch b)
+    liftF f x = do
+      r  <- new
+      x' <- x
+      put r . f =<< get x'  -- don't create a new execution stream for this
+      return r
+
+    liftF2 :: Async arch
+           => (a -> b -> c)
+           -> Par arch (FutureR arch a)
+           -> Par arch (FutureR arch b)
+           -> Par arch (FutureR arch c)
+    liftF2 f x y = do
+      r  <- new
+      x' <- spawn x
+      y' <- spawn y
+      fork $ put r =<< liftM2 f (get x') (get y')
+      return r
 

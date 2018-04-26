@@ -40,8 +40,8 @@ module Data.Array.Accelerate.LLVM.PTX (
   runNAsync, runNAsyncWith,
 
   -- * Ahead-of-time compilation
-  -- runQ, runQWith,
-  -- runQAsync, runQAsyncWith,
+  runQ, runQWith,
+  runQAsync, runQAsyncWith,
 
   -- * Execution targets
   PTX, createTargetForDevice, createTargetFromContext,
@@ -70,8 +70,6 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.State
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as Stream
 
 import Foreign.CUDA.Driver                                          as CUDA ( CUDAException, mallocHostForeignPtr )
 
@@ -335,8 +333,6 @@ streamWith target f arrs = map go arrs
     !go = run1With target f
 
 
-{--
-
 -- | Ahead-of-time compilation for an embedded array program.
 --
 -- This function will generate, compile, and link into the final executable,
@@ -429,10 +425,10 @@ runQAsyncWith f = do
 
 
 runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
-runQ' using = runQ'_main using (\go -> [| withPool defaultTargetPool $ \target -> evalPTX target $go |])
+runQ' using = runQ'_ using (\go -> [| withPool defaultTargetPool (\target -> evalPTX target (evalPar $go)) |])
 
 runQWith' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
-runQWith' using target = runQ'_main using (TH.appE [| evalPTX $target |])
+runQWith' using target = runQ'_ using (TH.appE [| evalPTX $target . evalPar |])
 
 -- Generate a template haskell expression for the given function to be embedded
 -- into the current program. The supplied continuation specifies how to execute
@@ -451,8 +447,8 @@ runQWith' using target = runQ'_main using (TH.appE [| evalPTX $target |])
 --    With runN this will automatically be recompiled for each new architecture
 --    (at runtime).
 --
-runQ'_main :: Afunction f => TH.ExpQ -> (TH.ExpQ -> TH.ExpQ) -> f -> TH.ExpQ
-runQ'_main using k f = do
+runQ'_ :: Afunction f => TH.ExpQ -> (TH.ExpQ -> TH.ExpQ) -> f -> TH.ExpQ
+runQ'_ using k f = do
   afun  <- let acc = convertAfunWith config f
            in  TH.runIO $ do
                  dumpGraph acc
@@ -460,20 +456,27 @@ runQ'_main using k f = do
                    phase "compile" (compileAfun acc) >>= dumpStats
   let
       go :: Typeable aenv => CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam lam) xs as stmts = do
+      go (Alam l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (AD.useRemoteAsync $(TH.varE x)) |]
-        go lam (TH.bangP (TH.varP x) : xs) (TH.varE a : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
+        go l (TH.bangP (TH.varP x) : xs) (TH.varE a : as) (return s : stmts)
 
-      go (Abody body) xs as stmts =
-        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
-            eval = TH.noBindS [| AD.copyToHostLazy =<< E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc defaultTarget body)) $aenv) |]
-        in
-        TH.lamE (reverse xs) (TH.appE using [| phase "execute" $(k (TH.doE (reverse (eval : stmts)))) |])
+      go (Abody b) xs as stmts = do
+        r <- TH.newName "r" -- result
+        let
+            aenv  = foldr (\a gamma -> [| $gamma `Push` $a |] ) [| Empty |] as
+            body  = embedOpenAcc defaultTarget b
+        --
+        TH.lamE (reverse xs)
+                [| $using (phase "execute" $(k (
+                     TH.doE ( reverse stmts ++
+                            [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
+                            , TH.noBindS [| liftPar . copyToHostLazy =<< get $(TH.varE r) |]
+                            ]))))
+                 |]
   --
   go afun [] [] []
---}
 
 
 -- How the Accelerate program should be evaluated.

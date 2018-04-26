@@ -472,8 +472,8 @@ liftF2 :: Async arch
        -> Par arch (FutureR arch c)
 liftF2 f x y = do
   r  <- new
-  x' <- x
-  y' <- y
+  x' <- spawn x
+  y' <- spawn y
   fork $ put r =<< liftM2 f (get x') (get y')
   return r
 

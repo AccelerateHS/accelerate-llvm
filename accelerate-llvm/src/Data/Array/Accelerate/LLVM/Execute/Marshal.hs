@@ -98,6 +98,9 @@ instance Marshalable arch m a => Marshalable arch m [a] where
 -- instance Monad m => Marshalable arch m (DList (ArgR arch)) where
 --   marshal' _ = return
 
+-- instance (Async arch, Marshalable arch (Par arch) a) => Marshalable arch (Par arch) (FutureR arch a) where
+--   marshal' proxy future = marshal' proxy =<< get future
+
 instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRepr e)))
     => Marshalable arch m (Array sh e) where
   marshal' proxy (Array sh adata) =

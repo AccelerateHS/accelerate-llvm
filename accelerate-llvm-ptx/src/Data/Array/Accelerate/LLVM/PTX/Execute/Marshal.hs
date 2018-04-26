@@ -76,6 +76,9 @@ instance {-# OVERLAPS #-} M.Marshalable PTX (Par PTX) (Gamma aenv, Val aenv) whe
     = fmap DL.concat
     $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' proxy =<< get (prj idx aenv)) (IM.elems gamma)
 
+instance (M.Marshalable PTX (Par PTX) a) => M.Marshalable PTX (Par PTX) (Future a) where
+  marshal' proxy future = M.marshal' proxy =<< get future
+
 instance ArrayElt e => M.Marshalable PTX (Par PTX) (ArrayData e) where
   marshal' proxy adata = liftPar (M.marshal' proxy adata)
 
