@@ -45,8 +45,8 @@ module Data.Array.Accelerate.LLVM.Native (
   runNAsync, runNAsyncWith,
 
   -- * Ahead-of-time compilation
-  -- runQ, runQWith,
-  -- runQAsync, runQAsyncWith,
+  runQ, runQWith,
+  runQAsync, runQAsyncWith,
 
   -- * Execution targets
   Native,
@@ -61,8 +61,6 @@ import Data.Array.Accelerate.Async                                  ( Async, asy
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
-
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
@@ -76,7 +74,6 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 -- standard library
 import Control.Monad.Trans
-import Data.IORef
 import Data.Typeable
 import System.IO.Unsafe
 import Text.Printf
@@ -270,7 +267,7 @@ streamWith target f arrs = map go arrs
   where
     !go = run1With target f
 
-{--
+
 -- | Ahead-of-time compilation for an embedded array program.
 --
 -- This function will generate, compile, and link into the final executable,
@@ -406,21 +403,27 @@ runQ' using target f = do
   -- directly to the body expression.
   let
       go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam lam) xs as stmts = do
+      go (Alam l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (useRemoteAsync $(TH.varE x)) |]
-        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
+        go l (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
 
-      go (Abody body) xs as stmts =
-        let aenv = foldr (\a gamma -> [| $gamma `Push` $a |] ) [| Empty |] as
-            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
-        in
-        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) $
-                                  $(TH.doE (reverse (eval : stmts))) |]
+      go (Abody b) xs as stmts = do
+        r <- TH.newName "r" -- result
+        let
+            aenv  = foldr (\a gamma -> [| $gamma `Push` $a |]) [| Empty |] as
+            body  = embedOpenAcc (defaultTarget { segmentOffset = True }) b
+        --
+        TH.lamE (reverse xs)
+                [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) . evalPar $
+                      $(TH.doE ( reverse stmts ++   -- useRemoteAsync
+                               [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
+                               , TH.noBindS [| get $(TH.varE r) |]
+                               ]))
+                 |]
   --
   go afun [] [] []
---}
 
 
 -- How the Accelerate program should be evaluated.
