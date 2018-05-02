@@ -9,7 +9,9 @@ packages:
 - 'accelerate-llvm-ptx'
 
 extra-deps:
-- 'accelerate-1.2.0.0'
+- git:    https://github.com/tmcdonell/accelerate.git
+  commit: 39dcd686947090b1e53a6c48be5d5b6c69bb96f2
+
 - 'Cabal-2.0.1.1'
 - 'constraints-0.9.1'
 - 'cuda-0.9.0.3'
