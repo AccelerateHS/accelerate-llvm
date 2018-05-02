@@ -44,6 +44,7 @@ import Data.IORef
 
 -- | Evaluate a parallel computation
 --
+{-# INLINE evalPar #-}
 evalPar :: Par PTX a -> LLVM PTX a
 evalPar p = do
   s <- Stream.create

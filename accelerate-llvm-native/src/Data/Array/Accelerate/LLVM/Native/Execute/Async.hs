@@ -38,6 +38,7 @@ import Data.IORef
 
 -- | Evaluate a parallel computation
 --
+{-# INLINEABLE evalPar #-}
 evalPar :: Par Native a -> LLVM Native a
 evalPar work = do
   queue   <- liftIO newQ
@@ -54,7 +55,7 @@ type Schedule = LinkedQueue (Par Native ())
 
 data IVar a
     = Full !a
-    | Blocked [a -> IO ()]
+    | Blocked ![a -> IO ()]
     | Empty
 
 instance Async Native where
