@@ -62,8 +62,8 @@ import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 
 
-{-# SPECIALISE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (Future a) #-}
-{-# SPECIALISE executeOpenAcc :: ExecOpenAcc PTX aenv a -> Val aenv -> Par PTX (Future a) #-}
+{-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (Future a) #-}
+{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc PTX aenv a -> Val aenv -> Par PTX (Future a) #-}
 
 -- Array expression evaluation
 -- ---------------------------

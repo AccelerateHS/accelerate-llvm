@@ -69,8 +69,8 @@ import Foreign.LibFFI
 import Foreign.Ptr
 
 
-{-# SPECIALISE executeAcc     :: ExecAcc     Native      a ->             Par Native (Future a) #-}
-{-# SPECIALISE executeOpenAcc :: ExecOpenAcc Native aenv a -> Val aenv -> Par Native (Future a) #-}
+{-# SPECIALISE INLINE executeAcc     :: ExecAcc     Native      a ->             Par Native (Future a) #-}
+{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc Native aenv a -> Val aenv -> Par Native (Future a) #-}
 
 -- Array expression evaluation
 -- ---------------------------
