@@ -39,6 +39,7 @@ import Foreign.ForeignPtr
 import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
+import GHC.ForeignPtr                                     ( mallocPlainForeignPtrAlignedBytes )
 import GHC.Prim                                           ( addr2Int#, int2Word#, int2Addr# )
 import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
@@ -75,7 +76,9 @@ loadObject obj =
       --
       (funtab, oc) <- loadSegment obj strtab secs symbols relocs
 
-      -- Unmap the executable pages when they are no longer required
+      -- The executable pages were allocated on the GC heap. When the pages
+      -- are finalised, unset the executable bit and mark them as
+      -- read/write so that the memory can be reused.
       --
       objectcode <- newLifetime [oc]
       addFinalizer objectcode $ do
@@ -83,7 +86,7 @@ loadObject obj =
         case oc of
           Segment vmsize oc_fp ->
             withForeignPtr oc_fp $ \oc_p ->
-              munmap oc_p vmsize
+              mprotect oc_p vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
 
       return (funtab, objectcode)
 
@@ -144,44 +147,42 @@ loadSegment obj strtab secs symtab relocs = do
       vmsize'     = V.last offsets                                  -- bytes required to store all sections
       vmsize      = pad pagesize (vmsize' + (V.length symtab * 16)) -- sections + jump tables
 
-  -- Allocate new pages to store the executable code. This is allocated in
-  -- the lower 2GB so that 32-bit relocations should work without needing
-  -- to go via the jump tables.
-  --
-  -- The memory is implicitly initialised to zero (corresponding to NOP).
-  -- This also takes care of .bss sections.
-  --
-  seg_p   <- mmap vmsize
-  seg_fp  <- newForeignPtr_ seg_p
+  seg_fp  <- mallocPlainForeignPtrAlignedBytes vmsize pagesize
+  funtab  <- withForeignPtr seg_fp $ \seg_p -> do
 
-  -- Jump tables are placed directly after the segment data
-  let jump_p = seg_p `plusPtr` vmsize'
-  V.imapM_ (makeJumpIsland jump_p) symtab
+              -- Clear the segment data; this takes care of .bss sections
+              fillBytes seg_p 0 vmsize
 
-  -- Copy over section data
-  V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
+              -- Jump tables are placed directly after the segment data
+              let jump_p = seg_p `plusPtr` vmsize'
+              V.imapM_ (makeJumpIsland jump_p) symtab
 
-  -- Process relocations
-  V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
+              -- Copy over section data
+              V.izipWithM_ (loadSection obj strtab seg_p) offsets secs
 
-  -- Mark the page as executable and read-only
-  mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
+              -- Process relocations
+              V.mapM_ (processRelocation symtab offsets seg_p jump_p) relocs
 
-  -- Resolve external symbols defined in the sections into function
-  -- pointers.
-  --
-  -- Note that in order to support ahead-of-time compilation, the generated
-  -- functions are given unique names by appending with an underscore followed
-  -- by a unique ID. The execution phase doesn't need to know about this
-  -- however, so un-mangle the name to the basic "map", "fold", etc.
-  --
-  let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
-      extern Symbol{..}   = sym_binding == Global && sym_type == Func
-      resolve Symbol{..}  =
-        let name  = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
-            addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
-        in
-        (name, addr)
+              -- Mark the page as executable and read-only
+              mprotect seg_p vmsize ({#const PROT_READ#} .|. {#const PROT_EXEC#})
+
+              -- Resolve external symbols defined in the sections into function
+              -- pointers.
+              --
+              -- Note that in order to support ahead-of-time compilation, the generated
+              -- functions are given unique names by appending with an underscore followed
+              -- by a unique ID. The execution phase doesn't need to know about this
+              -- however, so un-mangle the name to the basic "map", "fold", etc.
+              --
+              let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
+                  extern Symbol{..}   = sym_binding == Global && sym_type == Func
+                  resolve Symbol{..}  =
+                    let name  = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
+                        addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
+                    in
+                    (name, addr)
+              --
+              return funtab
   --
   return (funtab, Segment vmsize seg_fp)
 
@@ -708,35 +709,22 @@ mprotect addr len prot
   = throwErrnoIfMinus1_ "mprotect"
   $ c_mprotect addr (fromIntegral len) (fromIntegral prot)
 
--- Allocate memory pages in the lower 2GB
---
-mmap :: Int -> IO (Ptr Word8)
-mmap len
-  = throwErrnoIf (== _MAP_FAILED) "mmap"
-  $ c_mmap nullPtr (fromIntegral len) prot flags (-1) 0
-  where
-    prot        = {#const PROT_READ#} .|. {#const PROT_WRITE#}
-    flags       = {#const MAP_ANONYMOUS#} .|. {#const MAP_PRIVATE#} .|. {#const MAP_32BIT#}
-    _MAP_FAILED = Ptr (int2Addr# (-1#))
-
--- Remove a memory mapping
---
-munmap :: Ptr Word8 -> Int -> IO ()
-munmap addr len
-  = throwErrnoIfMinus1_ "munmap"
-  $ c_munmap addr (fromIntegral len)
-
 foreign import ccall unsafe "mprotect"
   c_mprotect :: Ptr a -> CSize -> CInt -> IO CInt
 
-foreign import ccall unsafe "mmap"
-  c_mmap :: Ptr a -> CSize -> CInt -> CInt -> CInt -> COff -> IO (Ptr a)
-
-foreign import ccall unsafe "munmap"
-  c_munmap :: Ptr a -> CSize -> IO CInt
-
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
+
+#if __GLASGOW_HASKELL__ <= 708
+-- Fill a given number of bytes in memory. Added in base-4.8.0.0.
+--
+fillBytes :: Ptr a -> Word8 -> Int -> IO ()
+fillBytes dest char size = do
+  _ <- memset dest (fromIntegral char) (fromIntegral size)
+  return ()
+
+foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO (Ptr a)
+#endif
 
 
 -- Debug
