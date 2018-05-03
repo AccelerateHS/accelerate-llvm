@@ -199,7 +199,7 @@ copyToRemote arrs =
 {-# INLINEABLE copyToHost #-}
 copyToHost :: (Remote arch, Arrays a) => a -> Par arch a
 copyToHost arrs =
-  get =<< copyToHostAsync arrs
+  block =<< copyToHostAsync arrs
 
 -- | Copy arrays between two remote instances of the same type. This may be more
 -- efficient than copying to the host and then to the second remote instance
