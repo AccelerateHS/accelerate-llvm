@@ -408,7 +408,7 @@ runQWith f = do
 -- @since 1.1.0.0
 --
 runQAsync :: Afunction f => f -> TH.ExpQ
-runQAsync = runQ' [| async |]
+runQAsync = runQ' [| asyncBound |]
 
 -- | Ahead-of-time analogue of 'runNAsyncWith'. See 'runQWith' for more information.
 --
@@ -421,14 +421,14 @@ runQAsync = runQ' [| async |]
 runQAsyncWith :: Afunction f => f -> TH.ExpQ
 runQAsyncWith f = do
   target <- TH.newName "target"
-  TH.lamE [TH.varP target] (runQWith' [| async |] (TH.varE target) f)
+  TH.lamE [TH.varP target] (runQWith' [| asyncBound |] (TH.varE target) f)
 
 
 runQ' :: Afunction f => TH.ExpQ -> f -> TH.ExpQ
 runQ' using = runQ'_ using (\go -> [| withPool defaultTargetPool (\target -> evalPTX target (evalPar $go)) |])
 
 runQWith' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
-runQWith' using target = runQ'_ using (TH.appE [| evalPTX $target . evalPar |])
+runQWith' using target = runQ'_ using (\go -> [| evalPTX $target (evalPar $go) |])
 
 -- Generate a template haskell expression for the given function to be embedded
 -- into the current program. The supplied continuation specifies how to execute
