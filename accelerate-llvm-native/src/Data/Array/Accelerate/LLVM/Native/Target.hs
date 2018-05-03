@@ -88,7 +88,7 @@ withNativeTargetMachine k = do
         nativeCPUName
         nativeCPUFeatures
         targetOptions
-        RelocationModel.DynamicNoPIC
+        RelocationModel.PIC
         CodeModel.Default
         CodeOptimisation.Default
         k
