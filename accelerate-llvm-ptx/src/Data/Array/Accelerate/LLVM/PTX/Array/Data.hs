@@ -26,9 +26,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Array.Unique                       ( UniqueArray(..) )
-import Data.Array.Accelerate.Lifetime                           ( Lifetime(..) )
-import qualified Data.Array.Accelerate.Array.Representation     as R
+import qualified Data.Array.Accelerate.Array.Representation         as R
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.State
@@ -36,12 +34,14 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
-import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
+import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 
 -- standard library
 import Control.Applicative
-import Control.Monad.State                                      ( liftIO, gets )
 import Control.Monad.Reader
+import Control.Monad.State                                          ( liftIO, gets )
+import Data.IORef
 import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
@@ -87,65 +87,76 @@ instance Remote PTX where
 {-# INLINEABLE copyToHostLazy #-}
 copyToHostLazy
     :: Arrays arrs
-    => arrs
-    -> LLVM PTX arrs
-copyToHostLazy arrs = do
+    => Future arrs
+    -> Par PTX arrs
+copyToHostLazy (Future ref) = do
   ptx   <- gets llvmTarget
-  liftIO $ runArrays arrs $ \(Array sh adata) ->
-    let
-        peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-              => ArrayData e
-              -> UniqueArray a
-              -> Int
-              -> IO (UniqueArray a)
-        peekR ad (UniqueArray uid (Lifetime ref weak fp)) n = do
-          fp' <- unsafeInterleaveIO $
-            evalPTX ptx $ do
-              r  <- evalPar $ Prim.peekArrayAsync n ad
-              !_ <- liftIO  $ wait r
-              return fp
-          --
-          return $ UniqueArray uid (Lifetime ref weak fp')  -- not directly reusing 'fp'
+  arrs  <- liftIO $ do
+    ivar  <- readIORef ref
+    arrs  <- case ivar of -- peek at the underlying array
+               Full a       -> return a
+               Pending _ a  -> return a
+               Empty        -> $internalError "copyToHostLazy" "blocked on an IVar"
+    --
+    runArrays arrs $ \(Array sh adata) ->
+      let
+          peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
+                => ArrayData e
+                -> Int
+                -> IO (ArrayData e)
+          peekR ad n =
+            unsafeInterleaveIO . evalPTX ptx . evalPar $ do
+              liftIO $ do
+                ivar' <- readIORef ref
+                case ivar' of
+                  Pending event _ -> do
+                    Event.block event
+                    writeIORef ref (Full arrs)
+                  _               -> return ()
 
-        runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
-        runR ArrayEltRunit              AD_Unit          _ = return AD_Unit
-        runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) n = AD_Pair    <$> runR aeR2 ad2 n <*> runR aeR1 ad1 n
-        runR (ArrayEltRvec2 aeR)       (AD_V2 ad)        n = AD_V2      <$> runR aeR ad (n*2)
-        runR (ArrayEltRvec3 aeR)       (AD_V3 ad)        n = AD_V3      <$> runR aeR ad (n*3)
-        runR (ArrayEltRvec4 aeR)       (AD_V4 ad)        n = AD_V4      <$> runR aeR ad (n*4)
-        runR (ArrayEltRvec8 aeR)       (AD_V8 ad)        n = AD_V8      <$> runR aeR ad (n*8)
-        runR (ArrayEltRvec16 aeR)      (AD_V16 ad)       n = AD_V16     <$> runR aeR ad (n*16)
-        --
-        runR ArrayEltRint           ad@(AD_Int ua)       n = AD_Int     <$> peekR ad ua n
-        runR ArrayEltRint8          ad@(AD_Int8 ua)      n = AD_Int8    <$> peekR ad ua n
-        runR ArrayEltRint16         ad@(AD_Int16 ua)     n = AD_Int16   <$> peekR ad ua n
-        runR ArrayEltRint32         ad@(AD_Int32 ua)     n = AD_Int32   <$> peekR ad ua n
-        runR ArrayEltRint64         ad@(AD_Int64 ua)     n = AD_Int64   <$> peekR ad ua n
-        runR ArrayEltRword          ad@(AD_Word ua)      n = AD_Word    <$> peekR ad ua n
-        runR ArrayEltRword8         ad@(AD_Word8 ua)     n = AD_Word8   <$> peekR ad ua n
-        runR ArrayEltRword16        ad@(AD_Word16 ua)    n = AD_Word16  <$> peekR ad ua n
-        runR ArrayEltRword32        ad@(AD_Word32 ua)    n = AD_Word32  <$> peekR ad ua n
-        runR ArrayEltRword64        ad@(AD_Word64 ua)    n = AD_Word64  <$> peekR ad ua n
-        runR ArrayEltRcshort        ad@(AD_CShort ua)    n = AD_CShort  <$> peekR ad ua n
-        runR ArrayEltRcushort       ad@(AD_CUShort ua)   n = AD_CUShort <$> peekR ad ua n
-        runR ArrayEltRcint          ad@(AD_CInt ua)      n = AD_CInt    <$> peekR ad ua n
-        runR ArrayEltRcuint         ad@(AD_CUInt ua)     n = AD_CUInt   <$> peekR ad ua n
-        runR ArrayEltRclong         ad@(AD_CLong ua)     n = AD_CLong   <$> peekR ad ua n
-        runR ArrayEltRculong        ad@(AD_CULong ua)    n = AD_CULong  <$> peekR ad ua n
-        runR ArrayEltRcllong        ad@(AD_CLLong ua)    n = AD_CLLong  <$> peekR ad ua n
-        runR ArrayEltRcullong       ad@(AD_CULLong ua)   n = AD_CULLong <$> peekR ad ua n
-        runR ArrayEltRhalf          ad@(AD_Half ua)      n = AD_Half    <$> peekR ad ua n
-        runR ArrayEltRfloat         ad@(AD_Float ua)     n = AD_Float   <$> peekR ad ua n
-        runR ArrayEltRdouble        ad@(AD_Double ua)    n = AD_Double  <$> peekR ad ua n
-        runR ArrayEltRcfloat        ad@(AD_CFloat ua)    n = AD_CFloat  <$> peekR ad ua n
-        runR ArrayEltRcdouble       ad@(AD_CDouble ua)   n = AD_CDouble <$> peekR ad ua n
-        runR ArrayEltRbool          ad@(AD_Bool ua)      n = AD_Bool    <$> peekR ad ua n
-        runR ArrayEltRchar          ad@(AD_Char ua)      n = AD_Char    <$> peekR ad ua n
-        runR ArrayEltRcchar         ad@(AD_CChar ua)     n = AD_CChar   <$> peekR ad ua n
-        runR ArrayEltRcschar        ad@(AD_CSChar ua)    n = AD_CSChar  <$> peekR ad ua n
-        runR ArrayEltRcuchar        ad@(AD_CUChar ua)    n = AD_CUChar  <$> peekR ad ua n
-    in
-    Array sh <$> runR arrayElt adata (R.size sh)
+              block =<< Prim.peekArrayAsync n ad
+
+          runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
+          runR ArrayEltRunit              AD_Unit          _ = return AD_Unit
+          runR (ArrayEltRpair aeR2 aeR1) (AD_Pair ad2 ad1) n = AD_Pair    <$> runR aeR2 ad2 n <*> runR aeR1 ad1 n
+          runR (ArrayEltRvec2 aeR)       (AD_V2 ad)        n = AD_V2      <$> runR aeR ad (n*2)
+          runR (ArrayEltRvec3 aeR)       (AD_V3 ad)        n = AD_V3      <$> runR aeR ad (n*3)
+          runR (ArrayEltRvec4 aeR)       (AD_V4 ad)        n = AD_V4      <$> runR aeR ad (n*4)
+          runR (ArrayEltRvec8 aeR)       (AD_V8 ad)        n = AD_V8      <$> runR aeR ad (n*8)
+          runR (ArrayEltRvec16 aeR)      (AD_V16 ad)       n = AD_V16     <$> runR aeR ad (n*16)
+          --
+          runR ArrayEltRint     ad n = peekR ad n
+          runR ArrayEltRint8    ad n = peekR ad n
+          runR ArrayEltRint16   ad n = peekR ad n
+          runR ArrayEltRint32   ad n = peekR ad n
+          runR ArrayEltRint64   ad n = peekR ad n
+          runR ArrayEltRword    ad n = peekR ad n
+          runR ArrayEltRword8   ad n = peekR ad n
+          runR ArrayEltRword16  ad n = peekR ad n
+          runR ArrayEltRword32  ad n = peekR ad n
+          runR ArrayEltRword64  ad n = peekR ad n
+          runR ArrayEltRcshort  ad n = peekR ad n
+          runR ArrayEltRcushort ad n = peekR ad n
+          runR ArrayEltRcint    ad n = peekR ad n
+          runR ArrayEltRcuint   ad n = peekR ad n
+          runR ArrayEltRclong   ad n = peekR ad n
+          runR ArrayEltRculong  ad n = peekR ad n
+          runR ArrayEltRcllong  ad n = peekR ad n
+          runR ArrayEltRcullong ad n = peekR ad n
+          runR ArrayEltRhalf    ad n = peekR ad n
+          runR ArrayEltRfloat   ad n = peekR ad n
+          runR ArrayEltRdouble  ad n = peekR ad n
+          runR ArrayEltRcfloat  ad n = peekR ad n
+          runR ArrayEltRcdouble ad n = peekR ad n
+          runR ArrayEltRbool    ad n = peekR ad n
+          runR ArrayEltRchar    ad n = peekR ad n
+          runR ArrayEltRcchar   ad n = peekR ad n
+          runR ArrayEltRcschar  ad n = peekR ad n
+          runR ArrayEltRcuchar  ad n = peekR ad n
+      in
+      Array sh <$> runR arrayElt adata (R.size sh)
+  --
+  return arrs
 
 
 {-# INLINE runIndexArrayAsync #-}

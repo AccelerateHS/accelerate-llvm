@@ -65,7 +65,7 @@ import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Embed
 import Data.Array.Accelerate.LLVM.PTX.Execute
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar, liftPar, get )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
@@ -139,7 +139,7 @@ runWithIO target a = execute
       evalPTX target $ do
         build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (evalPar (executeAcc exec >>= get) >>= copyToHostLazy)
+        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy))
         return res
 
 
@@ -249,7 +249,7 @@ runNWith' target acc = exec
     go (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
       aenv <- k
       res  <- executeOpenAcc b aenv
-      liftPar . copyToHostLazy =<< get res
+      copyToHostLazy res
 
 
 -- | As 'run1', but the computation is executed asynchronously.
@@ -314,7 +314,7 @@ instance RunAsync (IO (Async b)) where
   runAsync' target (Abody b) k = asyncBound . phase "execute" . evalPTX target . evalPar $ do
     aenv <- k
     res  <- executeOpenAcc b aenv
-    liftPar . copyToHostLazy =<< get res
+    copyToHostLazy res
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -472,7 +472,7 @@ runQ'_ using k f = do
                 [| $using (phase "execute" $(k (
                      TH.doE ( reverse stmts ++
                             [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                            , TH.noBindS [| liftPar . copyToHostLazy =<< get $(TH.varE r) |]
+                            , TH.noBindS [| copyToHostLazy $(TH.varE r) |]
                             ]))))
                  |]
   --
