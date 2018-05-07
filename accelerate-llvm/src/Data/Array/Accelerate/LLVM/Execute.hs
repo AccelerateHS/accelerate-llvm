@@ -322,7 +322,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Scanr1 sh           -> exec1 scanr1   (travE sh)
         Scanl' sh           -> exec1 scanl'   (travE sh)
         Scanr' sh           -> exec1 scanr'   (travE sh)
-        Stencil sh          -> exec1 stencil1 (travE sh)
+        Stencil1 sh         -> exec1 stencil1 (travE sh)
         Stencil2 sh1 sh2    -> exec2 stencil2 (travE sh1) (travE sh2)
         Permute sh d        -> exec2 (permute (inplace d)) (travE sh) (travA d)
 

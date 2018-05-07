@@ -199,7 +199,7 @@ liftPreOpenAccSkeleton arch pacc =
     Scanr1 sh         -> [|| Scanr1 $$(liftE sh) ||]
     Scanr' sh         -> [|| Scanr' $$(liftE sh) ||]
     Permute sh a      -> [|| Permute $$(liftE sh) $$(liftA a) ||]
-    Stencil sh        -> [|| Stencil $$(liftE sh) ||]
+    Stencil1 sh       -> [|| Stencil1 $$(liftE sh) ||]
     Stencil2 sh1 sh2  -> [|| Stencil2 $$(liftE sh1) $$(liftE sh2) ||]
 
 {-# INLINEABLE liftPreOpenFun #-}

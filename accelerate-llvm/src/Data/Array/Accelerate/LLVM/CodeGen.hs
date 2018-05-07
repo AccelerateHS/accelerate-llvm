@@ -79,7 +79,7 @@ llvmOfOpenAcc arch uid (Manifest pacc) aenv = runLLVM $
     Scanr' f z a            -> scanr' arch uid aenv (travF2 f) (travE z) (travD a)
     Scanr1 f a              -> scanr1 arch uid aenv (travF2 f) (travD a)
     Permute f _ p a         -> permute arch uid aenv (travPF f) (travF1 p) (travD a)
-    Stencil f b a           -> stencil arch uid aenv (travF1 f) (travB b) (travD a)
+    Stencil f b a           -> stencil1 arch uid aenv (travF1 f) (travB b) (travD a)
     Stencil2 f b1 a1 b2 a2  -> stencil2 arch uid aenv (travF2 f) (travB b1) (travD a1) (travB b2) (travD a2)
 
     -- Non-computation forms: sadness
