@@ -146,10 +146,11 @@ simpleOp NativeR{..} gamma aenv sh = do
               f:_ -> f
               _   -> $internalError "simpleOp" "no functions found"
   --
-  future <- new
-  result <- allocateRemote sh
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh
   scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
-    `andThen` do putIO future result
+    `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
 
@@ -164,10 +165,11 @@ simpleNamed
     -> Par Native (Future (Array sh e))
 simpleNamed name NativeR{..} gamma aenv sh = do
   let fun = nativeExecutable !# name
-  future <- new
-  result <- allocateRemote sh
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh
   scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
-    `andThen` do putIO future result
+    `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
 
@@ -257,13 +259,13 @@ foldAllOp NativeR{..} gamma aenv sh = do
   if steps <= 1
     then
       scheduleOpUsing ranges (nativeExecutable !# "foldAllS") gamma aenv result
-        `andThen` do putIO future result
+        `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
     else do
       tmp   <- allocateRemote (Z :. steps) :: Par Native (Vector e)
       job2  <- mkJobUsing (Seq.singleton (0, empty, Z:.steps)) (nativeExecutable !# "foldAllP2") gamma aenv (tmp, result)
-                 `andThen` do putIO future result
+                 `andThen` do putIO workers future result
                               touchLifetime nativeExecutable
 
       job1  <- mkJobUsingIndex ranges (nativeExecutable !# "foldAllP1") gamma aenv tmp
@@ -292,7 +294,7 @@ foldDimOp NativeR{..} gamma aenv (sh :. sz) = do
       minsize = 1
   --
   scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) (sz, result)
-    `andThen` do putIO future result
+    `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
   return future
 
@@ -324,7 +326,7 @@ foldSegOp NativeR{..} gamma aenv (sh :. _) (Z :. ss) = do
       --
       result  <- allocateRemote (sh :. n)
       scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv (Z :. size (sh:.n)) result
-        `andThen` do putIO future result
+        `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
     else do
@@ -333,7 +335,7 @@ foldSegOp NativeR{..} gamma aenv (sh :. _) (Z :. ss) = do
       --
       result  <- allocateRemote (sh :. ss)
       scheduleOpUsing (Seq.singleton (0, empty, Z :. size (sh:.ss))) (nativeExecutable !# "foldSegS") gamma aenv result
-        `andThen` do putIO future result
+        `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
   --
   return future
@@ -389,7 +391,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
           minsize = 1
       in
       scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) result
-        `andThen` do putIO future result
+        `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
     -- This is a one-dimensional scan. If the array is small just compute it
@@ -400,7 +402,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
         -- sequential execution
         then
           scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv result
-            `andThen` do putIO future result
+            `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
 
         -- parallel execution
@@ -416,7 +418,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
           --
           tmp   <- allocateRemote (Z :. steps) :: Par Native (Vector e)
           job3  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP3") gamma aenv (steps, result, tmp)
-                     `andThen` do putIO future result
+                     `andThen` do putIO workers future result
                                   touchLifetime nativeExecutable
           job2  <- mkJobUsing (Seq.singleton (0, empty, Z:.steps)) (nativeExecutable !# "scanP2") gamma aenv tmp
                      `andThen` schedule workers job3
@@ -472,7 +474,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
           minsize = 1
       in
       scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) (result, sums)
-        `andThen` do putIO future (result, sums)
+        `andThen` do putIO workers future (result, sums)
                      touchLifetime nativeExecutable
 
     -- One dimensional scan. If the array is small just compute it sequentially
@@ -484,7 +486,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
         -- sequential execution
         then
           scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv (result, sums)
-            `andThen` do putIO future (result, sums)
+            `andThen` do putIO workers future (result, sums)
                          touchLifetime nativeExecutable
 
         -- parallel execution
@@ -497,7 +499,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
           --
           tmp   <- allocateRemote (Z :. steps) :: Par Native (Vector e)
           job3  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP3") gamma aenv (steps, result, tmp)
-                     `andThen` do putIO future (result, sums)
+                     `andThen` do putIO workers future (result, sums)
                                   touchLifetime nativeExecutable
           job2  <- mkJobUsing (Seq.singleton (0, empty, Z:.steps)) (nativeExecutable !# "scanP2") gamma aenv (sums, tmp)
                      `andThen` schedule workers job3
@@ -541,7 +543,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
     -- sequential execution does not require handling critical sections
     then
       scheduleOpUsing ranges (nativeExecutable !# "permuteS") gamma aenv result
-        `andThen` do putIO future result
+        `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
     -- parallel execution
@@ -550,7 +552,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
         -- using atomic operations
         Just f ->
           scheduleOpUsing ranges f gamma aenv result
-            `andThen` do putIO future result
+            `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
 
         -- uses a temporary array of spin-locks to guard the critical section
@@ -560,7 +562,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
           barrier@(Array _ adb) <- allocateRemote (Z :. m) :: Par Native (Vector Word8)
           liftIO $ memset (ptrsOfArrayData adb) 0 m
           scheduleOpUsing ranges (nativeExecutable !# "permuteP_mutex") gamma aenv (result, barrier)
-            `andThen` do putIO future result
+            `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
   --
   return future

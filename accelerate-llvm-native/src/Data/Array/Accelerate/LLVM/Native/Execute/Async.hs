@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -24,16 +25,17 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 -- accelerate
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Execute.Async
+import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.State
 
 -- standard library
 import Control.Concurrent
 import Control.Monad.Cont
-import Control.Monad.Reader
 import Control.Monad.State
-import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
+import Data.Sequence                                                ( Seq )
+import qualified Data.Sequence                                      as Seq
 
 
 -- | Evaluate a parallel computation
@@ -41,9 +43,8 @@ import Data.IORef
 {-# INLINEABLE evalPar #-}
 evalPar :: Par Native a -> LLVM Native a
 evalPar work = do
-  queue   <- liftIO newQ
-  result  <- liftIO newEmptyMVar
-  runReaderT (runContT (runPar work) (liftIO . putMVar result)) queue
+  result <- liftIO newEmptyMVar
+  runContT (runPar work) (liftIO . putMVar result)
   liftIO $ takeMVar result
 
 
@@ -51,81 +52,88 @@ evalPar work = do
 -- --------------
 
 data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
-type Schedule = LinkedQueue (Par Native ())
 
 data IVar a
-    = Full !a
-    | Blocked ![a -> IO ()]
+    = Full    !a
+    | Blocked !(Seq (a -> IO ()))
     | Empty
 
 instance Async Native where
   type FutureR Native  = Future
-  newtype Par Native a = Par { runPar :: ContT () (ReaderT Schedule (LLVM Native)) a }
-    deriving ( Functor, Applicative, Monad, MonadIO, MonadCont, MonadReader Schedule, MonadState Native )
+  newtype Par Native a = Par { runPar :: ContT () (LLVM Native) a }
+    deriving ( Functor, Applicative, Monad, MonadIO, MonadCont, MonadState Native )
 
   {-# INLINE new     #-}
   {-# INLINE newFull #-}
   new       = Future <$> liftIO (newIORef Empty)
   newFull v = Future <$> liftIO (newIORef (Full v))
 
+  {-# INLINE fork  #-}
+  {-# INLINE spawn #-}
+  fork  = id
+  spawn = id
+
   {-# INLINE get #-}
   get (Future ref) =
     callCC $ \k -> do
-      queue  <- ask
+      native <- gets llvmTarget
       next   <- liftIO . atomicModifyIORef' ref $ \case
-                  Empty      -> (Blocked [pushL queue . k],      reschedule)
-                  Blocked ks -> (Blocked (pushL queue . k : ks), reschedule)
-                  Full a     -> (Full a,                         return a)
+                  Empty      -> (Blocked (Seq.singleton (evalParIO native . k)), reschedule)
+                  Blocked ks -> (Blocked (ks Seq.|>      evalParIO native . k),  reschedule)
+                  Full a     -> (Full a,                                         return a)
       next
 
   {-# INLINE put #-}
-  put future ref = liftIO (putIO future ref)
-
-  {-# INLINE fork #-}
-  fork child = do
-    queue <- ask
-    callCC $ \parent -> do
-      liftIO $ pushL queue (parent ())
-      child
-      reschedule
-
-  {-# INLINE spawn #-}
-  spawn = id
+  put future ref = do
+    Native{..} <- gets llvmTarget
+    liftIO (putIO workers future ref)
 
 
--- | Lift and operation from the base LLVM monad into the Par monad
+-- | Lift an operation from the base LLVM monad into the Par monad
 --
 {-# INLINE liftPar #-}
 liftPar :: LLVM Native a -> Par Native a
-liftPar = Par . lift . lift
+liftPar = Par . lift
 
--- | The value represented by a future is now available. This version in IO is
--- callable by scheduler threads.
+-- | Evaluate a continuation
 --
-{-# INLINE putIO #-}
-putIO :: Future a -> a -> IO ()
-putIO (Future ref) v = do
+{-# INLINE evalParIO #-}
+evalParIO :: Native -> Par Native () -> IO ()
+evalParIO native@Native{..} work =
+  evalLLVM native (runContT (runPar work) return)
+
+-- | The value represented by a future is now available. Push any blocked
+-- continuations to the worker threads.
+--
+{-# INLINEABLE putIO #-}
+putIO :: Workers -> Future a -> a -> IO ()
+putIO workers (Future ref) v = do
   ks <- atomicModifyIORef' ref $ \case
-          Empty      -> (Full v, [])
+          Empty      -> (Full v, Seq.empty)
           Blocked ks -> (Full v, ks)
           _          -> $internalError "put" "multiple put"
-  mapM_ ($ v) (reverse ks)
+  --
+  schedule workers Job { jobTasks = fmap ($ v) ks
+                       , jobDone  = Nothing
+                       }
 
-
--- The reschedule loop checks for new work to become available as a result of
--- a thread calling 'put' on an IVar with blocked continuations.
+-- | The worker threads should search for other work to execute
 --
 {-# INLINE reschedule #-}
 reschedule :: Par Native a
-reschedule = Par $ ContT loop
-  where
-    loop :: unused -> ReaderT Schedule (LLVM Native) ()
-    loop unused = do
-      queue <- ask
-      mwork <- liftIO $ tryPopR queue
-      case mwork of
-        Just work -> runContT (runPar work) (\_ -> loop unused)
-        Nothing   -> liftIO yield >> loop unused
+reschedule = Par $ ContT (\_ -> return ())
+
+
+-- reschedule :: Par Native a
+-- reschedule = Par $ ContT (const loop)
+--   where
+--     loop :: ReaderT Schedule (LLVM Native) ()
+--     loop = do
+--       queue <- ask
+--       mwork <- liftIO $ tryPopR queue
+--       case mwork of
+--         Just work -> runContT (runPar work) (const loop)
+--         Nothing   -> liftIO yield >> loop
 
 -- pushL :: MVar (Seq a) -> a -> IO ()
 -- pushL ref a =

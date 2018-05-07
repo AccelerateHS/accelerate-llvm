@@ -13,7 +13,7 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
 
-  Action, Task(..), Job(..), Workers,
+  Action, Job(..), Workers,
 
   schedule,
   hireWorkers, hireWorkersOn, retireWorkers, fireWorkers, numWorkers,
@@ -60,6 +60,7 @@ data Workers = Workers
 -- Schedule a job to be executed by the worker threads. May be called
 -- concurrently.
 --
+{-# INLINEABLE schedule #-}
 schedule :: Workers -> Job -> IO ()
 schedule Workers{..} Job{..} = do
   -- Generate the work list. If there is a finalisation action, there is a bit
@@ -85,7 +86,7 @@ schedule Workers{..} Job{..} = do
   -- just in case a thread woke up and failed too many times before being able
   -- to successfully pop an item from the queue.
   --
-  _ <- tryPutMVar workerActive ()
+  -- _ <- tryPutMVar workerActive ()  -- TLM: disabled 2018-05-07
   mapM_ (pushL workerTaskQueue) tasks
   _ <- tryPutMVar workerActive ()
   return ()
@@ -107,15 +108,15 @@ runWorker activate queue = loop 0
       req <- tryPopR queue
       case req of
         -- The number of retries and thread delay on failure are knobs which can
-        -- be tuned. Having these values too small results in busy work which
+        -- be tuned. Having these values too high results in busy work which
         -- will detract from time spent adding new work thus reducing
-        -- productivity, whereas high values will reduce responsiveness and thus
+        -- productivity, whereas low values will reduce responsiveness and thus
         -- also reduce productivity.
         --
         -- TODO: Tune these values a bit
         --
-        Nothing   -> if retries < 1024
-                       then yield >> loop (retries+1)
+        Nothing   -> if retries < 16
+                       then loop (retries+1)
                        else do
                          D.when D.dump_sched $ do
                            tid <- myThreadId
