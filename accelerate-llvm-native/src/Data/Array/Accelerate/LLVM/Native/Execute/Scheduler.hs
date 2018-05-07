@@ -15,12 +15,11 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
 
   Action, Task(..), Job(..), Workers,
 
-  schedule, divideWork,
+  schedule,
   hireWorkers, hireWorkersOn, retireWorkers, fireWorkers, numWorkers,
 
 ) where
 
-import Data.Array.Accelerate.LLVM.Native.Execute.Divide
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as D
 
 import Control.Concurrent

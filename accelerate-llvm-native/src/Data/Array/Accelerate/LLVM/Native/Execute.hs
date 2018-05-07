@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Async
+import Data.Array.Accelerate.LLVM.Native.Execute.Divide
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Val )
 import Data.Array.Accelerate.LLVM.Native.Execute.Marshal
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
