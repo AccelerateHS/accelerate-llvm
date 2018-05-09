@@ -50,12 +50,13 @@ class Monad (Par arch) => Async arch where
 
   -- | Read a value stored in a future, once it is available. This is blocking
   -- with respect to both the host and remote device.
+  --
   {-# INLINEABLE block #-}
   block :: FutureR arch a -> Par arch a
   block = get
 
-  -- | Evaluate a computation in a new thread. This might be implemented more
-  -- efficiently than the default implementation.
+  -- | Evaluate a computation in a new thread/context. This might be implemented
+  -- more efficiently than the default implementation.
   --
   {-# INLINEABLE spawn #-}
   spawn :: Par arch (FutureR arch a) -> Par arch (FutureR arch a)
