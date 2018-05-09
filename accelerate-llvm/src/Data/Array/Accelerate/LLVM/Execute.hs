@@ -293,12 +293,11 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Atuple tup          -> atuple tup
         Alloc sh            -> allocate sh
         Apply f a           -> travAF f =<< spawn (travA a)
-
-        Aprj ix tup         -> lift1 (newFull . evalPrj ix . fromAtuple) (travA tup)
+        Aprj ix tup         -> liftF1 (evalPrj ix . fromAtuple) (travA tup)
         Acond p t e         -> acond t e =<< travE p
         Awhile p f a        -> awhile p f =<< spawn (travA a)
-        Reshape sh ix       -> lift2 (newFull $$ reshape) (travE sh) (return $ prj ix aenv)
-        Unzip tix ix        -> lift1 (newFull . unzip tix) (return $ prj ix aenv)
+        Reshape sh ix       -> liftF2 reshape (travE sh) (return $ prj ix aenv)
+        Unzip tix ix        -> liftF1 (unzip tix) (return $ prj ix aenv)
         Aforeign str asm a  -> do
           x <- travA a
           spawn $ aforeign str asm =<< get x
@@ -427,6 +426,11 @@ executeOpenAcc !topAcc !aenv = travA topAcc
 --      heavy-weight. In particular, perhaps we only need to know the shape of
 --      an array before proceeding (i.e. scheduling execution of the next array)
 --      without having to wait for the array elements to be evaluated.
+--
+--      Additionally, most operations do not interact with arrays and could be
+--      evaluated directly (e.g. shape/index manipulations) (currently futures
+--      are implemented in both backends as a data structure in an IORef, so we
+--      could avoid some indirections).
 --
 
 {-# INLINEABLE executeExp #-}
@@ -559,16 +563,16 @@ lift2 f x y = do
   y' <- y
   spawn $ id =<< liftM2 f (get x') (get y')
 
--- {-# INLINE liftF #-}
--- liftF :: Async arch
---       => (a -> b)
---       -> Par arch (FutureR arch a)
---       -> Par arch (FutureR arch b)
--- liftF f x = do
---   r  <- new
---   x' <- x
---   fork $ put r . f =<< get x'
---   return r
+{-# INLINE liftF1 #-}
+liftF1 :: Async arch
+       => (a -> b)
+       -> Par arch (FutureR arch a)
+       -> Par arch (FutureR arch b)
+liftF1 f x = do
+  r  <- new
+  x' <- x
+  fork $ put r . f =<< get x'
+  return r
 
 {-# INLINE liftF2 #-}
 liftF2 :: Async arch
