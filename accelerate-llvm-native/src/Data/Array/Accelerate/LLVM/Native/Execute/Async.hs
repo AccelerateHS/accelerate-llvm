@@ -40,12 +40,20 @@ import qualified Data.Sequence                                      as Seq
 
 -- | Evaluate a parallel computation
 --
+-- The worker threads execute the computation, while the calling thread
+-- effectively sleeps waiting for the result.
+--
 {-# INLINEABLE evalPar #-}
 evalPar :: Par Native a -> LLVM Native a
 evalPar work = do
+  native <- gets llvmTarget
   result <- liftIO newEmptyMVar
-  runContT (runPar work) (liftIO . putMVar result)
-  liftIO $ takeMVar result
+  liftIO  $ do
+    schedule (workers native)
+      Job { jobTasks = Seq.singleton $ evalLLVM native (runContT (runPar work) (liftIO . putMVar result))
+          , jobDone  = Nothing
+          }
+    takeMVar result
 
 
 -- Implementation
