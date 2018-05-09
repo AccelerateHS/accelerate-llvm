@@ -133,10 +133,10 @@ indexArrayAsync
     :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
     => ArrayData e
     -> Int              -- element index
-    -> Int              -- actual number of elements per value (i.e. this is >1 for SIMD types)
+    -> Int              -- actual number of values per element (i.e. this is >1 for SIMD types)
     -> Par PTX (Future (ArrayData e))
 indexArrayAsync !ad_src !i !n = do
-  ad_dst <- liftIO $ newArrayData 1
+  ad_dst <- liftIO $ newArrayData n
   let !bytes  = n * sizeOf (undefined::a)
       !dst    = CUDA.HostPtr (ptrsOfArrayData ad_dst)
   --
