@@ -361,7 +361,7 @@ message s = s `trace` return ()
 transfer :: MonadIO m => String -> Int -> Maybe CUDA.Stream -> IO () -> m ()
 transfer name bytes stream action =
   let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-      msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
+      msg wall cpu gpu  = printf "gc: %s: %s @ %s, %s"
                             name
                             (showBytes bytes)
                             (showRate bytes wall)
