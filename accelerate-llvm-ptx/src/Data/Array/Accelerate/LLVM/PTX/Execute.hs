@@ -512,8 +512,8 @@ permuteOp inplace exe gamma aenv shIn dfs@(shape -> shOut) = withExecutable exe 
   --
   future  <- new
   result  <- if inplace
-               then return dfs
-               else get =<< cloneArrayAsync dfs
+               then Debug.trace Debug.dump_exec "exec: permute/inplace" $ return dfs
+               else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync dfs
   --
   case kernelName kernel of
     -- execute directly using atomic operations
@@ -521,8 +521,11 @@ permuteOp inplace exe gamma aenv shIn dfs@(shape -> shOut) = withExecutable exe 
 
     -- a temporary array is required for spin-locks around the critical section
     "permute_mutex" -> do
+      barrier     <- new                     :: Par PTX (Future (Vector Word32))
       Array _ ad  <- allocateRemote (Z :. m) :: Par PTX (Vector Word32)
-      barrier     <- memsetArrayAsync m 0 ad
+      fork $ do fill <- memsetArrayAsync m 0 ad
+                put barrier . Array ((), m) =<< get fill
+      --
       executeOp kernel gamma aenv (Z :. n) (result, barrier)
 
     _               -> $internalError "permute" "unexpected kernel image"
