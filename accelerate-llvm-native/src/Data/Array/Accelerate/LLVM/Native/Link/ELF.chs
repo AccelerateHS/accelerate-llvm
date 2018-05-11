@@ -40,12 +40,11 @@ import Foreign.Marshal
 import Foreign.Ptr
 import Foreign.Storable
 import GHC.ForeignPtr                                     ( mallocPlainForeignPtrAlignedBytes )
-import GHC.Prim                                           ( addr2Int#, int2Word#, int2Addr# )
+import GHC.Prim                                           ( addr2Int#, int2Word# )
 import GHC.Ptr                                            ( Ptr(..) )
 import GHC.Word                                           ( Word64(..) )
 import System.IO.Unsafe
 import System.Posix.DynamicLinker
-import System.Posix.Types                                 ( COff(..) )
 import Text.Printf
 import qualified Data.ByteString                          as B
 import qualified Data.ByteString.Char8                    as B8
