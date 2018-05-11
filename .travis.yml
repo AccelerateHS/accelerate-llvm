@@ -138,7 +138,7 @@ script:
 
   # Run test suite(s)
   # retry due to intermittent failures \:
-  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s'
+  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
