@@ -176,7 +176,7 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
-  stencil       :: (Stencil sh a stencil, Elt b)
+  stencil1      :: (Stencil sh a stencil, Elt b)
                 => arch
                 -> UID
                 -> Gamma aenv
@@ -201,7 +201,7 @@ class Skeleton arch where
   map           = defaultMap
   backpermute   = defaultBackpermute
   transform     = defaultTransform
-  stencil       = defaultStencil1
+  stencil1      = defaultStencil1
   stencil2      = defaultStencil2
 
 

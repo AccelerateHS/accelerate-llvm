@@ -6,10 +6,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -20,7 +21,7 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute (
 
-  executeAcc, executeAfun,
+  executeAcc,
   executeOpenAcc,
 
 ) where
@@ -33,7 +34,6 @@ import Data.Array.Accelerate.Lifetime
 
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
-import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
@@ -41,27 +41,29 @@ import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsy
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
-
-import Data.Range                                               ( Range(..) )
-import Control.Parallel.Meta                                    ( runExecutable )
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
 import Control.Monad                                            ( when )
-import Control.Monad.State                                      ( gets, liftIO )
+import Control.Monad.Reader                                     ( ask )
+import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
+import Data.Proxy                                               ( Proxy(..) )
 import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
-import qualified Prelude                                        as P
 
+
+{-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (Future a) #-}
+{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc PTX aenv a -> Val aenv -> Par PTX (Future a) #-}
 
 -- Array expression evaluation
 -- ---------------------------
@@ -80,6 +82,24 @@ import qualified Prelude                                        as P
 --     code.
 --
 instance Execute PTX where
+  {-# INLINE map         #-}
+  {-# INLINE generate    #-}
+  {-# INLINE transform   #-}
+  {-# INLINE backpermute #-}
+  {-# INLINE fold        #-}
+  {-# INLINE fold1       #-}
+  {-# INLINE foldSeg     #-}
+  {-# INLINE fold1Seg    #-}
+  {-# INLINE scanl       #-}
+  {-# INLINE scanl1      #-}
+  {-# INLINE scanl'      #-}
+  {-# INLINE scanr       #-}
+  {-# INLINE scanr1      #-}
+  {-# INLINE scanr'      #-}
+  {-# INLINE permute     #-}
+  {-# INLINE stencil1    #-}
+  {-# INLINE stencil2    #-}
+  {-# INLINE aforeign    #-}
   map           = simpleOp
   generate      = simpleOp
   transform     = simpleOp
@@ -105,38 +125,42 @@ instance Execute PTX where
 
 -- Simple kernels just need to know the shape of the output array
 --
+{-# INLINE simpleOp #-}
 simpleOp
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
-    -> LLVM PTX (Array sh e)
-simpleOp exe gamma aenv stream sh = withExecutable exe $ \ptxExecutable -> do
-  let kernel  = case functionTable ptxExecutable of
-                  k:_ -> k
-                  _   -> $internalError "simpleOp" "no kernels found"
+    -> Par PTX (Future (Array sh e))
+simpleOp exe gamma aenv sh = withExecutable exe $ \ptxExecutable -> do
+  let kernel = case functionTable ptxExecutable of
+                 k:_ -> k
+                 _   -> $internalError "simpleOp" "no kernels found"
   --
-  out <- allocateRemote sh
-  ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
-  return out
+  future <- new
+  result <- allocateRemote sh
+  --
+  executeOp kernel gamma aenv sh result
+  put future result
+  return future
 
+{-# INLINE simpleNamed #-}
 simpleNamed
     :: (Shape sh, Elt e)
     => ShortByteString
     -> ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
-    -> LLVM PTX (Array sh e)
-simpleNamed fun exe gamma aenv stream sh = withExecutable exe $ \ptxExecutable -> do
-  out <- allocateRemote sh
-  ptx <- gets llvmTarget
-  liftIO $ executeOp ptx (ptxExecutable !# fun) gamma aenv stream (IE 0 (size sh)) out
-  return out
+    -> Par PTX (Future (Array sh e))
+simpleNamed fun exe gamma aenv sh = withExecutable exe $ \ptxExecutable -> do
+  future <- new
+  result <- allocateRemote sh
+  --
+  executeOp (ptxExecutable !# fun) gamma aenv sh result
+  put future result
+  return future
 
 
 -- There are two flavours of fold operation:
@@ -153,121 +177,115 @@ simpleNamed fun exe gamma aenv stream sh = withExecutable exe $ \ptxExecutable -
 --      block. Currently we always use the first, but require benchmarking to
 --      determine when to select each.
 --
+{-# INLINE fold1Op #-}
 fold1Op
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
-    -> LLVM PTX (Array sh e)
-fold1Op exe gamma aenv stream sh@(sx :. sz)
+    -> Par PTX (Future (Array sh e))
+fold1Op exe gamma aenv sh@(sx :. sz)
   = $boundsCheck "fold1" "empty array" (sz > 0)
   $ case size sh of
-      0 -> allocateRemote sx    -- empty, but possibly with one or more non-zero dimensions
-      _ -> foldCore exe gamma aenv stream sh
+      0 -> newFull =<< allocateRemote sx  -- empty, but possibly with one or more non-zero dimensions
+      _ -> foldCore exe gamma aenv sh
 
+{-# INLINE foldOp #-}
 foldOp
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
-    -> LLVM PTX (Array sh e)
-foldOp exe gamma aenv stream sh@(sx :. _)
+    -> Par PTX (Future (Array sh e))
+foldOp exe gamma aenv sh@(sx :. _)
   = case size sh of
-      0 -> simpleNamed "generate" exe gamma aenv stream sx
-      _ -> foldCore exe gamma aenv stream sh
+      0 -> simpleNamed "generate" exe gamma aenv sx
+      _ -> foldCore exe gamma aenv sh
 
+{-# INLINE foldCore #-}
 foldCore
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
-    -> LLVM PTX (Array sh e)
-foldCore exe gamma aenv stream sh
+    -> Par PTX (Future (Array sh e))
+foldCore exe gamma aenv sh
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = foldAllOp exe gamma aenv stream sh
+  = foldAllOp exe gamma aenv sh
   --
   | otherwise
-  = foldDimOp exe gamma aenv stream sh
+  = foldDimOp exe gamma aenv sh
 
-
+{-# INLINE foldAllOp #-}
 foldAllOp
     :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> DIM1
-    -> LLVM PTX (Scalar e)
-foldAllOp exe gamma aenv stream (Z :. n) = withExecutable exe $ \ptxExecutable -> do
-  ptx <- gets llvmTarget
+    -> Par PTX (Future (Scalar e))
+foldAllOp exe gamma aenv sh@(Z :. n) = withExecutable exe $ \ptxExecutable -> do
+  future <- new
   let
-      ks      = ptxExecutable !# "foldAllS"
-      km1     = ptxExecutable !# "foldAllM1"
-      km2     = ptxExecutable !# "foldAllM2"
+      ks    = ptxExecutable !# "foldAllS"
+      km1   = ptxExecutable !# "foldAllM1"
+      km2   = ptxExecutable !# "foldAllM2"
   --
   if kernelThreadBlocks ks n == 1
     then do
       -- The array is small enough that we can compute it in a single step
-      out   <- allocateRemote Z
-      liftIO $ executeOp ptx ks gamma aenv stream (IE 0 n) out
-      return out
+      result <- allocateRemote Z
+      executeOp ks gamma aenv sh result
+      put future result
 
     else do
       -- Multi-kernel reduction to a single element. The first kernel integrates
       -- any delayed elements, and the second is called recursively until
       -- reaching a single element.
       let
-          rec :: Vector e -> LLVM PTX (Scalar e)
+          rec :: Vector e -> Par PTX ()
           rec tmp@(Array ((),m) adata)
-            | m <= 1    = return $ Array () adata
+            | m <= 1    = put future (Array () adata)
             | otherwise = do
-                let s = m `multipleOf` kernelThreadBlockSize km2
-                out   <- allocateRemote (Z :. s)
-                liftIO $ executeOp ptx km2 gamma aenv stream (IE 0 s) (tmp, out)
+                let sh' = Z :. m `multipleOf` kernelThreadBlockSize km2
+                out <- allocateRemote sh'
+                executeOp km2 gamma aenv sh' (tmp, out)
                 rec out
       --
-      let s = n `multipleOf` kernelThreadBlockSize km1
-      tmp   <- allocateRemote (Z :. s)
-      liftIO $ executeOp ptx km1 gamma aenv stream (IE 0 s) tmp
+      let sh' = Z :. n `multipleOf` kernelThreadBlockSize km1
+      tmp <- allocateRemote sh'
+      executeOp km1 gamma aenv sh' tmp
       rec tmp
+  --
+  return future
 
 
+{-# INLINE foldDimOp #-}
 foldDimOp
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
-    -> LLVM PTX (Array sh e)
-foldDimOp exe gamma aenv stream (sh :. sz) = withExecutable exe $ \ptxExecutable -> do
-  let
-      kernel  = if sz > 0
-                  then ptxExecutable !# "fold"
-                  else ptxExecutable !# "generate"
-  --
-  out <- allocateRemote sh
-  ptx <- gets llvmTarget
-  liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 (size sh)) out
-  return out
+    -> Par PTX (Future (Array sh e))
+foldDimOp exe gamma aenv (sh :. sz)
+  | sz > 0    = simpleNamed "fold"     exe gamma aenv sh
+  | otherwise = simpleNamed "generate" exe gamma aenv sh
 
 
+{-# INLINE foldSegOp #-}
 foldSegOp
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> (sh :. Int)
     -> (Z  :. Int)
-    -> LLVM PTX (Array (sh :. Int) e)
-foldSegOp exe gamma aenv stream (sh :. sz) (Z :. ss) = withExecutable exe $ \ptxExecutable -> do
+    -> Par PTX (Future (Array (sh :. Int) e))
+foldSegOp exe gamma aenv (sh :. sz) (Z :. ss) = withExecutable exe $ \ptxExecutable -> do
   let
       n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
       m       = size sh * n
@@ -279,65 +297,65 @@ foldSegOp exe gamma aenv stream (sh :. sz) (Z :. ss) = withExecutable exe $ \ptx
       foldseg_warp  = ptxExecutable !# "foldSeg_warp"
       -- qinit         = ptxExecutable !# "qinit"
   --
-  out <- allocateRemote (sh :. n)
-  ptx <- gets llvmTarget
-  liftIO $ executeOp ptx foldseg gamma aenv stream (IE 0 m) out
-  return out
+  future  <- new
+  result  <- allocateRemote (sh :. n)
+  executeOp foldseg gamma aenv (Z :. m) result
+  put future result
+  return future
 
 
+{-# INLINE scanOp #-}
 scanOp
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
-    -> LLVM PTX (Array (sh:.Int) e)
-scanOp exe gamma aenv stream (sz :. n) =
+    -> Par PTX (Future (Array (sh:.Int) e))
+scanOp exe gamma aenv (sz :. n) =
   case n of
-    0 -> simpleNamed "generate" exe gamma aenv stream (sz :. 1)
-    _ -> scanCore exe gamma aenv stream sz n (n+1)
+    0 -> simpleNamed "generate" exe gamma aenv (sz :. 1)
+    _ -> scanCore exe gamma aenv sz n (n+1)
 
+{-# INLINE scan1Op #-}
 scan1Op
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
-    -> LLVM PTX (Array (sh:.Int) e)
-scan1Op exe gamma aenv stream (sz :. n)
+    -> Par PTX (Future (Array (sh:.Int) e))
+scan1Op exe gamma aenv (sz :. n)
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv stream sz n n
+  $ scanCore exe gamma aenv sz n n
 
+{-# INLINE scanCore #-}
 scanCore
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> Int                    -- input size
     -> Int                    -- output size
-    -> LLVM PTX (Array (sh:.Int) e)
-scanCore exe gamma aenv stream sz n m
+    -> Par PTX (Future (Array (sh:.Int) e))
+scanCore exe gamma aenv sz n m
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = scanAllOp exe gamma aenv stream n m
+  = scanAllOp exe gamma aenv n m
   --
   | otherwise
-  = scanDimOp exe gamma aenv stream sz m
+  = scanDimOp exe gamma aenv sz m
 
-
+{-# INLINE scanAllOp #-}
 scanAllOp
     :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> Int                    -- input size
     -> Int                    -- output size
-    -> LLVM PTX (Vector e)
-scanAllOp exe gamma aenv stream n m = withExecutable exe $ \ptxExecutable -> do
+    -> Par PTX (Future (Vector e))
+scanAllOp exe gamma aenv n m = withExecutable exe $ \ptxExecutable -> do
   let
       k1  = ptxExecutable !# "scanP1"
       k2  = ptxExecutable !# "scanP2"
@@ -346,79 +364,85 @@ scanAllOp exe gamma aenv stream n m = withExecutable exe $ \ptxExecutable -> do
       c   = kernelThreadBlockSize k1
       s   = n `multipleOf` c
   --
-  ptx <- gets llvmTarget
-  out <- allocateRemote (Z :. m)
+  future  <- new
+  result  <- allocateRemote (Z :. m)
 
   -- Step 1: Independent thread-block-wide scans of the input. Small arrays
   -- which can be computed by a single thread block will require no
   -- additional work.
-  tmp <- allocateRemote (Z :. s) :: LLVM PTX (Vector e)
-  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+  tmp     <- allocateRemote (Z :. s) :: Par PTX (Vector e)
+  executeOp k1 gamma aenv (Z :. s) (tmp, result)
 
   -- Step 2: Multi-block reductions need to compute the per-block prefix,
   -- then apply those values to the partial results.
   when (s > 1) $ do
-    liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     tmp
-    liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, c)
+    executeOp k2 gamma aenv (Z :. s)   tmp
+    executeOp k3 gamma aenv (Z :. s-1) (tmp, result, c)
 
-  return out
+  put future result
+  return future
 
-
+{-# INLINE scanDimOp #-}
 scanDimOp
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> Int
-    -> LLVM PTX (Array (sh:.Int) e)
-scanDimOp exe gamma aenv stream sz m = withExecutable exe $ \ptxExecutable -> do
-  ptx <- gets llvmTarget
-  out <- allocateRemote (sz :. m)
-  liftIO $ executeOp ptx (ptxExecutable !# "scan") gamma aenv stream (IE 0 (size sz)) out
-  return out
+    -> Par PTX (Future (Array (sh:.Int) e))
+scanDimOp exe gamma aenv sz m = withExecutable exe $ \ptxExecutable -> do
+  future  <- new
+  result  <- allocateRemote (sz :. m)
+  executeOp (ptxExecutable !# "scan") gamma aenv (Z :. size sz) result
+  put future result
+  return future
 
 
+{-# INLINE scan'Op #-}
 scan'Op
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
-    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
-scan'Op exe gamma aenv stream sh@(sz :. n) =
+    -> Par PTX (Future (Array (sh:.Int) e, Array sh e))
+scan'Op exe gamma aenv sh@(sz :. n) =
   case n of
-    0 -> do out <- allocateRemote (sz :. 0)
-            sum <- simpleNamed "generate" exe gamma aenv stream sz
-            return (out, sum)
-    _ -> scan'Core exe gamma aenv stream sh
+    0 -> do
+      future  <- new
+      result  <- allocateRemote (sz :. 0)
+      sums    <- simpleNamed "generate" exe gamma aenv sz
+      fork $ do sums' <- get sums
+                put future (result, sums')
+      return future
+    --
+    _ -> scan'Core exe gamma aenv sh
 
+{-# INLINE scan'Core #-}
 scan'Core
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
-    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
-scan'Core exe gamma aenv stream sh
+    -> Par PTX (Future (Array (sh:.Int) e, Array sh e))
+scan'Core exe gamma aenv sh
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = scan'AllOp exe gamma aenv stream sh
+  = scan'AllOp exe gamma aenv sh
   --
   | otherwise
-  = scan'DimOp exe gamma aenv stream sh
+  = scan'DimOp exe gamma aenv sh
 
+{-# INLINE scan'AllOp #-}
 scan'AllOp
     :: forall aenv e. Elt e
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> DIM1
-    -> LLVM PTX (Vector e, Scalar e)
-scan'AllOp exe gamma aenv stream (Z :. n) = withExecutable exe $ \ptxExecutable -> do
+    -> Par PTX (Future (Vector e, Scalar e))
+scan'AllOp exe gamma aenv (Z :. n) = withExecutable exe $ \ptxExecutable -> do
   let
       k1  = ptxExecutable !# "scanP1"
       k2  = ptxExecutable !# "scanP2"
@@ -427,104 +451,116 @@ scan'AllOp exe gamma aenv stream (Z :. n) = withExecutable exe $ \ptxExecutable 
       c   = kernelThreadBlockSize k1
       s   = n `multipleOf` c
   --
-  ptx <- gets llvmTarget
-  out <- allocateRemote (Z :. n)
-  tmp <- allocateRemote (Z :. s)  :: LLVM PTX (Vector e)
+  future  <- new
+  result  <- allocateRemote (Z :. n)
+  tmp     <- allocateRemote (Z :. s)  :: Par PTX (Vector e)
 
   -- Step 1: independent thread-block-wide scans. Each block stores its partial
   -- sum to a temporary array.
-  liftIO $ executeOp ptx k1 gamma aenv stream (IE 0 s) (tmp, out)
+  executeOp k1 gamma aenv (Z :. s) (tmp, result)
 
   -- If this was a small array that was processed by a single thread block then
   -- we are done, otherwise compute the per-block prefix and apply those values
   -- to the partial results.
   if s == 1
-    then case tmp of
-           Array _ ad -> return (out, Array () ad)
+    then
+      case tmp of
+        Array _ ad -> put future (result, Array () ad)
+
     else do
-      sum <- allocateRemote Z
-      liftIO $ executeOp ptx k2 gamma aenv stream (IE 0 s)     (tmp, sum)
-      liftIO $ executeOp ptx k3 gamma aenv stream (IE 0 (s-1)) (tmp, out, c)
-      return (out, sum)
+      sums <- allocateRemote Z
+      executeOp k2 gamma aenv (Z :. s)   (tmp, sums)
+      executeOp k3 gamma aenv (Z :. s-1) (tmp, result, c)
+      put future (result, sums)
+  --
+  return future
 
-
+{-# INLINE scan'DimOp #-}
 scan'DimOp
     :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh :. Int
-    -> LLVM PTX (Array (sh:.Int) e, Array sh e)
-scan'DimOp exe gamma aenv stream sh@(sz :. _) = withExecutable exe $ \ptxExecutable -> do
-  ptx <- gets llvmTarget
-  out <- allocateRemote sh
-  sum <- allocateRemote sz
-  liftIO $ executeOp ptx (ptxExecutable !# "scan") gamma aenv stream (IE 0 (size sz)) (out,sum)
-  return (out,sum)
+    -> Par PTX (Future (Array (sh:.Int) e, Array sh e))
+scan'DimOp exe gamma aenv sh@(sz :. _) = withExecutable exe $ \ptxExecutable -> do
+  future  <- new
+  result  <- allocateRemote sh
+  sums    <- allocateRemote sz
+  executeOp (ptxExecutable !# "scan") gamma aenv (Z :. size sz) (result, sums)
+  put future (result, sums)
+  return future
 
 
+{-# INLINE permuteOp #-}
 permuteOp
     :: (Shape sh, Shape sh', Elt e)
-    => ExecutableR PTX
+    => Bool
+    -> ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Bool
+    -> Val aenv
     -> sh
     -> Array sh' e
-    -> LLVM PTX (Array sh' e)
-permuteOp exe gamma aenv stream inplace shIn dfs = withExecutable exe $ \ptxExecutable -> do
+    -> Par PTX (Future (Array sh' e))
+permuteOp inplace exe gamma aenv shIn dfs@(shape -> shOut) = withExecutable exe $ \ptxExecutable -> do
   let
       n       = size shIn
-      m       = size (shape dfs)
+      m       = size shOut
       kernel  = case functionTable ptxExecutable of
                   k:_ -> k
                   _   -> $internalError "permute" "no kernels found"
   --
-  ptx <- gets llvmTarget
-  out <- if inplace
-           then return dfs
-           else cloneArrayAsync stream dfs
+  future  <- new
+  result  <- if inplace
+               then Debug.trace Debug.dump_exec "exec: permute/inplace" $ return dfs
+               else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync dfs
   --
   case kernelName kernel of
-    "permute_rmw"   -> liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) out
+    -- execute directly using atomic operations
+    "permute_rmw"   -> executeOp kernel gamma aenv (Z :. n) result
+
+    -- a temporary array is required for spin-locks around the critical section
     "permute_mutex" -> do
-      barrier@(Array _ ad) <- allocateRemote (Z :. m) :: LLVM PTX (Vector Word32)
-      memsetArrayAsync stream m 0 ad
-      liftIO $ executeOp ptx kernel gamma aenv stream (IE 0 n) (out, barrier)
+      barrier     <- new                     :: Par PTX (Future (Vector Word32))
+      Array _ ad  <- allocateRemote (Z :. m) :: Par PTX (Vector Word32)
+      fork $ do fill <- memsetArrayAsync m 0 ad
+                put barrier . Array ((), m) =<< get fill
+      --
+      executeOp kernel gamma aenv (Z :. n) (result, barrier)
+
     _               -> $internalError "permute" "unexpected kernel image"
   --
-  return out
+  put future result
+  return future
 
 
 -- Using the defaulting instances for stencil operations (for now).
 --
+{-# INLINE stencil2Op #-}
 stencil2Op
     :: (Shape sh, Elt e)
     => ExecutableR PTX
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
+    -> Val aenv
     -> sh
     -> sh
-    -> LLVM PTX (Array sh e)
-stencil2Op exe gamma aenv stream sh1 sh2 =
-  simpleOp exe gamma aenv stream (sh1 `intersect` sh2)
+    -> Par PTX (Future (Array sh e))
+stencil2Op exe gamma aenv sh1 sh2 =
+  simpleOp exe gamma aenv (sh1 `intersect` sh2)
 
 
 -- Foreign functions
 --
+{-# INLINE aforeignOp #-}
 aforeignOp
     :: (Arrays as, Arrays bs)
     => String
-    -> (Stream -> as -> LLVM PTX bs)
-    -> Stream
+    -> (as -> Par PTX (Future bs))
     -> as
-    -> LLVM PTX bs
-aforeignOp name asm stream arr =
-  Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) $
-    asm stream arr
+    -> Par PTX (Future bs)
+aforeignOp name asm arr = do
+  stream <- ask
+  Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
     query = if Debug.monitoringIsEnabled
               then return True
@@ -538,12 +574,6 @@ aforeignOp name asm stream arr =
 
 -- Skeleton execution
 -- ------------------
-
--- TODO: Calculate this from the device properties, say [a multiple of] the
---       maximum number of in-flight threads that the device supports.
---
-defaultPPT :: Int
-defaultPPT = 32768
 
 -- | Retrieve the named kernel
 --
@@ -560,19 +590,19 @@ lookupKernel name ptxExecutable =
 -- Execute the function implementing this kernel.
 --
 executeOp
-    :: Marshalable args
-    => PTX
-    -> Kernel
+    :: (Shape sh, Marshalable (Par PTX) args)
+    => Kernel
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Range
+    -> Val aenv
+    -> sh
     -> args
-    -> IO ()
-executeOp ptx@PTX{..} kernel@Kernel{..} gamma aenv stream r args =
-  runExecutable fillP kernelName defaultPPT r $ \start end _ -> do
-    argv <- marshal ptx stream (start, end, args, (gamma,aenv))
-    launch kernel stream (end-start) argv
+    -> Par PTX ()
+executeOp kernel gamma aenv sh args =
+  let n = size sh
+  in  when (n > 0) $ do
+        stream <- ask
+        argv   <- marshal (Proxy::Proxy PTX) (0::Int, n, args, (gamma, aenv))
+        liftIO  $ launch kernel stream n argv
 
 
 -- Execute a device function with the given thread configuration and function
@@ -580,7 +610,6 @@ executeOp ptx@PTX{..} kernel@Kernel{..} gamma aenv stream r args =
 --
 launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
 launch Kernel{..} stream n args =
-  when (n > 0) $
   withLifetime stream $ \st ->
     Debug.monitorProcTime query msg (Just st) $
       CUDA.launchKernel kernelFun grid cta smem (Just st) args

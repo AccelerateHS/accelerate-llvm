@@ -66,7 +66,7 @@ matrix:
             - cabal-install-2.0
             - llvm-5.0-dev
 
-    - env: GHC=8.4.1 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
+    - env: GHC=8.4.2 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.4"
       addons:
         apt:
@@ -103,7 +103,7 @@ before_install:
   # ghc bug? error while loading shared libraries: libffi.so.7
   - |
       case ${GHC} in
-        8.4.1) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.1/rts:$LD_LIBRARY_PATH ;;
+        8.4.2) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.2/rts:$LD_LIBRARY_PATH ;;
       esac
 
   # https://github.com/haskell/haddock/issues/775
@@ -132,13 +132,13 @@ install:
   - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
 
 script:
-  - travis_retry stack build accelerate-llvm        --fast --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-native --fast --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-ptx    --fast --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests ${HADDOCK}
 
   # Run test suite(s)
   # retry due to intermittent failures \:
-  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s'
+  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh

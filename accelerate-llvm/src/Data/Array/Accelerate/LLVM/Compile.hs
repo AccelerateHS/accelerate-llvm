@@ -202,7 +202,7 @@ compileOpenAcc = traverseAcc
         scanr1 _ a          = AST.Scanr1 a
         scanr' _ _ a        = AST.Scanr' a
         permute _ d _ a     = AST.Permute a d
-        stencil1 _ _ a      = AST.Stencil a
+        stencil1 _ _ a      = AST.Stencil1 a
         stencil2 _ _ a _ b  = AST.Stencil2 a b
 
         fusionError :: error

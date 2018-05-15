@@ -1,6 +1,6 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Environment
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -11,12 +11,13 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Execute.Environment (
 
-  Aval, aprj
+  module Data.Array.Accelerate.LLVM.Execute.Environment,
+  module Data.Array.Accelerate.LLVM.PTX.Execute.Environment,
 
 ) where
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.Execute.Environment
 
-type Aval = AvalR PTX
+type Val = ValR PTX
 

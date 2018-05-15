@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-ptx
-version:                1.2.0.0
+version:                1.3.0.0
 cabal-version:          >= 1.10
 tested-with:            GHC >= 7.10
 build-type:             Simple
@@ -142,8 +142,8 @@ Library
 
   build-depends:
           base                          >= 4.7 && < 4.12
-        , accelerate                    == 1.2.*
-        , accelerate-llvm               == 1.2.*
+        , accelerate                    == 1.3.*
+        , accelerate-llvm               == 1.3.*
         , bytestring                    >= 0.10.4
         , containers                    >= 0.5 && <0.6
         , cuda                          >= 0.9
@@ -160,7 +160,6 @@ Library
         , pretty                        >= 1.1
         , process                       >= 1.4.3
         , template-haskell
-        , time                          >= 1.4
         , unordered-containers          >= 0.2
 
   hs-source-dirs:
@@ -207,6 +206,7 @@ test-suite nofib-llvm-ptx
         -rtsopts
         -with-rtsopts=-A128M
         -with-rtsopts=-n4M
+        -with-rtsopts=-N
 
 
 source-repository head
@@ -215,7 +215,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.2.0.0
+  tag:                  1.3.0.0
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell

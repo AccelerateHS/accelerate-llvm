@@ -5,7 +5,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Foreign
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -24,6 +24,7 @@ module Data.Array.Accelerate.LLVM.Native.Foreign (
   Native(..),
   liftIO,
   module Data.Array.Accelerate.LLVM.Native.Array.Data,
+  module Data.Array.Accelerate.LLVM.Native.Execute.Async,
 
 ) where
 
@@ -34,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.Native.Array.Data
+import Data.Array.Accelerate.LLVM.Native.Execute.Async
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Control.Monad.State
@@ -42,7 +44,7 @@ import Data.Typeable
 
 instance Foreign Native where
   foreignAcc _ (ff :: asm (a -> b))
-    | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just (const asm)
+    | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just asm
     | otherwise                                                 = Nothing
 
   foreignExp _ (ff :: asm (x -> y))
@@ -63,7 +65,7 @@ instance S.Foreign ForeignExp where
 --
 data ForeignAcc f where
   ForeignAcc :: String
-             -> (a -> LLVM Native b)
+             -> (a -> Par Native (Future b))
              -> ForeignAcc (a -> b)
 
 -- Foreign expressions in the Native backend.

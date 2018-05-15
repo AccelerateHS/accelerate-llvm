@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -62,7 +62,7 @@ link (ObjectR uid _ obj) = do
 
 -- | Execute some operation with the supplied executable functions
 --
-withExecutable :: ExecutableR Native -> (FunctionTable -> LLVM Native b) -> LLVM Native b
+withExecutable :: MonadIO m => ExecutableR Native -> (FunctionTable -> m b) -> m b
 withExecutable NativeR{..} f = do
   r <- f (unsafeGetValue nativeExecutable)
   liftIO $ touchLifetime nativeExecutable
