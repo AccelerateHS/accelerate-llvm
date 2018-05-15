@@ -46,14 +46,22 @@ import qualified Data.Sequence                                      as Seq
 {-# INLINEABLE evalPar #-}
 evalPar :: Par Native a -> LLVM Native a
 evalPar work = do
-  native <- gets llvmTarget
   result <- liftIO newEmptyMVar
-  liftIO  $ do
-    schedule (workers native)
-      Job { jobTasks = Seq.singleton $ evalLLVM native (runContT (runPar work) (liftIO . putMVar result))
-          , jobDone  = Nothing
-          }
-    takeMVar result
+  runContT (runPar work) (liftIO . putMVar result)
+  liftIO $ takeMVar result
+
+  -- XXX: Running the initial computation on the worker threads can lead to the
+  -- workers becoming blocked, possibly waiting for the result MVars to be
+  -- filled from previous (lazily evaluated) computations (speculation). This
+  -- happened for example with the code from Issue255, when extracting the
+  -- result at index > number of worker threads.
+  --
+  -- liftIO  $ do
+  --   schedule (workers native)
+  --     Job { jobTasks = Seq.singleton $ evalLLVM native (runContT (runPar work) (liftIO . putMVar result))
+  --         , jobDone  = Nothing
+  --         }
+  --   takeMVar result
 
 
 -- Implementation
