@@ -26,11 +26,12 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where
-  map _         = mkMapNested
+  map _         = mkMap
   generate _    = mkGenerate
   fold _        = mkFold
   fold1 _       = mkFold1
@@ -42,5 +43,7 @@ instance Skeleton Native where
   scanr _       = mkScanr
   scanr1 _      = mkScanr1
   scanr' _      = mkScanr'
-  permute _     = mkPermute
+  permute _     = mkPermuteNested
+  stencil       = mkStencil1
+  stencil2      = mkStencil2
 

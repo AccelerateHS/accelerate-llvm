@@ -40,7 +40,18 @@ mkGenerate
     -> Gamma aenv
     -> IRFun1 Native aenv (sh -> e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkGenerate uid aenv apply =
+mkGenerate uid aenv apply
+  = foldr1 (+++) <$> sequence [ mkGenerateLinear uid aenv apply
+                              , mkGenerateNested uid aenv apply
+                              ]
+
+mkGenerateLinear
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => UID
+    -> Gamma aenv
+    -> IRFun1 Native aenv (sh -> e)
+    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+mkGenerateLinear uid aenv apply =
   let
       (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
@@ -67,7 +78,7 @@ mkGenerateNested uid aenv apply =
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "generateNested" (paramGang ++ paramOut ++ paramEnv) $ do
 
     imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
       r  <- app1 apply ix                       -- apply generator function

@@ -178,7 +178,7 @@ compileOpenAcc = traverseAcc
         Scanr' f z a                -> build =<< liftA3 scanr'        <$> travF f <*> travE z <*> travD a
         Scanr1 f a                  -> build =<< liftA2 scanr1        <$> travF f <*> travD a
         Permute f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
-        Stencil f x a               -> build =<< liftA3 stencil1      <$> travF f <*> travB x <*> travM a
+        Stencil  f x a              -> build =<< liftA3 stencil1      <$> travF f <*> travB x <*> travM a
         Stencil2 f x a y b          -> build =<< liftA5 stencil2      <$> travF f <*> travB x <*> travM a <*> travB y <*> travM b
 
         -- Removed by fusion
@@ -202,8 +202,23 @@ compileOpenAcc = traverseAcc
         scanr1 _ a          = AST.Scanr1 a
         scanr' _ _ a        = AST.Scanr' a
         permute _ d _ a     = AST.Permute a d
-        stencil1 _ _ a      = AST.Stencil a
-        stencil2 _ _ a _ b  = AST.Stencil2 a b
+
+        stencil1 :: forall acc sh stencil a b. (Stencil sh a stencil, Elt b)
+                 => CompiledFun arch aenv (stencil -> b)
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> Idx aenv (Array sh a)
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
+        stencil1 _ _ a      = AST.Stencil1 (stencil :: StencilR sh a stencil) a
+
+        stencil2 :: forall acc sh stencil1 stencil2 a b c. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
+                 => CompiledFun arch aenv (stencil1 -> stencil2 -> c)
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> Idx aenv (Array sh a)
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh b)
+                 -> Idx aenv (Array sh b)
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh c)
+        stencil2 _ _ a _ b  = AST.Stencil2 (stencil :: StencilR sh a stencil1) (stencil :: StencilR sh b stencil2) a b
+
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc

@@ -24,7 +24,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
+
+import Control.Monad
 
 
 -- | A standard 'for' loop, that steps from the start to end index executing the
@@ -67,6 +70,77 @@ imapNestedFromTo (IR start) (IR end) extent body = go (eltType (undefined::sh)) 
       $ \(IR i)  -> k (OP_Pair sz i)
 
     go _ _ _ _
+      = $internalError "imapNestedFromTo" "expected shape with Int components"
+
+
+imapNestedFromTo'
+  :: forall sh. Shape sh
+  => IR sh
+  -> IR sh
+  -> IR sh
+  -> (IR sh -> IR Int -> CodeGen ())
+  -> CodeGen ()
+imapNestedFromTo' (IR start) (IR end) (IR extent) body = do
+  startl <- intOfIndex (IR extent :: IR sh) (IR start)
+  void $ go (eltType (undefined::sh)) start end extent (int 1) startl body'
+  where
+    body' :: Operands (EltRepr sh) -> IR Int -> CodeGen (IR Int)
+    body' ix l = body (IR ix) l >> add numType (int 1) l
+
+    go :: TupleType t
+       -> Operands t
+       -> Operands t
+       -> Operands t
+       -> IR Int
+       -> IR Int
+       -> (Operands t -> IR Int -> CodeGen (IR Int))
+       -> CodeGen (IR Int)
+    go TypeRunit OP_Unit OP_Unit OP_Unit _delta l k
+      = k OP_Unit l
+
+    go (TypeRpair tsh tsz) (OP_Pair ssh ssz) (OP_Pair esh esz) (OP_Pair exh exz) delta l k
+      | TypeRscalar t <- tsz
+      , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
+      = do
+          delta' <- mul numType delta (IR exz)
+          go tsh ssh esh exh delta' l $ \sz ll -> do
+            Loop.iterFromStepTo (IR ssz) (int 1) (IR esz) ll $ \(IR i) l' ->
+              k (OP_Pair sz i) l'
+            add numType ll delta'
+
+    go _ _ _ _ _ _ _ 
+      = $internalError "imapNestedFromTo'" "expected shape with Int components"
+
+
+-- | Generate a series of nested 'for' loops which iterate between the start and
+-- end indices of a given hyper-rectangle. LLVM is very good at vectorising
+-- these kinds of nested loops, but not so good at vectorising the flattened
+-- representation utilising to/from index.
+--
+imapNestedFromStepTo
+    :: forall sh. Shape sh
+    => IR sh                                    -- ^ initial index (inclusive)
+    -> IR sh                                    -- ^ steps
+    -> IR sh                                    -- ^ final index (exclusive)
+    -> IR sh                                    -- ^ total array extent
+    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
+    -> CodeGen ()
+imapNestedFromStepTo (IR start) (IR steps) (IR end) extent body = go (eltType (undefined::sh)) start steps end (body' . IR)
+  where
+    body' ix = body ix =<< intOfIndex extent ix
+
+    go :: TupleType t -> Operands t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
+    go TypeRunit OP_Unit OP_Unit OP_Unit k
+      = k OP_Unit
+
+    go (TypeRpair tsh tsz) (OP_Pair ssh ssz) (OP_Pair sts stz) (OP_Pair esh esz) k
+      | TypeRscalar t <- tsz
+      , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
+      = go tsh ssh sts esh
+      $ \sz      -> Loop.imapFromStepTo (IR ssz :: IR Int) (IR stz) (IR esz)
+      $ \(IR i)  -> k (OP_Pair sz i)
+
+    go _ _ _ _ _
       = $internalError "imapNestedFromTo" "expected shape with Int components"
 
 

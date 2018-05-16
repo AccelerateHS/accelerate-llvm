@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
@@ -83,10 +84,10 @@ import Foreign.Ptr
 --     code.
 --
 instance Execute Native where
-  map           = simpleOpNestedLoops
-  generate      = simpleOp
-  transform     = simpleOpNestedLoops
-  backpermute   = simpleOpNestedLoops
+  map           = simpleOp
+  generate      = simpleNamedNestedLoops "generateNested"
+  transform     = simpleNamedNestedLoops "generateNested"
+  backpermute   = simpleNamedNestedLoops "generateNested"
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
@@ -97,7 +98,7 @@ instance Execute Native where
   scanr         = scanOp
   scanr1        = scan1Op
   scanr'        = scan'Op
-  permute       = permuteOp
+  permute       = permuteOpNested
   stencil1      = stencil1Op
   stencil2      = stencil2Op
   aforeign      = aforeignOp
@@ -143,17 +144,8 @@ simpleOpNestedLoops exe gamma aenv () sh = withExecutable exe $ \nativeExecutabl
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv (zeroes sh) sh out
+    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv empty sh out
     return out
-
---
-zeroes :: forall sh. (Shape sh) => sh -> sh
-zeroes sh = toElt $ go (eltType (undefined::sh)) (fromElt sh)
-  where
-    go :: TupleType t -> t -> t
-    go TypeRunit () = ()
-    go (TypeRpair tts (TypeRscalar s)) (dims, _)
-      | Just Refl <- matchScalarType s (scalarType :: ScalarType Int) = (go tts dims, 0) 
 
 --
 simpleNamed
@@ -186,7 +178,7 @@ simpleNamedNestedLoops name exe gamma aenv () sh = withExecutable exe $ \nativeE
   Native{..} <- gets llvmTarget
   liftIO $ do
     out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv (zeroes sh) sh out
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv empty sh out
     return out
 
 
@@ -486,28 +478,104 @@ permuteOp exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecu
   return out
 
 
-stencil1Op
-    :: (Shape sh, Elt b)
+permuteOpNested
+    :: (Shape sh, Shape sh', Elt e)
     => ExecutableR Native
+    -> Gamma aenv
+    -> Aval aenv
+    -> Stream
+    -> Bool
+    -> sh
+    -> Array sh' e
+    -> LLVM Native (Array sh' e)
+permuteOpNested exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  out        <- if inplace
+                  then return dfs
+                  else cloneArray dfs
+  let
+      ncpu    = gangSize
+      n       = size shIn
+      m       = size (shape out)
+  --
+  if ncpu == 1 || n <= defaultLargePPT
+    then liftIO $ do
+      -- sequential permutation
+      executeOpMultiDimensional 1 fillS (nativeExecutable !# "permuteSNested") gamma aenv empty shIn out
+
+    else liftIO $ do
+      -- parallel permutation
+      case lookupFunction "permuteP_rmwNested" nativeExecutable of
+        Just f  -> executeOpMultiDimensional defaultLargePPT fillP f gamma aenv empty shIn out
+        Nothing -> do
+          barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
+          memset (ptrsOfArrayData adb) 0 m
+          executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "permuteP_mutexNested") gamma aenv empty shIn (out, barrier)
+
+  return out
+
+
+boundaryThickness
+  :: StencilR sh a stencil
+  -> sh
+boundaryThickness = go
+  where
+    go :: StencilR sh a stencil -> sh
+    go StencilRunit3 = Z :. 1
+    go StencilRunit5 = Z :. 2
+    go StencilRunit7 = Z :. 3
+    go StencilRunit9 = Z :. 4
+    --
+    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c] :. 1
+    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e] :. 2
+    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g] :. 3
+    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+
+
+stencil1Op
+    :: forall aenv sh a b stencil. (Shape sh, Elt a, Elt b)
+    => StencilR sh a stencil
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Array sh a
     -> LLVM Native (Array sh b)
-stencil1Op kernel gamma aenv stream arr =
-  simpleOp kernel gamma aenv stream (shape arr)
+stencil1Op s exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray (shape arr)
+    let
+      start' = boundaryThickness s
+      end'   = listToShape (zipWith (-) (shapeToList $ shape arr) (shapeToList start'))
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil1_inner") gamma aenv start' end' out
+    executeOp 1 fillP (nativeExecutable !# "stencil1_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
+
+    return out
+
 
 stencil2Op
-    :: (Shape sh, Elt c)
-    => ExecutableR Native
+    :: forall aenv sh a b c stencil1 stencil2. (Shape sh, Elt a, Elt b, Elt c)
+    => StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> ExecutableR Native
     -> Gamma aenv
     -> Aval aenv
     -> Stream
     -> Array sh a
     -> Array sh b
     -> LLVM Native (Array sh c)
-stencil2Op kernel gamma aenv stream arr brr =
-  simpleOp kernel gamma aenv stream (shape arr `intersect` shape brr)
+stencil2Op s1 s2 exe gamma aenv stream arr brr = withExecutable exe $ \nativeExecutable -> do
+  Native{..} <- gets llvmTarget
+  liftIO $ do
+    out <- allocateArray (shape arr `intersect` shape brr)
+    let
+      start' = boundaryThickness s1 `intersect` boundaryThickness s2
+      end'   = rangeToShape (start', (shape arr))
+    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil2_inner") gamma aenv start' end' out
+    executeOp 1 fillS (nativeExecutable !# "stencil2_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
+
+    return out
 
 
 aforeignOp
@@ -568,15 +636,21 @@ executeOpMultiDimensional
   -> sh
   -> args
   -> IO ()
-executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args = do
-  let range = IE (innermost start) (innermost end)
-  runExecutable exe name ppt range $ \s e _tid -> do
-    let
-      start' = changeInnermost start s
-      end'   = changeInnermost end   e
-    monitorProcTime $
-      callFFI f retVoid =<< marshal (undefined::Native) ()
-        (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
+executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args =
+  case rank (undefined::sh) of
+    0 -> do
+      runExecutable exe name ppt (IE 0 1) $ \_s _e _tid -> do
+        monitorProcTime $
+          callFFI f retVoid =<< marshal (undefined::Native) () (args, (gamma, aenv))
+    _ -> do
+      let range = IE (innermost start) (innermost end)
+      runExecutable exe name ppt range $ \s e _tid -> do
+        let
+          start' = changeInnermost start s
+          end'   = changeInnermost end   e
+        monitorProcTime $
+          callFFI f retVoid =<< marshal (undefined::Native) ()
+            (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
 
   where
     innermost :: Shape sh => sh -> Int
