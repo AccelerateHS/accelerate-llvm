@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP                   #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -43,7 +45,16 @@ instance Downcast Metadata LLVM.Metadata where
   downcast (MetadataConstantOperand o) = LLVM.MDValue (LLVM.ConstantOperand o)
   downcast (MetadataNodeOperand n)     = LLVM.MDNode (downcast n)
 
+#if MIN_VERSION_llvm_hs_pure(6,1,0)
+instance Downcast MetadataNode (LLVM.MDRef LLVM.MDNode) where
+  downcast (MetadataNode n)            = LLVM.MDInline (downcast n)
+  downcast (MetadataNodeReference r)   = LLVM.MDRef r
+
+instance Downcast [Maybe Metadata] LLVM.MDNode where
+  downcast = LLVM.MDTuple . map downcast
+#else
 instance Downcast MetadataNode LLVM.MetadataNode where
   downcast (MetadataNode n)            = LLVM.MetadataNode (downcast n)
   downcast (MetadataNodeReference r)   = LLVM.MetadataNodeReference r
+#endif
 
