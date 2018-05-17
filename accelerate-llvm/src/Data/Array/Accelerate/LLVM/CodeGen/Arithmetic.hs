@@ -384,12 +384,18 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- ------------------------
 
 isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isNaN f (op f -> x) = instr (FCmp f UNO x x)
+isNaN f (op f -> x) = instr (IsNaN f x)
 
-isInfinite :: FloatingType a -> IR a -> CodeGen (IR Bool)
-isInfinite f x | FloatingDict <- floatingDict f = do
-  y <- mathf "fabs" f x
-  instr (FCmp f OEQ (op f y) (floating f (1/0)))
+isInfinite :: forall a. FloatingType a -> IR a -> CodeGen (IR Bool)
+isInfinite f x = do
+  x' <- abs n x
+  eq (NumSingleType n) infinity x'
+  where
+    n :: NumType a
+    n = FloatingNumType f
+
+    infinity :: IR a
+    infinity | FloatingDict <- floatingDict f = ir f (floating f (1/0))
 
 
 -- Operators from RealFrac

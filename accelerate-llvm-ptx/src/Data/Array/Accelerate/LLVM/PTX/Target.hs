@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.AST.AddrSpace
 import LLVM.AST.DataLayout
 import LLVM.Target                                                  hiding ( Target )

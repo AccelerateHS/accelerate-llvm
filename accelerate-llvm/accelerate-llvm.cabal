@@ -94,7 +94,6 @@ Library
     Data.Array.Accelerate.LLVM.CodeGen.Array
     Data.Array.Accelerate.LLVM.CodeGen.Base
     Data.Array.Accelerate.LLVM.CodeGen.Constant
-    Data.Array.Accelerate.LLVM.CodeGen.Downcast
     Data.Array.Accelerate.LLVM.CodeGen.Environment
     Data.Array.Accelerate.LLVM.CodeGen.Exp
     Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -125,6 +124,7 @@ Library
     -- LLVM code generation
     LLVM.AST.Type.AddrSpace
     LLVM.AST.Type.Constant
+    LLVM.AST.Type.Downcast
     LLVM.AST.Type.Flags
     LLVM.AST.Type.Global
     LLVM.AST.Type.Instruction

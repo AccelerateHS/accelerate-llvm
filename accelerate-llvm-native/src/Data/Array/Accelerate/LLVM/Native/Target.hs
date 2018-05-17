@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.Target                                                  hiding ( Target )
 import LLVM.AST.DataLayout                                          ( DataLayout )
 import qualified LLVM.Relocation                                    as RelocationModel
