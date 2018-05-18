@@ -439,7 +439,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
               , LLVM.approxFunc      = True
               }
 #else
-      fmf = UnsafeAlgebra -- allow everything
+      fmf = LLVM.UnsafeAlgebra -- allow everything
 #endif
 
       md :: LLVM.InstructionMetadata
