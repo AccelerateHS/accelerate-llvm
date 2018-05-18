@@ -23,11 +23,11 @@ import qualified LLVM.AST.Global                                    as AST.G
 import qualified LLVM.Context                                       as LLVM
 import qualified LLVM.Module                                        as LLVM
 
+import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import Foreign.CUDA.Path

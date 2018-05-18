@@ -47,7 +47,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.CodeGen.Type                      hiding ( typeOf )
+import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L

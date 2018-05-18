@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Instruction.Volatile
@@ -12,6 +13,9 @@
 module LLVM.AST.Type.Instruction.Volatile
   where
 
+import LLVM.AST.Type.Downcast
+
+
 -- | Loads and stores may be marked as 'volatile'. The LLVM optimiser will not
 -- change the number of volatile operations or their order with respect to other
 -- volatile operations, but may change the order of volatile operations relative
@@ -23,4 +27,8 @@ module LLVM.AST.Type.Instruction.Volatile
 -- <http://llvm.org/docs/LangRef.html#volatile-memory-accesses>
 --
 data Volatility = Volatile | NonVolatile
+
+instance Downcast Volatility Bool where
+  downcast Volatile    = True
+  downcast NonVolatile = False
 

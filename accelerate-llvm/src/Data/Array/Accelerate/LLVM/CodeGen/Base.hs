@@ -32,6 +32,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Global
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
@@ -42,7 +43,6 @@ import LLVM.AST.Type.Representation
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 
-import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad

@@ -71,7 +71,7 @@ data ForeignAcc f where
 -- Foreign expressions in the Native backend.
 --
 -- I'm not sure how useful this is; perhaps we want a way to splice in an
--- arbitrary llvm-general term, which would give us access to instructions not
+-- arbitrary llvm-hs term, which would give us access to instructions not
 -- currently encoded in Accelerate (i.e. SIMD operations, struct types, etc.)
 --
 data ForeignExp f where
