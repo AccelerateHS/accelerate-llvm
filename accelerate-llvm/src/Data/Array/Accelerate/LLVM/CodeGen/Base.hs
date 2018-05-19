@@ -17,7 +17,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
   -- References
   Name(..),
   local, global,
-  eltLocal,
 
   -- Arrays
   irArray,
@@ -25,8 +24,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
   -- Functions & parameters
   call,
-  scalarParameter, ptrParameter,
-  eltParameter,
+  parameter, scalarParameter, ptrParameter,
   envParam,
   arrayParam,
 
@@ -62,16 +60,11 @@ import Prelude                                                      as P
 -- References
 -- ----------
 
-local :: ScalarType a -> Name a -> IR a
-local t x = ir t (LocalReference (PrimType (ScalarPrimType t)) x)
+local :: forall a. Elt a => Name a -> IR a
+local n  = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
-
-eltLocal :: forall a. Elt a => Name a -> IR a
-eltLocal n = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
-
-
-global :: ScalarType a -> Name a -> IR a
-global t x = ir t (ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) x))
+global :: forall a. Elt a => Name a -> IR a
+global n = travTypeToIR (undefined::a) (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
 
 
 -- Generating names for things
@@ -80,21 +73,20 @@ global t x = ir t (ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)
 -- | Names of array data components
 --
 arrayName :: Name (Array sh e) -> Int -> Name e'        -- for the i-th component of the ArrayData
-arrayName (Name n)   i = Name (n <> fromString (printf ".ad%d" i))
-arrayName (UnName n) i = arrayName (fromString (show n)) i
+arrayName (Name n)   i = Name (n <> fromString (printf   ".ad%d"   i))
+arrayName (UnName n) i = Name (     fromString (printf "%d.ad%d" n i))
 
 -- | Names of shape components
 --
 shapeName :: Name (Array sh e) -> Int -> Name sh'       -- for the i-th component of the shape structure
-shapeName (Name n)   i = Name (n <> fromString (printf ".sh%d" i))
-shapeName (UnName n) i = shapeName (fromString (show n)) i
-
+shapeName (Name n)   i = Name (n <> fromString (printf   ".sh%d"   i))
+shapeName (UnName n) i = Name (     fromString (printf "%d.sh%d" n i))
 
 -- | Names combined with traversing
 --
-rename :: Name t -> Int -> Name t'
-rename (Name   n) i = Name $ n <> fromString (printf ".%d" i)
-rename (UnName n) i = Name $ fromString (printf "x.%d.%d" n i)
+rename :: Name t -> Int -> Name t'                      -- for the i-th component of the named variable
+rename (Name   n) i = Name (n <> fromString (printf   ".%d"   i))
+rename (UnName n) i = Name (     fromString (printf "%d.%d" n i))
 
 -- | Names of array data elements
 --
@@ -190,11 +182,11 @@ call f attrs = do
   instr (Call f attrs')
 
 
+parameter :: forall t. Elt t => Name t -> [LLVM.Parameter]
+parameter n = travTypeToList (undefined::t) (\s i -> scalarParameter s (rename n i))
+
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
-
-eltParameter :: forall t. Elt t => Name t -> [LLVM.Parameter]
-eltParameter n = travTypeToList (undefined::t) (\s i -> scalarParameter s (rename n i))
 
 ptrParameter :: ScalarType t -> Name (Ptr t) -> LLVM.Parameter
 ptrParameter t x = downcast (Parameter (PtrPrimType (ScalarPrimType t) defaultAddrSpace) x)

@@ -171,7 +171,7 @@ gangParam =
       start     = "ix.start"
       end       = "ix.end"
   in
-  (local t start, local t end, [ scalarParameter t start, scalarParameter t end ] )
+  (local start, local end, [ scalarParameter t start, scalarParameter t end ] )
 
 
 -- Barriers and synchronisation

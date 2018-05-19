@@ -12,8 +12,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
-  where
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Base (
+
+  module Data.Array.Accelerate.LLVM.Native.CodeGen.Base,
+  module Data.Proxy,
+
+) where
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
@@ -23,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
+
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 import LLVM.AST.Type.Downcast
@@ -41,34 +46,20 @@ import Prelude                                                      as P
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
 --
-gangParam :: (IR Int, IR Int, [LLVM.Parameter])
-gangParam =
-  let t         = scalarType
-      start     = "ix.start"
-      end       = "ix.end"
+gangParam :: forall sh. Shape sh => Proxy sh -> (IR sh, IR sh, [LLVM.Parameter])
+gangParam _ =
+  let start = "ix.start" :: Name sh
+      end   = "ix.end"   :: Name sh
   in
-  (local t start, local t end, [ scalarParameter t start, scalarParameter t end ] )
+  (local start, local end, parameter start ++ parameter end)
 
 
--- | Generate function parameters that will specify the first and last (nested)
--- index of the array this thread should evaluate.
---
-gangParamNested :: Shape sh => Proxy sh -> (IR sh, IR sh, [LLVM.Parameter])
-gangParamNested Proxy =
-  let start     = "ix.start"
-      end       = "ix.end"
-  in
-  (eltLocal start, eltLocal end, join [ eltParameter start, eltParameter end ] )
-
-
--- | The thread ID of a gang worker
+-- | The worker ID of the calling thread
 --
 gangId :: (IR Int, [LLVM.Parameter])
 gangId =
-  let t         = scalarType
-      tid       = "ix.tid"
-  in
-  (local t tid, [ scalarParameter t tid ] )
+  let tid = "ix.tid" :: Name Int
+  in (local tid, [ scalarParameter scalarType tid ] )
 
 
 -- Global function definitions
