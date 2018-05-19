@@ -198,25 +198,18 @@ mkFoldAllP1 uid aenv combine IRDelayed{..} =
       (start, end, paramGang)   = gangParam
       paramEnv                  = envParam aenv
       (arrTmp,  paramTmp)       = mutableArray ("tmp" :: Name (Vector e))
-      length                    = local           scalarType ("ix.length" :: Name Int)
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramLength               = scalarParameter scalarType ("ix.length" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      piece                     = local           scalarType ("ix.piece" :: Name Int)
+      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
   in
-  makeOpenAcc uid "foldAllP1" (paramGang ++ paramLength : paramStride : paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "foldAllP1" (paramGang ++ paramPiece : paramTmp ++ paramEnv) $ do
 
     -- A thread reduces a sequential (non-empty) stripe of the input and stores
-    -- that value into a temporary array at a specific index. The size of the
-    -- stripe is fixed, but work stealing occurs between stripe indices. This
-    -- method thus supports non-commutative operators because the order of
-    -- operations remains left-to-right.
+    -- that value into a temporary array at a specific index. This method thus
+    -- supports non-commutative operators because the order of operations
+    -- remains left-to-right.
     --
-    imapFromTo start end $ \i -> do
-      inf <- A.mul numType    i   stride
-      a   <- A.add numType    inf stride
-      sup <- A.min singleType a   length
-      r   <- reduce1FromTo inf sup (app2 combine) (app1 delayedLinearIndex)
-      writeArray arrTmp i r
+    r <- reduce1FromTo start end (app2 combine) (app1 delayedLinearIndex)
+    writeArray arrTmp piece r
 
     return_
 

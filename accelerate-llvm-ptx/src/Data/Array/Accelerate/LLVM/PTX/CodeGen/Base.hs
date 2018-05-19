@@ -47,6 +47,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 -- llvm
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Global
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
@@ -54,8 +55,8 @@ import LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
-import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Constant                                  as LLVM hiding ( type' )
+import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Linkage                                   as LLVM
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
@@ -68,13 +69,11 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
-import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Context

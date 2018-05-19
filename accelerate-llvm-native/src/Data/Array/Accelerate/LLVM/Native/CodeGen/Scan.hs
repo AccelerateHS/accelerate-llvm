@@ -414,26 +414,24 @@ mkScanP1
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
   let
-      (chunk, _, paramGang)     = gangParam
+      (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps"  :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps"  :: Name Int)
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      piece                     = local           scalarType ("ix.piece" :: Name Int)
+      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
-      firstChunk                = case dir of
+      firstPiece                = case dir of
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
-
-    len <- indexHead <$> delayedExtent
+  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- A thread scans a non-empty stripe of the input, storing the final
     -- reduction result into a separate array.
@@ -441,33 +439,30 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- For exclusive scans the first chunk must incorporate the initial element
     -- into the input and output, while all other chunks increment their output
     -- index by one.
-    inf <- A.mul numType    chunk stride
-    a   <- A.add numType    inf   stride
-    sup <- A.min singleType a     len
-
+    --
     -- index i* is the index that we read data from. Recall that the supremum
     -- index is exclusive
     i0  <- case dir of
-             L -> return inf
-             R -> next sup
+             L -> return start
+             R -> next end
 
     -- index j* is the index that we write to. Recall that for exclusive scan
-    -- the output array is one larger than the input; the first chunk uses
+    -- the output array is one larger than the input; the first piece uses
     -- this spot to write the initial element, all other chunks shift by one.
     j0  <- case mseed of
              Nothing -> return i0
              Just _  -> case dir of
-                          L -> if A.eq singleType chunk firstChunk
+                          L -> if A.eq singleType piece firstPiece
                                  then return i0
                                  else next i0
-                          R -> if A.eq singleType chunk firstChunk
-                                 then return sup
+                          R -> if A.eq singleType piece firstPiece
+                                 then return end
                                  else return i0
 
-    -- Evaluate/read the initial element for this chunk. Update the read-from
+    -- Evaluate/read the initial element for this piece. Update the read-from
     -- index appropriately
     (v0,i1) <- A.unpair <$> case mseed of
-                 Just seed -> if A.eq singleType chunk firstChunk
+                 Just seed -> if A.eq singleType piece firstPiece
                                 then A.pair <$> seed                       <*> pure i0
                                 else A.pair <$> app1 delayedLinearIndex i0 <*> next i0
                  Nothing   ->        A.pair <$> app1 delayedLinearIndex i0 <*> next i0
@@ -479,8 +474,8 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  singleType i sup
-             R -> A.gte singleType i inf
+             L -> A.lt  singleType i end
+             R -> A.gte singleType i start
 
     r   <- while (cont . A.fst3)
                  (\(A.untrip -> (i,j,v)) -> do
@@ -492,8 +487,8 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
                      A.trip <$> next i <*> next j <*> pure v')
                  (A.trip i1 j1 v0)
 
-    -- Final reduction result of this chunk
-    writeArray arrTmp chunk (A.thd3 r)
+    -- Final reduction result of this piece
+    writeArray arrTmp piece (A.thd3 r)
 
     return_
 
@@ -553,8 +548,7 @@ mkScanP2 dir uid aenv combine =
 -- Threads combine every element of the partial block results with the carry-in
 -- value computed from step 2.
 --
--- Note that we launch (chunks-1) threads, because the first chunk does not need
--- extra processing (has no carry-in value).
+-- Note that first chunk does not need extra processing (has no carry-in value).
 --
 mkScanP3
     :: forall aenv e. Elt e
@@ -566,13 +560,15 @@ mkScanP3
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP3 dir uid aenv combine mseed =
   let
-      (chunk, _, paramGang)     = gangParam
+      (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      piece                     = local           scalarType ("ix.piece" :: Name Int)
+      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -580,35 +576,32 @@ mkScanP3 dir uid aenv combine mseed =
       prev i                    = case dir of
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
+      firstPiece                = case dir of
+                                    L -> lift 0
+                                    R -> steps
   in
-  makeOpenAcc uid "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    -- Determine which chunk will be carrying in values for. Compute appropriate
-    -- start and end indices.
-    a     <- case dir of
-               L -> next chunk
-               R -> pure chunk
+    -- TODO: Don't schedule the "first" piece. In the scheduler this corresponds
+    -- to the split range with the smallest/largest linear index for left/right
+    -- scans respectively. For right scans this is not necessarily the last piece(?).
+    --
+    A.when (neq singleType piece firstPiece) $ do
 
-    b     <- A.mul numType    a stride
-    c     <- A.add numType    b stride
-    d     <- A.min singleType c (indexHead (irArrayShape arrOut))
+      -- Compute start and end indices, leaving space for the initial element
+      (inf,sup) <- case (dir,mseed) of
+                     (L,Just _) -> (,) <$> next start <*> next end
+                     _          -> (,) <$> pure start <*> pure end
 
-    (inf,sup) <- case (dir,mseed) of
-                   (L,Just _) -> (,) <$> next b <*> next d
-                   _          -> (,) <$> pure b <*> pure d
+      -- Read in the carry in value for this piece
+      c <- readArray arrTmp =<< prev piece
 
-    -- Carry in value from the previous chunk
-    e     <- case dir of
-               L -> pure chunk
-               R -> prev chunk
-    carry <- readArray arrTmp e
-
-    imapFromTo inf sup $ \i -> do
-      x <- readArray arrOut i
-      y <- case dir of
-             L -> app2 combine carry x
-             R -> app2 combine x carry
-      writeArray arrOut i y
+      imapFromTo inf sup $ \i -> do
+        x <- readArray arrOut i
+        y <- case dir of
+               L -> app2 combine c x
+               R -> app2 combine x c
+        writeArray arrOut i y
 
     return_
 
@@ -631,8 +624,8 @@ mkScan'P dir uid aenv combine seed arr =
 -- Parallel scan', step 1
 --
 -- Threads scan a stripe of the input into a temporary array. Similar to
--- exclusive scan, but since the size of the output array is the same as the
--- input, input and output indices are shifted by one.
+-- exclusive scan, the output indices are shifted by one relative to the input
+-- indices to make space for the initial element.
 --
 mkScan'P1
     :: forall aenv e. Elt e
@@ -645,48 +638,41 @@ mkScan'P1
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
   let
-      (chunk, _, paramGang)     = gangParam
+      (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps"  :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps"  :: Name Int)
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      piece                     = local           scalarType ("ix.piece" :: Name Int)
+      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
                                     R -> A.sub numType i (lift 1)
 
-      firstChunk                = case dir of
+      firstPiece                = case dir of
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP1" (paramGang ++ paramStride : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
-
-    -- Compute the start and end indices for this non-empty chunk of the input.
-    --
-    len <- indexHead <$> delayedExtent
-    inf <- A.mul numType    chunk stride
-    a   <- A.add numType    inf   stride
-    sup <- A.min singleType a     len
+  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- index i* is the index that we pull data from.
     i0 <- case dir of
-            L -> return inf
-            R -> next sup
+            L -> return start
+            R -> next end
 
-    -- index j* is the index that we write results to. The first chunk needs to
+    -- index j* is the index that we write results to. The first piece needs to
     -- include the initial element, and all other chunks shift their results
     -- across by one to make space.
-    j0      <- if A.eq singleType chunk firstChunk
+    j0      <- if A.eq singleType piece firstPiece
                  then pure i0
                  else next i0
 
     -- Evaluate/read the initial element. Update the read-from index
     -- appropriately.
-    (v0,i1) <- A.unpair <$> if A.eq singleType chunk firstChunk
+    (v0,i1) <- A.unpair <$> if A.eq singleType piece firstPiece
                               then A.pair <$> seed                       <*> pure i0
                               else A.pair <$> app1 delayedLinearIndex i0 <*> pure j0
 
@@ -697,8 +683,8 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  singleType i sup
-             R -> A.gte singleType i inf
+             L -> A.lt  singleType i end
+             R -> A.gte singleType i start
 
     r  <- while (cont . A.fst3)
                 (\(A.untrip-> (i,j,v)) -> do
@@ -710,8 +696,8 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
                     A.trip <$> next i <*> next j <*> pure v')
                 (A.trip i1 j1 v0)
 
-    -- Write the final reduction result of this chunk
-    writeArray arrTmp chunk (A.thd3 r)
+    -- Write the final reduction result of this piece
+    writeArray arrTmp piece (A.thd3 r)
 
     return_
 
@@ -773,8 +759,8 @@ mkScan'P2 dir uid aenv combine =
 -- Similar to mkScanP3, except that indices are shifted by one since the output
 -- array is the same size as the input (despite being an exclusive scan).
 --
--- Launch (chunks-1) threads, because the first chunk does not need extra
--- processing.
+-- Note that the first chunk does not need to do any extra processing (has no
+-- carry-in value).
 --
 mkScan'P3
     :: forall aenv e. Elt e
@@ -785,13 +771,15 @@ mkScan'P3
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P3 dir uid aenv combine =
   let
-      (chunk, _, paramGang)     = gangParam
+      (start, end, paramGang)   = gangParam
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      steps                     = local           scalarType ("ix.steps" :: Name Int)
+      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
+      piece                     = local           scalarType ("ix.piece" :: Name Int)
+      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -799,35 +787,30 @@ mkScan'P3 dir uid aenv combine =
       prev i                    = case dir of
                                     L -> A.sub numType i (lift 1)
                                     R -> A.add numType i (lift 1)
+      firstPiece                = case dir of
+                                    L -> lift 0
+                                    R -> steps
   in
-  makeOpenAcc uid "scanP3" (paramGang ++ paramStride : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
 
-    -- Determine which chunk we will be carrying in the values of, and compute
-    -- the appropriate start and end indices
-    a     <- case dir of
-               L -> next chunk
-               R -> pure chunk
+    -- TODO: don't schedule the "first" piece.
+    --
+    A.when (neq singleType piece firstPiece) $ do
 
-    b     <- A.mul numType a stride
-    c     <- A.add numType b stride
-    d     <- A.min singleType c (indexHead (irArrayShape arrOut))
+      -- Compute start and end indices, leaving space for the initial element
+      inf <- next start
+      sup <- next end
 
-    inf   <- next b
-    sup   <- next d
+      -- Read the carry-in value for this piece
+      c   <- readArray arrTmp =<< prev piece
 
-    -- Carry-value from the previous chunk
-    e     <- case dir of
-               L -> pure chunk
-               R -> prev chunk
-
-    carry <- readArray arrTmp e
-
-    imapFromTo inf sup $ \i -> do
-      x <- readArray arrOut i
-      y <- case dir of
-             L -> app2 combine carry x
-             R -> app2 combine x carry
-      writeArray arrOut i y
+      -- Apply the carry-in value to all elements of the output
+      imapFromTo inf sup $ \i -> do
+        x <- readArray arrOut i
+        y <- case dir of
+               L -> app2 combine c x
+               R -> app2 combine x c
+        writeArray arrOut i y
 
     return_
 

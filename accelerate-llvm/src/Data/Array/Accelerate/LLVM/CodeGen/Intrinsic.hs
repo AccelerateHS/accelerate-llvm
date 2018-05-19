@@ -24,6 +24,7 @@ import Data.Monoid
 import Data.ByteString.Short                                    ( ShortByteString )
 import Data.HashMap.Strict                                      ( HashMap )
 import qualified Data.HashMap.Strict                            as HashMap
+import Prelude                                                  as P
 
 
 -- | During code generation we need to know the name of functions implementing

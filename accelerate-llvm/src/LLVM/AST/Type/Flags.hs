@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -34,5 +35,16 @@ instance Default NUW where
   def = UnsignedWrap
 
 instance Default FastMathFlags where
-  def = UnsafeAlgebra
-
+#if MIN_VERSION_llvm_hs_pure(6,0,0)
+  def = FastMathFlags
+          { allowReassoc    = True
+          , noNaNs          = True
+          , noInfs          = True
+          , noSignedZeros   = True
+          , allowReciprocal = True
+          , allowContract   = True
+          , approxFunc      = True
+          }
+#else
+  def = UnsafeAlgebra -- allow everything
+#endif

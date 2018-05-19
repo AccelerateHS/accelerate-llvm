@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Representation
@@ -24,6 +26,9 @@ import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Product
 
 import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Downcast
+
+import qualified LLVM.AST.Type                                      as LLVM
 
 import Foreign.Ptr
 import Text.Printf
@@ -425,4 +430,85 @@ instance Show (PrimType a) where
         | otherwise = printf "[addrspace %d]" n
       -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
       --   | otherwise           = show t
+
+
+-- | Does the concrete type represent signed or unsigned values?
+--
+class IsSigned dict where
+  signed   :: dict a -> Bool
+  signed   = not . unsigned
+  --
+  unsigned :: dict a -> Bool
+  unsigned = not . signed
+
+instance IsSigned ScalarType where
+  signed (SingleScalarType t) = signed t
+  signed (VectorScalarType t) = signed t
+
+instance IsSigned SingleType where
+  signed (NumSingleType t)    = signed t
+  signed (NonNumSingleType t) = signed t
+
+instance IsSigned VectorType where
+  signed (Vector2Type t)  = signed t
+  signed (Vector3Type t)  = signed t
+  signed (Vector4Type t)  = signed t
+  signed (Vector8Type t)  = signed t
+  signed (Vector16Type t) = signed t
+
+instance IsSigned BoundedType where
+  signed (IntegralBoundedType t) = signed t
+  signed (NonNumBoundedType t)   = signed t
+
+instance IsSigned NumType where
+  signed (IntegralNumType t) = signed t
+  signed (FloatingNumType t) = signed t
+
+instance IsSigned IntegralType where
+  signed = \case
+    TypeInt{}     -> True
+    TypeInt8{}    -> True
+    TypeInt16{}   -> True
+    TypeInt32{}   -> True
+    TypeInt64{}   -> True
+    TypeCShort{}  -> True
+    TypeCInt{}    -> True
+    TypeCLong{}   -> True
+    TypeCLLong{}  -> True
+    _             -> False
+
+instance IsSigned FloatingType where
+  signed _ = True
+
+instance IsSigned NonNumType where
+  signed = \case
+    TypeBool{}    -> False
+    TypeChar{}    -> False
+    TypeCUChar{}  -> False
+    TypeCSChar{}  -> True
+    TypeCChar{}   -> True
+
+
+-- | Recover the type of a container
+--
+class TypeOf f where
+  typeOf :: f a -> Type a
+
+
+-- | Convert to llvm-hs
+--
+instance Downcast (Type a) LLVM.Type where
+  downcast VoidType     = LLVM.VoidType
+  downcast (PrimType t) = downcast t
+
+instance Downcast (PrimType a) LLVM.Type where
+  downcast (ScalarPrimType t)   = downcast t
+  downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
+  downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)
+  downcast (StructPrimType t)   = LLVM.StructureType False (go t)
+    where
+      go :: TupleType t -> [LLVM.Type]
+      go TypeRunit         = []
+      go (TypeRscalar s)   = [downcast s]
+      go (TypeRpair ta tb) = go ta ++ go tb
 

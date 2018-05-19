@@ -3,7 +3,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Link
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -123,7 +123,7 @@ linkFunctionQ mdl name configure = do
 
 -- | Execute some operation with the supplied executable functions
 --
-withExecutable :: ExecutableR PTX -> (FunctionTable -> LLVM PTX b) -> LLVM PTX b
+withExecutable :: MonadIO m => ExecutableR PTX -> (FunctionTable -> m b) -> m b
 withExecutable PTXR{..} f = do
   r <- f (unsafeGetValue ptxExecutable)
   liftIO $ touchLifetime ptxExecutable

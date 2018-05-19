@@ -1,8 +1,10 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -14,74 +16,62 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
-import Data.Array.Accelerate.LLVM.State
 
+class Monad (Par arch) => Async arch where
 
--- Asynchronous operations
--- -----------------------
-
--- | The result of a potentially parallel computation which will be available at
--- some point (presumably, in the future). This is essentially a write-once
--- IVar.
---
-data AsyncR arch a = AsyncR !(EventR arch) !a
-
-class Async arch where
-  -- | Streams (i.e. threads) can execute concurrently with other streams, but
-  -- operations within the same stream proceed sequentially.
+  -- | The monad parallel computations will be executed in. Presumably a stack
+  -- with the LLVM monad at the base.
   --
-  type StreamR arch
+  data Par arch :: * -> *
 
-  -- | An Event marks a point in the execution stream, possibly in the future.
-  -- Since execution within a stream is sequential, events can be used to test
-  -- the progress of a computation and synchronise between different streams.
+  -- | Parallel computations can communicate via futures.
   --
-  type EventR arch
+  type FutureR arch :: * -> *
 
-  -- | Create a new execution stream that can be used to track (potentially
-  -- parallel) computations
+  -- | Create a new (empty) promise, to be fulfilled at some future point.
   --
-  fork        :: LLVM arch (StreamR arch)
+  new :: Par arch (FutureR arch a)
 
-  -- | Mark the given execution stream as closed. The stream may still be
-  -- executing in the background, but no new work may be submitted to it.
+  -- | The future is here. Multiple 'put's to the same future are not allowed
+  -- and (presumably) result in a runtime error.
   --
-  join        :: StreamR arch -> LLVM arch ()
+  put :: FutureR arch a -> a -> Par arch ()
 
-  -- | Generate a new event at the end of the given execution stream. It will be
-  -- filled once all prior work submitted to the stream has completed.
+  -- | Read the value stored in a future, once it is available. It is _not_
+  -- required that this is a blocking operation on the host, only that it is
+  -- blocking with respect to computations on the remote device.
   --
-  checkpoint  :: StreamR arch -> LLVM arch (EventR arch)
+  get :: FutureR arch a -> Par arch a
 
-  -- | Make all future work submitted to the given execution stream wait until
-  -- the given event has passed. Typically the event is from a different
-  -- execution stream, therefore this function is intended to enable
-  -- non-blocking cross-stream coordination.
+  -- | Fork a computation to happen in parallel. The forked computation may
+  -- exchange values with other computations using Futures.
   --
-  after       :: StreamR arch -> EventR arch -> LLVM arch ()
+  fork :: Par arch () -> Par arch ()
 
-  -- | Block execution of the calling thread until the given event has been
-  -- recorded.
+  -- | Read a value stored in a future, once it is available. This is blocking
+  -- with respect to both the host and remote device.
   --
-  block       :: EventR arch -> LLVM arch ()
+  {-# INLINEABLE block #-}
+  block :: FutureR arch a -> Par arch a
+  block = get
 
+  -- | Evaluate a computation in a new thread/context. This might be implemented
+  -- more efficiently than the default implementation.
+  --
+  {-# INLINEABLE spawn #-}
+  spawn :: Par arch (FutureR arch a) -> Par arch (FutureR arch a)
+  spawn m = do
+    r <- new              -- Future (Future a)  |:
+    fork $ put r =<< m
+    get r
 
--- | Wait for an asynchronous operation to complete, then return it.
---
-{-# INLINEABLE get #-}
-get :: Async arch => AsyncR arch a -> LLVM arch a
-get (AsyncR e a) = block e >> return a
-
--- | Execute the given operation asynchronously in a new execution stream.
---
-{-# INLINEABLE async #-}
-async :: Async arch
-      => (StreamR arch -> LLVM arch a)
-      -> LLVM arch (AsyncR arch a)
-async f = do
-  s <- fork
-  r <- f s
-  e <- checkpoint s
-  join s
-  return $ AsyncR e r
+  -- | Create a new "future" where the value is available immediately. This
+  -- might be implemented more efficiently than the default implementation.
+  --
+  {-# INLINEABLE newFull #-}
+  newFull :: a -> Par arch (FutureR arch a)
+  newFull a = do
+    r <- new
+    put r a
+    return r
 

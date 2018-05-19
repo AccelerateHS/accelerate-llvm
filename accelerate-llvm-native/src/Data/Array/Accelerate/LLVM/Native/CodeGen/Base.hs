@@ -18,7 +18,6 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -26,6 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
+import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
@@ -35,6 +35,7 @@ import Data.Monoid
 import Data.Proxy
 import Data.String
 import Text.Printf
+import Prelude                                                      as P
 
 
 -- | Generate function parameters that will specify the first and last (linear)

@@ -16,7 +16,3 @@ module LLVM.AST.Type.Instruction.Compare
 --
 data Ordering = EQ | NE | LT | LE | GT | GE
 
--- | Ordering predicate only for floating-point comparison instructions
---
-data FOrdering = OEQ | UNO
-

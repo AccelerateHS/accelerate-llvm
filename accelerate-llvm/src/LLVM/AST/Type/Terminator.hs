@@ -1,4 +1,6 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Terminator
@@ -16,6 +18,9 @@ module LLVM.AST.Type.Terminator
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Downcast
+
+import qualified LLVM.AST.Instruction                               as LLVM
 
 
 -- | <http://llvm.org/docs/LangRef.html#terminators>
@@ -53,4 +58,18 @@ data Terminator a where
                 -> Label
                 -> [(Constant a, Label)]
                 -> Terminator ()
+
+
+-- | Convert to llvm-hs
+--
+instance Downcast (Terminator a) LLVM.Terminator where
+  downcast = \case
+    Ret           -> LLVM.Ret Nothing md
+    RetVal x      -> LLVM.Ret (Just (downcast x)) md
+    Br l          -> LLVM.Br (downcast l) md
+    CondBr p t f  -> LLVM.CondBr (downcast p) (downcast t) (downcast f) md
+    Switch p d a  -> LLVM.Switch (downcast p) (downcast d) (downcast a) md
+    where
+      md :: LLVM.InstructionMetadata
+      md = []
 

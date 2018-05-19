@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.AST
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2018] Trevor L. McDonell
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
@@ -21,18 +21,17 @@ module Data.Array.Accelerate.LLVM.AST (
   PreAfun, PreOpenAfun(..),
   PreFun,  PreOpenFun(..),
   PreExp,  PreOpenExp(..),
-  Idx(..), Val(..), prj,
+  Idx(..),
 
 ) where
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Execute.Async
 
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), Val(..), PreAfun, PreFun, PreExp, prj )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -77,7 +76,7 @@ data PreOpenAccCommand acc arch aenv a where
 
   Aforeign    :: (Arrays as, Arrays bs)
               => String
-              -> (StreamR arch -> as -> LLVM arch bs)
+              -> (as -> Par arch (FutureR arch bs))
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 
@@ -172,15 +171,15 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> acc                    arch  aenv (Array sh' e)    -- default values
               -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
 
-  Stencil1    :: (Shape sh, Elt a, Elt b)
+  Stencil1    :: (Shape sh, Elt b)
               => StencilR sh a stencil1
-              -> Idx                         aenv (Array sh a)
-              -> PreOpenAccSkeleton acc arch aenv (Array sh b)
+              -> PreExp            (acc arch) aenv sh
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh b)
 
-  Stencil2    :: (Shape sh, Elt a, Elt b, Elt c)
+  Stencil2    :: (Shape sh, Elt c)
               => StencilR sh a stencil1
               -> StencilR sh b stencil2
-              -> Idx                         aenv (Array sh a)
-              -> Idx                         aenv (Array sh b)
-              -> PreOpenAccSkeleton acc arch aenv (Array sh c)
+              -> PreExp            (acc arch) aenv sh
+              -> PreExp            (acc arch) aenv sh
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh c)
 

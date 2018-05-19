@@ -30,6 +30,7 @@ import Data.Monoid                                                  ( Monoid(..)
 import Data.Semigroup                                               ( Semigroup(..) )
 #endif
 import Data.Range                                                   as R
+import Prelude                                                      as P
 import qualified Data.Vector                                        as V
 
 import GHC.Base                                                     ( quotInt, remInt )

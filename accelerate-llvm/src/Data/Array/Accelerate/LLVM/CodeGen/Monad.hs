@@ -62,6 +62,7 @@ import Data.Array.Accelerate.Array.Sugar                            ( Elt, eltTy
 import qualified Data.Array.Accelerate.Debug                        as Debug
 
 -- accelerate-llvm
+import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Name
@@ -70,11 +71,9 @@ import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
 
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.CodeGen.Downcast
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
 

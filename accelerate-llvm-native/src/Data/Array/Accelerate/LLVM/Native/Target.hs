@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.Target                                                  hiding ( Target )
 import LLVM.AST.DataLayout                                          ( DataLayout )
 import qualified LLVM.Relocation                                    as RelocationModel
@@ -25,8 +25,8 @@ import qualified LLVM.CodeGenOpt                                    as CodeOptim
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
+import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler          ( Workers )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
-import Control.Parallel.Meta                                        ( Executable )
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
@@ -37,10 +37,8 @@ import System.IO.Unsafe
 -- | Native machine code JIT execution target
 --
 data Native = Native
-  { gangSize      :: {-# UNPACK #-} !Int
-  , linkCache     :: {-# UNPACK #-} !LinkCache
-  , fillS         :: {-# UNPACK #-} !Executable
-  , fillP         :: {-# UNPACK #-} !Executable
+  { linkCache     :: !LinkCache
+  , workers       :: !Workers
   , segmentOffset :: !Bool
   }
 
@@ -90,7 +88,7 @@ withNativeTargetMachine k = do
         nativeCPUName
         nativeCPUFeatures
         targetOptions
-        RelocationModel.DynamicNoPIC
+        RelocationModel.PIC
         CodeModel.Default
         CodeOptimisation.Default
         k

@@ -26,7 +26,6 @@ import Data.Array.Accelerate.AST                                hiding ( Val(..)
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
@@ -177,13 +176,13 @@ class Skeleton arch where
                 -> IRDelayed arch aenv (Array sh e)
                 -> CodeGen (IROpenAcc arch aenv (Array sh' e))
 
-  stencil       :: (Stencil sh a stencil, Elt b)
+  stencil1      :: (Stencil sh a stencil, Elt b)
                 => arch
                 -> UID
                 -> Gamma aenv
                 -> IRFun1 arch aenv (stencil -> b)
                 -> IRBoundary arch aenv (Array sh a)
-                -> IRManifest arch aenv (Array sh a)
+                -> IRDelayed  arch aenv (Array sh a)
                 -> CodeGen (IROpenAcc arch aenv (Array sh b))
 
   stencil2      :: (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
@@ -192,9 +191,9 @@ class Skeleton arch where
                 -> Gamma aenv
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
                 -> IRBoundary arch aenv (Array sh a)
-                -> IRManifest arch aenv (Array sh a)
+                -> IRDelayed  arch aenv (Array sh a)
                 -> IRBoundary arch aenv (Array sh b)
-                -> IRManifest arch aenv (Array sh b)
+                -> IRDelayed  arch aenv (Array sh b)
                 -> CodeGen (IROpenAcc arch aenv (Array sh c))
 
   -- Default instances
@@ -202,7 +201,7 @@ class Skeleton arch where
   map           = defaultMap
   backpermute   = defaultBackpermute
   transform     = defaultTransform
-  stencil       = defaultStencil1
+  stencil1      = defaultStencil1
   stencil2      = defaultStencil2
 
 
@@ -255,14 +254,14 @@ defaultStencil1
     :: (Skeleton arch, Stencil sh a stencil, Elt b)
     => arch
     -> UID
-    -> Gamma aenv
-    -> IRFun1 arch aenv (stencil -> b)
+    -> Gamma           aenv
+    -> IRFun1     arch aenv (stencil -> b)
     -> IRBoundary arch aenv (Array sh a)
-    -> IRManifest arch aenv (Array sh a)
+    -> IRDelayed  arch aenv (Array sh a)
     -> CodeGen (IROpenAcc arch aenv (Array sh b))
-defaultStencil1 arch uid aenv f boundary (IRManifest v)
+defaultStencil1 arch uid aenv f boundary arr
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten <- stencilAccess (Just boundary) (irArray (aprj v aenv)) ix
+      sten <- stencilAccess (Just boundary) arr ix
       app1 f sten
 
 {-# INLINEABLE defaultStencil2 #-}
@@ -270,16 +269,16 @@ defaultStencil2
     :: (Skeleton arch, Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
     => arch
     -> UID
-    -> Gamma aenv
-    -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
+    -> Gamma           aenv
+    -> IRFun2     arch aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary arch aenv (Array sh a)
-    -> IRManifest arch aenv (Array sh a)
+    -> IRDelayed  arch aenv (Array sh a)
     -> IRBoundary arch aenv (Array sh b)
-    -> IRManifest arch aenv (Array sh b)
+    -> IRDelayed  arch aenv (Array sh b)
     -> CodeGen (IROpenAcc arch aenv (Array sh c))
-defaultStencil2 arch uid aenv f boundary1 (IRManifest v1) boundary2 (IRManifest v2)
+defaultStencil2 arch uid aenv f boundary1 arr1 boundary2 arr2
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten1 <- stencilAccess (Just boundary1) (irArray (aprj v1 aenv)) ix
-      sten2 <- stencilAccess (Just boundary2) (irArray (aprj v2 aenv)) ix
+      sten1 <- stencilAccess (Just boundary1) arr1 ix
+      sten2 <- stencilAccess (Just boundary2) arr2 ix
       app2 f sten1 sten2
 

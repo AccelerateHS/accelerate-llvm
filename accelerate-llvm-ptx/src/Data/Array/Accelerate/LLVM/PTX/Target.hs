@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.AST.AddrSpace
 import LLVM.AST.DataLayout
 import LLVM.Target                                                  hiding ( Target )
@@ -36,7 +36,6 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.Util
 
-import Control.Parallel.Meta                                        ( Executable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
@@ -69,7 +68,6 @@ data PTX = PTX {
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
   , ptxKernelTable              :: {-# UNPACK #-} !KernelTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
-  , fillP                       :: {-# UNPACK #-} !Executable
   }
 
 instance Target PTX where

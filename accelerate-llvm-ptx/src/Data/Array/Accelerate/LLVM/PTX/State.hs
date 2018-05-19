@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2018] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
 --
@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.State (
   createTargetForDevice, createTargetFromContext,
 
   Pool(..),
-  withPool,
+  withPool, unsafeWithPool,
   defaultTarget,
   defaultTargetPool,
 
@@ -36,15 +36,12 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
-import Data.Range                                                   ( Range(..) )
-import Control.Parallel.Meta                                        ( Executable(..) )
-
 -- standard library
 import Control.Concurrent                                           ( runInBoundThread )
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.Environment                                           ( lookupEnv )
-import System.IO.Unsafe                                             ( unsafePerformIO )
+import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
 import Text.Printf                                                  ( printf )
 import Text.Read                                                    ( readMaybe )
 import Foreign.CUDA.Driver.Error
@@ -98,15 +95,7 @@ createTarget dev prp raw = do
   mt  <- MT.new ctx
   lc  <- LC.new
   st  <- ST.new ctx
-  return $! PTX ctx mt lc st simpleIO
-
-
-{-# INLINE simpleIO #-}
-simpleIO :: Executable
-simpleIO = Executable $ \_name _ppt range action ->
-  case range of
-    Empty       -> return ()
-    IE u v      -> action u v 0
+  return $! PTX ctx mt lc st
 
 
 -- Shared execution contexts
@@ -117,13 +106,16 @@ simpleIO = Executable $ \_name _ppt range action ->
 --
 data Pool a = Pool
     { managed   :: {-# UNPACK #-} !(Pool.Pool a)
-    , unsafeGet :: [a]
+    , unmanaged :: [a]
     }
 
 -- Evaluate a thing given an execution context from the default pool
 --
 withPool :: Pool a -> (a -> IO b) -> IO b
 withPool p = Pool.with (managed p)
+
+unsafeWithPool :: Pool a -> (a -> b) -> b
+unsafeWithPool p = Pool.unsafeWith (managed p)
 
 
 -- Top-level mutable state
@@ -138,7 +130,7 @@ withPool p = Pool.with (managed p)
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
-defaultTarget = head (unsafeGet defaultTargetPool)
+defaultTarget = head (unmanaged defaultTargetPool)
 
 -- | Create a shared resource pool of the available CUDA devices.
 --
@@ -163,7 +155,7 @@ defaultTargetPool = unsafePerformIO $! do
       -- Spin up the GPU at the given ordinal.
       --
       boot :: Int -> IO (Maybe PTX)
-      boot i = do
+      boot i = unsafeInterleaveIO $ do
         dev <- CUDA.device i
         prp <- CUDA.props dev
         r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]

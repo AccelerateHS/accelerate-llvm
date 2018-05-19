@@ -144,8 +144,8 @@ linkOpenAcc = travA
         Scanr1 sh               -> Scanr1       <$> travE sh
         Scanr' sh               -> Scanr'       <$> travE sh
         Permute sh d            -> Permute      <$> travE sh <*> travA d
-        Stencil1 s a            -> return (Stencil1 s a)
-        Stencil2 s t a b        -> return (Stencil2 s t a b)
+        Stencil1 s sh           -> Stencil1 s   <$> travE sh
+        Stencil2 s t sh1 sh2    -> Stencil2 s t <$> travE sh1 <*> travE sh2
 
     travAF :: CompiledOpenAfun arch aenv f
            -> LLVM arch (ExecOpenAfun arch aenv f)

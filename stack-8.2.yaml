@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-10.0
+resolver: lts-11.2
 
 packages:
 - 'accelerate-llvm'
@@ -10,9 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: f808a6e6cddf1d516851106da63cf00f11f2a9c0
-
-- 'cuda-0.9.0.1'
+  commit: 39dcd686947090b1e53a6c48be5d5b6c69bb96f2
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -27,7 +25,7 @@ extra-deps:
 # system-ghc: true
 
 # Require a specific version of stack, using version ranges
-require-stack-version: ">= 1.6"
+# require-stack-version: ">= 1.6"
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386

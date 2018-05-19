@@ -26,9 +26,7 @@ import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic            ( ifThenElse )
-import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -43,13 +41,13 @@ import Prelude
 stencilAccess
     :: Stencil sh e stencil
     => Maybe (IRBoundary arch aenv (Array sh e))
-    -> IRArray (Array sh e)
+    ->        IRDelayed  arch aenv (Array sh e)
     -> IR sh
     -> CodeGen (IR stencil)
-stencilAccess mbndy arr ix =
+stencilAccess mbndy arr =
   case mbndy of
-    Nothing   -> goR stencil (inbounds     arr) ix
-    Just bndy -> goR stencil (bounded bndy arr) ix
+    Nothing   -> goR stencil (inbounds     arr)
+    Just bndy -> goR stencil (bounded bndy arr)
   where
     -- Base cases, nothing interesting to do here since we know the lower
     -- dimension is Z.
@@ -161,16 +159,15 @@ stencilAccess mbndy arr ix =
            <*> goR s9 (rf'   4)  ix'
 
 
--- Assume that every index is inbounds of the array (bounds checks or boundary
--- conditions).
+-- Do not apply any boundary conditions to the given index
 --
 inbounds
     :: (Shape sh, Elt e)
-    => IRArray (Array sh e)
+    => IRDelayed arch aenv (Array sh e)
     -> IR sh
     -> CodeGen (IR e)
-inbounds arr@IRArray{..} ix = do
-  readArray arr =<< intOfIndex irArrayShape ix
+inbounds IRDelayed{..} ix =
+  app1 delayedIndex ix
 
 
 -- Apply boundary conditions to the given index
@@ -178,23 +175,24 @@ inbounds arr@IRArray{..} ix = do
 bounded
     :: (Shape sh, Elt e)
     => IRBoundary arch aenv (Array sh e)
-    -> IRArray (Array sh e)
+    -> IRDelayed  arch aenv (Array sh e)
     -> IR sh
     -> CodeGen (IR e)
-bounded bndy arr@IRArray{..} ix =
+bounded bndy IRDelayed{..} ix = do
+  sh <- delayedExtent
   case bndy of
     IRConstant v ->
-      if inside irArrayShape ix
-        then readArray arr =<< intOfIndex irArrayShape ix
+      if inside sh ix
+        then app1 delayedIndex ix
         else return v
     IRFunction f ->
-      if inside irArrayShape ix
-        then readArray arr =<< intOfIndex irArrayShape ix
+      if inside sh ix
+        then app1 delayedIndex ix
         else app1 f ix
     _            -> do
-      ix' <- bound irArrayShape ix
-      i   <- intOfIndex irArrayShape ix'
-      readArray arr i
+      ix' <- bound sh ix
+      v   <- app1 delayedIndex ix'
+      return v
   --
   where
     -- Return the index, updated to obey the given boundary conditions (clamp,
