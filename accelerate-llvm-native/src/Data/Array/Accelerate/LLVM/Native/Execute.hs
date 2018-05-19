@@ -29,7 +29,6 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
@@ -125,8 +124,8 @@ instance Execute Native where
   scanr'        = scan'Op
   -- stencil1      = stencil1Op
   permute       = permuteOp
-  stencil1      = simpleOp
-  stencil2      = stencil2Op
+  stencil1 _    = simpleOp
+  stencil2 _ _  = stencil2Op
   aforeign      = aforeignOp
 
 
@@ -872,6 +871,7 @@ mkJobUsingIndex ranges (name, f) gamma aenv args jobDone = do
   liftIO $ timed name Job {..}
 
 
+{--
 executeOpMultiDimensional
   :: forall sh args aenv. (Marshalable args, Shape sh)
   => Int
@@ -919,11 +919,11 @@ executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args =
           = case tt of
             TypeRunit -> ((), n)
             _         -> (go tt dims n, d)
-
+--}
 
 
 -- Standard C functions
--- -------------------- 
+-- --------------------
 
 memset :: Ptr Word8 -> Word8 -> Int -> IO ()
 memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
