@@ -108,7 +108,7 @@ instance Execute Native where
   {-# INLINE stencil1    #-}
   {-# INLINE stencil2    #-}
   {-# INLINE aforeign    #-}
-  map           = simpleOp
+  map           = mapOp
   generate      = simpleOp
   transform     = simpleOp
   backpermute   = simpleOp
@@ -122,8 +122,8 @@ instance Execute Native where
   scanr         = scanOp
   scanr1        = scan1Op
   scanr'        = scan'Op
-  -- stencil1      = stencil1Op
   permute       = permuteOp
+  -- stencil1      = stencil1Op
   stencil1 _    = simpleOp
   stencil2 _ _  = stencil2Op
   aforeign      = aforeignOp
@@ -213,6 +213,27 @@ simpleNamedNestedLoops name exe gamma aenv () sh = withExecutable exe $ \nativeE
     executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv empty sh out
     return out
 --}
+
+-- Map over an array can ignore the dimensionality of the array and treat it as
+-- its underlying linear representation.
+--
+{-# INLINE mapOp #-}
+mapOp
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh
+    -> Par Native (Future (Array sh e))
+mapOp NativeR{..} gamma aenv sh = do
+  let fun = nativeExecutable !# "map"
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh
+  scheduleOp fun gamma aenv (Z :. size sh) result
+    `andThen` do putIO workers future result
+                 touchLifetime nativeExecutable   -- XXX: must not unload the object code early
+  return future
 
 
 -- Note: [Reductions]
