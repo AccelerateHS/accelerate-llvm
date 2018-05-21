@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -97,16 +98,16 @@ mkFoldDim
   -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkFoldDim uid aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
       --
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
+      paramStride               = parameter ("ix.stride" :: Name Int)
+      stride                    = local     ("ix.stride" :: Name Int)
   in
-  makeOpenAcc uid "fold" (paramGang ++ paramStride : paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
 
-    imapFromTo start end $ \seg -> do
+    imapFromTo (indexHead start) (indexHead end) $ \seg -> do
       from <- mul numType seg  stride
       to   <- add numType from stride
       --
@@ -168,16 +169,16 @@ mkFoldAllS
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
 mkFoldAllS uid aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      paramEnv                  = envParam aenv
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut,  paramOut)       = mutableArray ("out" :: Name (Scalar e))
+      paramEnv                  = envParam aenv
       zero                      = lift 0 :: IR Int
   in
   makeOpenAcc uid "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
-                           reduceFromTo  start end (app2 combine) z (app1 delayedLinearIndex)
-           Nothing   ->    reduce1FromTo start end (app2 combine)   (app1 delayedLinearIndex)
+                           reduceFromTo  (indexHead start) (indexHead end) (app2 combine) z (app1 delayedLinearIndex)
+           Nothing   ->    reduce1FromTo (indexHead start) (indexHead end) (app2 combine)   (app1 delayedLinearIndex)
     writeArray arrOut zero r
     return_
 
@@ -195,20 +196,20 @@ mkFoldAllP1
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
 mkFoldAllP1 uid aenv combine IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy      :: Proxy DIM1)
+      (arrTmp,  paramTmp)       = mutableArray ("tmp"      :: Name (Vector e))
+      piece                     = local        ("ix.piece" :: Name Int)
+      paramPiece                = parameter    ("ix.piece" :: Name Int)
       paramEnv                  = envParam aenv
-      (arrTmp,  paramTmp)       = mutableArray ("tmp" :: Name (Vector e))
-      piece                     = local           scalarType ("ix.piece" :: Name Int)
-      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
   in
-  makeOpenAcc uid "foldAllP1" (paramGang ++ paramPiece : paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "foldAllP1" (paramGang ++ paramPiece ++ paramTmp ++ paramEnv) $ do
 
     -- A thread reduces a sequential (non-empty) stripe of the input and stores
     -- that value into a temporary array at a specific index. This method thus
     -- supports non-commutative operators because the order of operations
     -- remains left-to-right.
     --
-    r <- reduce1FromTo start end (app2 combine) (app1 delayedLinearIndex)
+    r <- reduce1FromTo (indexHead start) (indexHead end) (app2 combine) (app1 delayedLinearIndex)
     writeArray arrTmp piece r
 
     return_
@@ -231,17 +232,17 @@ mkFoldAllP2
     -> CodeGen (IROpenAcc Native aenv (Scalar e))
 mkFoldAllP2 uid aenv combine mseed =
   let
-      (start, end, paramGang)   = gangParam
-      paramEnv                  = envParam aenv
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
+      paramEnv                  = envParam aenv
       zero                      = lift 0 :: IR Int
   in
   makeOpenAcc uid "foldAllP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
-                           reduceFromTo  start end (app2 combine) z (readArray arrTmp)
-           Nothing   ->    reduce1FromTo start end (app2 combine)   (readArray arrTmp)
+                           reduceFromTo  (indexHead start) (indexHead end) (app2 combine) z (readArray arrTmp)
+           Nothing   ->    reduce1FromTo (indexHead start) (indexHead end) (app2 combine)   (readArray arrTmp)
     writeArray arrOut zero r
     return_
 
