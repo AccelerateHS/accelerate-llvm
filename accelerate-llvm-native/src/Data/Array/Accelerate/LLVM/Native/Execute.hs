@@ -307,7 +307,7 @@ foldDimOp
     -> Val aenv
     -> (sh :. Int)
     -> Par Native (Future (Array sh e))
-foldDimOp NativeR{..} gamma aenv (sh :. sz) = do
+foldDimOp NativeR{..} gamma aenv (sh :. _) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote sh
@@ -316,7 +316,7 @@ foldDimOp NativeR{..} gamma aenv (sh :. sz) = do
       splits  = numWorkers workers
       minsize = 1
   --
-  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) (sz, result)
+  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
   return future

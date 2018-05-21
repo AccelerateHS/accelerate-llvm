@@ -101,15 +101,14 @@ mkFoldDim uid aenv combine mseed IRDelayed{..} =
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
-      --
-      paramStride               = parameter ("ix.stride" :: Name Int)
-      stride                    = local     ("ix.stride" :: Name Int)
   in
-  makeOpenAcc uid "fold" (paramGang ++ paramStride ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    sz <- indexHead <$> delayedExtent
 
     imapFromTo (indexHead start) (indexHead end) $ \seg -> do
-      from <- mul numType seg  stride
-      to   <- add numType from stride
+      from <- mul numType seg  sz
+      to   <- add numType from sz
       --
       r    <- case mseed of
                 Just seed -> do z <- seed
