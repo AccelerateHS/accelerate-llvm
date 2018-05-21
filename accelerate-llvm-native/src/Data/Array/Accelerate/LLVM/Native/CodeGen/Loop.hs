@@ -24,10 +24,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
-
-import Control.Monad
 
 
 -- | A standard 'for' loop, that steps from the start to end index executing the
@@ -47,14 +44,15 @@ imapFromTo start end body =
 -- these kinds of nested loops, but not so good at vectorising the flattened
 -- representation utilising to/from index.
 --
-imapNestedFromTo
+imapNestFromTo
     :: forall sh. Shape sh
     => IR sh                                    -- ^ initial index (inclusive)
     -> IR sh                                    -- ^ final index (exclusive)
     -> IR sh                                    -- ^ total array extent
     -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
     -> CodeGen ()
-imapNestedFromTo (IR start) (IR end) extent body = go (eltType (undefined::sh)) start end (body' . IR)
+imapNestFromTo (IR start) (IR end) extent body =
+  go (eltType (undefined::sh)) start end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 
@@ -70,17 +68,22 @@ imapNestedFromTo (IR start) (IR end) extent body = go (eltType (undefined::sh)) 
       $ \(IR i)  -> k (OP_Pair sz i)
 
     go _ _ _ _
-      = $internalError "imapNestedFromTo" "expected shape with Int components"
+      = $internalError "imapNestFromTo" "expected shape with Int components"
 
 
-imapNestedFromTo'
-  :: forall sh. Shape sh
-  => IR sh
-  -> IR sh
-  -> IR sh
-  -> (IR sh -> IR Int -> CodeGen ())
-  -> CodeGen ()
-imapNestedFromTo' (IR start) (IR end) (IR extent) body = do
+{--
+-- TLM: this version (seems to) compute the corresponding linear index as it
+--      goes. We need to compare it against the above implementation to see if
+--      there are any advantages.
+--
+imapNestFromTo'
+    :: forall sh. Shape sh
+    => IR sh
+    -> IR sh
+    -> IR sh
+    -> (IR sh -> IR Int -> CodeGen ())
+    -> CodeGen ()
+imapNestFromTo' (IR start) (IR end) (IR extent) body = do
   startl <- intOfIndex (IR extent :: IR sh) (IR start)
   void $ go (eltType (undefined::sh)) start end extent (int 1) startl body'
   where
@@ -108,8 +111,9 @@ imapNestedFromTo' (IR start) (IR end) (IR extent) body = do
               k (OP_Pair sz i) l'
             add numType ll delta'
 
-    go _ _ _ _ _ _ _ 
-      = $internalError "imapNestedFromTo'" "expected shape with Int components"
+    go _ _ _ _ _ _ _
+      = $internalError "imapNestFromTo'" "expected shape with Int components"
+--}
 
 
 -- | Generate a series of nested 'for' loops which iterate between the start and
@@ -117,7 +121,7 @@ imapNestedFromTo' (IR start) (IR end) (IR extent) body = do
 -- these kinds of nested loops, but not so good at vectorising the flattened
 -- representation utilising to/from index.
 --
-imapNestedFromStepTo
+imapNestFromStepTo
     :: forall sh. Shape sh
     => IR sh                                    -- ^ initial index (inclusive)
     -> IR sh                                    -- ^ steps
@@ -125,7 +129,8 @@ imapNestedFromStepTo
     -> IR sh                                    -- ^ total array extent
     -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
     -> CodeGen ()
-imapNestedFromStepTo (IR start) (IR steps) (IR end) extent body = go (eltType (undefined::sh)) start steps end (body' . IR)
+imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
+  go (eltType (undefined::sh)) start steps end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 
@@ -141,7 +146,7 @@ imapNestedFromStepTo (IR start) (IR steps) (IR end) extent body = go (eltType (u
       $ \(IR i)  -> k (OP_Pair sz i)
 
     go _ _ _ _ _
-      = $internalError "imapNestedFromTo" "expected shape with Int components"
+      = $internalError "imapNestFromTo" "expected shape with Int components"
 
 
 -- | Iterate with an accumulator between the start and end index, executing the

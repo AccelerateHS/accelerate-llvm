@@ -150,7 +150,7 @@ simpleOp NativeR{..} gamma aenv sh = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh
-  scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
+  scheduleOp fun gamma aenv sh result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future

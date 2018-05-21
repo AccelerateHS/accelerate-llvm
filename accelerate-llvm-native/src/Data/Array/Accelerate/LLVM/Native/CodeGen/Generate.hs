@@ -20,7 +20,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -29,7 +28,6 @@ import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import Data.Proxy
 
 -- Construct a new array by applying a function to each index. Each thread
 -- processes multiple adjacent elements.
@@ -40,48 +38,18 @@ mkGenerate
     -> Gamma aenv
     -> IRFun1 Native aenv (sh -> e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkGenerate uid aenv apply
-  = foldr1 (+++) <$> sequence [ mkGenerateLinear uid aenv apply
-                              , mkGenerateNested uid aenv apply
-                              ]
-
-mkGenerateLinear
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
-    -> Gamma aenv
-    -> IRFun1 Native aenv (sh -> e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkGenerateLinear uid aenv apply =
+mkGenerate uid aenv apply =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
+      shOut                     = irArrayShape arrOut
   in
   makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    imapFromTo start end $ \i -> do
-      ix <- indexOfInt (irArrayShape arrOut) i  -- convert to multidimensional index
-      r  <- app1 apply ix                       -- apply generator function
+    imapNestFromTo start end shOut $ \ix i -> do
+      r <- app1 apply ix                        -- apply generator function
       writeArray arrOut i r                     -- store result
 
     return_
 
-mkGenerateNested
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
-    -> Gamma aenv
-    -> IRFun1 Native aenv (sh -> e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkGenerateNested uid aenv apply =
-  let
-      (start, end, paramGang)   = gangParamNested (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
-      paramEnv                  = envParam aenv
-  in
-  makeOpenAcc uid "generateNested" (paramGang ++ paramOut ++ paramEnv) $ do
-
-    imapNestedFromTo start end (irArrayShape arrOut) $ \ix i -> do
-      r  <- app1 apply ix                       -- apply generator function
-      writeArray arrOut i r                     -- store result
-
-    return_
