@@ -249,7 +249,7 @@ mkScanS
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanS dir uid aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
       paramEnv                  = envParam aenv
       --
@@ -264,7 +264,7 @@ mkScanS dir uid aenv combine mseed IRDelayed{..} =
     szm1  <- A.sub numType sz (lift 1)
 
     -- loop over each lower-dimensional index (segment)
-    imapFromTo start end $ \seg -> do
+    imapFromTo (indexHead start) (indexHead end) $ \seg -> do
 
       -- index i* is the index that we will read data from. Recall that the
       -- supremum index is exclusive
@@ -326,7 +326,7 @@ mkScan'S
     -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScan'S dir uid aenv combine seed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
       (arrSum, paramSum)        = mutableArray ("sum" :: Name (Array sh e))
       paramEnv                  = envParam aenv
@@ -341,7 +341,7 @@ mkScan'S dir uid aenv combine seed IRDelayed{..} =
     szm1  <- A.sub numType sz (lift 1)
 
     -- iterate over each lower-dimensional index (segment)
-    imapFromTo start end $ \seg -> do
+    imapFromTo (indexHead start) (indexHead end) $ \seg -> do
 
       -- index to read data from
       i0 <- case dir of
@@ -414,15 +414,15 @@ mkScanP1
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
-      piece                     = local           scalarType ("ix.piece" :: Name Int)
-      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
+      steps                     = local     ("ix.steps" :: Name Int)
+      paramSteps                = parameter ("ix.steps" :: Name Int)
+      piece                     = local     ("ix.piece" :: Name Int)
+      paramPiece                = parameter ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -431,7 +431,7 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- A thread scans a non-empty stripe of the input, storing the final
     -- reduction result into a separate array.
@@ -443,8 +443,8 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- index i* is the index that we read data from. Recall that the supremum
     -- index is exclusive
     i0  <- case dir of
-             L -> return start
-             R -> next end
+             L -> return (indexHead start)
+             R -> next (indexHead end)
 
     -- index j* is the index that we write to. Recall that for exclusive scan
     -- the output array is one larger than the input; the first piece uses
@@ -456,7 +456,7 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
                                  then return i0
                                  else next i0
                           R -> if A.eq singleType piece firstPiece
-                                 then return end
+                                 then return (indexHead end)
                                  else return i0
 
     -- Evaluate/read the initial element for this piece. Update the read-from
@@ -474,8 +474,8 @@ mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  singleType i end
-             R -> A.gte singleType i start
+             L -> A.lt  singleType i (indexHead end)
+             R -> A.gte singleType i (indexHead start)
 
     r   <- while (cont . A.fst3)
                  (\(A.untrip -> (i,j,v)) -> do
@@ -508,13 +508,13 @@ mkScanP2
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP2 dir uid aenv combine =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
       cont i                    = case dir of
-                                    L -> A.lt  singleType i end
-                                    R -> A.gte singleType i start
+                                    L -> A.lt  singleType i (indexHead end)
+                                    R -> A.gte singleType i (indexHead start)
 
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -523,8 +523,8 @@ mkScanP2 dir uid aenv combine =
   makeOpenAcc uid "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
 
     i0 <- case dir of
-            L -> return start
-            R -> next end
+            L -> return (indexHead start)
+            R -> next (indexHead end)
 
     v0 <- readArray arrTmp i0
     i1 <- next i0
@@ -560,15 +560,15 @@ mkScanP3
     -> CodeGen (IROpenAcc Native aenv (Vector e))
 mkScanP3 dir uid aenv combine mseed =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
-      piece                     = local           scalarType ("ix.piece" :: Name Int)
-      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
+      steps                     = local     ("ix.steps" :: Name Int)
+      paramSteps                = parameter ("ix.steps" :: Name Int)
+      piece                     = local     ("ix.piece" :: Name Int)
+      paramPiece                = parameter ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -580,7 +580,7 @@ mkScanP3 dir uid aenv combine mseed =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- TODO: Don't schedule the "first" piece. In the scheduler this corresponds
     -- to the split range with the smallest/largest linear index for left/right
@@ -590,8 +590,8 @@ mkScanP3 dir uid aenv combine mseed =
 
       -- Compute start and end indices, leaving space for the initial element
       (inf,sup) <- case (dir,mseed) of
-                     (L,Just _) -> (,) <$> next start <*> next end
-                     _          -> (,) <$> pure start <*> pure end
+                     (L,Just _) -> (,) <$> next (indexHead start) <*> next (indexHead end)
+                     _          -> (,) <$> pure (indexHead start) <*> pure (indexHead end)
 
       -- Read in the carry in value for this piece
       c <- readArray arrTmp =<< prev piece
@@ -638,15 +638,15 @@ mkScan'P1
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
-      piece                     = local           scalarType ("ix.piece" :: Name Int)
-      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
+      steps                     = local     ("ix.steps" :: Name Int)
+      paramSteps                = parameter ("ix.steps" :: Name Int)
+      piece                     = local     ("ix.piece" :: Name Int)
+      paramPiece                = parameter ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -656,12 +656,12 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP1" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- index i* is the index that we pull data from.
     i0 <- case dir of
-            L -> return start
-            R -> next end
+            L -> return (indexHead start)
+            R -> next (indexHead end)
 
     -- index j* is the index that we write results to. The first piece needs to
     -- include the initial element, and all other chunks shift their results
@@ -683,8 +683,8 @@ mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
     -- Continue looping through the rest of the input
     let cont i =
            case dir of
-             L -> A.lt  singleType i end
-             R -> A.gte singleType i start
+             L -> A.lt  singleType i (indexHead end)
+             R -> A.gte singleType i (indexHead start)
 
     r  <- while (cont . A.fst3)
                 (\(A.untrip-> (i,j,v)) -> do
@@ -716,14 +716,14 @@ mkScan'P2
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P2 dir uid aenv combine =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       (arrSum, paramSum)        = mutableArray ("sum" :: Name (Scalar e))
       paramEnv                  = envParam aenv
       --
       cont i                    = case dir of
-                                    L -> A.lt  singleType i end
-                                    R -> A.gte singleType i start
+                                    L -> A.lt  singleType i (indexHead end)
+                                    R -> A.gte singleType i (indexHead start)
 
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -732,8 +732,8 @@ mkScan'P2 dir uid aenv combine =
   makeOpenAcc uid "scanP2" (paramGang ++ paramSum ++ paramTmp ++ paramEnv) $ do
 
     i0 <- case dir of
-            L -> return start
-            R -> next end
+            L -> return (indexHead start)
+            R -> next (indexHead end)
 
     v0 <- readArray arrTmp i0
     i1 <- next i0
@@ -771,15 +771,15 @@ mkScan'P3
     -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P3 dir uid aenv combine =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      steps                     = local           scalarType ("ix.steps" :: Name Int)
-      paramSteps                = scalarParameter scalarType ("ix.steps" :: Name Int)
-      piece                     = local           scalarType ("ix.piece" :: Name Int)
-      paramPiece                = scalarParameter scalarType ("ix.piece" :: Name Int)
+      steps                     = local     ("ix.steps" :: Name Int)
+      paramSteps                = parameter ("ix.steps" :: Name Int)
+      piece                     = local     ("ix.piece" :: Name Int)
+      paramPiece                = parameter ("ix.piece" :: Name Int)
       --
       next i                    = case dir of
                                     L -> A.add numType i (lift 1)
@@ -791,15 +791,15 @@ mkScan'P3 dir uid aenv combine =
                                     L -> lift 0
                                     R -> steps
   in
-  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece : paramSteps : paramOut ++ paramTmp ++ paramEnv) $ do
+  makeOpenAcc uid "scanP3" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
 
     -- TODO: don't schedule the "first" piece.
     --
     A.when (neq singleType piece firstPiece) $ do
 
       -- Compute start and end indices, leaving space for the initial element
-      inf <- next start
-      sup <- next end
+      inf <- next (indexHead start)
+      sup <- next (indexHead end)
 
       -- Read the carry-in value for this piece
       c   <- readArray arrTmp =<< prev piece
