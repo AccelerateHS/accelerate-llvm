@@ -155,27 +155,6 @@ simpleOp NativeR{..} gamma aenv sh = do
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
 
-{--
-simpleOpNestedLoops
-    :: (Shape sh, Elt e)
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> sh
-    -> LLVM Native (Array sh e)
-simpleOpNestedLoops exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
-  let fun = case functionTable nativeExecutable of
-              f:_ -> f
-              _   -> $internalError "simpleOpNestedLoops" "no functions found"
-  --
-  Native{..} <- gets llvmTarget
-  liftIO $ do
-    out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP fun gamma aenv empty sh out
-    return out
---}
-
 {-# INLINE simpleNamed #-}
 simpleNamed
     :: (Shape sh, Elt e)
@@ -190,29 +169,11 @@ simpleNamed name NativeR{..} gamma aenv sh = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh
-  scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
+  scheduleOp fun gamma aenv sh result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
 
-
-{--
-simpleNamedNestedLoops
-    :: (Shape sh, Elt e)
-    => ShortByteString
-    -> ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> sh
-    -> LLVM Native (Array sh e)
-simpleNamedNestedLoops name exe gamma aenv () sh = withExecutable exe $ \nativeExecutable -> do
-  Native{..} <- gets llvmTarget
-  liftIO $ do
-    out <- allocateArray sh
-    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# name) gamma aenv empty sh out
-    return out
---}
 
 -- Map over an array can ignore the dimensionality of the array and treat it as
 -- its underlying linear representation.
@@ -594,11 +555,11 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
                    else liftPar (cloneArray defaults)
   let
       splits  = numWorkers workers
-      minsize = case rank (undefined::sh') of
+      minsize = case rank shIn of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
-      ranges  = divideWork splits minsize empty (Z :. size shIn) (,,) -- XXX: nested loops
+      ranges  = divideWork splits minsize empty shIn (,,)
       steps   = Seq.length ranges
   --
   if steps <= 1
@@ -631,43 +592,6 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
 
 
 {--
-permuteOpNested
-    :: (Shape sh, Shape sh', Elt e)
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Bool
-    -> sh
-    -> Array sh' e
-    -> LLVM Native (Array sh' e)
-permuteOpNested exe gamma aenv () inplace shIn dfs = withExecutable exe $ \nativeExecutable -> do
-  Native{..} <- gets llvmTarget
-  out        <- if inplace
-                  then return dfs
-                  else cloneArray dfs
-  let
-      ncpu    = gangSize
-      n       = size shIn
-      m       = size (shape out)
-  --
-  if ncpu == 1 || n <= defaultLargePPT
-    then liftIO $ do
-      -- sequential permutation
-      executeOpMultiDimensional 1 fillS (nativeExecutable !# "permuteSNested") gamma aenv empty shIn out
-
-    else liftIO $ do
-      -- parallel permutation
-      case lookupFunction "permuteP_rmwNested" nativeExecutable of
-        Just f  -> executeOpMultiDimensional defaultLargePPT fillP f gamma aenv empty shIn out
-        Nothing -> do
-          barrier@(Array _ adb) <- allocateArray (Z :. m) :: IO (Vector Word8)
-          memset (ptrsOfArrayData adb) 0 m
-          executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "permuteP_mutexNested") gamma aenv empty shIn (out, barrier)
-
-  return out
-
-
 boundaryThickness
   :: StencilR sh a stencil
   -> sh
