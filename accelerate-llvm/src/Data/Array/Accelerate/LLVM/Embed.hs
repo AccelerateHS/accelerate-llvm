@@ -184,10 +184,10 @@ liftPreOpenAccSkeleton arch pacc =
       liftE = liftPreOpenExp arch
 
       liftS :: StencilR sh e stencil -> Q (TExp (StencilR sh e stencil))
-      liftS StencilRunit3                    = [|| StencilRunit3 ||]
-      liftS StencilRunit5                    = [|| StencilRunit5 ||]
-      liftS StencilRunit7                    = [|| StencilRunit7 ||]
-      liftS StencilRunit9                    = [|| StencilRunit9 ||]
+      liftS StencilRunit3                    = withSigE [|| StencilRunit3 ||]
+      liftS StencilRunit5                    = withSigE [|| StencilRunit5 ||]
+      liftS StencilRunit7                    = withSigE [|| StencilRunit7 ||]
+      liftS StencilRunit9                    = withSigE [|| StencilRunit9 ||]
       liftS (StencilRtup3 a b c)             = [|| StencilRtup3 $$(liftS a) $$(liftS b) $$(liftS c) ||]
       liftS (StencilRtup5 a b c d e)         = [|| StencilRtup5 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) ||]
       liftS (StencilRtup7 a b c d e f g)     = [|| StencilRtup7 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) $$(liftS f) $$(liftS g) ||]
