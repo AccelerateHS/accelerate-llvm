@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
+## [next]
+### Changed
+ * Switch the thread scheduler to static, rather than dynamic, work stealing
+ * Thread scheduler is no longer block-synchronous
+ * Code generation improvements, in particular for >=2-dimensional operations
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+ * Trevor L. McDonell (@tmcdonell)
+ * Josh Meredith (@JoshMeredith)
+
+
 ## [1.2.0.0] - 2018-04-03
 ### Fixed
  * LLVM native throws "SIGSEGV: invalid address" due to fused FP operation ([#409])
