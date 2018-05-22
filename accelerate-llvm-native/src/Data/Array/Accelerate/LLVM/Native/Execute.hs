@@ -33,7 +33,9 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
@@ -58,6 +60,7 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Proxy                                                   ( Proxy(..) )
 import Data.Sequence                                                ( Seq )
+import Data.Foldable                                                ( asum )
 import Data.Word                                                    ( Word8 )
 import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
@@ -123,9 +126,8 @@ instance Execute Native where
   scanr1        = scan1Op
   scanr'        = scan'Op
   permute       = permuteOp
-  -- stencil1      = stencil1Op
-  stencil1 _    = simpleOp
-  stencil2 _ _  = stencil2Op
+  stencil1      = stencil1Op
+  stencil2      = stencil2Op
   aforeign      = aforeignOp
 
 
@@ -591,82 +593,126 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
   return future
 
 
-{--
-boundaryThickness
-  :: StencilR sh a stencil
-  -> sh
-boundaryThickness = go
-  where
-    go :: StencilR sh a stencil -> sh
-    go StencilRunit3 = Z :. 1
-    go StencilRunit5 = Z :. 2
-    go StencilRunit7 = Z :. 3
-    go StencilRunit9 = Z :. 4
-    --
-    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c] :. 1
-    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e] :. 2
-    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g] :. 3
-    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
-
-
+{-# INLINE stencil1Op #-}
 stencil1Op
-    :: forall aenv sh a b stencil. (Shape sh, Elt a, Elt b)
+    :: (Shape sh, Elt e)
     => StencilR sh a stencil
     -> ExecutableR Native
     -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Array sh a
-    -> LLVM Native (Array sh b)
-stencil1Op s exe gamma aenv stream arr = withExecutable exe $ \nativeExecutable -> do
-  Native{..} <- gets llvmTarget
-  liftIO $ do
-    out <- allocateArray (shape arr)
-    let
-      start' = boundaryThickness s
-      end'   = listToShape (zipWith (-) (shapeToList $ shape arr) (shapeToList start'))
-    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil1_inner") gamma aenv start' end' out
-    executeOp 1 fillP (nativeExecutable !# "stencil1_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
-
-    return out
-
-
-stencil2Op
-    :: forall aenv sh a b c stencil1 stencil2. (Shape sh, Elt a, Elt b, Elt c)
-    => StencilR sh a stencil1
-    -> StencilR sh b stencil2
-    -> ExecutableR Native
-    -> Gamma aenv
-    -> Aval aenv
-    -> Stream
-    -> Array sh a
-    -> Array sh b
-    -> LLVM Native (Array sh c)
-stencil2Op s1 s2 exe gamma aenv stream arr brr = withExecutable exe $ \nativeExecutable -> do
-  Native{..} <- gets llvmTarget
-  liftIO $ do
-    out <- allocateArray (shape arr `intersect` shape brr)
-    let
-      start' = boundaryThickness s1 `intersect` boundaryThickness s2
-      end'   = rangeToShape (start', (shape arr))
-    executeOpMultiDimensional defaultLargePPT fillP (nativeExecutable !# "stencil2_inner") gamma aenv start' end' out
-    executeOp 1 fillS (nativeExecutable !# "stencil2_boundary") gamma aenv (IE 0 (2 * rank (undefined::sh))) (reverse $ shapeToList start', out)
-
-    return out
---}
-
+    -> Val aenv
+    -> sh
+    -> Par Native (Future (Array sh e))
+stencil1Op stencilR exe gamma aenv sh =
+  stencilCore exe gamma aenv (stencilThickness stencilR) sh
 
 {-# INLINE stencil2Op #-}
 stencil2Op
     :: (Shape sh, Elt e)
-    => ExecutableR Native
+    => StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> sh
     -> Par Native (Future (Array sh e))
-stencil2Op exe gamma aenv sh1 sh2 =
-  simpleOp exe gamma aenv (sh1 `intersect` sh2)
+stencil2Op stencilR1 stencilR2 exe gamma aenv sh1 sh2 =
+  stencilCore exe gamma aenv (stencilThickness stencilR1 `union` stencilThickness stencilR2) (sh1 `intersect` sh2)
+
+{-# INLINE stencilCore #-}
+stencilCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh                       -- border dimensions (i.e. index of first interior element)
+    -> sh                       -- output array size
+    -> Par Native (Future (Array sh e))
+stencilCore NativeR{..} gamma aenv bnd sh = do
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh :: Par Native (Array sh e)
+  let
+      inside  = nativeExecutable !# "stencil_inside"
+      border  = nativeExecutable !# "stencil_border"
+
+      splits  = numWorkers workers
+      minsize = case rank sh of
+                  1 -> 2048
+                  2 -> 32
+                  _ -> 8
+
+      ins     = divideWork splits minsize bnd (sh `sub` bnd) (,,)
+      outs    = asum . flip fmap (stencilBorders sh bnd) $ \(u,v) -> divideWork splits minsize u v (,,)
+
+      sub :: sh -> sh -> sh
+      sub a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
+        where
+          go :: TupleType t -> t -> t -> t
+          go TypeRunit         ()      ()      = ()
+          go (TypeRpair ta tb) (xa,xb) (ya,yb) = (go ta xa ya, go tb xb yb)
+          go (TypeRscalar t)   x       y
+            | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = x-y
+            | otherwise                                                         = $internalError "stencilCore" "expected Int dimensions"
+  --
+  jobsInside <- mkTasksUsing ins  inside gamma aenv result
+  jobsBorder <- mkTasksUsing outs border gamma aenv result
+  let jobTasks  = jobsInside Seq.>< jobsBorder
+      jobDone   = Just $ do putIO workers future result
+                            touchLifetime nativeExecutable
+  --
+  liftIO $ schedule workers =<< timed "stencil" Job{..}
+  return future
+
+-- Compute the stencil border regions, where we may need to evaluate the
+-- boundary conditions.
+--
+{-# INLINE stencilBorders #-}
+stencilBorders
+    :: forall sh. Shape sh
+    => sh
+    -> sh
+    -> Seq (sh, sh)
+stencilBorders sh bnd = Seq.fromFunction (2 * rank sh) face
+  where
+    face :: Int -> (sh, sh)
+    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt bnd)
+             in  (toElt u, toElt v)
+
+    go :: Int -> TupleType t -> t -> t -> (t, t)
+    go _ TypeRunit           ()         ()         = ((), ())
+    go n (TypeRpair tsh tsz) (sha, sza) (shb, szb)
+      | TypeRscalar (SingleScalarType (NumSingleType (IntegralNumType TypeInt{}))) <- tsz
+      = let
+            (sha', shb')  = go (n-2) tsh sha shb
+            (sza', szb')
+              | n <  0    = (0,       sza)
+              | n == 0    = (0,       szb)
+              | n == 1    = (sza-szb, sza)
+              | otherwise = (szb,     sza-szb)
+        in
+        ((sha', sza'), (shb', szb'))
+    go _ _ _ _
+      = $internalError "stencilBorders" "expected Int dimensions"
+
+-- Compute the thickness of the stencil pattern, from the focal point. In other
+-- works, this returns the index of the first element where the stencil is
+-- completely inside the array.
+--
+{-# INLINE stencilThickness #-}
+stencilThickness :: StencilR sh e stencil -> sh
+stencilThickness = go
+  where
+    go :: StencilR sh e stencil -> sh
+    go StencilRunit3 = Z :. 1
+    go StencilRunit5 = Z :. 2
+    go StencilRunit7 = Z :. 3
+    go StencilRunit9 = Z :. 4
+    --
+    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
+    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
+    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
+    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
 
 
 {-# INLINE aforeignOp #-}
@@ -786,14 +832,9 @@ mkJobUsing
       -> args
       -> Maybe Action
       -> Par Native Job
-mkJobUsing ranges (name, f) gamma aenv args jobDone = do
-  argv <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
-  let
-      jobTasks = flip fmap ranges $ \(_,u,v) -> do
-                  sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-                  callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
-  --
-  liftIO $ timed name Job {..}
+mkJobUsing ranges fun@(name,_) gamma aenv args jobDone = do
+  jobTasks <- mkTasksUsing ranges fun gamma aenv args
+  liftIO    $ timed name Job {..}
 
 {-# SPECIALISE mkJobUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Maybe Action -> Par Native Job #-}
 {-# SPECIALISE mkJobUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Maybe Action -> Par Native Job #-}
@@ -806,65 +847,41 @@ mkJobUsingIndex
       -> args
       -> Maybe Action
       -> Par Native Job
-mkJobUsingIndex ranges (name, f) gamma aenv args jobDone = do
-  argv <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
-  let
-      jobTasks = flip fmap ranges $ \(i,u,v) -> do
-                  sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-                  callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
-  --
-  liftIO $ timed name Job {..}
+mkJobUsingIndex ranges fun@(name,_) gamma aenv args jobDone = do
+  jobTasks <- mkTasksUsingIndex ranges fun gamma aenv args
+  liftIO    $ timed name Job {..}
 
+{-# SPECIALISE mkTasksUsing :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+{-# SPECIALISE mkTasksUsing :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+mkTasksUsing
+      :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+      => Seq (Int, sh, sh)
+      -> Function
+      -> Gamma aenv
+      -> Val aenv
+      -> args
+      -> Par Native (Seq Action)
+mkTasksUsing ranges (name, f) gamma aenv args = do
+  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  return $ flip fmap ranges $ \(_,u,v) -> do
+    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
+    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
 
-{--
-executeOpMultiDimensional
-  :: forall sh args aenv. (Marshalable args, Shape sh)
-  => Int
-  -> Executable
-  -> Function
-  -> Gamma aenv
-  -> Aval aenv
-  -> sh
-  -> sh
-  -> args
-  -> IO ()
-executeOpMultiDimensional ppt exe (name, f) gamma aenv start end args =
-  case rank (undefined::sh) of
-    0 -> do
-      runExecutable exe name ppt (IE 0 1) $ \_s _e _tid -> do
-        monitorProcTime $
-          callFFI f retVoid =<< marshal (undefined::Native) () (args, (gamma, aenv))
-    _ -> do
-      let range = IE (innermost start) (innermost end)
-      runExecutable exe name ppt range $ \s e _tid -> do
-        let
-          start' = changeInnermost start s
-          end'   = changeInnermost end   e
-        monitorProcTime $
-          callFFI f retVoid =<< marshal (undefined::Native) ()
-            (reverse $ shapeToList start', reverse $ shapeToList end', args, (gamma, aenv))
-
-  where
-    innermost :: Shape sh => sh -> Int
-    innermost sh = go (eltType (undefined::sh)) (fromElt sh)
-      where
-        go :: TupleType t -> t -> Int
-        go TypeRunit () = 0
-        go (TypeRpair TypeRunit (TypeRscalar s)) ((), n)
-          | Just Refl <- matchScalarType s (scalarType :: ScalarType Int) = n
-        go (TypeRpair tt _) (dims, _) = go tt dims
-
-    changeInnermost :: Shape sh => sh -> Int -> sh
-    changeInnermost sh = toElt . go (eltType (undefined::sh)) (fromElt sh)
-      where
-        go :: TupleType t -> t -> Int -> t
-        go TypeRunit () _ = ()
-        go (TypeRpair tt (TypeRscalar s)) (dims, d) n
-          | Just Refl <- matchScalarType s (scalarType :: ScalarType Int)
-          = case tt of
-            TypeRunit -> ((), n)
-            _         -> (go tt dims n, d)
---}
+{-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+{-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+mkTasksUsingIndex
+      :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+      => Seq (Int, sh, sh)
+      -> Function
+      -> Gamma aenv
+      -> Val aenv
+      -> args
+      -> Par Native (Seq Action)
+mkTasksUsingIndex ranges (name, f) gamma aenv args = do
+  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  return $ flip fmap ranges $ \(i,u,v) -> do
+    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
+    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
 
 
 -- Standard C functions
