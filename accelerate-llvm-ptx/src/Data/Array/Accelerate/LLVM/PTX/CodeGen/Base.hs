@@ -167,11 +167,10 @@ globalThreadIdx = do
 --
 gangParam :: (IR Int, IR Int, [LLVM.Parameter])
 gangParam =
-  let t         = scalarType
-      start     = "ix.start"
-      end       = "ix.end"
+  let start = "ix.start"
+      end   = "ix.end"
   in
-  (local start, local end, [ scalarParameter t start, scalarParameter t end ] )
+  (local start, local end, parameter start ++ parameter end )
 
 
 -- Barriers and synchronisation
