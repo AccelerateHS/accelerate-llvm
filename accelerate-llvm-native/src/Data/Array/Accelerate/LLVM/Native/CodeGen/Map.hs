@@ -17,11 +17,12 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt, DIM1 )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -70,8 +71,10 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- declare float @apply(float)
 --
 
-
 -- Apply the given unary function to each element of an array.
+--
+-- The map operation can always treat an array of any dimension in its flat
+-- underlying representation, which simplifies code generation.
 --
 mkMap :: forall aenv sh a b. Elt b
       => UID
@@ -81,13 +84,13 @@ mkMap :: forall aenv sh a b. Elt b
       -> CodeGen (IROpenAcc Native aenv (Array sh b))
 mkMap uid aenv apply IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
       paramEnv                  = envParam aenv
   in
   makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    imapFromTo start end $ \i -> do
+    imapFromTo (indexHead start) (indexHead end) $ \i -> do
       xs <- app1 delayedLinearIndex i
       ys <- app1 apply xs
       writeArray arrOut i ys

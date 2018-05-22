@@ -20,9 +20,9 @@ Policy (PVP)](https://pvp.haskell.org)
 
 Special thanks to those who contributed patches as part of this release:
 
- * Trevor L. McDonell (@tmcdonell)
- * Ryan Scott (@ryanglscott)
- * Moritz Kiefer (@cocreature)
+ * Trevor L. McDonell ([@tmcdonell][tmcdonell])
+ * Ryan Scott ([@ryanglscott][ryanglscott])
+ * Moritz Kiefer ([@cocreature][cocreature])
 
 
 ## [1.1.0.0] - 2017-09-21
@@ -38,7 +38,7 @@ Special thanks to those who contributed patches as part of this release:
  * initial release
 
 
-[1.2.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...v1.2.0.0
+[1.2.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...1.2.0.0
 [1.1.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
 

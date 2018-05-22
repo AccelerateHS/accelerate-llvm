@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.AST (
   PreFun,  PreOpenFun(..),
   PreExp,  PreOpenExp(..),
   Idx(..),
+  StencilR(..),
 
 ) where
 
@@ -30,7 +31,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), StencilR(..), PreAfun, PreFun, PreExp )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -170,12 +171,15 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> acc                    arch  aenv (Array sh' e)    -- default values
               -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
 
-  Stencil1    :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
-
-  Stencil2    :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
+  Stencil1    :: (Shape sh, Elt b)
+              => StencilR sh a stencil1
               -> PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh b)
+
+  Stencil2    :: (Shape sh, Elt c)
+              => StencilR sh a stencil1
+              -> StencilR sh b stencil2
+              -> PreExp            (acc arch) aenv sh
+              -> PreExp            (acc arch) aenv sh
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh c)
 

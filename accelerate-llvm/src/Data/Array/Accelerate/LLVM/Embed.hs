@@ -25,7 +25,7 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftArrays, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun )
+import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftArrays, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun, StencilR(..) )
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 
@@ -182,25 +182,35 @@ liftPreOpenAccSkeleton arch pacc =
 
       liftE :: PreExp (CompiledOpenAcc arch) aenv t -> Q (TExp (PreExp (ExecOpenAcc arch) aenv t))
       liftE = liftPreOpenExp arch
+
+      liftS :: StencilR sh e stencil -> Q (TExp (StencilR sh e stencil))
+      liftS StencilRunit3                    = withSigE [|| StencilRunit3 ||]
+      liftS StencilRunit5                    = withSigE [|| StencilRunit5 ||]
+      liftS StencilRunit7                    = withSigE [|| StencilRunit7 ||]
+      liftS StencilRunit9                    = withSigE [|| StencilRunit9 ||]
+      liftS (StencilRtup3 a b c)             = [|| StencilRtup3 $$(liftS a) $$(liftS b) $$(liftS c) ||]
+      liftS (StencilRtup5 a b c d e)         = [|| StencilRtup5 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) ||]
+      liftS (StencilRtup7 a b c d e f g)     = [|| StencilRtup7 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) $$(liftS f) $$(liftS g) ||]
+      liftS (StencilRtup9 a b c d e f g h i) = [|| StencilRtup9 $$(liftS a) $$(liftS b) $$(liftS c) $$(liftS d) $$(liftS e) $$(liftS f) $$(liftS g) $$(liftS h) $$(liftS i) ||]
   in
   case pacc of
-    Map sh            -> [|| Map $$(liftE sh) ||]
-    Generate sh       -> [|| Generate $$(liftE sh) ||]
-    Transform sh      -> [|| Transform $$(liftE sh) ||]
-    Backpermute sh    -> [|| Backpermute $$(liftE sh) ||]
-    Fold sh           -> [|| Fold $$(liftE sh) ||]
-    Fold1 sh          -> [|| Fold1 $$(liftE sh) ||]
-    FoldSeg sa ss     -> [|| FoldSeg $$(liftE sa) $$(liftE ss) ||]
-    Fold1Seg sa ss    -> [|| Fold1Seg $$(liftE sa) $$(liftE ss) ||]
-    Scanl sh          -> [|| Scanl $$(liftE sh) ||]
-    Scanl1 sh         -> [|| Scanl1 $$(liftE sh) ||]
-    Scanl' sh         -> [|| Scanl' $$(liftE sh) ||]
-    Scanr sh          -> [|| Scanr $$(liftE sh) ||]
-    Scanr1 sh         -> [|| Scanr1 $$(liftE sh) ||]
-    Scanr' sh         -> [|| Scanr' $$(liftE sh) ||]
-    Permute sh a      -> [|| Permute $$(liftE sh) $$(liftA a) ||]
-    Stencil1 sh       -> [|| Stencil1 $$(liftE sh) ||]
-    Stencil2 sh1 sh2  -> [|| Stencil2 $$(liftE sh1) $$(liftE sh2) ||]
+    Map sh                -> [|| Map $$(liftE sh) ||]
+    Generate sh           -> [|| Generate $$(liftE sh) ||]
+    Transform sh          -> [|| Transform $$(liftE sh) ||]
+    Backpermute sh        -> [|| Backpermute $$(liftE sh) ||]
+    Fold sh               -> [|| Fold $$(liftE sh) ||]
+    Fold1 sh              -> [|| Fold1 $$(liftE sh) ||]
+    FoldSeg sa ss         -> [|| FoldSeg $$(liftE sa) $$(liftE ss) ||]
+    Fold1Seg sa ss        -> [|| Fold1Seg $$(liftE sa) $$(liftE ss) ||]
+    Scanl sh              -> [|| Scanl $$(liftE sh) ||]
+    Scanl1 sh             -> [|| Scanl1 $$(liftE sh) ||]
+    Scanl' sh             -> [|| Scanl' $$(liftE sh) ||]
+    Scanr sh              -> [|| Scanr $$(liftE sh) ||]
+    Scanr1 sh             -> [|| Scanr1 $$(liftE sh) ||]
+    Scanr' sh             -> [|| Scanr' $$(liftE sh) ||]
+    Permute sh a          -> [|| Permute $$(liftE sh) $$(liftA a) ||]
+    Stencil1 s sh         -> [|| Stencil1 $$(liftS s) $$(liftE sh) ||]
+    Stencil2 s t sh1 sh2  -> [|| Stencil2 $$(liftS s) $$(liftS t) $$(liftE sh1) $$(liftE sh2) ||]
 
 {-# INLINEABLE liftPreOpenFun #-}
 liftPreOpenFun

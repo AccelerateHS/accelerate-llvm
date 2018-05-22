@@ -20,7 +20,6 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -41,15 +40,15 @@ mkGenerate
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
 mkGenerate uid aenv apply =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
       paramEnv                  = envParam aenv
+      shOut                     = irArrayShape arrOut
   in
   makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    imapFromTo start end $ \i -> do
-      ix <- indexOfInt (irArrayShape arrOut) i  -- convert to multidimensional index
-      r  <- app1 apply ix                       -- apply generator function
+    imapNestFromTo start end shOut $ \ix i -> do
+      r <- app1 apply ix                        -- apply generator function
       writeArray arrOut i r                     -- store result
 
     return_

@@ -254,14 +254,14 @@ defaultStencil1
     :: (Skeleton arch, Stencil sh a stencil, Elt b)
     => arch
     -> UID
-    -> Gamma aenv
-    -> IRFun1 arch aenv (stencil -> b)
+    -> Gamma           aenv
+    -> IRFun1     arch aenv (stencil -> b)
     -> IRBoundary arch aenv (Array sh a)
     -> IRDelayed  arch aenv (Array sh a)
     -> CodeGen (IROpenAcc arch aenv (Array sh b))
 defaultStencil1 arch uid aenv f boundary arr
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten <- stencilAccess boundary arr ix
+      sten <- stencilAccess (Just boundary) arr ix
       app1 f sten
 
 {-# INLINEABLE defaultStencil2 #-}
@@ -269,8 +269,8 @@ defaultStencil2
     :: (Skeleton arch, Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
     => arch
     -> UID
-    -> Gamma aenv
-    -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
+    -> Gamma           aenv
+    -> IRFun2     arch aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary arch aenv (Array sh a)
     -> IRDelayed  arch aenv (Array sh a)
     -> IRBoundary arch aenv (Array sh b)
@@ -278,7 +278,7 @@ defaultStencil2
     -> CodeGen (IROpenAcc arch aenv (Array sh c))
 defaultStencil2 arch uid aenv f boundary1 arr1 boundary2 arr2
   = generate arch uid aenv . IRFun1 $ \ix -> do
-      sten1 <- stencilAccess boundary1 arr1 ix
-      sten2 <- stencilAccess boundary2 arr2 ix
+      sten1 <- stencilAccess (Just boundary1) arr1 ix
+      sten2 <- stencilAccess (Just boundary2) arr2 ix
       app2 f sten1 sten2
 

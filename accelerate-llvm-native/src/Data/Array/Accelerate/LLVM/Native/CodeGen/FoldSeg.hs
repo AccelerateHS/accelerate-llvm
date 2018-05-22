@@ -88,7 +88,7 @@ mkFoldSegS
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegS uid aenv combine mseed arr seg =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
@@ -97,8 +97,8 @@ mkFoldSegS uid aenv combine mseed arr seg =
     -- Number of segments, useful only if reducing DIM2 and higher
     ss <- indexHead <$> delayedExtent seg
 
-    let test si = A.lt singleType (A.fst si) end
-        initial = A.pair start (lift 0)
+    let test si = A.lt singleType (A.fst si) (indexHead end)
+        initial = A.pair (indexHead start) (lift 0)
 
         body :: IR (Int,Int) -> CodeGen (IR (Int,Int))
         body (A.unpair -> (s,inf)) = do
@@ -140,7 +140,7 @@ mkFoldSegP
     -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegP uid aenv combine mseed arr seg =
   let
-      (start, end, paramGang)   = gangParam
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
       (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv                  = envParam aenv
   in
@@ -155,7 +155,7 @@ mkFoldSegP uid aenv combine mseed arr seg =
     ss <- do n <- indexHead <$> delayedExtent seg
              A.sub numType n (lift 1)
 
-    imapFromTo start end $ \s -> do
+    imapFromTo (indexHead start) (indexHead end) $ \s -> do
 
       i   <- case rank (undefined::sh) of
                0 -> return s

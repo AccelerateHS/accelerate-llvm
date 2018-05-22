@@ -26,10 +26,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 -- | TODO: Iterate over a multidimensional index space.
 --
--- Build nested loops that iterate over a hype-rectangular index space
--- between the given coordinates. The LLVM optimiser will be able to
--- vectorise nested loops, including when we insert conversions to the
--- corresponding linear index (e.g., in order to index arrays).
+-- Build nested loops that iterate over a hyper-rectangular index space between
+-- the given coordinates. The LLVM optimiser will be able to vectorise nested
+-- loops, including when we insert conversions to the corresponding linear index
+-- (e.g., in order to index arrays).
 --
 -- iterate
 --     :: Shape sh

@@ -202,8 +202,22 @@ compileOpenAcc = traverseAcc
         scanr1 _ a          = AST.Scanr1 a
         scanr' _ _ a        = AST.Scanr' a
         permute _ d _ a     = AST.Permute a d
-        stencil1 _ _ a      = AST.Stencil1 a
-        stencil2 _ _ a _ b  = AST.Stencil2 a b
+
+        stencil1 :: forall sh a b stencil. (Stencil sh a stencil, Elt b)
+                 => CompiledFun                  arch  aenv (stencil -> b)
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> PreExp      (CompiledOpenAcc arch) aenv sh
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
+        stencil1 _ _ a = AST.Stencil1 (stencil :: StencilR sh a stencil) a
+
+        stencil2 :: forall sh a b c stencil1 stencil2. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
+                 => CompiledFun                  arch  aenv (stencil1 -> stencil2 -> c)
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> PreExp      (CompiledOpenAcc arch) aenv sh
+                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh b)
+                 -> PreExp      (CompiledOpenAcc arch) aenv sh
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh c)
+        stencil2 _ _ a _ b = AST.Stencil2 (stencil :: StencilR sh a stencil1) (stencil :: StencilR sh b stencil2) a b
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc

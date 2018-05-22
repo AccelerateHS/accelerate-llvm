@@ -461,12 +461,12 @@ mkScanAllP3 dir dev aenv combine mseed =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      stride                    = local     ("ix.stride" :: Name Int)
+      paramStride               = parameter ("ix.stride" :: Name Int)
       --
       config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
@@ -761,12 +761,12 @@ mkScan'AllP3 dir dev aenv combine =
       (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
       paramEnv                  = envParam aenv
       --
-      stride                    = local           scalarType ("ix.stride" :: Name Int)
-      paramStride               = scalarParameter scalarType ("ix.stride" :: Name Int)
+      stride                    = local     ("ix.stride" :: Name Int)
+      paramStride               = parameter ("ix.stride" :: Name Int)
       --
       config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride : paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx

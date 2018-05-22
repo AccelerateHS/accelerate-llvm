@@ -1,6 +1,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -22,7 +24,8 @@ module Data.Array.Accelerate.LLVM.Execute.Marshal
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
-import qualified Data.Array.Accelerate.Array.Representation     as R
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Type
 
 -- libraries
 import Data.Proxy                                               ( Proxy )
@@ -104,15 +107,33 @@ instance Marshalable arch m a => Marshalable arch m [a] where
 instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRepr e)))
     => Marshalable arch m (Array sh e) where
   marshal' proxy (Array sh adata) =
-    marshal' proxy (adata, reverse (R.shapeToList sh))
+    DL.concat `fmap` sequence [marshal' proxy adata, go proxy (eltType (undefined::sh)) sh]
+    where
+      go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
+      go _ TypeRunit         ()       = return DL.empty
+      go p (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go p ta sa, go p tb sb]
+      go p (TypeRscalar t)   i
+        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' p i
+        | otherwise                                                         = $internalError "marshal" "expected Int argument"
 
-instance Monad m => Marshalable arch m Z where
-  marshal' _ Z = return DL.empty
+instance {-# INCOHERENT #-} (Shape sh, Monad m, Marshalable arch m Int)
+    => Marshalable arch m sh where
+  marshal' proxy sh = go proxy (eltType sh) (fromElt sh)
+    where
+      go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
+      go _ TypeRunit         ()       = return DL.empty
+      go p (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go p ta sa, go p tb sb]
+      go p (TypeRscalar t)   i
+        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' p i
+        | otherwise                                                         = $internalError "marshal" "expected Int argument"
 
-instance (Shape sh, Marshalable arch m sh, Marshalable arch m Int)
-    => Marshalable arch m (sh :. Int) where
-  marshal' proxy (sh :. sz) =
-    DL.concat `fmap` sequence [marshal' proxy sh, marshal' proxy sz]
+-- instance Monad m => Marshalable arch m Z where
+--   marshal' _ Z = return DL.empty
+
+-- instance (Shape sh, Marshalable arch m sh, Marshalable arch m Int)
+--     => Marshalable arch m (sh :. Int) where
+--   marshal' proxy (sh :. sz) =
+--     DL.concat `fmap` sequence [marshal' proxy sh, marshal' proxy sz]
 
 -- instance Marshalable arch (Gamma aenv, ValR arch aenv) where
 --   marshal' (gamma, aenv)

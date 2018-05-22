@@ -33,7 +33,9 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
 
+import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
@@ -58,6 +60,7 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Proxy                                                   ( Proxy(..) )
 import Data.Sequence                                                ( Seq )
+import Data.Foldable                                                ( asum )
 import Data.Word                                                    ( Word8 )
 import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
@@ -108,7 +111,7 @@ instance Execute Native where
   {-# INLINE stencil1    #-}
   {-# INLINE stencil2    #-}
   {-# INLINE aforeign    #-}
-  map           = simpleOp
+  map           = mapOp
   generate      = simpleOp
   transform     = simpleOp
   backpermute   = simpleOp
@@ -123,7 +126,7 @@ instance Execute Native where
   scanr1        = scan1Op
   scanr'        = scan'Op
   permute       = permuteOp
-  stencil1      = simpleOp
+  stencil1      = stencil1Op
   stencil2      = stencil2Op
   aforeign      = aforeignOp
 
@@ -149,7 +152,7 @@ simpleOp NativeR{..} gamma aenv sh = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh
-  scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
+  scheduleOp fun gamma aenv sh result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
@@ -168,7 +171,29 @@ simpleNamed name NativeR{..} gamma aenv sh = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh
-  scheduleOp fun gamma aenv (Z :. size sh) result -- XXX: nested loops
+  scheduleOp fun gamma aenv sh result
+    `andThen` do putIO workers future result
+                 touchLifetime nativeExecutable   -- XXX: must not unload the object code early
+  return future
+
+
+-- Map over an array can ignore the dimensionality of the array and treat it as
+-- its underlying linear representation.
+--
+{-# INLINE mapOp #-}
+mapOp
+    :: (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh
+    -> Par Native (Future (Array sh e))
+mapOp NativeR{..} gamma aenv sh = do
+  let fun = nativeExecutable !# "map"
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh
+  scheduleOp fun gamma aenv (Z :. size sh) result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
@@ -284,7 +309,7 @@ foldDimOp
     -> Val aenv
     -> (sh :. Int)
     -> Par Native (Future (Array sh e))
-foldDimOp NativeR{..} gamma aenv (sh :. sz) = do
+foldDimOp NativeR{..} gamma aenv (sh :. _) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote sh
@@ -293,7 +318,7 @@ foldDimOp NativeR{..} gamma aenv (sh :. sz) = do
       splits  = numWorkers workers
       minsize = 1
   --
-  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) (sz, result)
+  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) result
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
   return future
@@ -532,11 +557,11 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
                    else liftPar (cloneArray defaults)
   let
       splits  = numWorkers workers
-      minsize = case rank (undefined::sh') of
+      minsize = case rank shIn of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
-      ranges  = divideWork splits minsize empty (Z :. size shIn) (,,) -- XXX: nested loops
+      ranges  = divideWork splits minsize empty shIn (,,)
       steps   = Seq.length ranges
   --
   if steps <= 1
@@ -568,17 +593,126 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
   return future
 
 
+{-# INLINE stencil1Op #-}
+stencil1Op
+    :: (Shape sh, Elt e)
+    => StencilR sh a stencil
+    -> ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh
+    -> Par Native (Future (Array sh e))
+stencil1Op stencilR exe gamma aenv sh =
+  stencilCore exe gamma aenv (stencilThickness stencilR) sh
+
 {-# INLINE stencil2Op #-}
 stencil2Op
     :: (Shape sh, Elt e)
-    => ExecutableR Native
+    => StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> sh
     -> Par Native (Future (Array sh e))
-stencil2Op exe gamma aenv sh1 sh2 =
-  simpleOp exe gamma aenv (sh1 `intersect` sh2)
+stencil2Op stencilR1 stencilR2 exe gamma aenv sh1 sh2 =
+  stencilCore exe gamma aenv (stencilThickness stencilR1 `union` stencilThickness stencilR2) (sh1 `intersect` sh2)
+
+{-# INLINE stencilCore #-}
+stencilCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh                       -- border dimensions (i.e. index of first interior element)
+    -> sh                       -- output array size
+    -> Par Native (Future (Array sh e))
+stencilCore NativeR{..} gamma aenv bnd sh = do
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- allocateRemote sh :: Par Native (Array sh e)
+  let
+      inside  = nativeExecutable !# "stencil_inside"
+      border  = nativeExecutable !# "stencil_border"
+
+      splits  = numWorkers workers
+      minsize = case rank sh of
+                  1 -> 4096
+                  2 -> 64
+                  _ -> 16
+
+      ins     = divideWork splits minsize bnd (sh `sub` bnd) (,,)
+      outs    = asum . flip fmap (stencilBorders sh bnd) $ \(u,v) -> divideWork splits minsize u v (,,)
+
+      sub :: sh -> sh -> sh
+      sub a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
+        where
+          go :: TupleType t -> t -> t -> t
+          go TypeRunit         ()      ()      = ()
+          go (TypeRpair ta tb) (xa,xb) (ya,yb) = (go ta xa ya, go tb xb yb)
+          go (TypeRscalar t)   x       y
+            | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = x-y
+            | otherwise                                                         = $internalError "stencilCore" "expected Int dimensions"
+  --
+  jobsInside <- mkTasksUsing ins  inside gamma aenv result
+  jobsBorder <- mkTasksUsing outs border gamma aenv result
+  let jobTasks  = jobsInside Seq.>< jobsBorder
+      jobDone   = Just $ do putIO workers future result
+                            touchLifetime nativeExecutable
+  --
+  liftIO $ schedule workers =<< timed "stencil" Job{..}
+  return future
+
+-- Compute the stencil border regions, where we may need to evaluate the
+-- boundary conditions.
+--
+{-# INLINE stencilBorders #-}
+stencilBorders
+    :: forall sh. Shape sh
+    => sh
+    -> sh
+    -> Seq (sh, sh)
+stencilBorders sh bnd = Seq.fromFunction (2 * rank sh) face
+  where
+    face :: Int -> (sh, sh)
+    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt bnd)
+             in  (toElt u, toElt v)
+
+    go :: Int -> TupleType t -> t -> t -> (t, t)
+    go _ TypeRunit           ()         ()         = ((), ())
+    go n (TypeRpair tsh tsz) (sha, sza) (shb, szb)
+      | TypeRscalar (SingleScalarType (NumSingleType (IntegralNumType TypeInt{}))) <- tsz
+      = let
+            (sha', shb')  = go (n-2) tsh sha shb
+            (sza', szb')
+              | n <  0    = (0,       sza)
+              | n == 0    = (0,       szb)
+              | n == 1    = (sza-szb, sza)
+              | otherwise = (szb,     sza-szb)
+        in
+        ((sha', sza'), (shb', szb'))
+    go _ _ _ _
+      = $internalError "stencilBorders" "expected Int dimensions"
+
+-- Compute the thickness of the stencil pattern, from the focal point. In other
+-- works, this returns the index of the first element where the stencil is
+-- completely inside the array.
+--
+{-# INLINE stencilThickness #-}
+stencilThickness :: StencilR sh e stencil -> sh
+stencilThickness = go
+  where
+    go :: StencilR sh e stencil -> sh
+    go StencilRunit3 = Z :. 1
+    go StencilRunit5 = Z :. 2
+    go StencilRunit7 = Z :. 3
+    go StencilRunit9 = Z :. 4
+    --
+    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
+    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
+    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
+    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
 
 
 {-# INLINE aforeignOp #-}
@@ -698,14 +832,9 @@ mkJobUsing
       -> args
       -> Maybe Action
       -> Par Native Job
-mkJobUsing ranges (name, f) gamma aenv args jobDone = do
-  argv <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
-  let
-      jobTasks = flip fmap ranges $ \(_,u,v) -> do
-                  sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-                  callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
-  --
-  liftIO $ timed name Job {..}
+mkJobUsing ranges fun@(name,_) gamma aenv args jobDone = do
+  jobTasks <- mkTasksUsing ranges fun gamma aenv args
+  liftIO    $ timed name Job {..}
 
 {-# SPECIALISE mkJobUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Maybe Action -> Par Native Job #-}
 {-# SPECIALISE mkJobUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Maybe Action -> Par Native Job #-}
@@ -718,14 +847,41 @@ mkJobUsingIndex
       -> args
       -> Maybe Action
       -> Par Native Job
-mkJobUsingIndex ranges (name, f) gamma aenv args jobDone = do
-  argv <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
-  let
-      jobTasks = flip fmap ranges $ \(i,u,v) -> do
-                  sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-                  callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
-  --
-  liftIO $ timed name Job {..}
+mkJobUsingIndex ranges fun@(name,_) gamma aenv args jobDone = do
+  jobTasks <- mkTasksUsingIndex ranges fun gamma aenv args
+  liftIO    $ timed name Job {..}
+
+{-# SPECIALISE mkTasksUsing :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+{-# SPECIALISE mkTasksUsing :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+mkTasksUsing
+      :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+      => Seq (Int, sh, sh)
+      -> Function
+      -> Gamma aenv
+      -> Val aenv
+      -> args
+      -> Par Native (Seq Action)
+mkTasksUsing ranges (name, f) gamma aenv args = do
+  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  return $ flip fmap ranges $ \(_,u,v) -> do
+    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
+    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
+
+{-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+{-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
+mkTasksUsingIndex
+      :: (Shape sh, Marshalable IO sh, Marshalable (Par Native) args)
+      => Seq (Int, sh, sh)
+      -> Function
+      -> Gamma aenv
+      -> Val aenv
+      -> args
+      -> Par Native (Seq Action)
+mkTasksUsingIndex ranges (name, f) gamma aenv args = do
+  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  return $ flip fmap ranges $ \(i,u,v) -> do
+    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
+    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
 
 
 -- Standard C functions
