@@ -638,9 +638,9 @@ stencilCore NativeR{..} gamma aenv bnd sh = do
 
       splits  = numWorkers workers
       minsize = case rank sh of
-                  1 -> 2048
-                  2 -> 32
-                  _ -> 8
+                  1 -> 4096
+                  2 -> 64
+                  _ -> 16
 
       ins     = divideWork splits minsize bnd (sh `sub` bnd) (,,)
       outs    = asum . flip fmap (stencilBorders sh bnd) $ \(u,v) -> divideWork splits minsize u v (,,)
