@@ -16,8 +16,8 @@ Policy (PVP)](https://pvp.haskell.org)
 
 Special thanks to those who contributed patches as part of this release:
 
- * Trevor L. McDonell (@tmcdonell)
- * Josh Meredith (@JoshMeredith)
+ * Trevor L. McDonell ([@tmcdonell][tmcdonell])
+ * Josh Meredith ([@JoshMeredith][JoshMeredith])
 
 
 ## [1.2.0.0] - 2018-04-03
@@ -34,11 +34,11 @@ Special thanks to those who contributed patches as part of this release:
 
 Special thanks to those who contributed patches as part of this release:
 
- * Trevor L. McDonell (@tmcdonell)
- * @samft
- * Ryan Scott (@ryanglscott)
- * Jesse Sigal (@jasigal)
- * Moritz Kiefer (@cocreature)
+ * Trevor L. McDonell ([@tmcdonell][tmcdonell])
+ * [@samft][samft]
+ * Ryan Scott ([@ryanglscott][ryanglscott])
+ * Jesse Sigal ([@jasigal][jasigal])
+ * Moritz Kiefer ([@cocreature][cocreature])
 
 
 ## [1.1.0.1] - 2017-10-04
@@ -64,7 +64,8 @@ Special thanks to those who contributed patches as part of this release:
  * initial release
 
 
-[1.2.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-native...v1.2.0.0
+[next]:                 https://github.com/AccelerateHS/accelerate-llvm/compare/1.2.0.0...HEAD
+[1.2.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.1-native...1.2.0.0
 [1.1.0.1]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...1.1.0.1-native
 [1.1.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.0]:              https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
