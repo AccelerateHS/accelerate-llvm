@@ -27,6 +27,8 @@ module Data.Array.Accelerate.LLVM.PTX.Foreign (
   withDevicePtr,
   module Data.Array.Accelerate.LLVM.PTX.Array.Data,
   module Data.Array.Accelerate.LLVM.PTX.Execute.Async,
+  module Data.Array.Accelerate.LLVM.PTX.Execute.Event,
+  module Data.Array.Accelerate.LLVM.PTX.Execute.Stream,
 
 ) where
 
@@ -41,6 +43,8 @@ import Data.Array.Accelerate.LLVM.PTX.Array.Prim
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Stream )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( Event, waypoint, query )
 
 import Control.Monad.State
 import Data.Typeable
