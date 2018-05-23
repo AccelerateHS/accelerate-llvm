@@ -12,6 +12,9 @@ Policy (PVP)](https://pvp.haskell.org)
  * Thread scheduler is no longer block-synchronous
  * Code generation improvements, in particular for >=2-dimensional operations
 
+### Fixed
+ * Stability improvements
+
 ### Contributors
 
 Special thanks to those who contributed patches as part of this release:
