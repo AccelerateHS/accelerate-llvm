@@ -699,6 +699,10 @@ stencilBorders sh bnd = Seq.fromFunction (2 * rank sh) face
 -- works, this returns the index of the first element where the stencil is
 -- completely inside the array.
 --
+-- XXX: This is an Accelerate-compile-time constant, so we should probably move
+--      this to an earlier phase, so that runN etc. don't need to recompute it
+--      on every evaluation.
+--
 {-# INLINE stencilThickness #-}
 stencilThickness :: StencilR sh e stencil -> sh
 stencilThickness = go
