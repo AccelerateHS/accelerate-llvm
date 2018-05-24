@@ -26,6 +26,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
 
+import Control.Monad
+
 
 -- | A standard 'for' loop, that steps from the start to end index executing the
 -- given function at each index.
@@ -37,6 +39,28 @@ imapFromTo
     -> CodeGen ()
 imapFromTo start end body =
   Loop.imapFromStepTo start (lift 1) end body
+
+-- | A 'for' loop with specified unrolling amount.
+--
+imapFromToUnroll
+    :: Int                                      -- ^ loop iterations to unroll
+    -> IR Int                                   -- ^ starting index (inclusive)
+    -> IR Int                                   -- ^ final index (exclusive)
+    -> (IR Int -> CodeGen ())                   -- ^ apply at each index
+    -> CodeGen ()
+imapFromToUnroll n start end body
+  | n <= 1    = imapFromTo start end body
+  | otherwise = do
+      let
+          incr i  = add numType i (lift n)
+          test i  = do i' <- incr i
+                       lt singleType i' end
+          body' i = forM_ [0 .. n-1]
+                  $ \j -> body =<< add numType i (lift j)
+      --
+      start'  <- Loop.while test (\i -> body' i >> incr i) start
+      _       <- imapFromTo start' end body
+      return ()
 
 
 -- | Generate a series of nested 'for' loops which iterate between the start and
@@ -68,6 +92,35 @@ imapNestFromTo (IR start) (IR end) extent body =
       $ \(IR i)  -> k (OP_Pair sz i)
 
     go _ _ _ _
+      = $internalError "imapNestFromTo" "expected shape with Int components"
+
+
+imapNestFromToUnroll
+    :: forall sh. Shape sh
+    => IR sh                                    -- ^ initial index (inclusive)
+    -> IR sh                                    -- ^ final index (exclusive)
+    -> IR sh                                    -- ^ total array extent
+    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
+    -> CodeGen ()
+imapNestFromToUnroll (IR start) (IR end) extent body =
+  go (rank (undefined::sh)) (eltType (undefined::sh)) start end (body' . IR)
+  where
+    body' ix = body ix =<< intOfIndex extent ix
+
+    go :: Int -> TupleType t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
+    go _ TypeRunit OP_Unit OP_Unit k
+      = k OP_Unit
+
+    go r (TypeRpair tsh tsz) (OP_Pair ssh ssz) (OP_Pair esh esz) k
+      | TypeRscalar t <- tsz
+      , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
+      = go (r-1) tsh ssh esh
+      $ \sz      -> case r of
+                      2 -> imapFromToUnroll 4 (IR ssz) (IR esz)
+                      _ -> imapFromTo         (IR ssz) (IR esz)
+      $ \(IR i)  -> k (OP_Pair sz i)
+
+    go _ _ _ _ _
       = $internalError "imapNestFromTo" "expected shape with Int components"
 
 

@@ -92,7 +92,20 @@ mkInside
     -> Gamma aenv
     -> IRFun1  Native aenv (sh -> e)
     -> CodeGen (IROpenAcc Native aenv (Array sh e))
-mkInside = mkGenerate "stencil_inside"
+mkInside uid aenv apply =
+  let
+      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
+      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      paramEnv                  = envParam aenv
+      shOut                     = irArrayShape arrOut
+  in
+  makeOpenAcc uid "stencil_inside" (paramGang ++ paramOut ++ paramEnv) $ do
+
+    imapNestFromToUnroll start end shOut $ \ix i -> do
+      r <- app1 apply ix                        -- apply generator function
+      writeArray arrOut i r                     -- store result
+
+    return_
 
 mkBorder
     :: forall aenv sh e. (Shape sh, Elt e)
