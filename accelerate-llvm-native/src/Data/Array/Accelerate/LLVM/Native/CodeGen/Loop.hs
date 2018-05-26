@@ -115,7 +115,7 @@ imapNestFromTo' (IR start) (IR end) (IR extent) body = do
       = $internalError "imapNestFromTo'" "expected shape with Int components"
 --}
 
-
+{--
 -- | Generate a series of nested 'for' loops which iterate between the start and
 -- end indices of a given hyper-rectangle. LLVM is very good at vectorising
 -- these kinds of nested loops, but not so good at vectorising the flattened
@@ -147,7 +147,7 @@ imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
 
     go _ _ _ _ _
       = $internalError "imapNestFromTo" "expected shape with Int components"
-
+--}
 
 -- | Iterate with an accumulator between the start and end index, executing the
 -- given function at each.
