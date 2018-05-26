@@ -208,7 +208,7 @@ compileOpenAcc = traverseAcc
                  -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
                  -> PreExp      (CompiledOpenAcc arch) aenv sh
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
-        stencil1 _ _ a = AST.Stencil1 (stencil :: StencilR sh a stencil) a
+        stencil1 _ _ a = AST.Stencil1 (halo (stencil :: StencilR sh a stencil)) a
 
         stencil2 :: forall sh a b c stencil1 stencil2. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
                  => CompiledFun                  arch  aenv (stencil1 -> stencil2 -> c)
@@ -217,7 +217,24 @@ compileOpenAcc = traverseAcc
                  -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh b)
                  -> PreExp      (CompiledOpenAcc arch) aenv sh
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh c)
-        stencil2 _ _ a _ b = AST.Stencil2 (stencil :: StencilR sh a stencil1) (stencil :: StencilR sh b stencil2) a b
+        stencil2 _ _ a _ b = AST.Stencil2 (halo stencilR1 `union` halo stencilR2) a b
+          where
+            stencilR1 = stencil :: StencilR sh a stencil1
+            stencilR2 = stencil :: StencilR sh b stencil2
+
+        halo :: StencilR sh e stencil -> sh
+        halo = go
+          where
+            go :: StencilR sh e stencil -> sh
+            go StencilRunit3 = Z :. 1
+            go StencilRunit5 = Z :. 2
+            go StencilRunit7 = Z :. 3
+            go StencilRunit9 = Z :. 4
+            --
+            go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
+            go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
+            go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
+            go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc

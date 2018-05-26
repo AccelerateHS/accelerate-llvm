@@ -116,7 +116,7 @@ instance Execute PTX where
   scanr'        = scan'Op
   permute       = permuteOp
   stencil1 _    = simpleOp
-  stencil2 _ _  = stencil2Op
+  stencil2 _    = stencil2Op
   aforeign      = aforeignOp
 
 

@@ -35,7 +35,6 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
@@ -596,28 +595,27 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
 {-# INLINE stencil1Op #-}
 stencil1Op
     :: (Shape sh, Elt e)
-    => StencilR sh a stencil
+    => sh
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> Par Native (Future (Array sh e))
-stencil1Op stencilR exe gamma aenv sh =
-  stencilCore exe gamma aenv (stencilThickness stencilR) sh
+stencil1Op halo exe gamma aenv sh =
+  stencilCore exe gamma aenv halo sh
 
 {-# INLINE stencil2Op #-}
 stencil2Op
     :: (Shape sh, Elt e)
-    => StencilR sh a stencil1
-    -> StencilR sh b stencil2
+    => sh
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> sh
     -> Par Native (Future (Array sh e))
-stencil2Op stencilR1 stencilR2 exe gamma aenv sh1 sh2 =
-  stencilCore exe gamma aenv (stencilThickness stencilR1 `union` stencilThickness stencilR2) (sh1 `intersect` sh2)
+stencil2Op halo exe gamma aenv sh1 sh2 =
+  stencilCore exe gamma aenv halo (sh1 `intersect` sh2)
 
 {-# INLINE stencilCore #-}
 stencilCore
@@ -628,7 +626,7 @@ stencilCore
     -> sh                       -- border dimensions (i.e. index of first interior element)
     -> sh                       -- output array size
     -> Par Native (Future (Array sh e))
-stencilCore NativeR{..} gamma aenv bnd sh = do
+stencilCore NativeR{..} gamma aenv halo sh = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh :: Par Native (Array sh e)
@@ -642,8 +640,8 @@ stencilCore NativeR{..} gamma aenv bnd sh = do
                   2 -> 64
                   _ -> 16
 
-      ins     = divideWork splits minsize bnd (sh `sub` bnd) (,,)
-      outs    = asum . flip fmap (stencilBorders sh bnd) $ \(u,v) -> divideWork splits minsize u v (,,)
+      ins     = divideWork splits minsize halo (sh `sub` halo) (,,)
+      outs    = asum . flip fmap (stencilBorders sh halo) $ \(u,v) -> divideWork splits minsize u v (,,)
 
       sub :: sh -> sh -> sh
       sub a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
@@ -673,10 +671,10 @@ stencilBorders
     => sh
     -> sh
     -> Seq (sh, sh)
-stencilBorders sh bnd = Seq.fromFunction (2 * rank sh) face
+stencilBorders sh halo = Seq.fromFunction (2 * rank sh) face
   where
     face :: Int -> (sh, sh)
-    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt bnd)
+    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt halo)
              in  (toElt u, toElt v)
 
     go :: Int -> TupleType t -> t -> t -> (t, t)
@@ -694,29 +692,6 @@ stencilBorders sh bnd = Seq.fromFunction (2 * rank sh) face
         ((sha', sza'), (shb', szb'))
     go _ _ _ _
       = $internalError "stencilBorders" "expected Int dimensions"
-
--- Compute the thickness of the stencil pattern, from the focal point. In other
--- works, this returns the index of the first element where the stencil is
--- completely inside the array.
---
--- XXX: This is an Accelerate-compile-time constant, so we should probably move
---      this to an earlier phase, so that runN etc. don't need to recompute it
---      on every evaluation.
---
-{-# INLINE stencilThickness #-}
-stencilThickness :: StencilR sh e stencil -> sh
-stencilThickness = go
-  where
-    go :: StencilR sh e stencil -> sh
-    go StencilRunit3 = Z :. 1
-    go StencilRunit5 = Z :. 2
-    go StencilRunit7 = Z :. 3
-    go StencilRunit9 = Z :. 4
-    --
-    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
-    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
-    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
-    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
 
 
 {-# INLINE aforeignOp #-}

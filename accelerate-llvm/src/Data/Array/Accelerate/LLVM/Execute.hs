@@ -30,7 +30,6 @@ module Data.Array.Accelerate.LLVM.Execute (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                ( StencilR() )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
@@ -162,7 +161,7 @@ class Remote arch => Execute arch where
                 -> Par arch (FutureR arch (Array sh' e))
 
   stencil1      :: (Shape sh, Elt e)
-                => StencilR sh a stencil
+                => sh
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -170,8 +169,7 @@ class Remote arch => Execute arch where
                 -> Par arch (FutureR arch (Array sh e))
 
   stencil2      :: (Shape sh, Elt e)
-                => StencilR sh a stencil1
-                -> StencilR sh b stencil2
+                => sh
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -290,44 +288,44 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     travA :: ExecOpenAcc arch aenv a -> Par arch (FutureR arch a)
     travA (EvalAcc pacc) =
       case pacc of
-        Use arrs              -> spawn $ useRemoteAsync (toArr arrs)
-        Unit x                -> unit x
-        Avar ix               -> return $ prj ix aenv
-        Alet bnd body         -> alet bnd body
-        Atuple tup            -> atuple tup
-        Alloc sh              -> allocate sh
-        Apply f a             -> travAF f =<< spawn (travA a)
-        Aprj ix tup           -> liftF1 (evalPrj ix . fromAtuple) (travA tup)
-        Acond p t e           -> acond t e =<< travE p
-        Awhile p f a          -> awhile p f =<< spawn (travA a)
-        Reshape sh ix         -> liftF2 reshape (travE sh) (return $ prj ix aenv)
-        Unzip tix ix          -> liftF1 (unzip tix) (return $ prj ix aenv)
-        Aforeign str asm a    -> do
+        Use arrs            -> spawn $ useRemoteAsync (toArr arrs)
+        Unit x              -> unit x
+        Avar ix             -> return $ prj ix aenv
+        Alet bnd body       -> alet bnd body
+        Atuple tup          -> atuple tup
+        Alloc sh            -> allocate sh
+        Apply f a           -> travAF f =<< spawn (travA a)
+        Aprj ix tup         -> liftF1 (evalPrj ix . fromAtuple) (travA tup)
+        Acond p t e         -> acond t e =<< travE p
+        Awhile p f a        -> awhile p f =<< spawn (travA a)
+        Reshape sh ix       -> liftF2 reshape (travE sh) (return $ prj ix aenv)
+        Unzip tix ix        -> liftF1 (unzip tix) (return $ prj ix aenv)
+        Aforeign str asm a  -> do
           x <- travA a
           spawn $ aforeign str asm =<< get x
 
     travA (ExecAcc !gamma !kernel pacc) =
       case pacc of
         -- Producers
-        Map sh                -> exec1 map         (travE sh)
-        Generate sh           -> exec1 generate    (travE sh)
-        Transform sh          -> exec1 transform   (travE sh)
-        Backpermute sh        -> exec1 backpermute (travE sh)
+        Map sh              -> exec1 map         (travE sh)
+        Generate sh         -> exec1 generate    (travE sh)
+        Transform sh        -> exec1 transform   (travE sh)
+        Backpermute sh      -> exec1 backpermute (travE sh)
 
         -- Consumers
-        Fold sh               -> exec1 fold     (travE sh)
-        Fold1 sh              -> exec1 fold1    (travE sh)
-        FoldSeg sa ss         -> exec2 foldSeg  (travE sa) (travE ss)
-        Fold1Seg sa ss        -> exec2 fold1Seg (travE sa) (travE ss)
-        Scanl sh              -> exec1 scanl    (travE sh)
-        Scanr sh              -> exec1 scanr    (travE sh)
-        Scanl1 sh             -> exec1 scanl1   (travE sh)
-        Scanr1 sh             -> exec1 scanr1   (travE sh)
-        Scanl' sh             -> exec1 scanl'   (travE sh)
-        Scanr' sh             -> exec1 scanr'   (travE sh)
-        Permute sh d          -> exec2 (permute (inplace d)) (travE sh) (travA d)
-        Stencil1 s sh         -> exec1 (stencil1 s)   (travE sh)
-        Stencil2 s t sh1 sh2  -> exec2 (stencil2 s t) (travE sh2) (travE sh1)
+        Fold sh             -> exec1 fold     (travE sh)
+        Fold1 sh            -> exec1 fold1    (travE sh)
+        FoldSeg sa ss       -> exec2 foldSeg  (travE sa) (travE ss)
+        Fold1Seg sa ss      -> exec2 fold1Seg (travE sa) (travE ss)
+        Scanl sh            -> exec1 scanl    (travE sh)
+        Scanr sh            -> exec1 scanr    (travE sh)
+        Scanl1 sh           -> exec1 scanl1   (travE sh)
+        Scanr1 sh           -> exec1 scanr1   (travE sh)
+        Scanl' sh           -> exec1 scanl'   (travE sh)
+        Scanr' sh           -> exec1 scanr'   (travE sh)
+        Permute sh d        -> exec2 (permute (inplace d)) (travE sh) (travA d)
+        Stencil1 h sh       -> exec1 (stencil1 h) (travE sh)
+        Stencil2 h sh1 sh2  -> exec2 (stencil2 h) (travE sh2) (travE sh1)
 
       where
         exec1 :: (ExecutableR arch -> Gamma aenv -> ValR arch aenv -> a -> Par arch (FutureR arch b))
