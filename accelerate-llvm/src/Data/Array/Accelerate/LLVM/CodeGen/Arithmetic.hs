@@ -592,8 +592,8 @@ untrip t = (fst3 t, snd3 t, thd3 t)
 -- | Lift a constant value into an constant in the intermediate representation.
 --
 {-# INLINABLE lift #-}
-lift :: IsScalar a => a -> IR a
-lift x = ir scalarType (scalar scalarType x)
+lift :: forall a. Elt a => a -> IR a
+lift v = IR $ constant (eltType (undefined::a)) (fromElt v)
 
 
 -- | Standard if-then-else expression
