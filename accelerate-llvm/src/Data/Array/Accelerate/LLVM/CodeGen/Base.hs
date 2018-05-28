@@ -85,7 +85,7 @@ shapeName (UnName n) i = Name (     fromString (printf "%d.sh%d" n i))
 -- | Names combined with traversing
 --
 rename :: Name t -> Int -> Name t'                      -- for the i-th component of the named variable
-rename (Name   n) i = Name (n <> fromString (printf   ".%d"   i))
+rename (Name   n) i = Name (n <> fromString (printf    "%d"   i))
 rename (UnName n) i = Name (     fromString (printf "%d.%d" n i))
 
 -- | Names of array data elements
