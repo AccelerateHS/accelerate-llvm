@@ -22,7 +22,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   -- Thread identifiers
   blockDim, gridDim, threadIdx, blockIdx, warpSize,
   gridSize, globalThreadIdx,
-  gangParam,
 
   -- Other intrinsics
   laneId, warpId,
@@ -162,6 +161,7 @@ globalThreadIdx = do
   return v
 
 
+{--
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this kernel should evaluate.
 --
@@ -171,6 +171,7 @@ gangParam =
       end   = "ix.end"
   in
   (local start, local end, parameter start ++ parameter end )
+--}
 
 
 -- Barriers and synchronisation

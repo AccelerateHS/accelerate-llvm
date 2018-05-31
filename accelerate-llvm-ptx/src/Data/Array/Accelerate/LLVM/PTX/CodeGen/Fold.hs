@@ -147,25 +147,27 @@ mkFoldAllS
     -> CodeGen (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllS dev aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Scalar e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Scalar e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "foldAllS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldAllS" (paramOut ++ paramEnv) $ do
 
     tid     <- threadIdx
     bd      <- blockDim
 
+    sh      <- delayedExtent
+    end     <- shapeSize sh
+
     -- We can assume that there is only a single thread block
-    start'  <- i32 start
+    start'  <- return (lift 0)
     end'    <- i32 end
     i0      <- A.add numType start' tid
     sz      <- A.sub numType end' start'
@@ -200,19 +202,19 @@ mkFoldAllM1
     -> CodeGen (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM1 dev aenv combine IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      paramEnv            = envParam aenv
+      start               = lift 0
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "foldAllM1" (paramGang ++ paramTmp ++ paramEnv) $ do
+  makeOpenAccWith config "foldAllM1" (paramTmp ++ paramEnv) $ do
 
     -- Each thread block cooperatively reduces a stripe of the input and stores
     -- that value into a temporary array at a corresponding index. Since the
@@ -222,6 +224,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
     tid   <- threadIdx
     bd    <- int =<< blockDim
     sz    <- indexHead <$> delayedExtent
+    end   <- shapeSize (irArrayShape arrTmp)
 
     imapFromTo start end $ \seg -> do
 
@@ -253,20 +256,20 @@ mkFoldAllM2
     -> CodeGen (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM2 dev aenv combine mseed =
   let
-      (start, end, paramGang)   = gangParam
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
+      paramEnv            = envParam aenv
+      start               = lift 0
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "foldAllM2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
 
     -- Threads cooperatively reduce a stripe of the input (temporary) array
     -- output from the first phase, storing the results into another temporary.
@@ -277,6 +280,7 @@ mkFoldAllM2 dev aenv combine mseed =
     gd    <- gridDim
     bd    <- int =<< blockDim
     sz    <- return $ indexHead (irArrayShape arrTmp)
+    end   <- shapeSize (irArrayShape arrOut)
 
     imapFromTo start end $ \seg -> do
 
@@ -319,19 +323,18 @@ mkFoldDim
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkFoldDim dev aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "fold" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "fold" (paramOut ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
@@ -340,6 +343,9 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
     sz'   <- i32 sz
 
     when (A.lt singleType tid sz') $ do
+
+      start <- return (lift 0)
+      end   <- shapeSize (irArrayShape arrOut)
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.

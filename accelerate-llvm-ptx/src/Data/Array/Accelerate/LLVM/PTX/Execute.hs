@@ -601,7 +601,7 @@ executeOp kernel gamma aenv sh args =
   let n = size sh
   in  when (n > 0) $ do
         stream <- ask
-        argv   <- marshal (Proxy::Proxy PTX) (0::Int, n, args, (gamma, aenv))
+        argv   <- marshal (Proxy::Proxy PTX) (args, (gamma, aenv))
         liftIO  $ launch kernel stream n argv
 
 

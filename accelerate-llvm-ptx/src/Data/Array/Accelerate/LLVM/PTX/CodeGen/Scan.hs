@@ -252,20 +252,20 @@ mkScanAllP1
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
 mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      end                 = indexHead (irArrayShape arrTmp)
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramEnv) $ do
 
     -- Size of the input array
     sz  <- indexHead <$> delayedExtent
@@ -280,7 +280,7 @@ mkScanAllP1 dir dev aenv combine mseed IRDelayed{..} =
     bid <- blockIdx
     gd  <- gridDim
     gd' <- int gd
-    s0  <- A.add numType start =<< int bid
+    s0  <- int bid
 
     -- iterating over thread-block-wide segments
     imapFromStepTo s0 gd' end $ \chunk -> do
@@ -367,21 +367,22 @@ mkScanAllP2
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
 mkScanAllP2 dir dev aenv combine =
   let
-      (start, end, paramGang)   = gangParam
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      paramEnv            = envParam aenv
+      start               = lift 0
+      end                 = indexHead (irArrayShape arrTmp)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
-      grid _ _                  = 1
-      gridQ                     = [|| \_ _ -> 1 ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      grid _ _            = 1
+      gridQ               = [|| \_ _ -> 1 ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
+  makeOpenAccWith config "scanP2" (paramTmp ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -393,6 +394,7 @@ mkScanAllP2 dir dev aenv combine =
 
     bd    <- blockDim
     bd'   <- int bd
+
     imapFromStepTo start bd' end $ \offset -> do
 
       -- Index of the partial sums array that this thread will process.
@@ -456,17 +458,16 @@ mkScanAllP3
     -> CodeGen (IROpenAcc PTX aenv (Vector e))
 mkScanAllP3 dir dev aenv combine mseed =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      paramEnv            = envParam aenv
       --
-      stride                    = local     ("ix.stride" :: Name Int)
-      paramStride               = parameter ("ix.stride" :: Name Int)
+      stride              = local     ("ix.stride" :: Name Int)
+      paramStride         = parameter ("ix.stride" :: Name Int)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
+      config              = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
@@ -480,8 +481,9 @@ mkScanAllP3 dir dev aenv combine mseed =
       -- fewer chunk to process because the first has no carry-in.
       bid <- int =<< blockIdx
       gd  <- int =<< gridDim
-      c0  <- A.add numType start bid
-      imapFromStepTo c0 gd end $ \chunk -> do
+      end <- A.sub numType (indexHead (irArrayShape arrTmp)) (lift 1)
+
+      imapFromStepTo bid gd end $ \chunk -> do
 
         -- Determine the start and end indicies of this chunk to which we will
         -- carry-in the value. Returned for left-to-right traversal.
@@ -552,20 +554,20 @@ mkScan'AllP1
     -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      end                 = indexHead (irArrayShape arrTmp)
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scanP1" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramEnv) $ do
 
     -- Size of the input array
     sz  <- indexHead <$> delayedExtent
@@ -574,10 +576,9 @@ mkScan'AllP1 dir dev aenv combine seed IRDelayed{..} =
     -- result and the final block-wide aggregate
     bid <- int =<< blockIdx
     gd  <- int =<< gridDim
-    s0  <- A.add numType start bid
 
     -- iterate over thread-block wide segments
-    imapFromStepTo s0 gd end $ \seg -> do
+    imapFromStepTo bid gd end $ \seg -> do
 
       bd  <- int =<< blockDim
       inf <- A.mul numType seg bd
@@ -661,22 +662,23 @@ mkScan'AllP2
     -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP2 dir dev aenv combine =
   let
-      (start, end, paramGang)   = gangParam
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Scalar e))
-      paramEnv                  = envParam aenv
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      (arrSum, paramSum)  = mutableArray ("sum" :: Name (Scalar e))
+      paramEnv            = envParam aenv
+      start               = lift 0
+      end                 = indexHead (irArrayShape arrTmp)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
-      grid _ _                  = 1
-      gridQ                     = [|| \_ _ -> 1 ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      grid _ _            = 1
+      gridQ               = [|| \_ _ -> 1 ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scanP2" (paramGang ++ paramTmp ++ paramSum ++ paramEnv) $ do
+  makeOpenAccWith config "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -687,6 +689,7 @@ mkScan'AllP2 dir dev aenv combine =
     tid   <- threadIdx
     tid'  <- int tid
     bd    <- int =<< blockDim
+
     imapFromStepTo start bd end $ \offset -> do
 
       i0  <- case dir of
@@ -756,17 +759,16 @@ mkScan'AllP3
     -> CodeGen (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP3 dir dev aenv combine =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Vector e))
-      (arrTmp, paramTmp)        = mutableArray ("tmp" :: Name (Vector e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
+      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      paramEnv            = envParam aenv
       --
-      stride                    = local     ("ix.stride" :: Name Int)
-      paramStride               = parameter ("ix.stride" :: Name Int)
+      stride              = local     ("ix.stride" :: Name Int)
+      paramStride         = parameter ("ix.stride" :: Name Int)
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
+      config              = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   in
-  makeOpenAccWith config "scanP3" (paramGang ++ paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
+  makeOpenAccWith config "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
@@ -775,8 +777,9 @@ mkScan'AllP3 dir dev aenv combine =
 
       bid <- int =<< blockIdx
       gd  <- int =<< gridDim
-      c0  <- A.add numType start bid
-      imapFromStepTo c0 gd end $ \chunk -> do
+      end <- A.sub numType (indexHead (irArrayShape arrTmp)) (lift 1)
+
+      imapFromStepTo bid gd end $ \chunk -> do
 
         (inf,sup) <- case dir of
                        L -> do
@@ -841,19 +844,18 @@ mkScanDim
     -> CodeGen (IROpenAcc PTX aenv (Array (sh:.Int) e))
 mkScanDim dir dev aenv combine mseed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh:.Int) e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scan" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "scan" (paramOut ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -872,8 +874,9 @@ mkScanDim dir dev aenv combine mseed IRDelayed{..} =
     --
     bid <- int =<< blockIdx
     gd  <- int =<< gridDim
-    s0  <- A.add numType start bid
-    imapFromStepTo s0 gd end $ \seg -> do
+    end <- shapeSize (indexTail (irArrayShape arrOut))
+
+    imapFromStepTo bid gd end $ \seg -> do
 
       -- Index this thread reads from
       tid   <- threadIdx
@@ -1034,20 +1037,19 @@ mkScan'Dim
     -> CodeGen (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
 mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh:.Int) e))
-      (arrSum, paramSum)        = mutableArray ("sum" :: Name (Array sh e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh:.Int) e))
+      (arrSum, paramSum)  = mutableArray ("sum" :: Name (Array sh e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n                    = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n              = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "scan" (paramGang ++ paramOut ++ paramSum ++ paramEnv) $ do
+  makeOpenAccWith config "scan" (paramOut ++ paramSum ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -1070,8 +1072,9 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
       -- cooperatively scanning along each outermost index.
       bid <- int =<< blockIdx
       gd  <- int =<< gridDim
-      s0  <- A.add numType start bid
-      imapFromStepTo s0 gd end $ \seg -> do
+      end <- shapeSize (irArrayShape arrSum)
+
+      imapFromStepTo bid gd end $ \seg -> do
 
         -- Not necessary to wait for threads to catch up before starting this segment
         -- __syncthreads
