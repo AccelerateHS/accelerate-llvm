@@ -123,6 +123,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
     -- Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Cache
