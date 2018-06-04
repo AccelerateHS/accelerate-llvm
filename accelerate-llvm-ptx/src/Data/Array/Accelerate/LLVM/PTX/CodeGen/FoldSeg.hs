@@ -103,19 +103,18 @@ mkFoldSegP_block
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFoldSegP_block dev aenv combine mseed arr seg =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
-      dsmem n                   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
+      dsmem n             = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
   in
-  makeOpenAccWith config "foldSeg_block" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldSeg_block" (paramOut ++ paramEnv) $ do
 
     -- We use a dynamically scheduled work queue in order to evenly distribute
     -- the uneven workload, due to the variable length of each segment, over the
@@ -146,6 +145,10 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
     -- Each thread block cooperatively reduces a segment.
     -- s0    <- dequeue queue (lift 1)
     -- for s0 (\s -> A.lt singleType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
+
+    start <- return (lift 0)
+    end   <- shapeSize (irArrayShape arrOut)
+
     imapFromTo start end $ \s -> do
 
       -- The first two threads of the block determine the indices of the
@@ -284,27 +287,26 @@ mkFoldSegP_warp
     -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFoldSegP_warp dev aenv combine mseed arr seg =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array (sh :. Int) e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
+      paramEnv            = envParam aenv
       --
-      config                    = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
-      dsmem n                   = warps * (2 + per_warp_elems) * bytes
+      config              = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
+      dsmem n             = warps * (2 + per_warp_elems) * bytes
         where
           warps = n `P.quot` ws
       --
-      grid n m                  = multipleOf n (m `P.quot` ws)
-      gridQ                     = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
+      grid n m            = multipleOf n (m `P.quot` ws)
+      gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes            = per_warp_elems * bytes
-      per_warp_elems            = ws + (ws `P.quot` 2)
-      ws                        = CUDA.warpSize dev
-      bytes                     = sizeOf (eltType (undefined :: e))
+      per_warp_bytes      = per_warp_elems * bytes
+      per_warp_elems      = ws + (ws `P.quot` 2)
+      ws                  = CUDA.warpSize dev
+      bytes               = sizeOf (eltType (undefined :: e))
 
       int32 :: Integral a => a -> IR Int32
       int32 = lift . P.fromIntegral
   in
-  makeOpenAccWith config "foldSeg_warp" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramEnv) $ do
 
     -- Each warp works independently.
     -- Determine the ID of this warp within the thread block.
@@ -354,10 +356,11 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                 return b
 
     -- Each thread reduces a segment independently
-    s0    <- A.add numType start =<< int gwid
+    s0    <- int gwid
     gd    <- int =<< gridDim
     wpb'  <- int wpb
     step  <- A.mul numType wpb' gd
+    end   <- shapeSize (irArrayShape arrOut)
     imapFromStepTo s0 step end $ \s -> do
 
       -- The first two threads of the warp determine the indices of the segments

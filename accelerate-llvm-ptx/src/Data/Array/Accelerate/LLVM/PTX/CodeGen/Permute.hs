@@ -127,22 +127,23 @@ mkPermute_rmw
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh' e))
+      paramEnv            = envParam aenv
+      start               = lift 0
       --
-      bytes                     = sizeOf (eltType (undefined :: e))
-      compute                   = computeCapability dev
-      compute32                 = Compute 3 2
-      compute60                 = Compute 6 0
+      bytes               = sizeOf (eltType (undefined :: e))
+      compute             = computeCapability dev
+      compute32           = Compute 3 2
+      compute60           = Compute 6 0
   in
-  makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc ptx "permute_rmw" (paramOut ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    shIn  <- delayedExtent
+    end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
 
-      ix  <- indexOfInt sh i
+      ix  <- indexOfInt shIn i
       ix' <- app1 project ix
 
       unless (ignore ix') $ do
@@ -231,18 +232,19 @@ mkPermute_mutex
     -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_mutex ptx aenv combine project IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word32))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)    = mutableArray ("out"  :: Name (Array sh' e))
+      (arrLock, paramLock)  = mutableArray ("lock" :: Name (Vector Word32))
+      paramEnv              = envParam aenv
+      start                 = lift 0
   in
-  makeOpenAcc ptx "permute_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc ptx "permute_mutex" (paramOut ++ paramLock ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    shIn  <- delayedExtent
+    end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
 
-      ix  <- indexOfInt sh i
+      ix  <- indexOfInt shIn i
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update

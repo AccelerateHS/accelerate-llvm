@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic ()
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 
@@ -44,4 +45,6 @@ instance Skeleton PTX where
   scanr1 ptx _    = mkScanr1 ptx
   scanr' ptx _    = mkScanr' ptx
   permute ptx _   = mkPermute ptx
+  stencil1 ptx _  = mkStencil1 ptx
+  stencil2 ptx _  = mkStencil2 ptx
 

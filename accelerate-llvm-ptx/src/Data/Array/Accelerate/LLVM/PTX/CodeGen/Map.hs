@@ -20,9 +20,11 @@ import Prelude                                                  hiding ( fromInt
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
 
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
@@ -42,11 +44,13 @@ mkMap :: forall aenv sh a b. Elt b
       -> CodeGen (IROpenAcc PTX aenv (Array sh b))
 mkMap ptx aenv apply IRDelayed{..} =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh b))
+      paramEnv            = envParam aenv
   in
-  makeOpenAcc ptx "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc ptx "map" (paramOut ++ paramEnv) $ do
+
+    start <- return (lift 0)
+    end   <- shapeSize (irArrayShape arrOut)
 
     imapFromTo start end $ \i -> do
       xs <- app1 delayedLinearIndex i

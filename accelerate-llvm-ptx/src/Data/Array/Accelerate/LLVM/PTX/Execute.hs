@@ -31,6 +31,7 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
@@ -45,12 +46,13 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
-import Control.Monad                                            ( when )
+import Control.Monad                                            ( when, forM_ )
 import Control.Monad.Reader                                     ( ask )
 import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
@@ -115,8 +117,8 @@ instance Execute PTX where
   scanr1        = scan1Op
   scanr'        = scan'Op
   permute       = permuteOp
-  stencil1 _    = simpleOp
-  stencil2 _    = stencil2Op
+  stencil1      = stencil1Op
+  stencil2      = stencil2Op
   aforeign      = aforeignOp
 
 
@@ -534,19 +536,116 @@ permuteOp inplace exe gamma aenv shIn dfs@(shape -> shOut) = withExecutable exe 
   return future
 
 
+{-# INLINE stencil1Op #-}
+stencil1Op
+    :: (Shape sh, Elt e)
+    => sh
+    -> ExecutableR PTX
+    -> Gamma aenv
+    -> Val aenv
+    -> sh
+    -> Par PTX (Future (Array sh e))
+stencil1Op halo exe gamma aenv sh =
+  stencilCore exe gamma aenv halo sh
+
 -- Using the defaulting instances for stencil operations (for now).
 --
 {-# INLINE stencil2Op #-}
 stencil2Op
     :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    => sh
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> sh
     -> Par PTX (Future (Array sh e))
-stencil2Op exe gamma aenv sh1 sh2 =
-  simpleOp exe gamma aenv (sh1 `intersect` sh2)
+stencil2Op halo exe gamma aenv sh1 sh2 =
+  stencilCore exe gamma aenv halo (sh1 `intersect` sh2)
+
+{-# INLINE stencilCore #-}
+stencilCore
+    :: forall aenv sh e. (Shape sh, Elt e)
+    => ExecutableR PTX
+    -> Gamma aenv
+    -> Val aenv
+    -> sh                       -- border dimensions (i.e. index of first interior element)
+    -> sh                       -- output array size
+    -> Par PTX (Future (Array sh e))
+stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> do
+  let
+      inside  = ptxExecutable !# "stencil_inside"
+      border  = ptxExecutable !# "stencil_border"
+
+      shIn :: sh
+      shIn = trav (\x y -> x - 2*y) shOut halo
+
+      trav :: (Int -> Int -> Int) -> sh -> sh -> sh
+      trav f a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
+        where
+          go :: TupleType t -> t -> t -> t
+          go TypeRunit         ()      ()      = ()
+          go (TypeRpair ta tb) (xa,xb) (ya,yb) = (go ta xa ya, go tb xb yb)
+          go (TypeRscalar t)   x       y
+            | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = f x y
+            | otherwise                                                         = $internalError "stencilCore" "expected Int dimensions"
+  --
+  future  <- new
+  result  <- allocateRemote shOut
+  parent  <- ask
+
+  -- interior (no bounds checking)
+  executeOp inside gamma aenv shIn (shIn, result)
+
+  -- halo regions (bounds checking)
+  -- executed in separate streams so that they might overlap the main stencil
+  -- and each other, as individually they will not saturate the device
+  forM_ (stencilBorders shOut halo) $ \(u, v) ->
+    fork $ do
+      -- launch in a separate stream
+      let sh = trav (-) v u
+      executeOp border gamma aenv sh (u, sh, result)
+
+      -- synchronisation with main stream
+      child <- ask
+      event <- liftPar (Event.waypoint child)
+      ready <- liftIO  (Event.query event)
+      if ready then return ()
+               else liftIO (Event.after event parent)
+
+  put future result
+  return future
+
+-- Compute the stencil border regions, where we may need to evaluate the
+-- boundary conditions.
+--
+{-# INLINE stencilBorders #-}
+stencilBorders
+    :: forall sh. Shape sh
+    => sh
+    -> sh
+    -> [(sh, sh)]
+stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank sh - 1)] ]
+  where
+    face :: Int -> (sh, sh)
+    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt halo)
+             in  (toElt u, toElt v)
+
+    go :: Int -> TupleType t -> t -> t -> (t, t)
+    go _ TypeRunit           ()         ()         = ((), ())
+    go n (TypeRpair tsh tsz) (sha, sza) (shb, szb)
+      | TypeRscalar (SingleScalarType (NumSingleType (IntegralNumType TypeInt{}))) <- tsz
+      = let
+            (sha', shb')  = go (n-2) tsh sha shb
+            (sza', szb')
+              | n <  0    = (0,       sza)
+              | n == 0    = (0,       szb)
+              | n == 1    = (sza-szb, sza)
+              | otherwise = (szb,     sza-szb)
+        in
+        ((sha', sza'), (shb', szb'))
+    go _ _ _ _
+      = $internalError "stencilBorders" "expected Int dimensions"
 
 
 -- Foreign functions
@@ -601,7 +700,7 @@ executeOp kernel gamma aenv sh args =
   let n = size sh
   in  when (n > 0) $ do
         stream <- ask
-        argv   <- marshal (Proxy::Proxy PTX) (0::Int, n, args, (gamma, aenv))
+        argv   <- marshal (Proxy::Proxy PTX) (args, (gamma, aenv))
         liftIO  $ launch kernel stream n argv
 
 

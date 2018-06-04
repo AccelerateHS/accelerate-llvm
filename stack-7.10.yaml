@@ -10,11 +10,12 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 39dcd686947090b1e53a6c48be5d5b6c69bb96f2
+  commit: efdf039298e2095929e5a97e853e35a05d8f4a71
 
 - 'Cabal-2.0.1.1'
 - 'constraints-0.9.1'
 - 'cuda-0.9.0.3'
+- 'half-0.3'
 - 'hashtables-1.2.3.0'
 - 'hedgehog-0.5.3'
 - 'libffi-0.1'

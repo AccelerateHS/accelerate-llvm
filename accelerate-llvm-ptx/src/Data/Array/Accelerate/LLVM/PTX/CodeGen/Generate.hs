@@ -18,6 +18,7 @@ import Prelude                                                  hiding ( fromInt
 -- accelerate
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -41,11 +42,13 @@ mkGenerate
     -> CodeGen (IROpenAcc PTX aenv (Array sh e))
 mkGenerate ptx aenv apply =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
-      paramEnv                  = envParam aenv
+      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh e))
+      paramEnv            = envParam aenv
   in
-  makeOpenAcc ptx "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc ptx "generate" (paramOut ++ paramEnv) $ do
+
+    start <- return (lift 0)
+    end   <- shapeSize (irArrayShape arrOut)
 
     imapFromTo start end $ \i -> do
       ix <- indexOfInt (irArrayShape arrOut) i          -- convert to multidimensional index
@@ -53,5 +56,4 @@ mkGenerate ptx aenv apply =
       writeArray arrOut i r                             -- store result
 
     return_
-
 

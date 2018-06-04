@@ -132,11 +132,10 @@ llvmOfOpenExp arch top env aenv = cvtE top
         Coerce x                    -> coerce =<< cvtE x
 
     indexNil :: IR Z
-    indexNil = IR (constant (eltType Z) (fromElt Z))
+    indexNil = A.lift Z
 
     indexAny :: forall sh. Shape sh => IR (Any sh)
-    indexAny = let any = Any :: Any sh
-               in  IR (constant (eltType any) (fromElt any))
+    indexAny = A.lift Any
 
     undefE :: forall t. Elt t => IR t
     undefE = IR $ go (eltType (undefined::t))
@@ -296,24 +295,6 @@ llvmOfOpenExp arch top env aenv = cvtE top
 
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
-
-    shapeSize :: forall sh. Shape sh => IR sh -> CodeGen (IR Int)
-    shapeSize (IR extent) = go (eltType (undefined::sh)) extent
-      where
-        go :: TupleType t -> Operands t -> CodeGen (IR Int)
-        go TypeRunit OP_Unit
-          = return $ IR (constant (eltType (undefined :: Int)) 1)
-        go (TypeRpair tsh t) (OP_Pair sh sz)
-          | Just Refl <- matchTupleType t (eltType (undefined::Int))
-          = do
-               a <- go tsh sh
-               b <- A.mul numType a (IR sz)
-               return b
-        go (TypeRscalar t) (op' t -> i)
-          | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-          = return $ ir t i
-        go _ _
-          = $internalError "shapeSize" "expected shape with Int components"
 
     intersect :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
     intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
@@ -496,6 +477,30 @@ indexTail (IR (OP_Pair sh _)) = IR sh
 indexCons :: IR sh -> IR sz -> IR (sh :. sz)
 indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 
+-- | Number of elements contained within a shape
+--
+shapeSize :: forall sh. Shape sh => IR sh -> CodeGen (IR Int)
+shapeSize (IR extent) = go (eltType (undefined::sh)) extent
+  where
+    go :: TupleType t -> Operands t -> CodeGen (IR Int)
+    go TypeRunit OP_Unit
+      = return $ A.lift 1
+
+    go (TypeRscalar t) (op' t -> i)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
+      = return $ ir t i
+
+    go (TypeRpair tsh t) (OP_Pair sh sz)
+      | Just Refl <- matchTupleType t (eltType (undefined::Int))
+      = case matchTupleType tsh (eltType (undefined::Z)) of
+          Just Refl -> return (IR sz)
+          Nothing   -> do
+            a <- go tsh sh
+            b <- A.mul numType a (IR sz)
+            return b
+
+    go _ _
+      = $internalError "shapeSize" "expected shape with Int components"
 
 -- | Convert a multidimensional array index into a linear index
 --
@@ -504,7 +509,11 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
   where
     cvt :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Int)
     cvt TypeRunit OP_Unit OP_Unit
-      = return $ IR (constant (eltType (undefined :: Int)) 0)
+      = return $ A.lift 0
+
+    cvt (TypeRscalar t) _ (op' t -> i)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
+      = return $ ir t i
 
     cvt (TypeRpair tsh t) (OP_Pair sh sz) (OP_Pair ix i)
       | Just Refl <- matchTupleType t (eltType (undefined::Int))
@@ -517,10 +526,6 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
             b <- A.mul numType a (IR sz)
             c <- A.add numType b (IR i)
             return c
-
-    cvt (TypeRscalar t) _ (op' t -> i)
-      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-      = return $ ir t i
 
     cvt _ _ _
       = $internalError "intOfIndex" "expected shape with Int components"
@@ -535,6 +540,10 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
     cvt TypeRunit OP_Unit _
       = return OP_Unit
 
+    cvt (TypeRscalar t) _ (IR i)
+      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
+      = return i
+
     cvt (TypeRpair tsh tsz) (OP_Pair sh sz) i
       | Just Refl <- matchTupleType tsz (eltType (undefined::Int))
       = do
@@ -546,10 +555,6 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
                       Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'
            return $ OP_Pair sh' r
-
-    cvt (TypeRscalar t) _ (IR i)
-      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-      = return i
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"
