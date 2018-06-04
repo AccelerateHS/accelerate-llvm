@@ -598,18 +598,20 @@ stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> 
   executeOp inside gamma aenv shIn (shIn, result)
 
   -- halo regions (bounds checking)
-  -- executed in a separate stream so that it might overlap the main stencil
-  fork $ do
-    forM_ (stencilBorders shOut halo) $ \(u, v) ->
+  -- executed in separate streams so that they might overlap the main stencil
+  -- and each other, as individually they will not saturate the device
+  forM_ (stencilBorders shOut halo) $ \(u, v) ->
+    fork $ do
+      -- launch in a separate stream
       let sh = trav (-) v u
-      in  executeOp border gamma aenv sh (u, sh, result)
+      executeOp border gamma aenv sh (u, sh, result)
 
-    -- synchronisation with main stream
-    child <- ask
-    event <- liftPar (Event.waypoint child)
-    ready <- liftIO  (Event.query event)
-    if ready then return ()
-             else liftIO (Event.after event parent)
+      -- synchronisation with main stream
+      child <- ask
+      event <- liftPar (Event.waypoint child)
+      ready <- liftIO  (Event.query event)
+      if ready then return ()
+               else liftIO (Event.after event parent)
 
   put future result
   return future
