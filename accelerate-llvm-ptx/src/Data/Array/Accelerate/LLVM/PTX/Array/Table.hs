@@ -57,4 +57,3 @@ trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
 message :: String -> IO ()
 message s = s `trace` return ()
 
-

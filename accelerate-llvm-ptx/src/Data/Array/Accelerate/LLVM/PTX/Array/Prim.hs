@@ -77,7 +77,7 @@ mallocArray
     -> LLVM PTX ()
 mallocArray !n !ad = do
   message ("mallocArray: " ++ showBytes (n * sizeOf (undefined::a)))
-  void $ malloc ad n False
+  void $ Remote.malloc ad n False
 
 
 -- | A combination of 'mallocArray' and 'pokeArray', that allocates remotes
@@ -92,7 +92,8 @@ useArrayAsync
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
 useArrayAsync !n !ad = do
-  alloc <- liftPar $ malloc ad n True
+  message ("useArrayAsync: " ++ showBytes (n * sizeOf (undefined::a)))
+  alloc <- liftPar $ Remote.malloc ad n True
   if alloc
     then pokeArrayAsync n ad
     else newFull ad
