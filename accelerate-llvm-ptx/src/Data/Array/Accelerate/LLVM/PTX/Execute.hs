@@ -46,6 +46,7 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
@@ -591,14 +592,24 @@ stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> 
   --
   future  <- new
   result  <- allocateRemote shOut
+  parent  <- ask
 
   -- interior (no bounds checking)
   executeOp inside gamma aenv shIn (shIn, result)
 
   -- halo regions (bounds checking)
-  forM_ (stencilBorders shOut halo) $ \(u, v) ->
-    let sh = trav (-) v u
-    in  executeOp border gamma aenv sh (u, sh, result)
+  -- executed in a separate stream so that it might overlap the main stencil
+  fork $ do
+    forM_ (stencilBorders shOut halo) $ \(u, v) ->
+      let sh = trav (-) v u
+      in  executeOp border gamma aenv sh (u, sh, result)
+
+    -- synchronisation with main stream
+    child <- ask
+    event <- liftPar (Event.waypoint child)
+    ready <- liftIO  (Event.query event)
+    if ready then return ()
+             else liftIO (Event.after event parent)
 
   put future result
   return future
