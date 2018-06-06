@@ -1156,7 +1156,7 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
                       when (A.eq singleType tid bd1) $
                         writeArray carry (lift 0 :: IR Int32) z
 
-                      return (IR OP_Unit :: IR ())
+                      return (lift ())
 
                     -- Only threads that are in bounds can participate. This is
                     -- the last iteration of the loop. The last active thread
@@ -1177,11 +1177,12 @@ mkScan'Dim dir dev aenv combine seed IRDelayed{..} =
 
                         m <- A.sub numType n (lift 1)
                         _ <- if A.lt singleType tid' m
-                               then writeArray arrOut j                   z >> return (IR OP_Unit :: IR ())
-                               else writeArray carry (lift 0 :: IR Int32) z >> return (IR OP_Unit :: IR ())
+                               then writeArray arrOut j                   z >> return (lift ())
+                               else writeArray carry (lift 0 :: IR Int32) z >> return (lift ())
 
                         return ()
-                      return (IR OP_Unit :: IR ())
+
+                      return (lift ())
 
             A.trip <$> A.sub numType n bd' <*> next i <*> next j)
           (A.trip n0 i0 j0)

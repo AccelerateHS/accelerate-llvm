@@ -605,7 +605,7 @@ reduceFromTo dev from to combine get set = do
                r <- reduceBlockSMem dev combine Nothing x
                set r
 
-               return (IR OP_Unit :: IR ())     -- unsightly, but free
+               return (lift ())
              else do
                -- Only in-bounds threads can read their input and participate in
                -- the reduction
@@ -615,7 +615,7 @@ reduceFromTo dev from to combine get set = do
                  r <- reduceBlockSMem dev combine (Just v) x
                  set r
 
-               return (IR OP_Unit :: IR ())
+               return (lift ())
 
   return ()
 

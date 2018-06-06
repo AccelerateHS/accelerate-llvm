@@ -184,10 +184,10 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
           -- first thread writes out the initial element for this segment.
           then do
             case mseed of
-              Nothing -> return (IR OP_Unit :: IR ())
+              Nothing -> return (lift ())
               Just z  -> do
                 when (A.eq singleType tid (lift 0)) $ writeArray arrOut s =<< z
-                return (IR OP_Unit)
+                return (lift ())
 
           -- This is a non-empty segment.
           else do
@@ -264,7 +264,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                  Nothing -> return r
                  Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
-            return (IR OP_Unit)
+            return (lift ())
 
     return_
 
@@ -396,10 +396,10 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
           -- lane writes out the initial element for this segment.
           then do
             case mseed of
-              Nothing -> return (IR OP_Unit :: IR ())
+              Nothing -> return (lift ())
               Just z  -> do
                 when (A.eq singleType lane (lift 0)) $ writeArray arrOut s =<< z
-                return (IR OP_Unit)
+                return (lift ())
 
           -- This is a non-empty segment.
           else do
@@ -463,7 +463,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                   Nothing -> return r
                   Just z  -> flip (app2 combine) r =<< z    -- Note: initial element on the left
 
-            return (IR OP_Unit)
+            return (lift ())
 
     return_
 
