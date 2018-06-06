@@ -336,7 +336,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
       b <- dynamicSharedMem (lift 2) a
       return b
 
-    -- Allocate (1.5 * warpSize) elements of share memory for each warp
+    -- Allocate (1.5 * warpSize) elements of shared memory for each warp
     smem  <- do
       a <- A.mul numType wpb (int32 (2 * bytes))
       b <- A.mul numType wid (int32 per_warp_bytes)
