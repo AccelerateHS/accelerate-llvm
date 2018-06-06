@@ -244,7 +244,14 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
                              else do
                                x <- if A.lt singleType i' sup
                                       then app1 (delayedLinearIndex arr) i'
-                                      else return r
+                                      else let
+                                               go :: TupleType a -> Operands a
+                                               go TypeRunit       = OP_Unit
+                                               go (TypeRpair a b) = OP_Pair (go a) (go b)
+                                               go (TypeRscalar t) = ir' t (undef t)
+                                           in
+                                           return . IR $ go (eltType (undefined::e))
+
                                z <- i32 v'
                                y <- reduceBlockSMem dev combine (Just z) x
                                return y
@@ -443,7 +450,14 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
                             else do
                               x <- if A.lt singleType i' sup
                                      then app1 (delayedLinearIndex arr) i'
-                                     else return r
+                                     else let
+                                              go :: TupleType a -> Operands a
+                                              go TypeRunit       = OP_Unit
+                                              go (TypeRpair a b) = OP_Pair (go a) (go b)
+                                              go (TypeRscalar t) = ir' t (undef t)
+                                          in
+                                          return . IR $ go (eltType (undefined::e))
+
                               z <- i32 v'
                               y <- reduceWarpSMem dev combine smem (Just z) x
                               return y

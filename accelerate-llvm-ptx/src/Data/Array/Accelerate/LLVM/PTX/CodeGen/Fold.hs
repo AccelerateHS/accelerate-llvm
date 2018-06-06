@@ -29,6 +29,7 @@ import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -395,7 +396,14 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
                    else do
                      x <- if A.lt singleType i to
                             then app1 delayedLinearIndex i
-                            else return r
+                            else let
+                                     go :: TupleType a -> Operands a
+                                     go TypeRunit       = OP_Unit
+                                     go (TypeRpair a b) = OP_Pair (go a) (go b)
+                                     go (TypeRscalar t) = ir' t (undef t)
+                                 in
+                                 return . IR $ go (eltType (undefined::e))
+
                      v <- i32 v'
                      y <- reduceBlockSMem dev combine (Just v) x
                      return y
