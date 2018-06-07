@@ -70,7 +70,7 @@ link (ObjectR uid cfg obj) = do
 
     -- Finalise the module by unloading it from the CUDA context
     addFinalizer oc $ do
-      Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
+      Debug.traceIO Debug.dump_ld ("ld: unload module: " ++ show nm)
       withContext (ptxContext target) (CUDA.unload mdl)
 
     return (nm, oc)
@@ -117,7 +117,7 @@ linkFunctionQ mdl name configure = do
                       (CUDA.activeWarps occ)
                       (CUDA.activeThreadBlocks occ)
 
-  Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
+  Debug.traceIO Debug.dump_cc (printf "cc: %s\n               %s" msg1 msg2)
   return (Kernel name f dsmem cta grid, gridQ)
 
 
