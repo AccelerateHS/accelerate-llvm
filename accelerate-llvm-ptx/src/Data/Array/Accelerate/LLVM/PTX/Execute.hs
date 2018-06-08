@@ -53,7 +53,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- library
 import Control.Monad                                            ( when, forM_ )
-import Control.Monad.Reader                                     ( ask )
+import Control.Monad.Reader                                     ( asks, local )
 import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import Data.List                                                ( find )
@@ -592,7 +592,7 @@ stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> 
   --
   future  <- new
   result  <- allocateRemote shOut
-  parent  <- ask
+  parent  <- asks ptxStream
 
   -- interior (no bounds checking)
   executeOp inside gamma aenv shIn (shIn, result)
@@ -607,7 +607,7 @@ stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> 
       executeOp border gamma aenv sh (u, sh, result)
 
       -- synchronisation with main stream
-      child <- ask
+      child <- asks ptxStream
       event <- liftPar (Event.waypoint child)
       ready <- liftIO  (Event.query event)
       if ready then return ()
@@ -658,7 +658,7 @@ aforeignOp
     -> as
     -> Par PTX (Future bs)
 aforeignOp name asm arr = do
-  stream <- ask
+  stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
     query = if Debug.monitoringIsEnabled
@@ -685,6 +685,15 @@ lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
   find (\k -> kernelName k == name) (functionTable ptxExecutable)
 
+-- | Execute some operation with the supplied executable functions
+--
+withExecutable :: ExecutableR PTX -> (FunctionTable -> Par PTX b) -> Par PTX b
+withExecutable PTXR{..} f =
+  local (\(s,_) -> (s,Just ptxExecutable)) $ do
+    r <- f (unsafeGetValue ptxExecutable)
+    liftIO $ touchLifetime ptxExecutable
+    return r
+
 
 -- Execute the function implementing this kernel.
 --
@@ -699,7 +708,7 @@ executeOp
 executeOp kernel gamma aenv sh args =
   let n = size sh
   in  when (n > 0) $ do
-        stream <- ask
+        stream <- asks ptxStream
         argv   <- marshal (Proxy::Proxy PTX) (args, (gamma, aenv))
         liftIO  $ launch kernel stream n argv
 

@@ -15,7 +15,6 @@ module Data.Array.Accelerate.LLVM.PTX.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
   ExecutableR(..), FunctionTable(..), Kernel(..), ObjectCode,
-  withExecutable,
   linkFunctionQ,
 
 ) where
@@ -119,15 +118,6 @@ linkFunctionQ mdl name configure = do
 
   Debug.traceIO Debug.dump_cc (printf "cc: %s\n               %s" msg1 msg2)
   return (Kernel name f dsmem cta grid, gridQ)
-
-
--- | Execute some operation with the supplied executable functions
---
-withExecutable :: MonadIO m => ExecutableR PTX -> (FunctionTable -> m b) -> m b
-withExecutable PTXR{..} f = do
-  r <- f (unsafeGetValue ptxExecutable)
-  liftIO $ touchLifetime ptxExecutable
-  return r
 
 
 {--

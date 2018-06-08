@@ -94,9 +94,9 @@ copyToHostLazy (Future ref) = do
   arrs  <- liftIO $ do
     ivar  <- readIORef ref
     arrs  <- case ivar of -- peek at the underlying array
-               Full a       -> return a
-               Pending _ a  -> return a
-               Empty        -> $internalError "copyToHostLazy" "blocked on an IVar"
+               Full a         -> return a
+               Pending _ _ a  -> return a
+               Empty          -> $internalError "copyToHostLazy" "blocked on an IVar"
     --
     runArrays arrs $ \(Array sh adata) ->
       let
@@ -109,10 +109,10 @@ copyToHostLazy (Future ref) = do
               liftIO $ do
                 ivar' <- readIORef ref
                 case ivar' of
-                  Pending event _ -> do
+                  Pending event _ _ -> do
                     Event.block event
                     writeIORef ref (Full arrs)
-                  _               -> return ()
+                  _                 -> return ()
 
               block =<< Prim.peekArrayAsync n ad
 
