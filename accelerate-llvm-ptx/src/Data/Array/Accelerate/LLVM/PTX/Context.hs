@@ -27,6 +27,7 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Device                     as CUDA
 import qualified Foreign.CUDA.Driver.Context                    as CUDA
 
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Data.Hashable
@@ -102,9 +103,10 @@ raw dev prp ctx = do
 --
 {-# INLINE withContext #-}
 withContext :: Context -> IO a -> IO a
-withContext Context{..} action =
-  withLifetime deviceContext $ \ctx ->
-    bracket_ (push ctx) pop action
+withContext Context{..} action
+  = runInBoundThread
+  $ withLifetime deviceContext $ \ctx ->
+      bracket_ (push ctx) pop action
 
 {-# INLINE push #-}
 push :: CUDA.Context -> IO ()
