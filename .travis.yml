@@ -137,8 +137,7 @@ script:
   - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests ${HADDOCK}
 
   # Run test suite(s)
-  # retry due to intermittent failures \:
-  - travis_retry stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
+  - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
