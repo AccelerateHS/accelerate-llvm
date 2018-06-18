@@ -29,7 +29,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   atomicAdd_f,
 
   -- Barriers and synchronisation
-  __syncthreads,
+  __syncthreads, __syncthreads_count, __syncthreads_and, __syncthreads_or,
+  __syncwarp, __syncwarp_mask,
   __threadfence_block, __threadfence_grid,
 
   -- Shared memory
@@ -177,20 +178,59 @@ gangParam =
 -- Barriers and synchronisation
 -- ----------------------------
 
--- | Call a builtin CUDA synchronisation intrinsic
+-- | Call a built-in CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen ()
 barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate, Convergent]
 
+barrier_op :: Label -> IR Int32 -> CodeGen (IR Int32)
+barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwind, NoDuplicate, Convergent]
 
--- | Wait until all threads in the thread block have reached this point and all
--- global and shared memory accesses made by these threads prior to
+
+-- | Wait until all threads in the thread block have reached this point, and all
+-- global and shared memory accesses made by these threads prior to the
 -- __syncthreads() are visible to all threads in the block.
 --
 -- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#synchronization-functions>
 --
 __syncthreads :: CodeGen ()
 __syncthreads = barrier "llvm.nvvm.barrier0"
+
+-- | Identical to __syncthreads() with the additional feature that it returns
+-- the number of threads in the block for which the predicate evaluates to
+-- non-zero.
+--
+__syncthreads_count :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_count = barrier_op "llvm.nvvm.barrier0.popc"
+
+-- | Identical to __syncthreads() with the additional feature that it returns
+-- non-zero iff the predicate evaluates to non-zero for all threads in the
+-- block.
+--
+__syncthreads_and :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_and = barrier_op "llvm.nvvm.barrier0.and"
+
+-- | Identical to __syncthreads() with the additional feature that it returns
+-- non-zero iff the predicate evaluates to non-zero for any thread in the block.
+--
+__syncthreads_or :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_or = barrier_op "llvm.nvvm.barrier0.or"
+
+
+-- | Wait until all warp lanes have reached this point.
+--
+__syncwarp :: CodeGen ()
+__syncwarp = __syncwarp_mask (lift 0xffffffff)
+
+-- | Wait until all warp lanes named in the mask have executed a __syncwarp()
+-- with the same mask. All non-exited threads named in the mask must execute
+-- a corresponding __syncwarp with the same mask, or the result is undefined.
+--
+-- This guarantees memory ordering among threads participating in the barrier.
+--
+__syncwarp_mask :: IR Word32 -> CodeGen ()
+__syncwarp_mask mask =
+  void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
 
 
 -- | Ensure that all writes to shared and global memory before the call to
