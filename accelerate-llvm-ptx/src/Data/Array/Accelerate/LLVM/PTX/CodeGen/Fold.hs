@@ -40,7 +40,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.Representation
@@ -50,6 +49,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>) )
+import Control.Monad.State                                          ( gets )
 import Data.String                                                  ( fromString )
 import Data.Bits                                                    as P
 import Prelude                                                      as P
@@ -64,20 +64,19 @@ import Prelude                                                      as P
 --
 mkFold
     :: forall aenv sh e. (Shape sh, Elt e)
-    => PTX
-    -> Gamma         aenv
+    => Gamma         aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh e))
+mkFold aenv f z acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = (+++) <$> mkFoldAll  dev aenv f (Just z) acc
-          <*> mkFoldFill ptx aenv z
+  = (+++) <$> mkFoldAll  aenv f (Just z) acc
+          <*> mkFoldFill aenv z
 
   | otherwise
-  = (+++) <$> mkFoldDim  dev aenv f (Just z) acc
-          <*> mkFoldFill ptx aenv z
+  = (+++) <$> mkFoldDim  aenv f (Just z) acc
+          <*> mkFoldFill aenv z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
@@ -89,17 +88,16 @@ mkFold ptx@(deviceProperties . ptxContext -> dev) aenv f z acc
 --
 mkFold1
     :: forall aenv sh e. (Shape sh, Elt e)
-    => PTX
-    -> Gamma         aenv
+    => Gamma         aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh e))
+mkFold1 aenv f acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
-  = mkFoldAll dev aenv f Nothing acc
+  = mkFoldAll aenv f Nothing acc
 
   | otherwise
-  = mkFoldDim dev aenv f Nothing acc
+  = mkFoldDim aenv f Nothing acc
 
 
 -- Reduce an array to a single element.
@@ -122,13 +120,13 @@ mkFold1 (deviceProperties . ptxContext -> dev) aenv f acc
 --
 mkFoldAll
     :: forall aenv e. Elt e
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp     PTX aenv e)                           -- ^ seed element, if this is an exclusive reduction
-    ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
-mkFoldAll dev aenv combine mseed acc =
+    => Gamma aenv                                   -- ^ array environment
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe (IRExp PTX aenv e)                     -- ^ (optional) initial element for exclusive reductions
+    -> IRDelayed PTX aenv (Vector e)                -- ^ input data
+    -> CodeGen PTX (IROpenAcc PTX aenv (Scalar e))
+mkFoldAll aenv combine mseed acc = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
   foldr1 (+++) <$> sequence [ mkFoldAllS  dev aenv combine mseed acc
                             , mkFoldAllM1 dev aenv combine       acc
                             , mkFoldAllM2 dev aenv combine mseed
@@ -140,12 +138,12 @@ mkFoldAll dev aenv combine mseed acc =
 --
 mkFoldAllS
     :: forall aenv e. Elt e
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp     PTX aenv e)
-    ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+    => DeviceProperties                             -- ^ properties of the target GPU
+    -> Gamma aenv                                   -- ^ array environment
+    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
+    -> Maybe (IRExp PTX aenv e)                     -- ^ (optional) initial element for exclusive reductions
+    -> IRDelayed PTX aenv (Vector e)                -- ^ input data
+    -> CodeGen PTX (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllS dev aenv combine mseed IRDelayed{..} =
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Scalar e))
@@ -196,11 +194,11 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
 --
 mkFoldAllM1
     :: forall aenv e. Elt e
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    ->          IRDelayed PTX aenv (Vector e)                   -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+    => DeviceProperties                                -- ^ properties of the target GPU
+    -> Gamma         aenv                              -- ^ array environment
+    -> IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
+    -> IRDelayed PTX aenv (Vector e)                   -- ^ input data
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM1 dev aenv combine IRDelayed{..} =
   let
       (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
@@ -250,11 +248,11 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
 --
 mkFoldAllM2
     :: forall aenv e. Elt e
-    =>          DeviceProperties
-    ->          Gamma         aenv
-    ->          IRFun2    PTX aenv (e -> e -> e)
-    -> Maybe   (IRExp     PTX aenv e)
-    -> CodeGen (IROpenAcc PTX aenv (Scalar e))
+    => DeviceProperties
+    -> Gamma aenv
+    -> IRFun2 PTX aenv (e -> e -> e)
+    -> Maybe (IRExp PTX aenv e)
+    -> CodeGen PTX (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM2 dev aenv combine mseed =
   let
       (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
@@ -316,13 +314,14 @@ mkFoldAllM2 dev aenv combine mseed =
 --
 mkFoldDim
     :: forall aenv sh e. (Shape sh, Elt e)
-    =>          DeviceProperties                                -- ^ properties of the target GPU
-    ->          Gamma         aenv                              -- ^ array environment
-    ->          IRFun2    PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe   (IRExp     PTX aenv e)                           -- ^ seed element, if this is an exclusive reduction
-    ->          IRDelayed PTX aenv (Array (sh :. Int) e)        -- ^ input data
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldDim dev aenv combine mseed IRDelayed{..} =
+    => Gamma aenv                                     -- ^ array environment
+    -> IRFun2 PTX aenv (e -> e -> e)                  -- ^ combination function
+    -> Maybe (IRExp PTX aenv e)                       -- ^ (optional) seed element, if this is an exclusive reduction
+    -> IRDelayed PTX aenv (Array (sh :. Int) e)       -- ^ input data
+    -> CodeGen PTX (IROpenAcc PTX aenv (Array sh e))
+mkFoldDim aenv combine mseed IRDelayed{..} = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  --
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh e))
       paramEnv            = envParam aenv
@@ -334,7 +333,7 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
-  in
+  --
   makeOpenAccWith config "fold" (paramOut ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
@@ -429,12 +428,11 @@ mkFoldDim dev aenv combine mseed IRDelayed{..} =
 --
 mkFoldFill
     :: (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRExp PTX aenv e
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill ptx aenv seed =
-  mkGenerate ptx aenv (IRFun1 (const seed))
+    -> CodeGen PTX (IROpenAcc PTX aenv (Array sh e))
+mkFoldFill aenv seed =
+  mkGenerate aenv (IRFun1 (const seed))
 
 
 -- Efficient threadblock-wide reduction using the specified operator. The
@@ -451,7 +449,7 @@ reduceBlockSMem
     -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
     -> Maybe (IR Int32)                                         -- ^ number of valid elements (may be less than block size)
     -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
+    -> CodeGen PTX (IR e)                                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
 reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
   where
     int32 :: Integral a => a -> IR Int32
@@ -463,7 +461,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
 
     -- Step 1: Reduction in every warp
     --
-    warpReduce :: IR e -> CodeGen (IR e)
+    warpReduce :: IR e -> CodeGen PTX (IR e)
     warpReduce input = do
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
@@ -488,7 +486,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
 
     -- Step 2: Aggregate per-warp reductions
     --
-    warpAggregate :: IR e -> CodeGen (IR e)
+    warpAggregate :: IR e -> CodeGen PTX (IR e)
     warpAggregate input = do
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
@@ -539,7 +537,7 @@ reduceWarpSMem
     -> IRArray (Vector e)                                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
     -> Maybe (IR Int32)                                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
     -> IR e                                                     -- ^ calling thread's input element
-    -> CodeGen (IR e)                                           -- ^ warp-wide reduction using the specified operator (lane 0 only)
+    -> CodeGen PTX (IR e)                                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
 reduceWarpSMem dev combine smem size = reduce 0
   where
     log2 :: Double -> Double
@@ -556,19 +554,25 @@ reduceWarpSMem dev combine smem size = reduce 0
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
-    reduce :: Int -> IR e -> CodeGen (IR e)
+    reduce :: Int -> IR e -> CodeGen PTX (IR e)
     reduce step x
-      | step >= steps               = return x
-      | offset <- 1 `P.shiftL` step = do
+      | step >= steps = return x
+      | otherwise     = do
+          let offset = lift (1 `P.shiftL` step)
+
           -- share input through buffer
           lane <- laneId
           writeArray smem lane x
 
+          __syncwarp
+
           -- update input if in range
-          i   <- A.add numType lane (lift offset)
+          i   <- A.add numType lane offset
           x'  <- if valid i
                    then app2 combine x =<< readArray smem i
                    else return x
+
+          __syncwarp
 
           reduce (step+1) x'
 
@@ -594,9 +598,9 @@ reduceFromTo
     -> IR Int                                   -- ^ starting index
     -> IR Int                                   -- ^ final index (exclusive)
     -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
-    -> (IR Int -> CodeGen (IR a))               -- ^ function to retrieve element at index
-    -> (IR a -> CodeGen ())                     -- ^ what to do with the value
-    -> CodeGen ()
+    -> (IR Int -> CodeGen PTX (IR a))           -- ^ function to retrieve element at index
+    -> (IR a -> CodeGen PTX ())                 -- ^ what to do with the value
+    -> CodeGen PTX ()
 reduceFromTo dev from to combine get set = do
 
   tid   <- int =<< threadIdx
@@ -632,17 +636,17 @@ reduceFromTo dev from to combine get set = do
 -- Utilities
 -- ---------
 
-i32 :: IR Int -> CodeGen (IR Int32)
+i32 :: IR Int -> CodeGen PTX (IR Int32)
 i32 = A.fromIntegral integralType numType
 
-int :: IR Int32 -> CodeGen (IR Int)
+int :: IR Int32 -> CodeGen PTX (IR Int)
 int = A.fromIntegral integralType numType
 
 imapFromTo
     :: IR Int
     -> IR Int
-    -> (IR Int -> CodeGen ())
-    -> CodeGen ()
+    -> (IR Int -> CodeGen PTX ())
+    -> CodeGen PTX ()
 imapFromTo start end body = do
   bid <- int =<< blockIdx
   gd  <- int =<< gridDim

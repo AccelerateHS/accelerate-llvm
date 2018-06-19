@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeApplications  #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 -- Copyright   : [2017] Trevor L. McDonell
@@ -71,8 +72,8 @@ nvvmReflectModule =
   AST.Module
     { AST.moduleName            = "nvvm-reflect"
     , AST.moduleSourceFileName  = BS.empty
-    , AST.moduleDataLayout      = targetDataLayout (undefined::PTX)
-    , AST.moduleTargetTriple    = targetTriple (undefined::PTX)
+    , AST.moduleDataLayout      = targetDataLayout @PTX
+    , AST.moduleTargetTriple    = targetTriple @PTX
     , AST.moduleDefinitions     = [AST.GlobalDefinition $ AST.G.functionDefaults
       { AST.G.name                = AST.Name "__nvvm_reflect"
       , AST.G.returnType          = downcast (integralType :: IntegralType Int32)

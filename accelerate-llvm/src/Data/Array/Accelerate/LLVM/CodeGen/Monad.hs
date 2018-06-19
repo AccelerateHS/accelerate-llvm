@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -18,7 +19,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   CodeGen,
-  runLLVM,
+  evalCodeGen,
+  liftCodeGen,
 
   -- declarations
   fresh, freshName,
@@ -70,10 +72,11 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
 
-import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
 
@@ -104,28 +107,30 @@ data Block = Block
   , terminator          :: LLVM.Terminator                                -- block terminator
   }
 
-newtype CodeGen a = CodeGen { runCodeGen :: State CodeGenState a }
+newtype CodeGen target a = CodeGen { runCodeGen :: StateT CodeGenState (LLVM target) a }
   deriving (Functor, Applicative, Monad, MonadState CodeGenState)
 
+liftCodeGen :: LLVM arch a -> CodeGen arch a
+liftCodeGen = CodeGen . lift
 
-{-# INLINEABLE runLLVM #-}
-runLLVM
+
+{-# INLINEABLE evalCodeGen #-}
+evalCodeGen
     :: forall arch aenv a. (Target arch, Intrinsic arch)
-    => CodeGen (IROpenAcc arch aenv a)
-    -> Module arch aenv a
-runLLVM ll =
-  let
-      initialState      = CodeGenState
+    => CodeGen arch (IROpenAcc arch aenv a)
+    -> LLVM    arch (Module    arch aenv a)
+evalCodeGen ll = do
+  (IROpenAcc ks, st)   <- runStateT (runCodeGen ll)
+                        $ CodeGenState
                             { blockChain        = initBlockChain
                             , symbolTable       = Map.empty
                             , metadataTable     = HashMap.empty
-                            , intrinsicTable    = intrinsicForTarget (undefined::arch)
+                            , intrinsicTable    = intrinsicForTarget @arch
                             , next              = 0
                             }
 
-      (kernels, md, st) = case runState (runCodeGen ll) initialState of
-                            (IROpenAcc ks, s) -> let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
-                                                 in  (fs, Map.fromList as, s)
+  let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
+                          in  (fs, Map.fromList as)
 
       definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
@@ -135,16 +140,16 @@ runLLVM ll =
            , LLVM.Name s       <- LLVM.name f = s
            | otherwise                        = "<undefined>"
 
-  in
-  Module { moduleMetadata = md
-         , unModule       = LLVM.Module
-                          { LLVM.moduleName           = name
-                          , LLVM.moduleSourceFileName = B.empty
-                          , LLVM.moduleDataLayout     = targetDataLayout (undefined::arch)
-                          , LLVM.moduleTargetTriple   = targetTriple (undefined::arch)
-                          , LLVM.moduleDefinitions    = definitions
-                          }
-         }
+  return $
+    Module { moduleMetadata = md
+           , unModule       = LLVM.Module
+                            { LLVM.moduleName           = name
+                            , LLVM.moduleSourceFileName = B.empty
+                            , LLVM.moduleDataLayout     = targetDataLayout @arch
+                            , LLVM.moduleTargetTriple   = targetTriple @arch
+                            , LLVM.moduleDefinitions    = definitions
+                            }
+           }
 
 
 -- Basic Blocks
@@ -184,7 +189,7 @@ initBlockChain
 -- instructions might be added to the wrong blocks, or the first set of blocks
 -- will be emitted empty and/or without a terminator.
 --
-newBlock :: String -> CodeGen Block
+newBlock :: String -> CodeGen arch Block
 newBlock nm =
   state $ \s ->
     let idx     = Seq.length (blockChain s)
@@ -198,14 +203,14 @@ newBlock nm =
 -- | Add this block to the block stream. Any instructions pushed onto the stream
 -- by 'instr' and friends will now apply to this block.
 --
-setBlock :: Block -> CodeGen ()
+setBlock :: Block -> CodeGen arch ()
 setBlock next =
   modify $ \s -> s { blockChain = blockChain s Seq.|> next }
 
 
 -- | Generate a new block and branch unconditionally to it.
 --
-beginBlock :: String -> CodeGen Block
+beginBlock :: String -> CodeGen arch Block
 beginBlock nm = do
   next <- newBlock nm
   _    <- br next
@@ -217,7 +222,7 @@ beginBlock nm = do
 -- body. The block stream is re-initialised, but module-level state such as the
 -- global symbol table is left intact.
 --
-createBlocks :: CodeGen [LLVM.BasicBlock]
+createBlocks :: CodeGen arch [LLVM.BasicBlock]
 createBlocks
   = state
   $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
@@ -236,17 +241,17 @@ createBlocks
 
 -- | Generate a fresh local reference
 --
-fresh :: forall a. Elt a => CodeGen (IR a)
+fresh :: forall arch a. Elt a => CodeGen arch (IR a)
 fresh = IR <$> go (eltType (undefined::a))
   where
-    go :: TupleType t -> CodeGen (Operands t)
+    go :: TupleType t -> CodeGen arch (Operands t)
     go TypeRunit         = return OP_Unit
     go (TypeRpair t2 t1) = OP_Pair <$> go t2 <*> go t1
     go (TypeRscalar t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
-freshName :: CodeGen (Name a)
+freshName :: CodeGen arch (Name a)
 freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
 
 
@@ -254,10 +259,10 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- computed, and return the operand (LocalReference) that can be used to later
 -- refer to it.
 --
-instr :: Instruction a -> CodeGen (IR a)
+instr :: Instruction a -> CodeGen arch (IR a)
 instr ins = ir (typeOf ins) <$> instr' ins
 
-instr' :: Instruction a -> CodeGen (Operand a)
+instr' :: Instruction a -> CodeGen arch (Operand a)
 instr' ins =
   -- LLVM-5 does not allow instructions of type void to have a name.
   case typeOf ins of
@@ -272,12 +277,12 @@ instr' ins =
 
 -- | Execute an unnamed instruction
 --
-do_ :: Instruction () -> CodeGen ()
+do_ :: Instruction () -> CodeGen arch ()
 do_ ins = instr_ $ downcast (Do ins)
 
 -- | Add raw assembly instructions to the execution stream
 --
-instr_ :: LLVM.Named LLVM.Instruction -> CodeGen ()
+instr_ :: LLVM.Named LLVM.Instruction -> CodeGen arch ()
 instr_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
@@ -287,30 +292,30 @@ instr_ ins =
 
 -- | Return void from a basic block
 --
-return_ :: CodeGen ()
+return_ :: CodeGen arch ()
 return_ = void $ terminate Ret
 
 -- | Return a value from a basic block
 --
-retval_ :: Operand a -> CodeGen ()
+retval_ :: Operand a -> CodeGen arch ()
 retval_ x = void $ terminate (RetVal x)
 
 
 -- | Unconditional branch. Return the name of the block that was branched from.
 --
-br :: Block -> CodeGen Block
+br :: Block -> CodeGen arch Block
 br target = terminate $ Br (blockLabel target)
 
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: IR Bool -> Block -> Block -> CodeGen Block
+cbr :: IR Bool -> Block -> Block -> CodeGen arch Block
 cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
 
 -- | Add a phi node to the top of the current block
 --
-phi :: forall a. Elt a => [(IR a, Block)] -> CodeGen (IR a)
+phi :: forall arch a. Elt a => [(IR a, Block)] -> CodeGen arch (IR a)
 phi incoming = do
   crit  <- fresh
   block <- state $ \s -> case Seq.viewr (blockChain s) of
@@ -318,10 +323,10 @@ phi incoming = do
                            _ Seq.:> b -> ( b, s )
   phi' block crit incoming
 
-phi' :: forall a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen (IR a)
+phi' :: forall arch a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen arch (IR a)
 phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b) | (IR o, b) <- incoming ]
   where
-    go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen (Operands t)
+    go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
     go TypeRunit OP_Unit _
       = return OP_Unit
     go (TypeRpair t2 t1) (OP_Pair n2 n1) inc
@@ -332,7 +337,7 @@ phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b)
       | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
 
 
-phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen (Operand a)
+phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
       update b  = b { instructions = downcast (crit := Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
@@ -352,7 +357,7 @@ phi1 target crit incoming =
 -- | Add a termination condition to the current instruction stream. Also return
 -- the block that was just terminated.
 --
-terminate :: Terminator a -> CodeGen Block
+terminate :: Terminator a -> CodeGen arch Block
 terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
@@ -362,7 +367,7 @@ terminate term =
 
 -- | Add a global declaration to the symbol table
 --
-declare :: LLVM.Global -> CodeGen ()
+declare :: LLVM.Global -> CodeGen arch ()
 declare g =
   let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
                       | otherwise = Just g
@@ -378,7 +383,7 @@ declare g =
 -- | Get name of the corresponding intrinsic function implementing a given C
 -- function. If there is no mapping, the C function name is used.
 --
-intrinsic :: ShortByteString -> CodeGen Label
+intrinsic :: ShortByteString -> CodeGen arch Label
 intrinsic key =
   state $ \s ->
     let name = HashMap.lookupDefault (Label key) key (intrinsicTable s)
@@ -391,7 +396,7 @@ intrinsic key =
 
 -- | Insert a metadata key/value pair into the current module.
 --
-addMetadata :: ShortByteString -> [Maybe Metadata] -> CodeGen ()
+addMetadata :: ShortByteString -> [Maybe Metadata] -> CodeGen arch ()
 addMetadata key val =
   modify $ \s ->
     s { metadataTable = HashMap.insertWith (flip (Seq.><)) key (Seq.singleton val) (metadataTable s) }

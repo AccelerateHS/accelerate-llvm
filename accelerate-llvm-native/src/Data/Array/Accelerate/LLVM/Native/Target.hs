@@ -43,8 +43,8 @@ data Native = Native
   }
 
 instance Target Native where
-  targetTriple     _ = Just nativeTargetTriple
-  targetDataLayout _ = Just nativeDataLayout
+  targetTriple     = Just nativeTargetTriple
+  targetDataLayout = Just nativeDataLayout
 
 
 -- | String that describes the native target

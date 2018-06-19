@@ -36,16 +36,15 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 --
 mkGenerate
     :: forall aenv sh e. (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
-    -> IRFun1 PTX aenv (sh -> e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkGenerate ptx aenv apply =
+    => Gamma aenv
+    -> IRFun1  PTX aenv (sh -> e)
+    -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
+mkGenerate aenv apply =
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh e))
       paramEnv            = envParam aenv
   in
-  makeOpenAcc ptx "generate" (paramOut ++ paramEnv) $ do
+  makeOpenAcc "generate" (paramOut ++ paramEnv) $ do
 
     start <- return (lift 0)
     end   <- shapeSize (irArrayShape arrOut)

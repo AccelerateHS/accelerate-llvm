@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
@@ -39,8 +40,8 @@ import Prelude                                                  as P
 --   sqrt       -> llvm.sqrt.f64
 --
 class Intrinsic arch where
-  intrinsicForTarget :: arch -> HashMap ShortByteString Label
-  intrinsicForTarget _ = llvmIntrinsic
+  intrinsicForTarget :: HashMap ShortByteString Label
+  intrinsicForTarget = llvmIntrinsic
 
 
 llvmIntrinsic :: HashMap ShortByteString Label

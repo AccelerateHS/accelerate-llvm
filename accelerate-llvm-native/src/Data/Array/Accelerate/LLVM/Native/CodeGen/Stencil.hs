@@ -62,7 +62,7 @@ mkStencil1
     -> IRFun1     Native aenv (stencil -> b)
     -> IRBoundary Native aenv (Array sh a)
     -> IRDelayed  Native aenv (Array sh a)
-    -> CodeGen (IROpenAcc Native aenv (Array sh b))
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh b))
 mkStencil1 uid aenv f bnd arr =
   (+++) <$> mkInside uid aenv (IRFun1 $ app1 f <=< stencilAccess Nothing    arr)
         <*> mkBorder uid aenv (IRFun1 $ app1 f <=< stencilAccess (Just bnd) arr)
@@ -76,7 +76,7 @@ mkStencil2
     -> IRDelayed  Native aenv (Array sh a)
     -> IRBoundary Native aenv (Array sh b)
     -> IRDelayed  Native aenv (Array sh b)
-    -> CodeGen (IROpenAcc Native aenv (Array sh c))
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh c))
 mkStencil2 uid aenv f bnd1 arr1 bnd2 arr2 =
   let
       inside  = IRFun1 $ \ix -> do
@@ -98,7 +98,7 @@ mkInside
     => UID
     -> Gamma aenv
     -> IRFun1  Native aenv (sh -> e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkInside uid aenv apply =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
@@ -119,7 +119,7 @@ mkBorder
     => UID
     -> Gamma aenv
     -> IRFun1  Native aenv (sh -> e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkBorder uid aenv apply =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
@@ -142,8 +142,8 @@ imapNestFromToTile
     -> IR sh                                    -- ^ initial index (inclusive)
     -> IR sh                                    -- ^ final index (exclusive)
     -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
-    -> CodeGen ()
+    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    -> CodeGen Native ()
 imapNestFromToTile unroll (IR start) (IR end) extent body =
   go (eltType (undefined::sh)) start end (body' . IR)
   where
@@ -152,8 +152,8 @@ imapNestFromToTile unroll (IR start) (IR end) extent body =
     go :: TupleType t
        -> Operands t
        -> Operands t
-       -> (Operands t -> CodeGen ())
-       -> CodeGen ()
+       -> (Operands t -> CodeGen Native ())
+       -> CodeGen Native ()
     go TypeRunit OP_Unit OP_Unit k
       = k OP_Unit
 
@@ -199,8 +199,8 @@ imapFromStepTo
     :: IR Int
     -> IR Int
     -> IR Int
-    -> (IR Int -> CodeGen ())
-    -> CodeGen (IR Int)
+    -> (IR Int -> CodeGen Native ())
+    -> CodeGen Native (IR Int)
 imapFromStepTo start step end body =
   let
       incr i = add numType i step

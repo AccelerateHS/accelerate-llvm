@@ -51,11 +51,11 @@ import Data.Typeable
 
 
 instance Foreign PTX where
-  foreignAcc _ (ff :: asm (a -> b))
+  foreignAcc (ff :: asm (a -> b))
     | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just asm
     | otherwise                                                 = Nothing
 
-  foreignExp _ (ff :: asm (x -> y))
+  foreignExp (ff :: asm (x -> y))
     | Just (ForeignExp _ asm :: ForeignExp (x -> y)) <- cast ff = Just asm
     | otherwise                                                 = Nothing
 

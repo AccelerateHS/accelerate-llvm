@@ -66,7 +66,7 @@ mkPermute
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
     -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermute uid aenv combine project arr =
   (+++) <$> mkPermuteS uid aenv combine project arr
         <*> mkPermuteP uid aenv combine project arr
@@ -87,7 +87,7 @@ mkPermuteS
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
     -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
@@ -132,7 +132,7 @@ mkPermuteP
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
     -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP uid aenv IRPermuteFun{..} project arr =
   case atomicRMW of
     Nothing       -> mkPermuteP_mutex uid aenv combine project arr
@@ -150,7 +150,7 @@ mkPermuteP_rmw
     -> IRFun1    Native aenv (e -> e)
     -> IRFun1    Native aenv (sh -> sh')
     -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
@@ -204,7 +204,7 @@ mkPermuteP_mutex
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRFun1    Native aenv (sh -> sh')
     -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy  :: Proxy sh)
@@ -247,8 +247,8 @@ mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
 atomically
     :: IRArray (Vector Word8)
     -> IR Int
-    -> CodeGen a
-    -> CodeGen a
+    -> CodeGen Native a
+    -> CodeGen Native a
 atomically barriers i action = do
   let
       lock      = integral integralType 1
@@ -289,10 +289,10 @@ atomically barriers i action = do
 -- Test whether the given index is the magic value 'ignore'. This operates
 -- strictly rather than performing short-circuit (&&).
 --
-ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
+ignore :: forall ix. Shape ix => IR ix -> CodeGen Native (IR Bool)
 ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
   where
-    go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
+    go :: TupleType t -> t -> Operands t -> CodeGen Native (IR Bool)
     go TypeRunit           ()          OP_Unit        = return (lift True)
     go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
                                                            y <- go tsz isz sz

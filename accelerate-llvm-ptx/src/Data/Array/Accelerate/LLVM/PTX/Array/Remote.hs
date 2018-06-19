@@ -1,5 +1,6 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -42,6 +43,9 @@ import Foreign.Ptr
 import Foreign.Storable
 import Text.Printf
 
+import GHC.Base
+import GHC.Int
+
 
 -- Events signal once a computation has completed
 --
@@ -57,7 +61,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
     | otherwise = liftIO $ do
         ep <- try (CUDA.mallocArray n)
         case ep of
-          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (fromIntegral n))
+          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (i64 n))
                                             return (Just p)
           Left (ExitCode OutOfMemory) -> do return Nothing
           Left e                      -> do message ("malloc failed with error: " ++ show e)
@@ -69,7 +73,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
     in
     blocking            $ \stream ->
     withLifetime stream $ \st     -> do
-      Debug.didCopyBytesFromRemote (fromIntegral bytes)
+      Debug.didCopyBytesFromRemote (i64 bytes)
       transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
   pokeRemote n dst ad =
@@ -78,7 +82,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
     in
     blocking            $ \stream ->
     withLifetime stream $ \st     -> do
-      Debug.didCopyBytesToRemote (fromIntegral bytes)
+      Debug.didCopyBytesToRemote (i64 bytes)
       transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr _      = CUDA.castDevPtr
@@ -134,12 +138,21 @@ blocking !fun =
 sizeOfPtr :: forall a. Storable a => CUDA.DevicePtr a -> Int
 sizeOfPtr _ = sizeOf (undefined :: a)
 
+{-# INLINE i64 #-}
+i64 :: Int -> Int64
+i64 (I# i#) = I64# i#
+
+{-# INLINE double #-}
+double :: Int -> Double
+double (I# i#) = D# (int2Double# i#)
+
+
 -- Debugging
 -- ---------
 
 {-# INLINE showBytes #-}
 showBytes :: Int -> String
-showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B"
+showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (double x) "B"
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
@@ -152,7 +165,7 @@ message s = s `trace` return ()
 {-# INLINE transfer #-}
 transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
-  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
+  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (double x / t) "B/s"
         msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
                               name
                               (showBytes bytes)

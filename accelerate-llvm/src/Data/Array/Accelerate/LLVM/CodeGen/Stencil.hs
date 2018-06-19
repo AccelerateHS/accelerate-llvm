@@ -43,7 +43,7 @@ stencilAccess
     => Maybe (IRBoundary arch aenv (Array sh e))
     ->        IRDelayed  arch aenv (Array sh e)
     -> IR sh
-    -> CodeGen (IR stencil)
+    -> IRExp arch aenv stencil
 stencilAccess mbndy arr =
   case mbndy of
     Nothing   -> goR stencil (inbounds     arr)
@@ -52,7 +52,10 @@ stencilAccess mbndy arr =
     -- Base cases, nothing interesting to do here since we know the lower
     -- dimension is Z.
     --
-    goR :: StencilR sh e stencil -> (IR sh -> CodeGen (IR e)) -> IR sh -> CodeGen (IR stencil)
+    goR :: StencilR sh e stencil
+        -> (IR sh -> IRExp arch aenv e)
+        -> IR sh
+        -> IRExp arch aenv stencil
     goR StencilRunit3 rf ix
       = let z :. i = unindex ix
             rf' d  = do d' <- A.add numType i (int d)
@@ -165,7 +168,7 @@ inbounds
     :: (Shape sh, Elt e)
     => IRDelayed arch aenv (Array sh e)
     -> IR sh
-    -> CodeGen (IR e)
+    -> IRExp arch aenv e
 inbounds IRDelayed{..} ix =
   app1 delayedIndex ix
 
@@ -177,7 +180,7 @@ bounded
     => IRBoundary arch aenv (Array sh e)
     -> IRDelayed  arch aenv (Array sh e)
     -> IR sh
-    -> CodeGen (IR e)
+    -> IRExp arch aenv e
 bounded bndy IRDelayed{..} ix = do
   sh <- delayedExtent
   case bndy of
@@ -198,10 +201,10 @@ bounded bndy IRDelayed{..} ix = do
     -- Return the index, updated to obey the given boundary conditions (clamp,
     -- mirror, or wrap only).
     --
-    bound :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    bound :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR sh)
     bound (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
-        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
         go (TypeRpair tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)
@@ -239,10 +242,10 @@ bounded bndy IRDelayed{..} ix = do
 
     -- Return whether the index is inside the bounds of the given shape
     --
-    inside :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR Bool)
+    inside :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR Bool)
     inside (IR extent1) (IR extent2) = go (eltType (undefined::sh)) extent1 extent2
       where
-        go :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Bool)
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (IR Bool)
         go TypeRunit OP_Unit OP_Unit
           = return (bool True)
         go (TypeRpair tsh ti) (OP_Pair sh sz) (OP_Pair ih iz)

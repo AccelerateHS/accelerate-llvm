@@ -1,6 +1,8 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -61,10 +63,10 @@ import Prelude                                                      as P
 -- ----------
 
 local :: forall a. Elt a => Name a -> IR a
-local n  = travTypeToIR (undefined::a) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
+local n  = travTypeToIR @a (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
 global :: forall a. Elt a => Name a -> IR a
-global n = travTypeToIR (undefined::a) (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
+global n = travTypeToIR @a (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
 
 
 -- Generating names for things
@@ -93,11 +95,11 @@ rename (UnName n) i = Name (     fromString (printf "%d.%d" n i))
 {-# INLINEABLE irArray #-}
 irArray
     :: forall sh e. (Shape sh, Elt e)
-    => Name (Array sh e)
+    => Name    (Array sh e)
     -> IRArray (Array sh e)
 irArray n
-  = IRArray (travTypeToIR (undefined::sh) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
-            (travTypeToIR (undefined::e)  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
+  = IRArray (travTypeToIR @sh (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
+            (travTypeToIR @e  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
             defaultAddrSpace
             NonVolatile
 
@@ -118,10 +120,9 @@ mutableArray name =
 {-# INLINEABLE travTypeToList #-}
 travTypeToList
     :: forall t a. Elt t
-    => t {- dummy -}
-    -> (forall s. ScalarType s -> Int -> a)
+    => (forall s. ScalarType s -> Int -> a)
     -> [a]
-travTypeToList t f = snd $ go (eltType t) 0
+travTypeToList f = snd $ go (eltType (undefined::t)) 0
   where
     -- DANGER: [1] must traverse in the same order as [2]
     go :: TupleType s -> Int -> (Int, [a])
@@ -132,12 +133,12 @@ travTypeToList t f = snd $ go (eltType t) 0
                              in
                              (i2, r2 ++ r1)
 
+{-# INLINEABLE travTypeToIR #-}
 travTypeToIR
-    :: Elt t
-    => t {- dummy -}
-    -> (forall s. ScalarType s -> Int -> Operand s)
+    :: forall t. Elt t
+    => (forall s. ScalarType s -> Int -> Operand s)
     -> IR t
-travTypeToIR t f = IR . snd $ go (eltType t) 0
+travTypeToIR f = IR . snd $ go (eltType (undefined::t)) 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
@@ -173,7 +174,7 @@ travTypeToIR t f = IR . snd $ go (eltType t) 0
 -- | Call a global function. The function declaration is inserted into the
 -- symbol table.
 --
-call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen (IR t)
+call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (IR t)
 call f attrs = do
   let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
       attrs'    = map Right attrs
@@ -183,7 +184,7 @@ call f attrs = do
 
 
 parameter :: forall t. Elt t => Name t -> [LLVM.Parameter]
-parameter n = travTypeToList (undefined::t) (\s i -> scalarParameter s (rename n i))
+parameter n = travTypeToList @t (\s i -> scalarParameter s (rename n i))
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
@@ -212,6 +213,6 @@ arrayParam
     -> [LLVM.Parameter]
 arrayParam name = ad ++ sh
   where
-    ad = travTypeToList (undefined :: e)  (\t i -> ptrParameter    t (arrayName name i))
-    sh = travTypeToList (undefined :: sh) (\t i -> scalarParameter t (shapeName name i))
+    ad = travTypeToList @e  (\t i -> ptrParameter    t (arrayName name i))
+    sh = travTypeToList @sh (\t i -> scalarParameter t (shapeName name i))
 

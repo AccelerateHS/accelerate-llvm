@@ -47,8 +47,8 @@ imapFromStepTo
     => IR i                                     -- ^ starting index (inclusive)
     -> IR i                                     -- ^ step size
     -> IR i                                     -- ^ final index (exclusive)
-    -> (IR i -> CodeGen ())                     -- ^ loop body
-    -> CodeGen ()
+    -> (IR i -> CodeGen arch ())                -- ^ loop body
+    -> CodeGen arch ()
 imapFromStepTo start step end body =
   for start
       (\i -> lt singleType i end)
@@ -65,8 +65,8 @@ iterFromStepTo
     -> IR i                                     -- ^ step size
     -> IR i                                     -- ^ final index (exclusive)
     -> IR a                                     -- ^ initial value
-    -> (IR i -> IR a -> CodeGen (IR a))         -- ^ loop body
-    -> CodeGen (IR a)
+    -> (IR i -> IR a -> CodeGen arch (IR a))    -- ^ loop body
+    -> CodeGen arch (IR a)
 iterFromStepTo start step end seed body =
   iter start seed
        (\i -> lt singleType i end)
@@ -78,10 +78,10 @@ iterFromStepTo start step end seed body =
 --
 for :: Elt i
     => IR i                                     -- ^ starting index
-    -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
-    -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
-    -> (IR i -> CodeGen ())                     -- ^ body of the loop
-    -> CodeGen ()
+    -> (IR i -> CodeGen arch (IR Bool))         -- ^ loop test to keep going
+    -> (IR i -> CodeGen arch (IR i))            -- ^ increment loop counter
+    -> (IR i -> CodeGen arch ())                -- ^ body of the loop
+    -> CodeGen arch ()
 for start test incr body =
   void $ while test (\i -> body i >> incr i) start
 
@@ -91,10 +91,10 @@ for start test incr body =
 iter :: (Elt i, Elt a)
      => IR i                                    -- ^ starting index
      -> IR a                                    -- ^ initial value
-     -> (IR i -> CodeGen (IR Bool))             -- ^ index test to keep looping
-     -> (IR i -> CodeGen (IR i))                -- ^ increment loop counter
-     -> (IR i -> IR a -> CodeGen (IR a))        -- ^ loop body
-     -> CodeGen (IR a)
+     -> (IR i -> CodeGen arch (IR Bool))        -- ^ index test to keep looping
+     -> (IR i -> CodeGen arch (IR i))           -- ^ increment loop counter
+     -> (IR i -> IR a -> CodeGen arch (IR a))   -- ^ loop body
+     -> CodeGen arch (IR a)
 iter start seed test incr body = do
   r <- while (test . fst)
              (\v -> do v' <- uncurry body v     -- update value and then...
@@ -107,10 +107,10 @@ iter start seed test incr body = do
 -- | A standard 'while' loop
 --
 while :: Elt a
-      => (IR a -> CodeGen (IR Bool))
-      -> (IR a -> CodeGen (IR a))
+      => (IR a -> CodeGen arch (IR Bool))
+      -> (IR a -> CodeGen arch (IR a))
       -> IR a
-      -> CodeGen (IR a)
+      -> CodeGen arch (IR a)
 while test body start = do
   loop <- newBlock   "while.top"
   exit <- newBlock   "while.exit"

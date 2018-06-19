@@ -40,7 +40,6 @@ import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, reduceWarpSMem, imapFromTo )
 -- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
@@ -48,6 +47,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( void )
+import Control.Monad.State                                          ( gets )
 import Data.String                                                  ( fromString )
 import Prelude                                                      as P
 
@@ -57,16 +57,15 @@ import Prelude                                                      as P
 --
 mkFoldSeg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => PTX
-    -> Gamma         aenv
+    => Gamma         aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRExp     PTX aenv e
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSeg (deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
-  (+++) <$> mkFoldSegP_block dev aenv combine (Just seed) arr seg
-        <*> mkFoldSegP_warp  dev aenv combine (Just seed) arr seg
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSeg aenv combine seed arr seg =
+  (+++) <$> mkFoldSegP_block aenv combine (Just seed) arr seg
+        <*> mkFoldSegP_warp  aenv combine (Just seed) arr seg
 
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
@@ -74,15 +73,14 @@ mkFoldSeg (deviceProperties . ptxContext -> dev) aenv combine seed arr seg =
 --
 mkFold1Seg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => PTX
-    -> Gamma         aenv
+    => Gamma         aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFold1Seg (deviceProperties . ptxContext -> dev) aenv combine arr seg =
-  (+++) <$> mkFoldSegP_block dev aenv combine Nothing arr seg
-        <*> mkFoldSegP_warp  dev aenv combine Nothing arr seg
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFold1Seg aenv combine arr seg =
+  (+++) <$> mkFoldSegP_block aenv combine Nothing arr seg
+        <*> mkFoldSegP_warp  aenv combine Nothing arr seg
 
 
 -- This implementation assumes that the segments array represents the offset
@@ -94,14 +92,15 @@ mkFold1Seg (deviceProperties . ptxContext -> dev) aenv combine arr seg =
 --
 mkFoldSegP_block
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => DeviceProperties
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun2 PTX aenv (e -> e -> e)
     -> Maybe (IRExp PTX aenv e)
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_block dev aenv combine mseed arr seg =
+    -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSegP_block aenv combine mseed arr seg = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  --
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv            = envParam aenv
@@ -113,7 +112,7 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType (undefined :: e))
-  in
+  --
   makeOpenAccWith config "foldSeg_block" (paramOut ++ paramEnv) $ do
 
     -- We use a dynamically scheduled work queue in order to evenly distribute
@@ -285,14 +284,15 @@ mkFoldSegP_block dev aenv combine mseed arr seg =
 --
 mkFoldSegP_warp
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => DeviceProperties
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun2 PTX aenv (e -> e -> e)
     -> Maybe (IRExp PTX aenv e)
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_warp dev aenv combine mseed arr seg =
+    -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSegP_warp aenv combine mseed arr seg = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  --
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
       paramEnv            = envParam aenv
@@ -312,7 +312,7 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
 
       int32 :: Integral a => a -> IR Int32
       int32 = lift . P.fromIntegral
-  in
+  --
   makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramEnv) $ do
 
     -- Each warp works independently.
@@ -482,9 +482,9 @@ mkFoldSegP_warp dev aenv combine mseed arr seg =
     return_
 
 
-i32 :: IsIntegral i => IR i -> CodeGen (IR Int32)
+i32 :: IsIntegral i => IR i -> CodeGen PTX (IR Int32)
 i32 = A.fromIntegral integralType numType
 
-int :: IsIntegral i => IR i -> CodeGen (IR Int)
+int :: IsIntegral i => IR i -> CodeGen PTX (IR Int)
 int = A.fromIntegral integralType numType
 

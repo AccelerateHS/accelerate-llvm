@@ -26,14 +26,12 @@ import Data.Typeable
 --
 class Foreign arch where
   foreignAcc :: (A.Foreign asm, Typeable a, Typeable b)
-             => arch {- dummy -}
-             -> asm (a -> b)
+             => asm (a -> b)
              -> Maybe (a -> Par arch (FutureR arch b))
-  foreignAcc _ _ = Nothing
+  foreignAcc _ = Nothing
 
   foreignExp :: (A.Foreign asm, Typeable x, Typeable y)
-             => arch {- dummy -}
-             -> asm (x -> y)
+             => asm (x -> y)
              -> Maybe (IRFun1 arch () (x -> y))
-  foreignExp _ _ = Nothing
+  foreignExp _ = Nothing
 

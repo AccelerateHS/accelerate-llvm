@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
@@ -71,11 +72,11 @@ data PTX = PTX {
   }
 
 instance Target PTX where
-  targetTriple _     = Just ptxTargetTriple
+  targetTriple     = Just ptxTargetTriple
 #if ACCELERATE_USE_NVVM
-  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
+  targetDataLayout = Nothing              -- see note: [NVVM and target data layout]
 #else
-  targetDataLayout _ = Just ptxDataLayout
+  targetDataLayout = Just ptxDataLayout
 #endif
 
 

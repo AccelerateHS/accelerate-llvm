@@ -41,7 +41,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.AddrSpace
@@ -56,6 +55,7 @@ import Foreign.CUDA.Analysis
 
 import Data.Typeable
 import Control.Monad                                                ( void )
+import Control.Monad.State                                          ( gets )
 import Prelude
 
 
@@ -79,20 +79,19 @@ import Prelude
 --
 mkPermute
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRPermuteFun PTX aenv (e -> e -> e)
     -> IRFun1       PTX aenv (sh -> sh')
     -> IRDelayed    PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute ptx aenv IRPermuteFun{..} project arr =
+    -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute aenv IRPermuteFun{..} project arr =
   let
       bytes   = sizeOf (eltType (undefined :: e))
       sizeOk  = bytes == 4 || bytes == 8
   in
   case atomicRMW of
-    Just (rmw, f) | sizeOk -> mkPermute_rmw   ptx aenv rmw f   project arr
-    _                      -> mkPermute_mutex ptx aenv combine project arr
+    Just (rmw, f) | sizeOk -> mkPermute_rmw   aenv rmw f   project arr
+    _                      -> mkPermute_mutex aenv combine project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
@@ -118,14 +117,15 @@ mkPermute ptx aenv IRPermuteFun{..} project arr =
 --
 mkPermute_rmw
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> RMWOperation
     -> IRFun1    PTX aenv (e -> e)
     -> IRFun1    PTX aenv (sh -> sh')
     -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project IRDelayed{..} =
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_rmw aenv rmw update project IRDelayed{..} = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  --
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh' e))
       paramEnv            = envParam aenv
@@ -135,8 +135,8 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
       compute             = computeCapability dev
       compute32           = Compute 3 2
       compute60           = Compute 6 0
-  in
-  makeOpenAcc ptx "permute_rmw" (paramOut ++ paramEnv) $ do
+  --
+  makeOpenAcc "permute_rmw" (paramOut ++ paramEnv) $ do
 
     shIn  <- delayedExtent
     end   <- shapeSize shIn
@@ -162,7 +162,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   let
-                      rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
+                      rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_integral t ptr val
                         | primOk    = void . instr' $ AtomicRMW t NonVolatile rmw ptr val (CrossThread, AcquireRelease)
                         | otherwise =
@@ -182,7 +182,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                                       RMW.Sub -> True
                                       _       -> False
 
-                      rmw_floating :: FloatingType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
+                      rmw_floating :: FloatingType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_floating t ptr val =
                         case rmw of
                           RMW.Min       -> atomicCAS_cmp s' A.lt ptr val
@@ -202,7 +202,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                                  || compute >= compute60
 #endif
 
-                      rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
+                      rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_nonnum TypeChar{} ptr val = do
                         ptr32 <- instr' $ PtrCast (primType   :: PrimType (Ptr Word32)) ptr
                         val32 <- instr' $ BitCast (scalarType :: ScalarType Word32)     val
@@ -224,20 +224,19 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
 --
 mkPermute_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun2    PTX aenv (e -> e -> e)
     -> IRFun1    PTX aenv (sh -> sh')
     -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex ptx aenv combine project IRDelayed{..} =
+    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_mutex aenv combine project IRDelayed{..} =
   let
       (arrOut, paramOut)    = mutableArray ("out"  :: Name (Array sh' e))
       (arrLock, paramLock)  = mutableArray ("lock" :: Name (Vector Word32))
       paramEnv              = envParam aenv
       start                 = lift 0
   in
-  makeOpenAcc ptx "permute_mutex" (paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramEnv) $ do
 
     shIn  <- delayedExtent
     end   <- shapeSize shIn
@@ -307,8 +306,8 @@ mkPermute_mutex ptx aenv combine project IRDelayed{..} =
 atomically
     :: IRArray (Vector Word32)
     -> IR Int
-    -> CodeGen a
-    -> CodeGen a
+    -> CodeGen PTX a
+    -> CodeGen PTX a
 atomically barriers i action = do
   let
       lock    = integral integralType 1
@@ -357,10 +356,10 @@ atomically barriers i action = do
 -- Test whether the given index is the magic value 'ignore'. This operates
 -- strictly rather than performing short-circuit (&&).
 --
-ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
+ignore :: forall ix. Shape ix => IR ix -> CodeGen PTX (IR Bool)
 ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
   where
-    go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
+    go :: TupleType t -> t -> Operands t -> CodeGen PTX (IR Bool)
     go TypeRunit           ()          OP_Unit        = return (lift True)
     go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
                                                            y <- go tsz isz sz

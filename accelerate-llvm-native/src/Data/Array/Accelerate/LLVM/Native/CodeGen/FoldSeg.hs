@@ -52,7 +52,7 @@ mkFoldSeg
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> IRDelayed Native aenv (Segments i)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSeg uid aenv combine seed arr seg =
   (+++) <$> mkFoldSegS uid aenv combine (Just seed) arr seg
         <*> mkFoldSegP uid aenv combine (Just seed) arr seg
@@ -68,7 +68,7 @@ mkFold1Seg
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> IRDelayed Native aenv (Segments i)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFold1Seg uid aenv combine arr seg =
   (+++) <$> mkFoldSegS uid aenv combine Nothing arr seg
         <*> mkFoldSegP uid aenv combine Nothing arr seg
@@ -79,13 +79,13 @@ mkFold1Seg uid aenv combine arr seg =
 --
 mkFoldSegS
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>          UID
-    ->          Gamma            aenv
-    ->          IRFun2    Native aenv (e -> e -> e)
-    -> Maybe   (IRExp     Native aenv e)
-    ->          IRDelayed Native aenv (Array (sh :. Int) e)
-    ->          IRDelayed Native aenv (Segments i)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
+    => UID
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> Maybe (IRExp Native aenv e)
+    -> IRDelayed Native aenv (Array (sh :. Int) e)
+    -> IRDelayed Native aenv (Segments i)
+    -> CodeGen Native (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegS uid aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -100,7 +100,7 @@ mkFoldSegS uid aenv combine mseed arr seg =
     let test si = A.lt singleType (A.fst si) (indexHead end)
         initial = A.pair (indexHead start) (lift 0)
 
-        body :: IR (Int,Int) -> CodeGen (IR (Int,Int))
+        body :: IR (Int,Int) -> CodeGen Native (IR (Int,Int))
         body (A.unpair -> (s,inf)) = do
           -- We can avoid an extra division if this is a DIM1 array. Higher
           -- dimensional reductions need to wrap around the segment array at
@@ -131,13 +131,13 @@ mkFoldSegS uid aenv combine mseed arr seg =
 --
 mkFoldSegP
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    =>          UID
-    ->          Gamma            aenv
-    ->          IRFun2    Native aenv (e -> e -> e)
-    -> Maybe   (IRExp     Native aenv e)
-    ->          IRDelayed Native aenv (Array (sh :. Int) e)
-    ->          IRDelayed Native aenv (Segments i)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh :. Int) e))
+    => UID
+    -> Gamma aenv
+    -> IRFun2 Native aenv (e -> e -> e)
+    -> Maybe (IRExp Native aenv e)
+    -> IRDelayed Native aenv (Array (sh :. Int) e)
+    -> IRDelayed Native aenv (Segments i)
+    -> CodeGen Native (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSegP uid aenv combine mseed arr seg =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)

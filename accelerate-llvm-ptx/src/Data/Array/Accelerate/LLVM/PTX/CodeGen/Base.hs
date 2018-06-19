@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -76,12 +77,16 @@ import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
+
+-- cuda
+import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
+import qualified Foreign.CUDA.Analysis                              as CUDA
 
 -- standard library
 import Control.Applicative
 import Control.Monad                                                ( void )
+import Control.Monad.State                                          ( gets )
 import Data.String
 import Text.Printf
 import Prelude                                                      as P
@@ -94,21 +99,21 @@ import Prelude                                                      as P
 --
 -- <https://github.com/llvm-mirror/llvm/blob/master/include/llvm/IR/IntrinsicsNVVM.td>
 --
-specialPTXReg :: Label -> CodeGen (IR Int32)
+specialPTXReg :: Label -> CodeGen PTX (IR Int32)
 specialPTXReg f =
   call (Body type' f) [NoUnwind, ReadNone]
 
-blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen (IR Int32)
+blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen PTX (IR Int32)
 blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
 gridDim     = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
 threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
-laneId :: CodeGen (IR Int32)
+laneId :: CodeGen PTX (IR Int32)
 laneId      = specialPTXReg "llvm.nvvm.read.ptx.sreg.laneid"
 
-laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen (IR Int32)
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen PTX (IR Int32)
 laneMask_eq = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.eq"
 laneMask_lt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.le"
@@ -123,16 +128,13 @@ laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
 --
 -- http://docs.nvidia.com/cuda/parallel-thread-execution/index.html#special-registers-warpid
 --
--- We might consider passing in the (constant) warp size from device properties,
--- so that the division can be optimised to a shift.
---
-warpId :: CodeGen (IR Int32)
+warpId :: CodeGen PTX (IR Int32)
 warpId = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
   tid <- threadIdx
-  ws  <- warpSize
-  A.quot integralType tid ws
+  A.quot integralType tid (A.lift (P.fromIntegral (CUDA.warpSize dev)))
 
-_warpId :: CodeGen (IR Int32)
+_warpId :: CodeGen PTX (IR Int32)
 _warpId = specialPTXReg "llvm.ptx.read.warpid"
 
 
@@ -140,7 +142,7 @@ _warpId = specialPTXReg "llvm.ptx.read.warpid"
 --
 -- > gridDim.x * blockDim.x
 --
-gridSize :: CodeGen (IR Int32)
+gridSize :: CodeGen PTX (IR Int32)
 gridSize = do
   ncta  <- gridDim
   nt    <- blockDim
@@ -151,7 +153,7 @@ gridSize = do
 --
 -- > blockDim.x * blockIdx.x + threadIdx.x
 --
-globalThreadIdx :: CodeGen (IR Int32)
+globalThreadIdx :: CodeGen PTX (IR Int32)
 globalThreadIdx = do
   ntid  <- blockDim
   ctaid <- blockIdx
@@ -180,10 +182,10 @@ gangParam =
 
 -- | Call a built-in CUDA synchronisation intrinsic
 --
-barrier :: Label -> CodeGen ()
+barrier :: Label -> CodeGen PTX ()
 barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate, Convergent]
 
-barrier_op :: Label -> IR Int32 -> CodeGen (IR Int32)
+barrier_op :: Label -> IR Int32 -> CodeGen PTX (IR Int32)
 barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwind, NoDuplicate, Convergent]
 
 
@@ -193,33 +195,33 @@ barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwin
 --
 -- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#synchronization-functions>
 --
-__syncthreads :: CodeGen ()
+__syncthreads :: CodeGen PTX ()
 __syncthreads = barrier "llvm.nvvm.barrier0"
 
 -- | Identical to __syncthreads() with the additional feature that it returns
 -- the number of threads in the block for which the predicate evaluates to
 -- non-zero.
 --
-__syncthreads_count :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_count :: IR Int32 -> CodeGen PTX (IR Int32)
 __syncthreads_count = barrier_op "llvm.nvvm.barrier0.popc"
 
 -- | Identical to __syncthreads() with the additional feature that it returns
 -- non-zero iff the predicate evaluates to non-zero for all threads in the
 -- block.
 --
-__syncthreads_and :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_and :: IR Int32 -> CodeGen PTX (IR Int32)
 __syncthreads_and = barrier_op "llvm.nvvm.barrier0.and"
 
 -- | Identical to __syncthreads() with the additional feature that it returns
 -- non-zero iff the predicate evaluates to non-zero for any thread in the block.
 --
-__syncthreads_or :: IR Int32 -> CodeGen (IR Int32)
+__syncthreads_or :: IR Int32 -> CodeGen PTX (IR Int32)
 __syncthreads_or = barrier_op "llvm.nvvm.barrier0.or"
 
 
 -- | Wait until all warp lanes have reached this point.
 --
-__syncwarp :: CodeGen ()
+__syncwarp :: CodeGen PTX ()
 __syncwarp = __syncwarp_mask (lift 0xffffffff)
 
 -- | Wait until all warp lanes named in the mask have executed a __syncwarp()
@@ -228,9 +230,20 @@ __syncwarp = __syncwarp_mask (lift 0xffffffff)
 --
 -- This guarantees memory ordering among threads participating in the barrier.
 --
-__syncwarp_mask :: IR Word32 -> CodeGen ()
-__syncwarp_mask mask =
-  void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
+-- Requires LLVM-6.0 or higher.
+-- Only required for devices of SM7 and later.
+--
+__syncwarp_mask :: IR Word32 -> CodeGen PTX ()
+__syncwarp_mask mask = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  if computeCapability dev < Compute 7 0
+    then return ()
+    else
+#if !MIN_VERSION_llvm_hs(6,0,0)
+         $internalError "__syncwarp_mask" "LLVM-6.0 or above is required for Volta devices and later"
+#else
+         void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
+#endif
 
 
 -- | Ensure that all writes to shared and global memory before the call to
@@ -240,14 +253,14 @@ __syncwarp_mask mask =
 --
 -- <http://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#memory-fence-functions>
 --
-__threadfence_block :: CodeGen ()
+__threadfence_block :: CodeGen PTX ()
 __threadfence_block = barrier "llvm.nvvm.membar.cta"
 
 
 -- | As __threadfence_block(), but the synchronisation is for *all* thread blocks.
 -- In CUDA this is known simply as __threadfence().
 --
-__threadfence_grid :: CodeGen ()
+__threadfence_grid :: CodeGen PTX ()
 __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 
 
@@ -264,7 +277,7 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 --
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
-atomicAdd_f :: FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen ()
+atomicAdd_f :: FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val =
   let
       width :: Int
@@ -305,7 +318,7 @@ sharedMemVolatility = Volatile
 staticSharedMem
     :: forall e. Elt e
     => Word64
-    -> CodeGen (IRArray (Vector e))
+    -> CodeGen PTX (IRArray (Vector e))
 staticSharedMem n = do
   ad    <- go (eltType (undefined::e))
   return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
@@ -314,7 +327,7 @@ staticSharedMem n = do
                    , irArrayVolatility = sharedMemVolatility
                    }
   where
-    go :: TupleType s -> CodeGen (Operands s)
+    go :: TupleType s -> CodeGen PTX (Operands s)
     go TypeRunit          = return OP_Unit
     go (TypeRpair t1 t2)  = OP_Pair <$> go t1 <*> go t2
     go tt@(TypeRscalar t) = do
@@ -345,7 +358,7 @@ staticSharedMem n = do
 --
 -- > @__shared__ = external addrspace(3) global [0 x i8]
 --
-initialiseDynamicSharedMemory :: CodeGen (Operand (Ptr Word8))
+initialiseDynamicSharedMemory :: CodeGen PTX (Operand (Ptr Word8))
 initialiseDynamicSharedMemory = do
   declare $ LLVM.globalVariableDefaults
     { LLVM.addrSpace = sharedMemAddrSpace
@@ -364,11 +377,11 @@ dynamicSharedMem
     :: forall e int. (Elt e, IsIntegral int)
     => IR int                                 -- number of array elements
     -> IR int                                 -- #bytes of shared memory the have already been allocated
-    -> CodeGen (IRArray (Vector e))
+    -> CodeGen PTX (IRArray (Vector e))
 dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
   smem <- initialiseDynamicSharedMemory
   let
-      go :: TupleType s -> Operand int -> CodeGen (Operand int, Operands s)
+      go :: TupleType s -> Operand int -> CodeGen PTX (Operand int, Operands s)
       go TypeRunit         i  = return (i, OP_Unit)
       go (TypeRpair t2 t1) i0 = do
         (i1, p1) <- go t1 i0
@@ -404,13 +417,13 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 -- | Create a single kernel program with the default launch configuration.
 --
 makeOpenAcc
-    :: PTX
-    -> Label
+    :: Label
     -> [LLVM.Parameter]
-    -> CodeGen ()
-    -> CodeGen (IROpenAcc PTX aenv a)
-makeOpenAcc (deviceProperties . ptxContext -> dev) =
-  makeOpenAccWith (simpleLaunchConfig dev)
+    -> CodeGen PTX ()
+    -> CodeGen PTX (IROpenAcc PTX aenv a)
+makeOpenAcc name param kernel = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  makeOpenAccWith (simpleLaunchConfig dev) name param kernel
 
 -- | Create a single kernel program with the given launch analysis information.
 --
@@ -418,8 +431,8 @@ makeOpenAccWith
     :: LaunchConfig
     -> Label
     -> [LLVM.Parameter]
-    -> CodeGen ()
-    -> CodeGen (IROpenAcc PTX aenv a)
+    -> CodeGen PTX ()
+    -> CodeGen PTX (IROpenAcc PTX aenv a)
 makeOpenAccWith config name param kernel = do
   body  <- makeKernel config name param kernel
   return $ IROpenAcc [body]
@@ -427,7 +440,12 @@ makeOpenAccWith config name param kernel = do
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --
-makeKernel :: LaunchConfig -> Label -> [LLVM.Parameter] -> CodeGen () -> CodeGen (Kernel PTX aenv a)
+makeKernel
+    :: LaunchConfig
+    -> Label
+    -> [LLVM.Parameter]
+    -> CodeGen PTX ()
+    -> CodeGen PTX (Kernel PTX aenv a)
 makeKernel config name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks

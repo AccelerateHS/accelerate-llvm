@@ -26,7 +26,7 @@ import Prelude                                                      as P
 
 
 instance Intrinsic PTX where
-  intrinsicForTarget _ = libdeviceIndex
+  intrinsicForTarget = libdeviceIndex
 
 -- The list of functions implemented by libdevice. These are all more-or-less
 -- named consistently based on the standard mathematical functions they
