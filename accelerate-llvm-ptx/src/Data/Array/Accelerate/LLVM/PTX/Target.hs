@@ -135,7 +135,7 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = CPUFeature (ptxISAVersion m n)
+      isa              = CPUFeature ptxISAVersion
       sm               = fromString (printf "sm_%d%d" m n)
   in
   withTargetOptions $ \options -> do
@@ -150,21 +150,24 @@ withPTXTargetMachine dev go =
         CGO.Default                 -- optimisation level
         go
 
--- Some libdevice functions require at least ptx40, even though devices at
--- that compute capability also accept older ISA versions.
+-- Use the latest PTX version supported by the installed version of LLVM, even
+-- if the target device has a lower minimum version requirement.
 --
---   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+-- Some libdevice features require at least ptx40.
+-- The __syncwarp() barrier requires ptx60 (used by Volta (sm_7x))
 --
-ptxISAVersion :: Int -> Int -> ByteString
-ptxISAVersion 2 _ = "ptx40"
-ptxISAVersion 3 7 = "ptx41"
-ptxISAVersion 3 _ = "ptx40"
-ptxISAVersion 5 0 = "ptx40"
-ptxISAVersion 5 2 = "ptx41"
-ptxISAVersion 5 3 = "ptx42"
-ptxISAVersion 6 _ = "ptx50"
-ptxISAVersion 7 _ = "ptx60"
-ptxISAVersion _ _ = "ptx40"
+-- https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+--
+ptxISAVersion :: ByteString
+#if   MIN_VERSION_llvm_hs(7,0,0)
+ptxISAVersion = "ptx61"
+#elif MIN_VERSION_llvm_hs(6,0,0)
+ptxISAVersion = "ptx60"
+#elif MIN_VERSION_llvm_hs(4,0,0)
+ptxISAVersion = "ptx50"
+#else
+ptxISAVersion = "ptx40"
+#endif
 
 
 -- | The NVPTX target for this host.
