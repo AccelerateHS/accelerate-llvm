@@ -298,17 +298,16 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
-      dsmem n             = warps * (2 + per_warp_elems) * bytes
+      dsmem n             = warps * per_warp_bytes
         where
-          warps = n `P.quot` ws
+          warps           = (n + ws - 1) `P.quot` ws
       --
       grid n m            = multipleOf n (m `P.quot` ws)
       gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes      = per_warp_elems * bytes
+      per_warp_bytes      = (per_warp_elems * sizeOf (eltType (undefined::e))) `P.max` (2 * sizeOf (eltType (undefined::Int)))
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
-      bytes               = sizeOf (eltType (undefined :: e))
 
       int32 :: Integral a => a -> IR Int32
       int32 = lift . P.fromIntegral
@@ -338,18 +337,24 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
     -- coalesced read, as these elements will be adjacent in the segment-offset
     -- array.
     --
+    -- Note that this is aliased with the memory used to communicate reduction
+    -- values within the warp.
+    --
     lim   <- do
-      a <- A.mul numType wid (int32 (2 * bytes))
-      b <- dynamicSharedMem (lift 2) a
+      a <- A.mul numType wid (int32 per_warp_bytes)
+      b <- dynamicSharedMem  (lift 2) a
       return b
 
-    -- Allocate (1.5 * warpSize) elements of shared memory for each warp
+    -- Allocate (1.5 * warpSize) elements of shared memory for each warp to
+    -- communicate reduction values.
+    --
+    -- Note that this is aliased with the memory used to communicate the start
+    -- and end indices of this segment.
+    --
     smem  <- do
-      a <- A.mul numType wpb (int32 (2 * bytes))
-      b <- A.mul numType wid (int32 per_warp_bytes)
-      c <- A.add numType a b
-      d <- dynamicSharedMem (int32 per_warp_elems) c
-      return d
+      a <- A.mul numType wid (int32 per_warp_bytes)
+      b <- dynamicSharedMem  (int32 per_warp_elems) a
+      return b
 
     -- Compute the number of segments and size of the innermost dimension. These
     -- are required if we are reducing a rank-2 or higher array, to properly
@@ -370,6 +375,8 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
     end   <- shapeSize (irArrayShape arrOut)
     imapFromStepTo s0 step end $ \s -> do
 
+      __syncwarp
+
       -- The first two threads of the warp determine the indices of the segments
       -- array that we will reduce between and distribute those values to the
       -- other threads in the warp
@@ -381,6 +388,8 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
         b <- A.add numType a =<< int lane
         c <- app1 (delayedLinearIndex seg) b
         writeArray lim lane =<< int c
+
+      __syncwarp
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
@@ -394,8 +403,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
                                A.pair <$> A.add numType u a
                                       <*> A.add numType v a
 
-      -- TLM: I don't think this should be necessary...
-      __syncthreads
+      __syncwarp
 
       void $
         if A.eq singleType inf sup
@@ -435,8 +443,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
             nx  <- A.add numType inf (lift ws)
             r   <- iterFromStepTo nx (lift ws) sup r0 $ \offset r -> do
 
-                    -- TLM: Similarly, I think this is unnecessary...
-                    __syncthreads
+                    __syncwarp
 
                     i' <- A.add numType offset =<< int lane
                     v' <- A.sub numType sup offset
