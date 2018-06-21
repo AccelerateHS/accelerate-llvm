@@ -13,7 +13,7 @@ extra-deps:
   commit: 388513912b43adaf36835954c59bbecd0359f343
 
 - git:    https://github.com/tmcdonell/cuda.git
-  commit: 2996ef0283a35b9160d7b77edbbbea6c7f18ff36
+  commit: d0f53026c25bbf372f2a2be43ac294c0158ea99e
 
 - 'nvvm-0.8.0.3'
 
