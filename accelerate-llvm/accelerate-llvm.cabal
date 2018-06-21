@@ -51,22 +51,6 @@ description:
     @LLVM_TARGETS_TO_BUILD@ option includes the @NVPTX@ target (if not
     specified, all targets are built).
     .
-    [/Installing accelerate-llvm/]
-    .
-    To use @accelerate-llvm@ it is important that the @llvm-hs@ package is
-    installed against the @libLLVM@ shared library, rather than statically
-    linked, so that we can use LLVM from GHCi and Template Haskell. This is the
-    default configuration, but you can also enforce this explicitly by adding
-    the following to your @stack.yaml@ file:
-    .
-    > flags:
-    >   llvm-hs:
-    >     shared-llvm: true
-    .
-    Or by specifying the @shared-llvm@ flag to cabal:
-    .
-    > cabal install llvm-hs -fshared-llvm
-    .
 
 license:                BSD3
 license-file:           LICENSE
