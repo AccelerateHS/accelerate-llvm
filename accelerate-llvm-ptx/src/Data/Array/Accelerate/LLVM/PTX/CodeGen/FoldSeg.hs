@@ -443,7 +443,8 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
             nx  <- A.add numType inf (lift ws)
             r   <- iterFromStepTo nx (lift ws) sup r0 $ \offset r -> do
 
-                    __syncwarp
+                    -- __syncwarp
+                    __syncthreads -- TLM: why is this necessary?
 
                     i' <- A.add numType offset =<< int lane
                     v' <- A.sub numType sup offset
