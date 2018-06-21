@@ -136,7 +136,7 @@ withPTXTargetMachine
     -> IO a
 withPTXTargetMachine dev go =
   let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = CPUFeature ptxISAVersion
+      isa              = CPUFeature (ptxISAVersion m n)
       sm               = fromString (printf "sm_%d%d" m n)
   in
   withTargetOptions $ \options -> do
@@ -151,24 +151,28 @@ withPTXTargetMachine dev go =
         CGO.Default                 -- optimisation level
         go
 
--- Use the latest PTX version supported by the installed version of LLVM, even
--- if the target device has a lower minimum version requirement.
+-- Compile using the earliest version of the PTX ISA supported by the given
+-- compute device. We could also take the LUB of the latest version supported by
+-- the installed version of both LLVM and CUDA.
 --
--- Some libdevice features require at least ptx40.
--- The __syncwarp() barrier requires ptx60 (used by Volta (sm_7x))
+-- Note that we require at least ptx40 for some libnvvm device functions.
 --
--- https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+-- See table NVPTX supported processors:
 --
-ptxISAVersion :: ByteString
-#if   MIN_VERSION_llvm_hs(7,0,0)
-ptxISAVersion = "ptx61"
-#elif MIN_VERSION_llvm_hs(6,0,0)
-ptxISAVersion = "ptx60"
-#elif MIN_VERSION_llvm_hs(4,0,0)
-ptxISAVersion = "ptx50"
-#else
-ptxISAVersion = "ptx40"
-#endif
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+--
+-- PTX ISA verison history:
+--
+--   https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#release-notes
+--
+ptxISAVersion :: Int -> Int -> ByteString
+ptxISAVersion 3 7 = "ptx41"
+ptxISAVersion 5 2 = "ptx41"
+ptxISAVersion 5 3 = "ptx42"
+ptxISAVersion 6 _ = "ptx50"
+ptxISAVersion 7 0 = "ptx60"
+ptxISAVersion 7 2 = "ptx61"
+ptxISAVersion _ _ = "ptx40"
 
 
 -- | The NVPTX target for this host.
