@@ -11,6 +11,9 @@ Policy (PVP)](https://pvp.haskell.org)
 ### Changed
  * Code generation improvements for stencil operations
 
+### Fixed
+ * Segmented folds crash or give inconsistent results ([accelerate#423])
+
 ### Contributors
 
 Special thanks to those who contributed patches as part of this release:
@@ -78,4 +81,5 @@ Special thanks to those who contributed patches as part of this release:
 [#363]:                 https://github.com/AccelerateHS/accelerate/issues/363
 
 [accelerate-llvm#17]:   https://github.com/AccelerateHS/accelerate-llvm/issues/17
+[accelerate#423]:       https://github.com/AccelerateHS/accelerate/issues/423
 
