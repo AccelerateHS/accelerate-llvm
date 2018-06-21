@@ -1336,17 +1336,21 @@ scanWarpSMem dir dev combine smem = scan 0
     -- Unfold the scan as a recursive code generation function
     scan :: Int -> IR e -> CodeGen PTX (IR e)
     scan step x
-      | step >= steps               = return x
-      | offset <- 1 `P.shiftL` step = do
+      | step >= steps = return x
+      | otherwise     = do
+          let offset = lift (1 `P.shiftL` step)
+
           -- share partial result through shared memory buffer
           lane <- laneId
           i    <- A.add numType lane (lift halfWarp)
           writeArray smem i x
 
+          __syncwarp
+
           -- update partial result if in range
-          x'   <- if A.gte singleType lane (lift offset)
+          x'   <- if A.gte singleType lane offset
                     then do
-                      i' <- A.sub numType i (lift offset)     -- lane + HALF_WARP - offset
+                      i' <- A.sub numType i offset    -- lane + HALF_WARP - offset
                       x' <- readArray smem i'
                       case dir of
                         L -> app2 combine x' x
@@ -1354,6 +1358,8 @@ scanWarpSMem dir dev combine smem = scan 0
 
                     else
                       return x
+
+          __syncwarp
 
           scan (step+1) x'
 
