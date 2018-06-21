@@ -1,12 +1,11 @@
 # vim: nospell
 
-FROM nvidia/cuda:9.0-devel-ubuntu16.04
+# https://hub.docker.com/r/nvidia/cuda/
+FROM nvidia/cuda:9.2-devel-ubuntu16.04
 LABEL maintainer "Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>"
 
-ARG GHC_VERSION=8.2.2
-ARG CABAL_VERSION=2.0
-ARG LTS_SLUG=lts-10.0
 ARG DEBIAN_FRONTEND=noninteractive
+ARG PREFIX=/opt/accelerate-llvm
 
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
@@ -41,36 +40,36 @@ RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-3.9" 50
 RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-3.9" 50
 
-# Install llvm-5.0
+# Install llvm-6.0
 RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
- && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main" \
+ && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" \
  && apt-get update \
- && apt-get install -y llvm-5.0-dev
+ && apt-get install -y llvm-6.0-dev
 
 # Setup stack
-RUN stack --no-terminal --resolver=${LTS_SLUG} setup
+WORKDIR ${PREFIX}
+COPY ./stack-8.4.yaml ${PREFIX}/stack.yaml
+RUN stack --no-terminal setup
 RUN stack --no-terminal install c2hs
 
 # Copy over just the cabal and stack file and install dependencies
-WORKDIR /opt/accelerate-llvm
-COPY ./README.md /opt/accelerate-llvm/README.md
-COPY ./LICENSE /opt/accelerate-llvm/LICENSE
-COPY ./stack-8.2.yaml /opt/accelerate-llvm/stack.yaml
-COPY ./accelerate-llvm/accelerate-llvm.cabal /opt/accelerate-llvm/accelerate-llvm/
-COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal /opt/accelerate-llvm/accelerate-llvm-native/
-COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal /opt/accelerate-llvm/accelerate-llvm-ptx/
+COPY ./README.md ${PREFIX}/README.md
+COPY ./LICENSE   ${PREFIX}/LICENSE
+COPY ./accelerate-llvm/accelerate-llvm.cabal                ${PREFIX}/accelerate-llvm/
+COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal  ${PREFIX}/accelerate-llvm-native/
+COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal        ${PREFIX}/accelerate-llvm-ptx/
 RUN stack --no-terminal build --only-snapshot
 
 # Copy over the actual source files and build
-COPY ./accelerate-llvm /opt/accelerate-llvm/accelerate-llvm
+COPY ./accelerate-llvm ${PREFIX}/accelerate-llvm
 RUN stack --no-terminal build accelerate-llvm
 
-COPY ./accelerate-llvm-native /opt/accelerate-llvm/accelerate-llvm-native
+COPY ./accelerate-llvm-native ${PREFIX}/accelerate-llvm-native
 RUN stack --no-terminal build accelerate-llvm-native
 
-COPY ./accelerate-llvm-ptx /opt/accelerate-llvm/accelerate-llvm-ptx
+COPY ./accelerate-llvm-ptx ${PREFIX}/accelerate-llvm-ptx
 RUN stack --no-terminal build accelerate-llvm-ptx
 
-COPY ./utils/ghci /opt/accelerate-llvm/
+COPY ./utils/ghci ${PREFIX}/
 CMD ["bash"]
 
