@@ -55,22 +55,22 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 -- Operations from Num
 -- -------------------
 
-add :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+add :: NumType a -> IR a -> IR a -> CodeGen arch (IR a)
 add = binop Add
 
-sub :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+sub :: NumType a -> IR a -> IR a -> CodeGen arch (IR a)
 sub = binop Sub
 
-mul :: NumType a -> IR a -> IR a -> CodeGen (IR a)
+mul :: NumType a -> IR a -> IR a -> CodeGen arch (IR a)
 mul = binop Mul
 
-negate :: NumType a -> IR a -> CodeGen (IR a)
+negate :: NumType a -> IR a -> CodeGen arch (IR a)
 negate t x =
   case t of
     IntegralNumType i | IntegralDict <- integralDict i -> mul t x (ir t (num t (P.negate 1)))
     FloatingNumType f | FloatingDict <- floatingDict f -> mul t x (ir t (num t (P.negate 1)))
 
-abs :: forall a. NumType a -> IR a -> CodeGen (IR a)
+abs :: forall arch a. NumType a -> IR a -> CodeGen arch (IR a)
 abs n x =
   case n of
     FloatingNumType f                  -> mathf "fabs" f x
@@ -84,7 +84,7 @@ abs n x =
             64 -> call (Lam p (op n x) (Body t "llabs")) [NoUnwind, ReadNone]
             _  -> call (Lam p (op n x) (Body t "abs"))   [NoUnwind, ReadNone]
 
-signum :: forall a. NumType a -> IR a -> CodeGen (IR a)
+signum :: forall arch a. NumType a -> IR a -> CodeGen arch (IR a)
 signum t x =
   case t of
     IntegralNumType i
@@ -117,13 +117,13 @@ signum t x =
 -- Operations from Integral and Bits
 -- ---------------------------------
 
-quot :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+quot :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 quot = binop Quot
 
-rem :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+rem :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 rem = binop Rem
 
-quotRem :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
+quotRem :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR (a,a))
 quotRem t x y = do
   q <- quot t x y
   r <- rem  t x y
@@ -141,7 +141,7 @@ quotRem t x y = do
   -- r <- sub (IntegralNumType t) x z
   return $ pair q r
 
-idiv :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+idiv :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 idiv i x y
   | unsigned i
   = quot i x y
@@ -168,7 +168,7 @@ idiv i x y
     else
          quot i x y
 
-mod :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+mod :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 mod i x y
   | unsigned i
   = rem i x y
@@ -185,7 +185,7 @@ mod i x y
                   else return zero
           else return r
 
-divMod :: IntegralType a -> IR a -> IR a -> CodeGen (IR (a,a))
+divMod :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR (a,a))
 divMod i x y
   | unsigned i
   = quotRem i x y
@@ -217,41 +217,41 @@ divMod i x y
          quotRem i x y
 
 
-band :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+band :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 band = binop BAnd
 
-bor :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+bor :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 bor = binop BOr
 
-xor :: IntegralType a -> IR a -> IR a -> CodeGen (IR a)
+xor :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 xor = binop BXor
 
-complement :: IntegralType a -> IR a -> CodeGen (IR a)
+complement :: IntegralType a -> IR a -> CodeGen arch (IR a)
 complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (P.negate 1)))
 
-shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftL t x i = do
   i' <- fromIntegral integralType (IntegralNumType t) i
   binop ShiftL t x i'
 
-shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftR t
   | signed t  = shiftRA t
   | otherwise = shiftRL t
 
-shiftRL :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRL :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftRL t x i = do
   i' <- fromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRL t x i'
   return r
 
-shiftRA :: IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+shiftRA :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftRA t x i = do
   i' <- fromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRA t x i'
   return r
 
-rotateL :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+rotateL :: forall arch a. IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 rotateL t x i
   | IntegralDict <- integralDict t
   = do let wsib = finiteBitSize (undefined::a)
@@ -263,13 +263,13 @@ rotateL t x i
        c  <- bor t a b
        return c
 
-rotateR :: forall a. IntegralType a -> IR a -> IR Int -> CodeGen (IR a)
+rotateR :: forall arch a. IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 rotateR t x i = do
   i' <- negate numType i
   r  <- rotateL t x i'
   return r
 
-popCount :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+popCount :: forall arch a. IntegralType a -> IR a -> CodeGen arch (IR Int)
 popCount i x
   | IntegralDict <- integralDict i
   = do let ctpop = fromString $ printf "llvm.ctpop.i%d" (finiteBitSize (undefined::a))
@@ -280,7 +280,7 @@ popCount i x
        r <- fromIntegral i numType c
        return r
 
-countLeadingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+countLeadingZeros :: forall arch a. IntegralType a -> IR a -> CodeGen arch (IR Int)
 countLeadingZeros i x
   | IntegralDict <- integralDict i
   = do let clz = fromString $ printf "llvm.ctlz.i%d" (finiteBitSize (undefined::a))
@@ -291,7 +291,7 @@ countLeadingZeros i x
        r <- fromIntegral i numType c
        return r
 
-countTrailingZeros :: forall a. IntegralType a -> IR a -> CodeGen (IR Int)
+countTrailingZeros :: forall arch a. IntegralType a -> IR a -> CodeGen arch (IR Int)
 countTrailingZeros i x
   | IntegralDict <- integralDict i
   = do let clz = fromString $ printf "llvm.cttz.i%d" (finiteBitSize (undefined::a))
@@ -306,64 +306,64 @@ countTrailingZeros i x
 -- Operators from Fractional and Floating
 -- --------------------------------------
 
-fdiv :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+fdiv :: FloatingType a -> IR a -> IR a -> CodeGen arch (IR a)
 fdiv = binop Div
 
-recip :: FloatingType a -> IR a -> CodeGen (IR a)
+recip :: FloatingType a -> IR a -> CodeGen arch (IR a)
 recip t x | FloatingDict <- floatingDict t = fdiv t (ir t (floating t 1)) x
 
-sin :: FloatingType a -> IR a -> CodeGen (IR a)
+sin :: FloatingType a -> IR a -> CodeGen arch (IR a)
 sin = mathf "sin"
 
-cos :: FloatingType a -> IR a -> CodeGen (IR a)
+cos :: FloatingType a -> IR a -> CodeGen arch (IR a)
 cos = mathf "cos"
 
-tan :: FloatingType a -> IR a -> CodeGen (IR a)
+tan :: FloatingType a -> IR a -> CodeGen arch (IR a)
 tan = mathf "tan"
 
-sinh :: FloatingType a -> IR a -> CodeGen (IR a)
+sinh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 sinh = mathf "sinh"
 
-cosh :: FloatingType a -> IR a -> CodeGen (IR a)
+cosh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 cosh = mathf "cosh"
 
-tanh :: FloatingType a -> IR a -> CodeGen (IR a)
+tanh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 tanh = mathf "tanh"
 
-asin :: FloatingType a -> IR a -> CodeGen (IR a)
+asin :: FloatingType a -> IR a -> CodeGen arch (IR a)
 asin = mathf "asin"
 
-acos :: FloatingType a -> IR a -> CodeGen (IR a)
+acos :: FloatingType a -> IR a -> CodeGen arch (IR a)
 acos = mathf "acos"
 
-atan :: FloatingType a -> IR a -> CodeGen (IR a)
+atan :: FloatingType a -> IR a -> CodeGen arch (IR a)
 atan = mathf "atan"
 
-asinh :: FloatingType a -> IR a -> CodeGen (IR a)
+asinh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 asinh = mathf "asinh"
 
-acosh :: FloatingType a -> IR a -> CodeGen (IR a)
+acosh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 acosh = mathf "acosh"
 
-atanh :: FloatingType a -> IR a -> CodeGen (IR a)
+atanh :: FloatingType a -> IR a -> CodeGen arch (IR a)
 atanh = mathf "atanh"
 
-atan2 :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+atan2 :: FloatingType a -> IR a -> IR a -> CodeGen arch (IR a)
 atan2 = mathf2 "atan2"
 
-exp :: FloatingType a -> IR a -> CodeGen (IR a)
+exp :: FloatingType a -> IR a -> CodeGen arch (IR a)
 exp = mathf "exp"
 
-fpow :: FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+fpow :: FloatingType a -> IR a -> IR a -> CodeGen arch (IR a)
 fpow = mathf2 "pow"
 
-sqrt :: FloatingType a -> IR a -> CodeGen (IR a)
+sqrt :: FloatingType a -> IR a -> CodeGen arch (IR a)
 sqrt = mathf "sqrt"
 
-log :: FloatingType a -> IR a -> CodeGen (IR a)
+log :: FloatingType a -> IR a -> CodeGen arch (IR a)
 log = mathf "log"
 
-logBase :: forall a. FloatingType a -> IR a -> IR a -> CodeGen (IR a)
+logBase :: forall arch a. FloatingType a -> IR a -> IR a -> CodeGen arch (IR a)
 logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
   where
     match :: Eq t => Operand t -> Operand t -> Bool
@@ -371,7 +371,7 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
           (ConstantOperand (ScalarConstant _ v)) = u == v
     match _ _                                    = False
 
-    logBase' :: (Num a, Eq a) => CodeGen (IR a)
+    logBase' :: (Num a, Eq a) => CodeGen arch (IR a)
     logBase' | match base (floating t 2)  = mathf "log2"  t y
              | match base (floating t 10) = mathf "log10" t y
              | otherwise
@@ -383,10 +383,10 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- Operators from RealFloat
 -- ------------------------
 
-isNaN :: FloatingType a -> IR a -> CodeGen (IR Bool)
+isNaN :: FloatingType a -> IR a -> CodeGen arch (IR Bool)
 isNaN f (op f -> x) = instr (IsNaN f x)
 
-isInfinite :: forall a. FloatingType a -> IR a -> CodeGen (IR Bool)
+isInfinite :: forall arch a. FloatingType a -> IR a -> CodeGen arch (IR Bool)
 isInfinite f x = do
   x' <- abs n x
   eq (NumSingleType n) infinity x'
@@ -401,20 +401,20 @@ isInfinite f x = do
 -- Operators from RealFrac
 -- -----------------------
 
-truncate :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
+truncate :: FloatingType a -> IntegralType b -> IR a -> CodeGen arch (IR b)
 truncate tf ti (op tf -> x) = instr (FPToInt tf ti x)
 
-round :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
+round :: FloatingType a -> IntegralType b -> IR a -> CodeGen arch (IR b)
 round tf ti x = do
   i <- mathf "round" tf x
   truncate tf ti i
 
-floor :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
+floor :: FloatingType a -> IntegralType b -> IR a -> CodeGen arch (IR b)
 floor tf ti x = do
   i <- mathf "floor" tf x
   truncate tf ti i
 
-ceiling :: FloatingType a -> IntegralType b -> IR a -> CodeGen (IR b)
+ceiling :: FloatingType a -> IntegralType b -> IR a -> CodeGen arch (IR b)
 ceiling tf ti x = do
   i <- mathf "ceil" tf x
   truncate tf ti i
@@ -423,34 +423,34 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Ordering -> SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+cmp :: Ordering -> SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
-lt :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+lt :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 lt = cmp LT
 
-gt :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+gt :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 gt = cmp GT
 
-lte :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+lte :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 lte = cmp LE
 
-gte :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+gte :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 gte = cmp GE
 
-eq :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+eq :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 eq = cmp EQ
 
-neq :: SingleType a -> IR a -> IR a -> CodeGen (IR Bool)
+neq :: SingleType a -> IR a -> IR a -> CodeGen arch (IR Bool)
 neq = cmp NE
 
-max :: SingleType a -> IR a -> IR a -> CodeGen (IR a)
+max :: SingleType a -> IR a -> IR a -> CodeGen arch (IR a)
 max ty x y
   | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
   | otherwise                               = do c <- op singleType <$> gte ty x y
                                                  binop (flip Select c) ty x y
 
-min :: SingleType a -> IR a -> IR a -> CodeGen (IR a)
+min :: SingleType a -> IR a -> IR a -> CodeGen arch (IR a)
 min ty x y
   | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
   | otherwise                               = do c <- op singleType <$> lte ty x y
@@ -460,52 +460,52 @@ min ty x y
 -- Logical operators
 -- -----------------
 
-land :: CodeGen (IR Bool) -> CodeGen (IR Bool) -> CodeGen (IR Bool)
+land :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
 land x y =
   if x
     then y
     else return $ ir scalarType (scalar scalarType False)
 
-lor :: CodeGen (IR Bool) -> CodeGen (IR Bool) -> CodeGen (IR Bool)
+lor :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
 lor x y =
   if x
     then return $ ir scalarType (scalar scalarType True)
     else y
 
 -- These implementations are strict in both arguments.
-land' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+land' :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
 land' (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor' :: IR Bool -> IR Bool -> CodeGen (IR Bool)
+lor' :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
 lor' (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
-lnot :: IR Bool -> CodeGen (IR Bool)
+lnot :: IR Bool -> CodeGen arch (IR Bool)
 lnot (op scalarType -> x) = instr (LNot x)
 
 
 -- Type conversions
 -- ----------------
 
-ord :: IR Char -> CodeGen (IR Int)
+ord :: IR Char -> CodeGen arch (IR Int)
 ord (op scalarType -> x) =
   case finiteBitSize (undefined :: Int) of
     32 -> instr (BitCast scalarType x)
     64 -> instr (Trunc boundedType boundedType x)
     _  -> $internalError "ord" "I don't know what architecture I am"
 
-chr :: IR Int -> CodeGen (IR Char)
+chr :: IR Int -> CodeGen arch (IR Char)
 chr (op integralType -> x) =
   case finiteBitSize (undefined :: Int) of
     32 -> instr (BitCast scalarType x)
     64 -> instr (Ext boundedType boundedType x)
     _  -> $internalError "chr" "I don't know what architecture I am"
 
-boolToInt :: IR Bool -> CodeGen (IR Int)
+boolToInt :: IR Bool -> CodeGen arch (IR Int)
 boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
 
-fromIntegral :: forall a b. IntegralType a -> NumType b -> IR a -> CodeGen (IR b)
+fromIntegral :: forall arch a b. IntegralType a -> NumType b -> IR a -> CodeGen arch (IR b)
 fromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
@@ -523,7 +523,7 @@ fromIntegral i1 n (op i1 -> x) =
            Ord.GT -> instr (Trunc (IntegralBoundedType i1) (IntegralBoundedType i2) x)
            Ord.LT -> instr (Ext   (IntegralBoundedType i1) (IntegralBoundedType i2) x)
 
-toFloating :: forall a b. NumType a -> FloatingType b -> IR a -> CodeGen (IR b)
+toFloating :: forall arch a b. NumType a -> FloatingType b -> IR a -> CodeGen arch (IR b)
 toFloating n1 f2 (op n1 -> x) =
   case n1 of
     IntegralNumType i1
@@ -541,10 +541,10 @@ toFloating n1 f2 (op n1 -> x) =
            Ord.GT -> instr (FTrunc f1 f2 x)
            Ord.LT -> instr (FExt   f1 f2 x)
 
-bitcast :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen (IR b)
+bitcast :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen arch (IR b)
 bitcast ta tb (IR x) = IR <$> go ta tb x
   where
-    go :: ScalarType a -> ScalarType b -> Operands a -> CodeGen (Operands b)
+    go :: ScalarType a -> ScalarType b -> Operands a -> CodeGen arch (Operands b)
     go ta' tb' x'
       | Just Refl <- matchScalarType ta' tb' = return x'
       | otherwise                            = ir' tb' <$> instr' (BitCast tb' (op' ta' x'))
@@ -569,7 +569,7 @@ uncurry :: (IR a -> IR b -> c) -> IR (a, b) -> c
 uncurry f (unpair -> (x,y)) = f x y
 
 
-binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen (IR a)
+binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> IR a -> IR a -> CodeGen arch (IR a)
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
@@ -600,10 +600,10 @@ lift v = IR $ constant (eltType (undefined::a)) (fromElt v)
 --
 ifThenElse
     :: Elt a
-    => CodeGen (IR Bool)
-    -> CodeGen (IR a)
-    -> CodeGen (IR a)
-    -> CodeGen (IR a)
+    => CodeGen arch (IR Bool)
+    -> CodeGen arch (IR a)
+    -> CodeGen arch (IR a)
+    -> CodeGen arch (IR a)
 ifThenElse test yes no = do
   ifThen <- newBlock "if.then"
   ifElse <- newBlock "if.else"
@@ -627,7 +627,7 @@ ifThenElse test yes no = do
 
 -- Execute the body only if the first argument evaluates to True
 --
-when :: CodeGen (IR Bool) -> CodeGen () -> CodeGen ()
+when :: CodeGen arch (IR Bool) -> CodeGen arch () -> CodeGen arch ()
 when test doit = do
   body <- newBlock "when.body"
   exit <- newBlock "when.exit"
@@ -644,7 +644,7 @@ when test doit = do
 
 -- Execute the body only if the first argument evaluates to False
 --
-unless :: CodeGen (IR Bool) -> CodeGen () -> CodeGen ()
+unless :: CodeGen arch (IR Bool) -> CodeGen arch () -> CodeGen arch ()
 unless test doit = do
   body <- newBlock "unless.body"
   exit <- newBlock "unless.exit"
@@ -667,7 +667,7 @@ unless test doit = do
 --
 -- TLM: We should really be able to construct functions of any arity.
 --
-mathf :: ShortByteString -> FloatingType t -> IR t -> CodeGen (IR t)
+mathf :: ShortByteString -> FloatingType t -> IR t -> CodeGen arch (IR t)
 mathf n f (op f -> x) = do
   let s = ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType f)))
       t = PrimType s
@@ -677,7 +677,7 @@ mathf n f (op f -> x) = do
   return r
 
 
-mathf2 :: ShortByteString -> FloatingType t -> IR t -> IR t -> CodeGen (IR t)
+mathf2 :: ShortByteString -> FloatingType t -> IR t -> IR t -> CodeGen arch (IR t)
 mathf2 n f (op f -> x) (op f -> y) = do
   let s = ScalarPrimType (SingleScalarType (NumSingleType (FloatingNumType f)))
       t = PrimType s
@@ -686,7 +686,7 @@ mathf2 n f (op f -> x) (op f -> y) = do
   r    <- call (Lam s x (Lam s y (Body t name))) [NoUnwind, ReadOnly]
   return r
 
-lm :: FloatingType t -> ShortByteString -> CodeGen Label
+lm :: FloatingType t -> ShortByteString -> CodeGen arch Label
 lm t n
   = intrinsic
   $ case t of

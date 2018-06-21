@@ -39,19 +39,23 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 -- | Read a value from an array at the given index
 --
 {-# INLINEABLE readArray #-}
-readArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> CodeGen (IR e)
+readArray
+    :: forall arch int sh e. IsIntegral int
+    => IRArray (Array sh e)
+    -> IR int
+    -> CodeGen arch (IR e)
 readArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) =
   IR <$> readArrayData addrspace volatility ix (eltType (undefined::e)) adata
 
-readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> CodeGen (Operands t)
+readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> CodeGen arch (Operands t)
 readArrayData as v ix = read
   where
-    read :: TupleType t -> Operands t -> CodeGen (Operands t)
+    read :: TupleType t -> Operands t -> CodeGen arch (Operands t)
     read TypeRunit          OP_Unit                  = return OP_Unit
     read (TypeRpair t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
     read (TypeRscalar t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
 
-readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen (Operand e)
+readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen arch (Operand e)
 readArrayPrim t v arr ix = do
   p <- instr' $ GetElementPtr arr [ix]
   x <- instr' $ Load t v p
@@ -61,19 +65,24 @@ readArrayPrim t v arr ix = do
 -- | Write a value into an array at the given index
 --
 {-# INLINEABLE writeArray #-}
-writeArray :: forall int sh e. IsIntegral int => IRArray (Array sh e) -> IR int -> IR e -> CodeGen ()
+writeArray
+    :: forall arch int sh e. IsIntegral int
+    => IRArray (Array sh e)
+    -> IR int
+    -> IR e
+    -> CodeGen arch ()
 writeArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) (IR val) =
   writeArrayData addrspace volatility ix (eltType (undefined::e)) adata val
 
-writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen ()
+writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen arch ()
 writeArrayData as v ix = write
   where
-    write :: TupleType e -> Operands e -> Operands e -> CodeGen ()
+    write :: TupleType e -> Operands e -> Operands e -> CodeGen arch ()
     write TypeRunit          OP_Unit                   OP_Unit        = return ()
     write (TypeRpair t2 t1) (OP_Pair a2 a1)           (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
     write (TypeRscalar t)   (asPtr as . op' t -> arr) (op' t -> val)  = writeArrayPrim v arr ix val
 
-writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen ()
+writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen arch ()
 writeArrayPrim v arr i x = do
   p <- instr' $ GetElementPtr arr [i]
   _ <- do_    $ Store v p x

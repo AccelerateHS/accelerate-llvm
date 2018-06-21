@@ -59,22 +59,20 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 {-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
     :: Foreign arch
-    => arch
-    -> DelayedFun aenv (a -> b)
+    => DelayedFun aenv (a -> b)
     -> Gamma aenv
     -> IRFun1 arch aenv (a -> b)
-llvmOfFun1 arch (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp arch body (Empty `Push` x) aenv
-llvmOfFun1 _ _ _                       = $internalError "llvmOfFun1" "impossible evaluation"
+llvmOfFun1 (Lam (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp body (Empty `Push` x) aenv
+llvmOfFun1  _ _                   = $internalError "llvmOfFun1" "impossible evaluation"
 
 {-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
     :: Foreign arch
-    => arch
-    -> DelayedFun aenv (a -> b -> c)
+    => DelayedFun aenv (a -> b -> c)
     -> Gamma aenv
     -> IRFun2 arch aenv (a -> b -> c)
-llvmOfFun2 arch (Lam (Lam (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp arch body (Empty `Push` x `Push` y) aenv
-llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impossible evaluation"
+llvmOfFun2 (Lam (Lam (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp body (Empty `Push` x `Push` y) aenv
+llvmOfFun2 _ _                          = $internalError "llvmOfFun2" "impossible evaluation"
 
 
 -- | Convert an open scalar expression into a sequence of LLVM IR instructions.
@@ -84,26 +82,25 @@ llvmOfFun2 _ _ _                             = $internalError "llvmOfFun2" "impo
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
     :: forall arch env aenv _t. Foreign arch
-    => arch
-    -> DelayedOpenExp env aenv _t
+    => DelayedOpenExp env aenv _t
     -> Val env
     -> Gamma aenv
     -> IROpenExp arch env aenv _t
-llvmOfOpenExp arch top env aenv = cvtE top
+llvmOfOpenExp top env aenv = cvtE top
   where
     cvtM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
     cvtM (Manifest (Avar ix)) = IRManifest ix
     cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
 
     cvtF1 :: DelayedOpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
-    cvtF1 (Lam (Body body)) = IRFun1 $ \x -> llvmOfOpenExp arch body (env `Push` x) aenv
+    cvtF1 (Lam (Body body)) = IRFun1 $ \x -> llvmOfOpenExp body (env `Push` x) aenv
     cvtF1 _                 = $internalError "cvtF1" "impossible evaluation"
 
     cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
         Let bnd body                -> do x <- cvtE bnd
-                                          llvmOfOpenExp arch body (env `Push` x) aenv
+                                          llvmOfOpenExp body (env `Push` x) aenv
         Var ix                      -> return $ prj ix env
         Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
         PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
@@ -174,14 +171,14 @@ llvmOfOpenExp arch top env aenv = cvtE top
           let sh' = extend sliceIdx slx sl
           in  OP_Pair sh' sz
 
-    prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> CodeGen (IR e)
+    prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IROpenExp arch env aenv e
     prjT tix (IR tup) =
       case eltType (undefined::t) of
         TypeRscalar (VectorScalarType v) -> goV tix v tup
         t                                -> goT tix t tup
       where
         -- for unzipped tuples
-        goT :: TupleIdx s e -> TupleType t' -> Operands t' -> CodeGen (IR e)
+        goT :: TupleIdx s e -> TupleType t' -> Operands t' -> CodeGen arch (IR e)
         goT (SuccTupIdx ix) (TypeRpair t _) (OP_Pair x _) = goT ix t x
         goT ZeroTupIdx      (TypeRpair _ t) (OP_Pair _ x)
           | Just Refl <- matchTupleType t (eltType (undefined::e))
@@ -190,7 +187,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
           = $internalError "prjT/tup" "inconsistent valuation"
 
         -- for SIMD vectors
-        goV :: forall (v :: * -> *) a. TupleIdx (ProdRepr t) e -> VectorType (v a) -> Operands (v a) -> CodeGen (IR e)
+        goV :: forall (v :: * -> *) a. TupleIdx (ProdRepr t) e -> VectorType (v a) -> Operands (v a) -> CodeGen arch (IR e)
         goV vix v (op' v -> vec)
           | Just Refl <- matchProdR (prod Proxy (undefined::t)) (vecProdR v)
           , Just Refl <- matchVecT (eltType (undefined::e)) (vecElemT v)
@@ -231,14 +228,14 @@ llvmOfOpenExp arch top env aenv = cvtE top
         vecProdR (Vector8Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V8 a)
         vecProdR (Vector16Type e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V16 a)
 
-    cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (IR t)
+    cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> IROpenExp arch env aenv t
     cvtT tup =
       case eltType (undefined::t) of
         TypeRscalar (VectorScalarType v) -> IR <$> goV v tup
         t                                -> IR <$> goT t tup
       where
         -- for unzipped tuples
-        goT :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Operands t')
+        goT :: TupleType t' -> Tuple (DelayedOpenExp env aenv) tup -> CodeGen arch (Operands t')
         goT TypeRunit NilTup
           = return OP_Unit
         goT (TypeRpair ta tb) (SnocTup a (b :: DelayedOpenExp env aenv b))
@@ -255,10 +252,10 @@ llvmOfOpenExp arch top env aenv = cvtE top
                     , "  possible solution: ensure that the 'EltRepr' and 'ProdRepr' instances of your data type are consistent." ]
 
         -- for packed SIMD vectors
-        goV :: forall (v :: * -> *) a. VectorType (v a) -> Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen (Operands (v a))
+        goV :: forall (v :: * -> *) a. VectorType (v a) -> Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen arch (Operands (v a))
         goV v ts = ir' v . snd <$> pack ts
           where
-            pack :: Tuple (DelayedOpenExp env aenv) tup -> CodeGen (Int32, Operand (v a))
+            pack :: Tuple (DelayedOpenExp env aenv) tup -> CodeGen arch (Int32, Operand (v a))
             pack NilTup
               = return (0, undef (VectorScalarType v))
             pack (SnocTup t x)
@@ -284,11 +281,11 @@ llvmOfOpenExp arch top env aenv = cvtE top
                   Vector8Type  t -> t
                   Vector16Type t -> t
 
-    linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> CodeGen (IR e)
+    linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
     linearIndex (IRManifest v) ix =
       readArray (irArray (aprj v aenv)) ix
 
-    index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> CodeGen (IR e)
+    index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
     index (IRManifest v) ix =
       let arr = irArray (aprj v aenv)
       in  readArray arr =<< intOfIndex (irArrayShape arr) ix
@@ -296,10 +293,10 @@ llvmOfOpenExp arch top env aenv = cvtE top
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
 
-    intersect :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    intersect :: forall sh. Shape sh => IR sh -> IR sh -> IROpenExp arch env aenv sh
     intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
-        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
         go (TypeRscalar t) sh1 sh2
@@ -314,10 +311,10 @@ llvmOfOpenExp arch top env aenv = cvtE top
         go _ _ _
           = $internalError "intersect" "expected shape with Int components"
 
-    union :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+    union :: forall sh. Shape sh => IR sh -> IR sh -> IROpenExp arch env aenv sh
     union (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
       where
-        go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+        go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
           = return OP_Unit
         go (TypeRscalar t) sh1 sh2
@@ -346,15 +343,15 @@ llvmOfOpenExp arch top env aenv = cvtE top
              -> IR a
              -> IRExp arch () b
     foreignE asm no x =
-      case foreignExp arch asm of
+      case foreignExp asm of
         Just f                       -> app1 f x
-        Nothing | Lam (Body b) <- no -> llvmOfOpenExp arch b (Empty `Push` x) IM.empty
+        Nothing | Lam (Body b) <- no -> llvmOfOpenExp b (Empty `Push` x) IM.empty
         _                            -> error "when a grid's misaligned with another behind / that's a moiré..."
 
-    coerce :: forall a b. (Elt a, Elt b) => IR a -> CodeGen (IR b)
+    coerce :: forall a b. (Elt a, Elt b) => IR a -> IROpenExp arch env aenv b
     coerce (IR as) = IR <$> go (eltType (undefined::a)) (eltType (undefined::b)) as
       where
-        go :: TupleType s -> TupleType t -> Operands s -> CodeGen (Operands t)
+        go :: TupleType s -> TupleType t -> Operands s -> CodeGen arch (Operands t)
         go TypeRunit         TypeRunit         OP_Unit         = return OP_Unit
         go (TypeRpair s1 s2) (TypeRpair t1 t2) (OP_Pair x1 x2) = OP_Pair <$> go s1 t1 x1 <*> go s2 t2 x2
         go (TypeRscalar s)   (TypeRscalar t)   x
@@ -371,7 +368,7 @@ llvmOfOpenExp arch top env aenv = cvtE top
     primFun :: Elt r
             => PrimFun (a -> r)
             -> DelayedOpenExp env aenv a
-            -> CodeGen (IR r)
+            -> IROpenExp arch env aenv r
     primFun f x =
       let
           -- The Accelerate language and its code generator are hyper-strict.
@@ -479,10 +476,10 @@ indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 
 -- | Number of elements contained within a shape
 --
-shapeSize :: forall sh. Shape sh => IR sh -> CodeGen (IR Int)
+shapeSize :: forall arch sh. Shape sh => IR sh -> CodeGen arch (IR Int)
 shapeSize (IR extent) = go (eltType (undefined::sh)) extent
   where
-    go :: TupleType t -> Operands t -> CodeGen (IR Int)
+    go :: TupleType t -> Operands t -> CodeGen arch (IR Int)
     go TypeRunit OP_Unit
       = return $ A.lift 1
 
@@ -504,10 +501,10 @@ shapeSize (IR extent) = go (eltType (undefined::sh)) extent
 
 -- | Convert a multidimensional array index into a linear index
 --
-intOfIndex :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR Int)
+intOfIndex :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR Int)
 intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
   where
-    cvt :: TupleType t -> Operands t -> Operands t -> CodeGen (IR Int)
+    cvt :: TupleType t -> Operands t -> Operands t -> CodeGen arch (IR Int)
     cvt TypeRunit OP_Unit OP_Unit
       = return $ A.lift 0
 
@@ -533,10 +530,10 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
 
 -- | Convert a linear index into into a multidimensional index
 --
-indexOfInt :: forall sh. Shape sh => IR sh -> IR Int -> CodeGen (IR sh)
+indexOfInt :: forall arch sh. Shape sh => IR sh -> IR Int -> CodeGen arch (IR sh)
 indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
   where
-    cvt :: TupleType t -> Operands t -> IR Int -> CodeGen (Operands t)
+    cvt :: TupleType t -> Operands t -> IR Int -> CodeGen arch (Operands t)
     cvt TypeRunit OP_Unit _
       = return OP_Unit
 

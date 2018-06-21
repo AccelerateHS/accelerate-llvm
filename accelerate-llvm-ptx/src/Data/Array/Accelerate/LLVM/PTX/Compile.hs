@@ -100,14 +100,13 @@ instance Compile PTX where
 --
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
 compile acc aenv = do
-  target            <- gets llvmTarget
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target uid acc aenv
-      dev           = ptxDeviceProperties target
-      config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
+  dev               <- gets ptxDeviceProperties
+  (uid, cacheFile)  <- cacheOfOpenAcc acc
+  Module ast md     <- llvmOfOpenAcc uid acc aenv
+  let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
   -- Lower the generated LLVM into a CUBIN object code.
   --

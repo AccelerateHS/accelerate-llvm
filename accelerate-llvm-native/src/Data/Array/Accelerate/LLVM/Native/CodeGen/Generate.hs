@@ -36,8 +36,8 @@ mkGenerate
     :: forall aenv sh e. (Shape sh, Elt e)
     => UID
     -> Gamma aenv
-    -> IRFun1 Native aenv (sh -> e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> IRFun1  Native aenv (sh -> e)
+    -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkGenerate uid aenv apply =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)

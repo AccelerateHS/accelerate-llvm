@@ -1,6 +1,4 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Target
@@ -23,6 +21,6 @@ import Data.ByteString.Short                              ( ShortByteString )
 -- | Describes some target specific information needed for code generation
 --
 class Target t where
-  targetTriple          :: t {- dummy -} -> Maybe ShortByteString
-  targetDataLayout      :: t {- dummy -} -> Maybe DataLayout
+  targetTriple      :: Maybe ShortByteString
+  targetDataLayout  :: Maybe DataLayout
 

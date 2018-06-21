@@ -78,13 +78,12 @@ data IRPermuteFun arch aenv t where
 --
 llvmOfPermuteFun
     :: forall arch aenv e. Foreign arch
-    => arch
-    -> DelayedFun aenv (e -> e -> e)
+    => DelayedFun aenv (e -> e -> e)
     -> Gamma aenv
     -> IRPermuteFun arch aenv (e -> e -> e)
-llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
+llvmOfPermuteFun fun aenv = IRPermuteFun{..}
   where
-    combine   = llvmOfFun2 arch fun aenv
+    combine   = llvmOfFun2 fun aenv
     atomicRMW
       -- If the old value is not used (i.e. permute const) then we can just
       -- store the new value directly. Since we do not require the return value
@@ -97,7 +96,7 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
       | Lam (Lam (Body body)) <- fun
       , TypeRscalar{}         <- eltType (undefined::e)
       , Just body'            <- strengthenE latest body
-      , fun'                  <- llvmOfFun1 arch (Lam (Body body')) aenv
+      , fun'                  <- llvmOfFun1 (Lam (Body body')) aenv
       = Just (Exchange, fun')
 
       -- LLVM natively supports atomic operations on integral types only.
@@ -113,7 +112,7 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
       , TypeRscalar{}         <- eltType (undefined::e)
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
-      , fun'                  <- llvmOfFun1 arch (Lam (Body x')) aenv
+      , fun'                  <- llvmOfFun1 (Lam (Body x')) aenv
       = Just (rmw, fun')
 
       | otherwise
@@ -171,10 +170,11 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
 -- > }
 --
 atomicCAS_rmw
-    :: SingleType t
-    -> (IR t -> CodeGen (IR t))
-    -> Operand (Ptr t)
-    -> CodeGen ()
+    :: forall arch e.
+       SingleType e
+    -> (IR e -> CodeGen arch (IR e))
+    -> Operand (Ptr e)
+    -> CodeGen arch ()
 atomicCAS_rmw t update addr =
   case t of
     NonNumSingleType s                -> nonnum s
@@ -182,30 +182,30 @@ atomicCAS_rmw t update addr =
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen ()
+    nonnum :: NonNumType t -> CodeGen arch ()
     nonnum TypeBool{}      = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
     nonnum TypeChar{}      = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
     nonnum TypeCChar{}     = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
     nonnum TypeCSChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
     nonnum TypeCUChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
 
-    floating :: FloatingType t -> CodeGen ()
+    floating :: FloatingType t -> CodeGen arch ()
     floating TypeHalf{}    = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
     floating TypeFloat{}   = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
     floating TypeDouble{}  = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
     floating TypeCFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
     floating TypeCDouble{} = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
 
-    integral :: IntegralType t -> CodeGen ()
+    integral :: IntegralType t -> CodeGen arch ()
     integral i             = atomicCAS_rmw' t i update addr
 
 
 atomicCAS_rmw'
     :: SingleType t
     -> IntegralType i
-    -> (IR t -> CodeGen (IR t))
+    -> (IR t -> CodeGen arch (IR t))
     -> Operand (Ptr t)
-    -> CodeGen ()
+    -> CodeGen arch ()
 atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
@@ -255,11 +255,12 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
 -- address.
 --
 atomicCAS_cmp
-    :: SingleType t
-    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
-    -> Operand (Ptr t)
-    -> Operand t
-    -> CodeGen ()
+    :: forall arch e.
+       SingleType e
+    -> (SingleType e -> IR e -> IR e -> CodeGen arch (IR Bool))
+    -> Operand (Ptr e)
+    -> Operand e
+    -> CodeGen arch ()
 atomicCAS_cmp t cmp addr val =
   case t of
     NonNumSingleType s                -> nonnum s
@@ -267,31 +268,31 @@ atomicCAS_cmp t cmp addr val =
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen ()
+    nonnum :: NonNumType t -> CodeGen arch ()
     nonnum TypeBool{}      = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
     nonnum TypeChar{}      = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
     nonnum TypeCChar{}     = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
     nonnum TypeCSChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
     nonnum TypeCUChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
 
-    floating :: FloatingType t -> CodeGen ()
+    floating :: FloatingType t -> CodeGen arch ()
     floating TypeHalf{}    = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
     floating TypeFloat{}   = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
     floating TypeDouble{}  = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
     floating TypeCFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
     floating TypeCDouble{} = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
 
-    integral :: IntegralType t -> CodeGen ()
+    integral :: IntegralType t -> CodeGen arch ()
     integral i             = atomicCAS_cmp' t i cmp addr val
 
 
 atomicCAS_cmp'
     :: SingleType t       -- actual type of elements
     -> IntegralType i     -- unsigned integral type of same bit size as 't'
-    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
+    -> (SingleType t -> IR t -> IR t -> CodeGen arch (IR Bool))
     -> Operand (Ptr t)
     -> Operand t
-    -> CodeGen ()
+    -> CodeGen arch ()
 atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --

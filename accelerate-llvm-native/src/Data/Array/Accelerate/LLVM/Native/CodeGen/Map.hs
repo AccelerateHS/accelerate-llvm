@@ -81,7 +81,7 @@ mkMap :: forall aenv sh a b. Elt b
       -> Gamma            aenv
       -> IRFun1    Native aenv (a -> b)
       -> IRDelayed Native aenv (Array sh a)
-      -> CodeGen (IROpenAcc Native aenv (Array sh b))
+      -> CodeGen   Native      (IROpenAcc Native aenv (Array sh b))
 mkMap uid aenv apply IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)

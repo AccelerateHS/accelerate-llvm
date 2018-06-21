@@ -24,7 +24,9 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as Loop
+
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
 
 -- | A standard 'for' loop, that steps from the start to end index executing the
@@ -33,8 +35,8 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
 imapFromTo
     :: IR Int                                   -- ^ starting index (inclusive)
     -> IR Int                                   -- ^ final index (exclusive)
-    -> (IR Int -> CodeGen ())                   -- ^ apply at each index
-    -> CodeGen ()
+    -> (IR Int -> CodeGen Native ())            -- ^ apply at each index
+    -> CodeGen Native ()
 imapFromTo start end body =
   Loop.imapFromStepTo start (lift 1) end body
 
@@ -49,14 +51,14 @@ imapNestFromTo
     => IR sh                                    -- ^ initial index (inclusive)
     -> IR sh                                    -- ^ final index (exclusive)
     -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
-    -> CodeGen ()
+    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    -> CodeGen Native ()
 imapNestFromTo (IR start) (IR end) extent body =
   go (eltType (undefined::sh)) start end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 
-    go :: TupleType t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
+    go :: TupleType t -> Operands t -> Operands t -> (Operands t -> CodeGen Native ()) -> CodeGen Native ()
     go TypeRunit OP_Unit OP_Unit k
       = k OP_Unit
 
@@ -81,13 +83,13 @@ imapNestFromTo'
     => IR sh
     -> IR sh
     -> IR sh
-    -> (IR sh -> IR Int -> CodeGen ())
-    -> CodeGen ()
+    -> (IR sh -> IR Int -> CodeGen Native ())
+    -> CodeGen Native ()
 imapNestFromTo' (IR start) (IR end) (IR extent) body = do
   startl <- intOfIndex (IR extent :: IR sh) (IR start)
   void $ go (eltType (undefined::sh)) start end extent (int 1) startl body'
   where
-    body' :: Operands (EltRepr sh) -> IR Int -> CodeGen (IR Int)
+    body' :: Operands (EltRepr sh) -> IR Int -> CodeGen Native (IR Int)
     body' ix l = body (IR ix) l >> add numType (int 1) l
 
     go :: TupleType t
@@ -96,8 +98,8 @@ imapNestFromTo' (IR start) (IR end) (IR extent) body = do
        -> Operands t
        -> IR Int
        -> IR Int
-       -> (Operands t -> IR Int -> CodeGen (IR Int))
-       -> CodeGen (IR Int)
+       -> (Operands t -> IR Int -> CodeGen Native (IR Int))
+       -> CodeGen Native (IR Int)
     go TypeRunit OP_Unit OP_Unit OP_Unit _delta l k
       = k OP_Unit l
 
@@ -127,14 +129,14 @@ imapNestFromStepTo
     -> IR sh                                    -- ^ steps
     -> IR sh                                    -- ^ final index (exclusive)
     -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen ())          -- ^ apply at each index
-    -> CodeGen ()
+    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    -> CodeGen Native ()
 imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
   go (eltType (undefined::sh)) start steps end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 
-    go :: TupleType t -> Operands t -> Operands t -> Operands t -> (Operands t -> CodeGen ()) -> CodeGen ()
+    go :: TupleType t -> Operands t -> Operands t -> Operands t -> (Operands t -> CodeGen Native ()) -> CodeGen Native ()
     go TypeRunit OP_Unit OP_Unit OP_Unit k
       = k OP_Unit
 
@@ -154,11 +156,11 @@ imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
 --
 iterFromTo
     :: Elt a
-    => IR Int                                   -- ^ starting index (inclusive)
-    -> IR Int                                   -- ^ final index (exclusive)
-    -> IR a                                     -- ^ initial value
-    -> (IR Int -> IR a -> CodeGen (IR a))       -- ^ apply at each index
-    -> CodeGen (IR a)
+    => IR Int                                       -- ^ starting index (inclusive)
+    -> IR Int                                       -- ^ final index (exclusive)
+    -> IR a                                         -- ^ initial value
+    -> (IR Int -> IR a -> CodeGen Native (IR a))    -- ^ apply at each index
+    -> CodeGen Native (IR a)
 iterFromTo start end seed body =
   Loop.iterFromStepTo start (lift 1) end seed body
 

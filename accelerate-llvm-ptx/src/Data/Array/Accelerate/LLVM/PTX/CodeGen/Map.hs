@@ -37,17 +37,16 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- multiple elements, striding the array by the grid size.
 --
 mkMap :: forall aenv sh a b. Elt b
-      => PTX
-      -> Gamma         aenv
+      => Gamma         aenv
       -> IRFun1    PTX aenv (a -> b)
       -> IRDelayed PTX aenv (Array sh a)
-      -> CodeGen (IROpenAcc PTX aenv (Array sh b))
-mkMap ptx aenv apply IRDelayed{..} =
+      -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh b))
+mkMap aenv apply IRDelayed{..} =
   let
       (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh b))
       paramEnv            = envParam aenv
   in
-  makeOpenAcc ptx "map" (paramOut ++ paramEnv) $ do
+  makeOpenAcc "map" (paramOut ++ paramEnv) $ do
 
     start <- return (lift 0)
     end   <- shapeSize (irArrayShape arrOut)

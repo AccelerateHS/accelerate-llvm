@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -64,7 +65,7 @@ mkScanl
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanl uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldr1 (+++) <$> sequence [ mkScanS L uid aenv combine (Just seed) arr
@@ -91,7 +92,7 @@ mkScanl1
     -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanl1 uid aenv combine arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = (+++) <$> mkScanS L uid aenv combine Nothing arr
@@ -116,7 +117,7 @@ mkScanl'
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanl' uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldr1 (+++) <$> sequence [ mkScan'S L uid aenv combine seed arr
@@ -144,7 +145,7 @@ mkScanr
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanr uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldr1 (+++) <$> sequence [ mkScanS R uid aenv combine (Just seed) arr
@@ -171,7 +172,7 @@ mkScanr1
     -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanr1 uid aenv combine arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = (+++) <$> mkScanS R uid aenv combine Nothing arr
@@ -196,7 +197,7 @@ mkScanr'
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanr' uid aenv combine seed arr
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = foldr1 (+++) <$> sequence [ mkScan'S R uid aenv combine seed arr
@@ -217,7 +218,7 @@ mkScanFill
     => UID
     -> Gamma aenv
     -> IRExp Native aenv e
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen Native (IROpenAcc Native aenv (Array sh e))
 mkScanFill uid aenv seed =
   mkGenerate uid aenv (IRFun1 (const seed))
 
@@ -226,9 +227,9 @@ mkScan'Fill
     => UID
     -> Gamma aenv
     -> IRExp Native aenv e
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen Native (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScan'Fill uid aenv seed =
-  Safe.coerce <$> (mkScanFill uid aenv seed :: CodeGen (IROpenAcc Native aenv (Array sh e)))
+  Safe.coerce <$> mkScanFill @sh uid aenv seed
 
 
 -- A single thread sequentially scans along an entire innermost dimension. For
@@ -246,7 +247,7 @@ mkScanS
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e))
+    -> CodeGen Native (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanS dir uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -320,10 +321,10 @@ mkScan'S
     => Direction
     -> UID
     -> Gamma aenv
-    -> IRFun2 Native aenv (e -> e -> e)
-    -> IRExp Native aenv e
+    -> IRFun2    Native aenv (e -> e -> e)
+    -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScan'S dir uid aenv combine seed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -390,7 +391,7 @@ mkScanP
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Vector e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e))
 mkScanP dir uid aenv combine mseed arr =
   foldr1 (+++) <$> sequence [ mkScanP1 dir uid aenv combine mseed arr
                             , mkScanP2 dir uid aenv combine
@@ -411,7 +412,7 @@ mkScanP1
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
     -> IRDelayed Native aenv (Vector e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e))
 mkScanP1 dir uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -505,7 +506,7 @@ mkScanP2
     -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e))
 mkScanP2 dir uid aenv combine =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -557,7 +558,7 @@ mkScanP3
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
     -> Maybe (IRExp Native aenv e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e))
 mkScanP3 dir uid aenv combine mseed =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -614,7 +615,7 @@ mkScan'P
     -> IRFun2 Native aenv (e -> e -> e)
     -> IRExp Native aenv e
     -> IRDelayed Native aenv (Vector e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P dir uid aenv combine seed arr =
   foldr1 (+++) <$> sequence [ mkScan'P1 dir uid aenv combine seed arr
                             , mkScan'P2 dir uid aenv combine
@@ -635,7 +636,7 @@ mkScan'P1
     -> IRFun2 Native aenv (e -> e -> e)
     -> IRExp Native aenv e
     -> IRDelayed Native aenv (Vector e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P1 dir uid aenv combine seed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -713,7 +714,7 @@ mkScan'P2
     -> UID
     -> Gamma aenv
     -> IRFun2 Native aenv (e -> e -> e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+    -> CodeGen Native (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P2 dir uid aenv combine =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -767,8 +768,8 @@ mkScan'P3
     => Direction
     -> UID
     -> Gamma aenv
-    -> IRFun2 Native aenv (e -> e -> e)
-    -> CodeGen (IROpenAcc Native aenv (Vector e, Scalar e))
+    -> IRFun2  Native aenv (e -> e -> e)
+    -> CodeGen Native      (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P3 dir uid aenv combine =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)

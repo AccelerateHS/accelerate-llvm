@@ -2,6 +2,7 @@
 {-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
@@ -71,11 +72,11 @@ data PTX = PTX {
   }
 
 instance Target PTX where
-  targetTriple _     = Just ptxTargetTriple
+  targetTriple     = Just ptxTargetTriple
 #if ACCELERATE_USE_NVVM
-  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
+  targetDataLayout = Nothing              -- see note: [NVVM and target data layout]
 #else
-  targetDataLayout _ = Just ptxDataLayout
+  targetDataLayout = Just ptxDataLayout
 #endif
 
 
@@ -150,20 +151,27 @@ withPTXTargetMachine dev go =
         CGO.Default                 -- optimisation level
         go
 
--- Some libdevice functions require at least ptx40, even though devices at
--- that compute capability also accept older ISA versions.
+-- Compile using the earliest version of the PTX ISA supported by the given
+-- compute device. We could also take the LUB of the latest version supported by
+-- the installed version of both LLVM and CUDA.
 --
---   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+-- Note that we require at least ptx40 for some libnvvm device functions.
+--
+-- See table NVPTX supported processors:
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+--
+-- PTX ISA verison history:
+--
+--   https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#release-notes
 --
 ptxISAVersion :: Int -> Int -> ByteString
-ptxISAVersion 2 _ = "ptx40"
 ptxISAVersion 3 7 = "ptx41"
-ptxISAVersion 3 _ = "ptx40"
-ptxISAVersion 5 0 = "ptx40"
 ptxISAVersion 5 2 = "ptx41"
 ptxISAVersion 5 3 = "ptx42"
 ptxISAVersion 6 _ = "ptx50"
-ptxISAVersion 7 _ = "ptx60"
+ptxISAVersion 7 0 = "ptx60"
+ptxISAVersion 7 2 = "ptx61"
 ptxISAVersion _ _ = "ptx40"
 
 

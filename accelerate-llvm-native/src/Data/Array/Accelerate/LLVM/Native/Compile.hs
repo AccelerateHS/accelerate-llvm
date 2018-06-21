@@ -69,13 +69,13 @@ instance Intrinsic Native
 --
 compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
 compile acc aenv = do
-  target            <- gets llvmTarget
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target uid acc aenv
-      triple        = fromMaybe BS.empty (moduleTargetTriple ast)
+  (uid, cacheFile)  <- cacheOfOpenAcc acc
+  Module ast md     <- llvmOfOpenAcc uid acc aenv
+
+  let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
       nms           = [ f | Name f <- Map.keys md ]
 

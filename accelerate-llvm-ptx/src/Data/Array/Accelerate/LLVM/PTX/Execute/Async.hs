@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 
 -- accelerate
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Lifetime
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.State
@@ -33,6 +34,7 @@ import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( Event )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Stream )
+import Data.Array.Accelerate.LLVM.PTX.Link.Object                   ( FunctionTable )
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as Stream
 
@@ -48,8 +50,17 @@ import Data.IORef
 evalPar :: Par PTX a -> LLVM PTX a
 evalPar p = do
   s <- Stream.create
-  r <- runReaderT (runPar p) s
+  r <- runReaderT (runPar p) (s, Nothing)
   return r
+
+
+type ParState = (Stream, Maybe (Lifetime FunctionTable))
+
+ptxStream :: ParState -> Stream
+ptxStream = fst
+
+ptxKernel :: ParState -> Maybe (Lifetime FunctionTable)
+ptxKernel = snd
 
 
 -- Implementation
@@ -59,15 +70,15 @@ data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
 
 data IVar a
     = Full !a
-    | Pending {-# UNPACK #-} !Event !a
+    | Pending {-# UNPACK #-} !Event !(Maybe (Lifetime FunctionTable)) !a
     | Empty
 
 
 instance Async PTX where
   type FutureR PTX = Future
 
-  newtype Par PTX a = Par { runPar :: ReaderT Stream (LLVM PTX) a }
-    deriving ( Functor, Applicative, Monad, MonadIO, MonadReader Stream, MonadState PTX )
+  newtype Par PTX a = Par { runPar :: ReaderT ParState (LLVM PTX) a }
+    deriving ( Functor, Applicative, Monad, MonadIO, MonadReader ParState, MonadState PTX )
 
   {-# INLINEABLE new     #-}
   {-# INLINEABLE newFull #-}
@@ -77,14 +88,14 @@ instance Async PTX where
   {-# INLINEABLE spawn #-}
   spawn m = do
     s' <- liftPar Stream.create
-    r  <- local (const s') m
+    r  <- local (const (s', Nothing)) m
     liftIO (Stream.destroy s')
     return r
 
   {-# INLINEABLE fork #-}
   fork m = do
     s' <- liftPar (Stream.create)
-    () <- local (const s') m
+    () <- local (const (s', Nothing)) m
     liftIO (Stream.destroy s')
 
   -- When we call 'put' the actual work may not have been evaluated yet; get
@@ -93,12 +104,13 @@ instance Async PTX where
   --
   {-# INLINEABLE put #-}
   put (Future ref) v = do
-    stream <- ask
+    stream <- asks ptxStream
+    kernel <- asks ptxKernel
     event  <- liftPar (Event.waypoint stream)
     ready  <- liftIO  (Event.query event)
     liftIO . modifyIORef' ref $ \case
       Empty -> if ready then Full v
-                        else Pending event v
+                        else Pending event kernel v
       _     -> $internalError "put" "multiple put"
 
   -- Get the value of Future. Since the actual cross-stream synchronisation
@@ -108,16 +120,21 @@ instance Async PTX where
   --
   {-# INLINEABLE get #-}
   get (Future ref) = do
-    stream <- ask
+    stream <- asks ptxStream
     liftIO  $ do
       ivar <- readIORef ref
       case ivar of
-        Full v          -> return v
-        Pending event v -> do
+        Full v            -> return v
+        Pending event k v -> do
           ready <- Event.query event
           if ready
-            then writeIORef ref (Full v)
-            else Event.after event stream
+            then do
+              writeIORef ref (Full v)
+              case k of
+                Just f  -> touchLifetime f
+                Nothing -> return ()
+            else
+              Event.after event stream
           return v
         Empty           -> $internalError "get" "blocked on an IVar"
 
@@ -139,10 +156,13 @@ wait :: Future a -> IO a
 wait (Future ref) = do
   ivar <- readIORef ref
   case ivar of
-    Full v          -> return v
-    Pending event v -> do
+    Full v            -> return v
+    Pending event k v -> do
       Event.block event
       writeIORef ref (Full v)
+      case k of
+        Just f  -> touchLifetime f
+        Nothing -> return ()
       return v
     Empty           -> $internalError "wait" "blocked on an IVar"
 

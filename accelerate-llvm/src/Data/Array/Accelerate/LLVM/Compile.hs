@@ -4,6 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -342,7 +343,7 @@ compileOpenAcc = traverseAcc
                  -> DelayedOpenAcc aenv a
                  -> LLVM arch (CompiledOpenAcc arch aenv b)
         foreignA ff f a =
-          case foreignAcc (undefined :: arch) ff of
+          case foreignAcc ff of
             Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) asm) <$> travA a
             Nothing  -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
@@ -412,7 +413,7 @@ compileOpenAcc = traverseAcc
                  -> DelayedOpenExp env aenv a
                  -> LLVM arch (IntMap (Idx' aenv), PreOpenExp (CompiledOpenAcc arch) env aenv b)
         foreignE asm f x =
-          case foreignExp (undefined :: arch) asm of
+          case foreignExp @arch asm of
             Just{}                      -> liftA (Foreign asm err) <$> travE x
             Nothing | Lam (Body b) <- f -> liftA2 Let              <$> travE x <*> travE (weaken absurd (weakenE zero b))
             _                           -> error "the slow regard of silent things"

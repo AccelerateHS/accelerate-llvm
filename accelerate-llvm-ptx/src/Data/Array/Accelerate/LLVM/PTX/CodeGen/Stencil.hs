@@ -54,30 +54,28 @@ import Control.Monad
 --
 mkStencil1
     :: forall aenv stencil sh a b. (Stencil sh a stencil, Elt b)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun1     PTX aenv (stencil -> b)
     -> IRBoundary PTX aenv (Array sh a)
     -> IRDelayed  PTX aenv (Array sh a)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh b))
-mkStencil1 ptx aenv fun bnd arr =
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh b))
+mkStencil1 aenv fun bnd arr =
   let halo = stencilBorder (stencil :: StencilR sh a stencil)
   in
-  (+++) <$> mkInside ptx aenv halo (IRFun1 $ app1 fun <=< stencilAccess Nothing    arr)
-        <*> mkBorder ptx aenv      (IRFun1 $ app1 fun <=< stencilAccess (Just bnd) arr)
+  (+++) <$> mkInside aenv halo (IRFun1 $ app1 fun <=< stencilAccess Nothing    arr)
+        <*> mkBorder aenv      (IRFun1 $ app1 fun <=< stencilAccess (Just bnd) arr)
 
 
 mkStencil2
     :: forall aenv stencil1 stencil2 sh a b c. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun2     PTX aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary PTX aenv (Array sh a)
     -> IRDelayed  PTX aenv (Array sh a)
     -> IRBoundary PTX aenv (Array sh b)
     -> IRDelayed  PTX aenv (Array sh b)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh c))
-mkStencil2 ptx aenv f bnd1 arr1 bnd2 arr2 =
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh c))
+mkStencil2 aenv f bnd1 arr1 bnd2 arr2 =
   let
       inside  = IRFun1 $ \ix -> do
         stencil1 <- stencilAccess Nothing arr1 ix
@@ -93,18 +91,17 @@ mkStencil2 ptx aenv f bnd1 arr1 bnd2 arr2 =
       halo2   = stencilBorder (stencil :: StencilR sh b stencil2)
       halo    = halo1 `union` halo2
   in
-  (+++) <$> mkInside ptx aenv halo inside
-        <*> mkBorder ptx aenv      border
+  (+++) <$> mkInside aenv halo inside
+        <*> mkBorder aenv      border
 
 
 mkInside
     :: forall aenv sh e. (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> sh
-    -> IRFun1 PTX aenv (sh -> e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkInside ptx aenv halo apply =
+    -> IRFun1  PTX aenv (sh -> e)
+    -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
+mkInside aenv halo apply =
   let
       (arrOut, paramOut)  = mutableArray ("out"  :: Name (Array sh e))
       paramIn             = parameter    ("shIn" :: Name sh)
@@ -113,7 +110,7 @@ mkInside ptx aenv halo apply =
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc ptx "stencil_inside" (paramIn ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "stencil_inside" (paramIn ++ paramOut ++ paramEnv) $ do
 
     start <- return (lift 0)
     end   <- shapeSize shIn
@@ -133,11 +130,10 @@ mkInside ptx aenv halo apply =
 
 mkBorder
     :: forall aenv sh e. (Shape sh, Elt e)
-    => PTX
-    -> Gamma aenv
+    => Gamma aenv
     -> IRFun1  PTX aenv (sh -> e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh e))
-mkBorder ptx aenv apply =
+    -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
+mkBorder aenv apply =
   let
       (arrOut, paramOut)  = mutableArray ("out"    :: Name (Array sh e))
       paramFrom           = parameter    ("shFrom" :: Name sh)
@@ -148,7 +144,7 @@ mkBorder ptx aenv apply =
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc ptx "stencil_border" (paramFrom ++ paramIn ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "stencil_border" (paramFrom ++ paramIn ++ paramOut ++ paramEnv) $ do
 
     start <- return (lift 0)
     end   <- shapeSize shIn
@@ -164,10 +160,10 @@ mkBorder ptx aenv apply =
     return_
 
 
-offset :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen (IR sh)
+offset :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen PTX (IR sh)
 offset (IR sh1) (IR sh2) = IR <$> go (eltType (undefined::sh)) sh1 sh2
   where
-    go :: TupleType t -> Operands t -> Operands t -> CodeGen (Operands t)
+    go :: TupleType t -> Operands t -> Operands t -> CodeGen PTX (Operands t)
     go TypeRunit OP_Unit OP_Unit
       = return OP_Unit
 

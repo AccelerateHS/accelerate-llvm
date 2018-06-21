@@ -32,19 +32,19 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
-  map ptx _       = mkMap ptx
-  generate ptx _  = mkGenerate ptx
-  fold ptx _      = mkFold ptx
-  fold1 ptx _     = mkFold1 ptx
-  foldSeg ptx _   = mkFoldSeg ptx
-  fold1Seg ptx _  = mkFold1Seg ptx
-  scanl ptx _     = mkScanl ptx
-  scanl1 ptx _    = mkScanl1 ptx
-  scanl' ptx _    = mkScanl' ptx
-  scanr ptx _     = mkScanr ptx
-  scanr1 ptx _    = mkScanr1 ptx
-  scanr' ptx _    = mkScanr' ptx
-  permute ptx _   = mkPermute ptx
-  stencil1 ptx _  = mkStencil1 ptx
-  stencil2 ptx _  = mkStencil2 ptx
+  map _       = mkMap
+  generate _  = mkGenerate
+  fold _      = mkFold
+  fold1 _     = mkFold1
+  foldSeg _   = mkFoldSeg
+  fold1Seg _  = mkFold1Seg
+  scanl _     = mkScanl
+  scanl1 _    = mkScanl1
+  scanl' _    = mkScanl'
+  scanr _     = mkScanr
+  scanr1 _    = mkScanr1
+  scanr' _    = mkScanr'
+  permute _   = mkPermute
+  stencil1 _  = mkStencil1
+  stencil2 _  = mkStencil2
 

@@ -36,25 +36,15 @@ addons:
 
 matrix:
   include:
-    - env: GHC=7.10.3 CABAL=1.22 LLVM=4.0.0 CUDA=8.0.61-1
-      compiler: "GHC 7.10"
+    - env: GHC=8.4.2 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.4"
       addons:
         apt:
           sources: *apt_sources
           packages:
             - *apt_packages
-            - cabal-install-1.22
-            - llvm-4.0-dev
-
-    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0 CUDA=8.0.61-1
-      compiler: "GHC 8.0"
-      addons:
-        apt:
-          sources: *apt_sources
-          packages:
-            - *apt_packages
-            - cabal-install-1.24
-            - llvm-4.0-dev
+            - cabal-install-2.0
+            - llvm-6.0-dev
 
     - env: GHC=8.2.2 CABAL=2.0 LLVM=5.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.2"
@@ -66,15 +56,15 @@ matrix:
             - cabal-install-2.0
             - llvm-5.0-dev
 
-    - env: GHC=8.4.2 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
-      compiler: "GHC 8.4"
+    - env: GHC=8.0.2 CABAL=1.24 LLVM=4.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.0"
       addons:
         apt:
           sources: *apt_sources
           packages:
             - *apt_packages
-            - cabal-install-2.0
-            - llvm-6.0-dev
+            - cabal-install-1.24
+            - llvm-4.0-dev
 
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"

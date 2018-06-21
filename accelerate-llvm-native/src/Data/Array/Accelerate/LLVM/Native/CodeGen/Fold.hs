@@ -54,7 +54,7 @@ mkFold
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRExp     Native aenv e
     -> IRDelayed Native aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh e))
 mkFold uid aenv f z acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = (+++) <$> mkFoldAll  uid aenv f (Just z) acc
@@ -74,7 +74,7 @@ mkFold1
     -> Gamma            aenv
     -> IRFun2    Native aenv (e -> e -> e)
     -> IRDelayed Native aenv (Array (sh :. Int) e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh e))
 mkFold1 uid aenv f acc
   | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
   = mkFoldAll uid aenv f Nothing acc
@@ -90,12 +90,12 @@ mkFold1 uid aenv f acc
 --
 mkFoldDim
   :: forall aenv sh e. (Shape sh, Elt e)
-  =>          UID
-  ->          Gamma            aenv
-  ->          IRFun2    Native aenv (e -> e -> e)
-  -> Maybe   (IRExp     Native aenv e)
-  ->          IRDelayed Native aenv (Array (sh :. Int) e)
-  -> CodeGen (IROpenAcc Native aenv (Array sh e))
+  => UID
+  -> Gamma aenv
+  -> IRFun2 Native aenv (e -> e -> e)
+  -> Maybe (IRExp Native aenv e)
+  -> IRDelayed Native aenv (Array (sh :. Int) e)
+  -> CodeGen Native (IROpenAcc Native aenv (Array sh e))
 mkFoldDim uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -143,12 +143,12 @@ mkFoldDim uid aenv combine mseed IRDelayed{..} =
 --
 mkFoldAll
     :: forall aenv e. Elt e
-    =>          UID
-    ->          Gamma            aenv                           -- ^ array environment
-    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
-    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
-    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
-    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+    => UID
+    -> Gamma aenv                                         -- ^ array environment
+    -> IRFun2 Native aenv (e -> e -> e)                   -- ^ combination function
+    -> Maybe (IRExp Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
+    -> IRDelayed Native aenv (Vector e)                   -- ^ input data
+    -> CodeGen Native (IROpenAcc Native aenv (Scalar e))
 mkFoldAll uid aenv combine mseed arr =
   foldr1 (+++) <$> sequence [ mkFoldAllS  uid aenv combine mseed arr
                             , mkFoldAllP1 uid aenv combine       arr
@@ -160,12 +160,12 @@ mkFoldAll uid aenv combine mseed arr =
 --
 mkFoldAllS
     :: forall aenv e. Elt e
-    =>          UID
-    ->          Gamma            aenv                           -- ^ array environment
-    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
-    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
-    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
-    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+    => UID
+    -> Gamma aenv                                         -- ^ array environment
+    -> IRFun2 Native aenv (e -> e -> e)                   -- ^ combination function
+    -> Maybe (IRExp Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
+    -> IRDelayed Native aenv (Vector e)                   -- ^ input data
+    -> CodeGen Native (IROpenAcc Native aenv (Scalar e))
 mkFoldAllS uid aenv combine mseed IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -188,11 +188,11 @@ mkFoldAllS uid aenv combine mseed IRDelayed{..} =
 --
 mkFoldAllP1
     :: forall aenv e. Elt e
-    =>          UID
-    ->          Gamma            aenv                           -- ^ array environment
-    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
-    ->          IRDelayed Native aenv (Vector e)                -- ^ input data
-    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+    => UID
+    -> Gamma            aenv                                    -- ^ array environment
+    -> IRFun2    Native aenv (e -> e -> e)                      -- ^ combination function
+    -> IRDelayed Native aenv (Vector e)                         -- ^ input data
+    -> CodeGen   Native      (IROpenAcc Native aenv (Scalar e))
 mkFoldAllP1 uid aenv combine IRDelayed{..} =
   let
       (start, end, paramGang)   = gangParam    (Proxy      :: Proxy DIM1)
@@ -224,11 +224,11 @@ mkFoldAllP1 uid aenv combine IRDelayed{..} =
 --
 mkFoldAllP2
     :: forall aenv e. Elt e
-    =>          UID
-    ->          Gamma            aenv                           -- ^ array environment
-    ->          IRFun2    Native aenv (e -> e -> e)             -- ^ combination function
-    -> Maybe   (IRExp     Native aenv e)                        -- ^ seed element, if this is an exclusive reduction
-    -> CodeGen (IROpenAcc Native aenv (Scalar e))
+    => UID
+    -> Gamma aenv                                               -- ^ array environment
+    -> IRFun2 Native aenv (e -> e -> e)                         -- ^ combination function
+    -> Maybe (IRExp Native aenv e)                              -- ^ seed element, if this is an exclusive reduction
+    -> CodeGen Native (IROpenAcc Native aenv (Scalar e))
 mkFoldAllP2 uid aenv combine mseed =
   let
       (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
@@ -254,7 +254,7 @@ mkFoldFill
     => UID
     -> Gamma aenv
     -> IRExp Native aenv e
-    -> CodeGen (IROpenAcc Native aenv (Array sh e))
+    -> CodeGen Native (IROpenAcc Native aenv (Array sh e))
 mkFoldFill uid aenv seed =
   mkGenerate uid aenv (IRFun1 (const seed))
 
@@ -265,12 +265,12 @@ mkFoldFill uid aenv seed =
 --
 reduceFromTo
     :: Elt a
-    => IR Int                                   -- ^ starting index
-    -> IR Int                                   -- ^ final index (exclusive)
-    -> (IR a -> IR a -> CodeGen (IR a))         -- ^ combination function
-    -> IR a                                     -- ^ initial value
-    -> (IR Int -> CodeGen (IR a))               -- ^ function to retrieve element at index
-    -> CodeGen (IR a)
+    => IR Int                                       -- ^ starting index
+    -> IR Int                                       -- ^ final index (exclusive)
+    -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
+    -> IR a                                         -- ^ initial value
+    -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
+    -> CodeGen Native (IR a)
 reduceFromTo m n f z get =
   iterFromTo m n z $ \i acc -> do
     x <- get i
@@ -282,11 +282,11 @@ reduceFromTo m n f z get =
 --
 reduce1FromTo
     :: Elt a
-    => IR Int                                   -- ^ starting index
-    -> IR Int                                   -- ^ final index
-    -> (IR a -> IR a -> CodeGen (IR a))         -- ^ combination function
-    -> (IR Int -> CodeGen (IR a))               -- ^ function to retrieve element at index
-    -> CodeGen (IR a)
+    => IR Int                                       -- ^ starting index
+    -> IR Int                                       -- ^ final index
+    -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
+    -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
+    -> CodeGen Native (IR a)
 reduce1FromTo m n f get = do
   z  <- get m
   m1 <- add numType m (ir numType (num numType 1))

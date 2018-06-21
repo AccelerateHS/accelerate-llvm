@@ -16,7 +16,6 @@ module Data.Array.Accelerate.LLVM.PTX.Link (
 
   module Data.Array.Accelerate.LLVM.Link,
   ExecutableR(..), FunctionTable(..), Kernel(..), ObjectCode,
-  withExecutable,
   linkFunctionQ,
 
 ) where
@@ -71,7 +70,7 @@ link (ObjectR uid cfg obj) = do
 
     -- Finalise the module by unloading it from the CUDA context
     addFinalizer oc $ do
-      Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show nm)
+      Debug.traceIO Debug.dump_ld ("ld: unload module: " ++ show nm)
       withContext (ptxContext target) (CUDA.unload mdl)
 
     return (nm, oc)
@@ -122,17 +121,8 @@ linkFunctionQ mdl name configure = do
                       (CUDA.activeWarps occ)
                       (CUDA.activeThreadBlocks occ)
 
-  Debug.traceIO Debug.dump_cc (printf "cc: %s\n  ... %s" msg1 msg2)
+  Debug.traceIO Debug.dump_cc (printf "cc: %s\n               %s" msg1 msg2)
   return (Kernel name f dsmem cta grid, gridQ)
-
-
--- | Execute some operation with the supplied executable functions
---
-withExecutable :: MonadIO m => ExecutableR PTX -> (FunctionTable -> m b) -> m b
-withExecutable PTXR{..} f = do
-  r <- f (unsafeGetValue ptxExecutable)
-  liftIO $ touchLifetime ptxExecutable
-  return r
 
 
 {--

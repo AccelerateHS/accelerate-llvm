@@ -37,7 +37,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
 -- standard library
-import Control.Concurrent                                           ( runInBoundThread )
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.Environment                                           ( lookupEnv )
@@ -53,7 +52,7 @@ import qualified Foreign.CUDA.Driver.Context                        as Context
 --
 evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
-  runInBoundThread (CT.withContext (ptxContext ptx) (evalLLVM ptx acc))
+  CT.withContext (ptxContext ptx) (evalLLVM ptx acc)
   `catch`
   \e -> $internalError "unhandled" (show (e :: CUDAException))
 

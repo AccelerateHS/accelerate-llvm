@@ -111,7 +111,7 @@ pokeArrayAsync !n !ad = do
   let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
       !bytes    = n * sizeOf (undefined :: a)
   --
-  stream <- ask
+  stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
       withDevicePtr ad  $ \dst ->
@@ -141,7 +141,7 @@ indexArrayAsync !ad_src !i !n = do
   let !bytes  = n * sizeOf (undefined::a)
       !dst    = CUDA.HostPtr (ptrsOfArrayData ad_dst)
   --
-  stream <- ask
+  stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream  $ \st  ->
     withDevicePtr ad_src $ \src ->
@@ -166,7 +166,7 @@ peekArrayAsync !n !ad = do
   let !bytes    = n * sizeOf (undefined :: a)
       !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
   --
-  stream <- ask
+  stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
       withDevicePtr ad  $ \src ->
@@ -191,7 +191,7 @@ copyArrayAsync
 copyArrayAsync !n !ad_src !ad_dst = do
   let !bytes    = n * sizeOf (undefined :: a)
   --
-  stream <- ask
+  stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream      $ \st ->
       withDevicePtr ad_src   $ \src ->
@@ -266,7 +266,7 @@ memsetArrayAsync
 memsetArrayAsync !n !v !ad = do
   let !bytes = n * sizeOf (undefined :: a)
   --
-  stream <- ask
+  stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
       withDevicePtr ad  $ \ptr ->
@@ -328,7 +328,7 @@ nonblocking !stream !action = do
       return (Nothing, future)
 
     else do
-      future <- Future <$> liftIO (newIORef (Pending event result))
+      future <- Future <$> liftIO (newIORef (Pending event Nothing result))
       return (Just event, future)
 
 {-# INLINE withLifetime #-}

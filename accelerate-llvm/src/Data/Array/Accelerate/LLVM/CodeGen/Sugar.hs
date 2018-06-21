@@ -1,6 +1,7 @@
-{-# LANGUAGE GADTs        #-}
-{-# LANGUAGE RankNTypes   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GADTs           #-}
+{-# LANGUAGE RankNTypes      #-}
+{-# LANGUAGE RoleAnnotations #-}
+{-# LANGUAGE TypeFamilies    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -42,7 +43,7 @@ import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Monad
 -- fresh names for each application of a scalar function or expression.
 --
 type IRExp     arch     aenv t = IROpenExp arch () aenv t
-type IROpenExp arch env aenv t = CodeGen (IR t)
+type IROpenExp arch env aenv t = CodeGen arch (IR t)
 
 type IRFun1 arch aenv t = IROpenFun1 arch () aenv t
 type IRFun2 arch aenv t = IROpenFun2 arch () aenv t

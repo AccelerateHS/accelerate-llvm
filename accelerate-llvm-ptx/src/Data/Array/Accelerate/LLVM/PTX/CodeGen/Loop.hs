@@ -20,6 +20,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 -- | A standard loop where the CUDA threads cooperatively step over an index
@@ -37,7 +38,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 --       boundary. This might not always be the case, so provide a version that
 --       explicitly aligns reads to the warp boundary.
 --
-imapFromTo :: IR Int -> IR Int -> (IR Int -> CodeGen ()) -> CodeGen ()
+imapFromTo :: IR Int -> IR Int -> (IR Int -> CodeGen PTX ()) -> CodeGen PTX ()
 imapFromTo start end body = do
   step  <- A.fromIntegral integralType numType =<< gridSize
   tid   <- A.fromIntegral integralType numType =<< globalThreadIdx

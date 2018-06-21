@@ -31,19 +31,19 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where
-  map _         = mkMap
-  generate _    = mkGenerate
-  fold _        = mkFold
-  fold1 _       = mkFold1
-  foldSeg _     = mkFoldSeg
-  fold1Seg _    = mkFold1Seg
-  scanl _       = mkScanl
-  scanl1 _      = mkScanl1
-  scanl' _      = mkScanl'
-  scanr _       = mkScanr
-  scanr1 _      = mkScanr1
-  scanr' _      = mkScanr'
-  permute _     = mkPermute
-  stencil1 _    = mkStencil1
-  stencil2 _    = mkStencil2
+  map         = mkMap
+  generate    = mkGenerate
+  fold        = mkFold
+  fold1       = mkFold1
+  foldSeg     = mkFoldSeg
+  fold1Seg    = mkFold1Seg
+  scanl       = mkScanl
+  scanl1      = mkScanl1
+  scanl'      = mkScanl'
+  scanr       = mkScanr
+  scanr1      = mkScanr1
+  scanr'      = mkScanr'
+  permute     = mkPermute
+  stencil1    = mkStencil1
+  stencil2    = mkStencil2
 
