@@ -14,7 +14,7 @@ ENV LD_LIBRARY_PATH /usr/local/cuda/lib64:/usr/local/cuda/nvvm/lib64:${LD_LIBRAR
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/libcuda.so.1
 
 RUN apt-get update \
- && apt-get install -y software-properties-common
+ && apt-get install -y software-properties-common netbase
 
 RUN add-apt-repository -y ppa:hvr/ghc \
  && apt-get update \
