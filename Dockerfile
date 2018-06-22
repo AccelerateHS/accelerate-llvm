@@ -40,28 +40,25 @@ RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-5.0" 50
 RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-5.0" 50
 
-# Setup stack
+# Setup stack and build dependencies
 WORKDIR ${PREFIX}
-COPY ./stack-8.4.yaml ${PREFIX}/stack.yaml
-RUN stack --no-terminal --color never setup
-RUN stack --no-terminal --color never install c2hs
-
-# Copy over just the cabal and stack file and install dependencies
-COPY ./README.md ${PREFIX}/README.md
-COPY ./LICENSE   ${PREFIX}/LICENSE
+COPY ./README.md                                            ${PREFIX}/
+COPY ./LICENSE                                              ${PREFIX}/
+COPY ./stack-8.4.yaml                                       ${PREFIX}/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal                ${PREFIX}/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal  ${PREFIX}/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal        ${PREFIX}/accelerate-llvm-ptx/
+
+RUN stack --no-terminal --color never setup
 RUN stack --no-terminal --color never build --only-snapshot
 
 # Copy over the actual source files and build
-COPY ./accelerate-llvm ${PREFIX}/accelerate-llvm
-RUN stack --no-terminal --color never build accelerate-llvm
-
+COPY ./accelerate-llvm        ${PREFIX}/accelerate-llvm
 COPY ./accelerate-llvm-native ${PREFIX}/accelerate-llvm-native
-RUN stack --no-terminal --color never build accelerate-llvm-native
+COPY ./accelerate-llvm-ptx    ${PREFIX}/accelerate-llvm-ptx
 
-COPY ./accelerate-llvm-ptx ${PREFIX}/accelerate-llvm-ptx
+RUN stack --no-terminal --color never build accelerate-llvm
+RUN stack --no-terminal --color never build accelerate-llvm-native
 RUN stack --no-terminal --color never build accelerate-llvm-ptx
 
 CMD ["bash"]
