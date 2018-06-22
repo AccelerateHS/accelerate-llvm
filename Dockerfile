@@ -13,9 +13,12 @@ ENV PATH /root/.cabal/bin:/root/.local/bin:${PATH}
 ENV LD_LIBRARY_PATH /usr/local/cuda/lib64:/usr/local/cuda/nvvm/lib64:${LD_LIBRARY_PATH}
 RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/libcuda.so.1
 
+RUN apt-get update \
+ && apt-get install -y software-properties-common
+
 RUN add-apt-repository -y ppa:hvr/ghc \
  && apt-get update \
- && apt-get install -y software-properties-common curl netbase pkg-config wget
+ && apt-get install -y curl netbase pkg-config wget
 
 RUN curl -sSL https://get.haskellstack.org/ | sh
 
