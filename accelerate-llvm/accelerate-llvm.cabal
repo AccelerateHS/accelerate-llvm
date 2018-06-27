@@ -140,8 +140,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , filepath                      >= 1.0
-        , llvm-hs                       >= 4.1 && < 6.3
-        , llvm-hs-pure                  >= 4.1 && < 6.3
+        , llvm-hs                       >= 4.1 && < 6.4
+        , llvm-hs-pure                  >= 4.1 && < 6.4
         , mtl                           >= 2.0
         , template-haskell
         , unordered-containers          >= 0.2
