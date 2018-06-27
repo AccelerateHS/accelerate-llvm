@@ -96,13 +96,6 @@ before_install:
         8.4*) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH ;;
       esac
 
-  # https://github.com/haskell/haddock/issues/775
-  - |
-      case ${GHC} in
-        8.4.*) ;;
-        *)     export HADDOCK="--haddock --no-haddock-deps" ;;
-      esac
-
 install:
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
