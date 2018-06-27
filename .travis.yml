@@ -93,7 +93,7 @@ before_install:
   # ghc bug? error while loading shared libraries: libffi.so.7
   - |
       case ${GHC} in
-        8.4.2) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-8.4.2/rts:$LD_LIBRARY_PATH ;;
+        8.4*) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH ;;
       esac
 
   # https://github.com/haskell/haddock/issues/775
