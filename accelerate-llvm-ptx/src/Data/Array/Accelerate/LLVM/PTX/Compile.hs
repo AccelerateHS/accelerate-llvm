@@ -138,9 +138,9 @@ compile acc aenv = do
 compilePTX :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
 compilePTX dev ctx ast = do
 #ifdef ACCELERATE_USE_NVVM
-  ptx <- withLibdeviceNVVM  dev ctx ast (compileModuleNVVM dev (AST.moduleName ast))
+  ptx <- withLibdeviceNVVM  dev ctx ast (_compileModuleNVVM dev (AST.moduleName ast))
 #else
-  ptx <- withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
+  ptx <- withLibdeviceNVPTX dev ctx ast (_compileModuleNVPTX dev)
 #endif
   Debug.when Debug.dump_asm $ Debug.traceIO Debug.verbose (B8.unpack ptx)
   return ptx
@@ -201,8 +201,8 @@ compileCUBIN dev sass ptx = do
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
-compileModuleNVVM dev name libdevice mdl = do
+_compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
+_compileModuleNVVM dev name libdevice mdl = do
   _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
   let arch    = CUDA.computeCapability dev
@@ -222,7 +222,7 @@ compileModuleNVVM dev name libdevice mdl = do
       header  = case bitSize (undefined::Int) of
                   32 -> "target triple = \"nvptx-nvidia-cuda\"\ntarget datalayout = \"e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
                   64 -> "target triple = \"nvptx64-nvidia-cuda\"\ntarget datalayout = \"e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
-                  _  -> $internalError "compileModuleNVVM" "I don't know what architecture I am"
+                  _  -> $internalError "_compileModuleNVVM" "I don't know what architecture I am"
 
   Debug.when Debug.dump_cc   $ do
     Debug.when Debug.verbose $ do
@@ -243,8 +243,8 @@ compileModuleNVVM dev name libdevice mdl = do
 
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
-compileModuleNVPTX dev mdl =
+_compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
+_compileModuleNVPTX dev mdl =
   withPTXTargetMachine dev $ \nvptx -> do
 
     when Debug.internalChecksAreEnabled $ LLVM.verify mdl
