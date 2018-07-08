@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
 -- Copyright   : [2018] Trevor L. McDonell
@@ -161,7 +162,7 @@ mkBorder aenv apply =
 
 
 offset :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen PTX (IR sh)
-offset (IR sh1) (IR sh2) = IR <$> go (eltType (undefined::sh)) sh1 sh2
+offset (IR sh1) (IR sh2) = IR <$> go (eltType @sh) sh1 sh2
   where
     go :: TupleType t -> Operands t -> Operands t -> CodeGen PTX (Operands t)
     go TypeRunit OP_Unit OP_Unit

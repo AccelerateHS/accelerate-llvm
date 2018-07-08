@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Native.Loop
 -- Copyright   : [2014..2017] Trevor L. McDonell
@@ -54,7 +55,7 @@ imapNestFromTo
     -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
 imapNestFromTo (IR start) (IR end) extent body =
-  go (eltType (undefined::sh)) start end (body' . IR)
+  go (eltType @sh) start end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 
@@ -87,7 +88,7 @@ imapNestFromTo'
     -> CodeGen Native ()
 imapNestFromTo' (IR start) (IR end) (IR extent) body = do
   startl <- intOfIndex (IR extent :: IR sh) (IR start)
-  void $ go (eltType (undefined::sh)) start end extent (int 1) startl body'
+  void $ go (eltType @sh) start end extent (int 1) startl body'
   where
     body' :: Operands (EltRepr sh) -> IR Int -> CodeGen Native (IR Int)
     body' ix l = body (IR ix) l >> add numType (int 1) l
@@ -132,7 +133,7 @@ imapNestFromStepTo
     -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
 imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
-  go (eltType (undefined::sh)) start steps end (body' . IR)
+  go (eltType @sh) start steps end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 

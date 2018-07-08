@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
@@ -107,7 +108,7 @@ instance Marshalable arch m a => Marshalable arch m [a] where
 instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRepr e)))
     => Marshalable arch m (Array sh e) where
   marshal' proxy (Array sh adata) =
-    DL.concat `fmap` sequence [marshal' proxy adata, go proxy (eltType (undefined::sh)) sh]
+    DL.concat `fmap` sequence [marshal' proxy adata, go proxy (eltType @sh) sh]
     where
       go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
       go _ TypeRunit         ()       = return DL.empty
@@ -118,7 +119,7 @@ instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRe
 
 instance {-# INCOHERENT #-} (Shape sh, Monad m, Marshalable arch m Int)
     => Marshalable arch m sh where
-  marshal' proxy sh = go proxy (eltType sh) (fromElt sh)
+  marshal' proxy sh = go proxy (eltType @sh) (fromElt sh)
     where
       go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
       go _ TypeRunit         ()       = return DL.empty

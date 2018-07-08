@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -320,7 +321,7 @@ staticSharedMem
     => Word64
     -> CodeGen PTX (IRArray (Vector e))
 staticSharedMem n = do
-  ad    <- go (eltType (undefined::e))
+  ad    <- go (eltType @e)
   return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
                    , irArrayData       = IR ad
                    , irArrayAddrSpace  = sharedMemAddrSpace
@@ -394,7 +395,7 @@ dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
         b <- instr' $ Add numType i a
         return (b, ir' t (unPtr q))
   --
-  (_, ad) <- go (eltType (undefined::e)) offset
+  (_, ad) <- go (eltType @e) offset
   IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
   return   $ IRArray { irArrayShape      = IR $ OP_Pair OP_Unit sz
                      , irArrayData       = IR ad

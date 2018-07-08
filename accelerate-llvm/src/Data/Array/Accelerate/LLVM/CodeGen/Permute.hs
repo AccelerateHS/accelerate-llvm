@@ -2,6 +2,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -94,7 +95,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       -- different threads.
       --
       | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType (undefined::e)
+      , TypeRscalar{}         <- eltType @e
       , Just body'            <- strengthenE latest body
       , fun'                  <- llvmOfFun1 (Lam (Body body')) aenv
       = Just (Exchange, fun')
@@ -109,7 +110,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       -- generic spin-lock based approach.
       --
       | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType (undefined::e)
+      , TypeRscalar{}         <- eltType @e
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
       , fun'                  <- llvmOfFun1 (Lam (Body x')) aenv

@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -593,7 +594,7 @@ untrip t = (fst3 t, snd3 t, thd3 t)
 --
 {-# INLINABLE lift #-}
 lift :: forall a. Elt a => a -> IR a
-lift v = IR $ constant (eltType (undefined::a)) (fromElt v)
+lift v = IR $ constant (eltType @a) (fromElt v)
 
 
 -- | Standard if-then-else expression

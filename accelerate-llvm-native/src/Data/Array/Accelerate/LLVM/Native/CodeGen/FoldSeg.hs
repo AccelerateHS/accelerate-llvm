@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -105,7 +106,7 @@ mkFoldSegS uid aenv combine mseed arr seg =
           -- We can avoid an extra division if this is a DIM1 array. Higher
           -- dimensional reductions need to wrap around the segment array at
           -- each new lower-dimensional index.
-          s'  <- case rank (undefined::sh) of
+          s'  <- case rank @sh of
                    0 -> return s
                    _ -> A.rem integralType s ss
 
@@ -157,14 +158,14 @@ mkFoldSegP uid aenv combine mseed arr seg =
 
     imapFromTo (indexHead start) (indexHead end) $ \s -> do
 
-      i   <- case rank (undefined::sh) of
+      i   <- case rank @sh of
                0 -> return s
                _ -> A.rem integralType s ss
       j   <- A.add numType i (lift 1)
       u   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) i
       v   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex seg) j
 
-      (inf,sup) <- A.unpair <$> case rank (undefined::sh) of
+      (inf,sup) <- A.unpair <$> case rank @sh of
                      0 -> return (A.pair u v)
                      _ -> do q <- A.quot integralType s ss
                              a <- A.mul numType q sz

@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -124,7 +125,7 @@ llvmOfOpenAcc uid (Manifest pacc) aenv = evalCodeGen $
     travB Clamp        = IRClamp
     travB Mirror       = IRMirror
     travB Wrap         = IRWrap
-    travB (Constant c) = IRConstant $ IR (constant (eltType (undefined::e)) c)
+    travB (Constant c) = IRConstant $ IR (constant (eltType @e) c)
     travB (Function f) = IRFunction $ travF1 f
 
     -- sadness

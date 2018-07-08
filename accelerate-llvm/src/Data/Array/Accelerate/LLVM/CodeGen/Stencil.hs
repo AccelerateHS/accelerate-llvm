@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -202,7 +203,7 @@ bounded bndy IRDelayed{..} ix = do
     -- mirror, or wrap only).
     --
     bound :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR sh)
-    bound (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+    bound (IR extent1) (IR extent2) = IR <$> go (eltType @sh) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
@@ -243,7 +244,7 @@ bounded bndy IRDelayed{..} ix = do
     -- Return whether the index is inside the bounds of the given shape
     --
     inside :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR Bool)
-    inside (IR extent1) (IR extent2) = go (eltType (undefined::sh)) extent1 extent2
+    inside (IR extent1) (IR extent2) = go (eltType @sh) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (IR Bool)
         go TypeRunit OP_Unit OP_Unit
@@ -267,10 +268,10 @@ bounded bndy IRDelayed{..} ix = do
 -- ---------
 
 int :: Int -> IR Int
-int x = IR (constant (eltType (undefined::Int)) x)
+int x = IR (constant (eltType @Int) x)
 
 bool :: Bool -> IR Bool
-bool b = IR (constant (eltType (undefined::Bool)) b)
+bool b = IR (constant (eltType @Bool) b)
 
 unindex :: IR (sh :. Int) -> IR sh :. IR Int
 unindex (IR (OP_Pair sh i)) = IR sh :. IR i
@@ -297,7 +298,7 @@ tup9 (IR a) (IR b) (IR c) (IR d) (IR e) (IR f) (IR g) (IR h) (IR i) =
 -- Add a _left-most_ dimension to a shape
 --
 cons :: forall sh. Shape sh => IR Int -> IR sh -> IR (sh :. Int)
-cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
+cons (IR ix) (IR extent) = IR $ go (eltType @sh) extent
   where
     go :: TupleType t -> Operands t -> Operands (t,Int)
     go TypeRunit OP_Unit                 = OP_Pair OP_Unit ix
@@ -312,7 +313,7 @@ cons (IR ix) (IR extent) = IR $ go (eltType (undefined::sh)) extent
 -- Remove the _left-most_ index to a shape, and return the remainder
 --
 uncons :: forall sh. Shape sh => IR (sh :. Int) -> (IR Int, IR sh)
-uncons (IR extent) = let (ix, extent') = go (eltType (undefined::(sh :. Int))) extent
+uncons (IR extent) = let (ix, extent') = go (eltType @(sh :. Int)) extent
                      in  (IR ix, IR extent')
   where
     go :: TupleType (t, Int) -> Operands (t, Int) -> (Operands Int, Operands t)

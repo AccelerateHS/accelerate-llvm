@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
@@ -23,9 +24,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute (
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import qualified Data.Array.Accelerate.Array.Representation         as R
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -86,7 +88,7 @@ mkPermute
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute aenv IRPermuteFun{..} project arr =
   let
-      bytes   = sizeOf (eltType (undefined :: e))
+      bytes   = sizeOf (eltType @e)
       sizeOk  = bytes == 4 || bytes == 8
   in
   case atomicRMW of
@@ -131,7 +133,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
       paramEnv            = envParam aenv
       start               = lift 0
       --
-      bytes               = sizeOf (eltType (undefined :: e))
+      bytes               = sizeOf (eltType @e)
       compute             = computeCapability dev
       compute32           = Compute 3 2
       compute60           = Compute 6 0
@@ -155,7 +157,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
           Exchange
             -> writeArray arrOut j r
           --
-          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
+          _ | TypeRscalar (SingleScalarType s)  <- eltType @e
             , Just adata                        <- gcast (irArrayData arrOut)
             , Just r'                           <- gcast r
             -> do
@@ -357,7 +359,7 @@ atomically barriers i action = do
 -- strictly rather than performing short-circuit (&&).
 --
 ignore :: forall ix. Shape ix => IR ix -> CodeGen PTX (IR Bool)
-ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
+ignore (IR ix) = go (S.eltType @ix) (R.ignore @(EltRepr ix)) ix
   where
     go :: TupleType t -> t -> Operands t -> CodeGen PTX (IR Bool)
     go TypeRunit           ()          OP_Unit        = return (lift True)

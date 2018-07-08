@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -407,12 +408,12 @@ executeOpenAcc !topAcc !aenv = travA topAcc
 
     -- Pull apart the unzipped struct-of-array representation
     unzip :: forall t sh e. (Elt t, Elt e) => TupleIdx (TupleRepr t) e -> Array sh t -> Array sh e
-    unzip tix (Array sh adata) = Array sh $ go tix (eltType (undefined::t)) adata
+    unzip tix (Array sh adata) = Array sh $ go tix (eltType @t) adata
       where
         go :: TupleIdx v e -> TupleType t' -> ArrayData t' -> ArrayData (EltRepr e)
         go (SuccTupIdx ix) (TypeRpair t _) (AD_Pair x _)           = go ix t x
         go ZeroTupIdx      (TypeRpair _ t) (AD_Pair _ x)
-          | Just Refl <- matchTupleType t (eltType (undefined::e)) = x
+          | Just Refl <- matchTupleType t (eltType @e) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 
     -- Can the permutation function write directly into the results array?

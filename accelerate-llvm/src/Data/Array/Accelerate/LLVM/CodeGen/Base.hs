@@ -122,7 +122,7 @@ travTypeToList
     :: forall t a. Elt t
     => (forall s. ScalarType s -> Int -> a)
     -> [a]
-travTypeToList f = snd $ go (eltType (undefined::t)) 0
+travTypeToList f = snd $ go (eltType @t) 0
   where
     -- DANGER: [1] must traverse in the same order as [2]
     go :: TupleType s -> Int -> (Int, [a])
@@ -138,7 +138,7 @@ travTypeToIR
     :: forall t. Elt t
     => (forall s. ScalarType s -> Int -> Operand s)
     -> IR t
-travTypeToIR f = IR . snd $ go (eltType (undefined::t)) 0
+travTypeToIR f = IR . snd $ go (eltType @t) 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
@@ -155,7 +155,7 @@ travTypeToIR f = IR . snd $ go (eltType (undefined::t)) 0
 --     -> t {- dummy -}
 --     -> (forall s. ScalarType s -> Int -> Operand (Ptr s))
 --     -> IR (Ptr t)
--- travTypeToIRPtr as t f = IR . snd $ go (eltType t) 0
+-- travTypeToIRPtr as t f = IR . snd $ go (eltType @t) 0
 --   where
 --     -- DANGER: [2] must traverse in the same order as [1]
 --     -- go :: TypeR s -> Int -> (Int, Operands (Ptr s))

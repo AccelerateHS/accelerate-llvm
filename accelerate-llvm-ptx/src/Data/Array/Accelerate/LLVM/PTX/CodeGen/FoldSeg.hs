@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -111,7 +112,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "foldSeg_block" (paramOut ++ paramEnv) $ do
 
@@ -155,7 +156,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
       -- to the other threads in the block.
       tid <- threadIdx
       when (A.lt singleType tid (lift 2)) $ do
-        i <- case rank (undefined::sh) of
+        i <- case rank @sh of
                0 -> return s
                _ -> A.rem integralType s ss
         j <- A.add numType i =<< int tid
@@ -170,7 +171,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
-      (inf,sup) <- A.unpair <$> case rank (undefined::sh) of
+      (inf,sup) <- A.unpair <$> case rank @sh of
                                   0 -> return (A.pair u v)
                                   _ -> do q <- A.quot integralType s ss
                                           a <- A.mul numType q sz
@@ -210,7 +211,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
                              go (TypeRpair a b) = OP_Pair (go a) (go b)
                              go (TypeRscalar t) = ir' t (undef t)
                          in
-                         return . IR $ go (eltType (undefined::e))
+                         return . IR $ go (eltType @e)
 
             bd  <- int =<< blockDim
             v0  <- A.sub numType sup inf
@@ -249,7 +250,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
                                                go (TypeRpair a b) = OP_Pair (go a) (go b)
                                                go (TypeRscalar t) = ir' t (undef t)
                                            in
-                                           return . IR $ go (eltType (undefined::e))
+                                           return . IR $ go (eltType @e)
 
                                z <- i32 v'
                                y <- reduceBlockSMem dev combine (Just z) x
@@ -305,7 +306,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
       grid n m            = multipleOf n (m `P.quot` ws)
       gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes      = (per_warp_elems * sizeOf (eltType (undefined::e))) `P.max` (2 * sizeOf (eltType (undefined::Int)))
+      per_warp_bytes      = (per_warp_elems * sizeOf (eltType @e)) `P.max` (2 * sizeOf (eltType @Int))
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
@@ -382,7 +383,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
       -- other threads in the warp
       lane <- laneId
       when (A.lt singleType lane (lift 2)) $ do
-        a <- case rank (undefined::sh) of
+        a <- case rank @sh of
                0 -> return s
                _ -> A.rem integralType s ss
         b <- A.add numType a =<< int lane
@@ -396,7 +397,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
       (inf,sup) <- do
         u <- readArray lim (lift 0 :: IR Int32)
         v <- readArray lim (lift 1 :: IR Int32)
-        A.unpair <$> case rank (undefined::sh) of
+        A.unpair <$> case rank @sh of
                        0 -> return (A.pair u v)
                        _ -> do q <- A.quot integralType s ss
                                a <- A.mul numType q sz
@@ -431,7 +432,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
                               go (TypeRpair a b) = OP_Pair (go a) (go b)
                               go (TypeRscalar t) = ir' t (undef t)
                           in
-                          return . IR $ go (eltType (undefined::e))
+                          return . IR $ go (eltType @e)
 
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
@@ -464,7 +465,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
                                               go (TypeRpair a b) = OP_Pair (go a) (go b)
                                               go (TypeRscalar t) = ir' t (undef t)
                                           in
-                                          return . IR $ go (eltType (undefined::e))
+                                          return . IR $ go (eltType @e)
 
                               z <- i32 v'
                               y <- reduceWarpSMem dev combine smem (Just z) x

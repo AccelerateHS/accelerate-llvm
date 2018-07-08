@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TemplateHaskell          #-}
+{-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -35,7 +36,6 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.State
 
@@ -249,14 +249,14 @@ foldOp exe gamma aenv sh@(sx :. _) =
 
 {-# INLINE foldCore #-}
 foldCore
-    :: (Shape sh, Elt e)
+    :: forall aenv sh e. (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> (sh :. Int)
     -> Par Native (Future (Array sh e))
 foldCore exe gamma aenv sh
-  | Just Refl <- matchShapeType sh (undefined::DIM1)
+  | Just Refl <- matchShapeType @sh @DIM0
   = foldAllOp exe gamma aenv sh
   --
   | otherwise
@@ -344,7 +344,7 @@ foldSegOp NativeR{..} gamma aenv (sh :. _) (Z :. ss) = do
       let
           n       = ss-1
           splits  = numWorkers workers
-          minsize = case rank (undefined :: (sh:.Int)) of
+          minsize = case rank @(sh:.Int) of
                       1 -> 64
                       _ -> 16
       --
@@ -405,7 +405,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
   future      <- new
   result      <- allocateRemote (sz :. m)
   --
-  if rank sz > 0
+  if rank @sh > 0
     -- This is a multidimensional scan. Each partial scan result is evaluated
     -- individually by a thread, so no inter-thread communication is required.
     then
@@ -488,7 +488,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
   result      <- allocateRemote sh
   sums        <- allocateRemote sz
   --
-  if rank sz > 0
+  if rank @sh > 0
     -- This is a multidimensional scan. Each partial scan result is evaluated
     -- individually by a thread, so no inter-thread communication is required.
     --
@@ -556,7 +556,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
                    else liftPar (cloneArray defaults)
   let
       splits  = numWorkers workers
-      minsize = case rank shIn of
+      minsize = case rank @sh of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
@@ -635,7 +635,7 @@ stencilCore NativeR{..} gamma aenv halo sh = do
       border  = nativeExecutable !# "stencil_border"
 
       splits  = numWorkers workers
-      minsize = case rank sh of
+      minsize = case rank @sh of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
@@ -644,7 +644,7 @@ stencilCore NativeR{..} gamma aenv halo sh = do
       outs    = asum . flip fmap (stencilBorders sh halo) $ \(u,v) -> divideWork splits minsize u v (,,)
 
       sub :: sh -> sh -> sh
-      sub a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
+      sub a b = toElt $ go (eltType @sh) (fromElt a) (fromElt b)
         where
           go :: TupleType t -> t -> t -> t
           go TypeRunit         ()      ()      = ()
@@ -671,10 +671,10 @@ stencilBorders
     => sh
     -> sh
     -> Seq (sh, sh)
-stencilBorders sh halo = Seq.fromFunction (2 * rank sh) face
+stencilBorders sh halo = Seq.fromFunction (2 * rank @sh) face
   where
     face :: Int -> (sh, sh)
-    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt halo)
+    face n = let (u,v) = go n (eltType @sh) (fromElt sh) (fromElt halo)
              in  (toElt u, toElt v)
 
     go :: Int -> TupleType t -> t -> t -> (t, t)
@@ -740,7 +740,7 @@ scheduleOp fun gamma aenv sz args done = do
   Native{..} <- gets llvmTarget
   let
       splits  = numWorkers workers
-      minsize = case rank (undefined::sh) of
+      minsize = case rank @sh of
                   1 -> 4096
                   2 -> 64
                   _ -> 16
