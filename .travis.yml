@@ -102,10 +102,8 @@ before_install:
   - travis_retry stack install c2hs --fast --no-terminal
 
   # ghc bug? error while loading shared libraries: libffi.so.7
-  - |
-      case ${GHC} in
-        8.4*) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH ;;
-      esac
+  # (only required for ghc-8.4+)
+  - export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH ;;
 
 install:
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
