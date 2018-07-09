@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Distribution.Simple.Build
 -- Copyright   : [2017] Trevor L. McDonell
@@ -36,8 +37,10 @@ import Distribution.Backpack
 import Distribution.Backpack.DescribeUnitId
 import qualified Distribution.Simple.GHC   as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
+#if !MIN_VERSION_Cabal(2,3,0)
 import qualified Distribution.Simple.JHC   as JHC
 import qualified Distribution.Simple.LHC   as LHC
+#endif
 import qualified Distribution.Simple.UHC   as UHC
 import qualified Distribution.Simple.HaskellSuite as HaskellSuite
 import qualified Distribution.Simple.PackageIndex as Index
@@ -317,7 +320,9 @@ testSuiteLibV09AsLibAndExe pkg_descr
                 }
     pkg = pkg_descr {
             package      = (package pkg_descr) { pkgName = mkPackageName $ unMungedPackageName compat_name }
+#if !MIN_VERSION_Cabal(2,3,0)
           , buildDepends = targetBuildDepends $ testBuildInfo test
+#endif
           , executables  = []
           , testSuites   = []
           , subLibraries = [lib]
@@ -406,7 +411,11 @@ addInternalBuildTools pkg lbi bi progs =
       [ simpleConfiguredProgram toolName' (FoundOnSystem toolLocation)
       | toolName <- getAllInternalToolDependencies pkg bi
       , let toolName' = unUnqualComponentName toolName
+#if MIN_VERSION_Cabal(2,3,0)
+      , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension (hostPlatform lbi) ]
+#else
       , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension ]
+#endif
 
 
 -- TODO: build separate libs in separate dirs so that we can build
@@ -418,8 +427,10 @@ buildLib verbosity numJobs pkg_descr lbi lib clbi =
   case compilerFlavor (compiler lbi) of
     GHC   -> Acc.buildLib   verbosity numJobs pkg_descr lbi lib clbi    -- XXX only change here
     GHCJS -> GHCJS.buildLib verbosity numJobs pkg_descr lbi lib clbi
+#if !MIN_VERSION_Cabal(2,3,0)
     JHC   -> JHC.buildLib   verbosity         pkg_descr lbi lib clbi
     LHC   -> LHC.buildLib   verbosity         pkg_descr lbi lib clbi
+#endif
     UHC   -> UHC.buildLib   verbosity         pkg_descr lbi lib clbi
     HaskellSuite {} -> HaskellSuite.buildLib verbosity pkg_descr lbi lib clbi
     _    -> die' verbosity "Building is not supported with this compiler."
@@ -443,8 +454,10 @@ buildExe verbosity numJobs pkg_descr lbi exe clbi =
   case compilerFlavor (compiler lbi) of
     GHC   -> GHC.buildExe   verbosity numJobs pkg_descr lbi exe clbi
     GHCJS -> GHCJS.buildExe verbosity numJobs pkg_descr lbi exe clbi
+#if !MIN_VERSION_Cabal(2,3,0)
     JHC   -> JHC.buildExe   verbosity         pkg_descr lbi exe clbi
     LHC   -> LHC.buildExe   verbosity         pkg_descr lbi exe clbi
+#endif
     UHC   -> UHC.buildExe   verbosity         pkg_descr lbi exe clbi
     _     -> die' verbosity "Building is not supported with this compiler."
 
