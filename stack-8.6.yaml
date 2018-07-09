@@ -45,6 +45,9 @@ extra-deps:
   subdirs:
     - core
 
+- git:    https://github.com/tmcdonell/language-c.git
+  commit: e6e3684d76015cdbdd5e716e1acc9a3a23f38fdf
+
 - abstract-deque-0.3
 - adjunctions-4.4
 - ansi-terminal-0.8.0.4
