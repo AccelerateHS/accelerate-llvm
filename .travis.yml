@@ -96,6 +96,7 @@ before_install:
   #     case ${LLVM} in
   #       3.5.*) source .travis/install-llvm-trusty.sh ;;
   #     esac
+  - export CUDA_INSTALL_EXTRA_LIBS=0  # cublas, cufft, etc.
   - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
