@@ -99,7 +99,6 @@ before_install:
   - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
-  - travis_retry stack install c2hs --fast --no-terminal
 
   # ghc bug? error while loading shared libraries: libffi.so.7
   # (only required for ghc-8.4+)
@@ -114,19 +113,19 @@ install:
   - opt-${LLVM:0:3} --version; true
 
   # how much do we have to do?
-  - stack build --no-terminal --dry-run
-
-  # build accelerate with optimisations (required for nofib#286)
-  # - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
-  # - travis_retry travis_wait 60 stack build accelerate --no-terminal
+  - stack build --only-dependencies --no-terminal --dry-run
 
   # build dependencies
-  - travis_retry travis_wait 60 stack build --fast --jobs=1 --test --no-terminal --only-dependencies --no-copy-bins
+  - travis_retry                stack build c2hs       --fast --no-terminal --copy-bins
+  - travis_retry                stack build cuda nvvm  --fast --no-terminal --no-copy-bins
+  - travis_retry                stack build accelerate --fast --no-terminal --no-copy-bins --only-dependencies
+  - travis_retry travis_wait 60 stack build accelerate --fast --no-terminal --no-copy-bins
+  - travis_retry                stack build            --fast --no-terminal --no-copy-bins --only-dependencies --test
 
 script:
-  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests --haddock --no-haddock-deps
 
   # Run test suite(s)
   # only use a single test thread due to limited memory on the travis boxes
