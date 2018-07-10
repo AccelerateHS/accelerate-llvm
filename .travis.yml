@@ -104,14 +104,14 @@ before_install:
   # (only required for ghc-8.4+)
   - export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH
 
-install:
+  # build environment
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
-  - c2hs --version
   - llc-${LLVM:0:3} --version; true
   - opt-${LLVM:0:3} --version; true
 
+install:
   # how much do we have to do?
   - stack build --only-dependencies --no-terminal --dry-run
 
