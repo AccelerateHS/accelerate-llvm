@@ -15,7 +15,7 @@ cache:
     - .stack-work/install
 
 before_cache:
-  # - rm -rf $(stack path --local-install-root)/bin
+  - rm -rf $(stack path --local-install-root)/bin
   - rm -rf $(stack path --local-install-root)/doc
 
 addons:
@@ -117,8 +117,6 @@ install:
   - stack build --only-dependencies --no-terminal --dry-run
 
   # build dependencies
-  - travis_retry                stack build c2hs       --fast --no-terminal --copy-bins
-  - travis_retry                stack build cuda nvvm  --fast --no-terminal --no-copy-bins
   - travis_retry                stack build accelerate --fast --no-terminal --no-copy-bins --only-dependencies
   - travis_retry travis_wait 60 stack build accelerate --fast --no-terminal --no-copy-bins
   - travis_retry                stack build            --fast --no-terminal --no-copy-bins --only-dependencies --test
