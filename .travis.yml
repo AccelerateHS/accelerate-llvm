@@ -15,7 +15,7 @@ cache:
     - .stack-work/install
 
 before_cache:
-  # - rm -rf $(stack path --local-install-root)/bin
+  - rm -rf $(stack path --local-install-root)/bin
   - rm -rf $(stack path --local-install-root)/doc
 
 addons:
@@ -36,6 +36,16 @@ addons:
 
 matrix:
   include:
+    - env: GHC=8.6.1 CABAL=2.2 LLVM=6.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.6"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-2.2
+            - llvm-6.0-dev
+
     - env: GHC=8.4.3 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
       compiler: "GHC 8.4"
       addons:
@@ -70,7 +80,8 @@ matrix:
     #   compiler: "GHC HEAD"
     #   addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, ghc-head, cabal-install-head, happy-1.19.5, alex-3.1.7 ] }}
 
-  # allow_failures:
+  allow_failures:
+    - env: GHC=8.6.1 CABAL=2.2 LLVM=6.0.0 CUDA=8.0.61-1
   #   - env: GHC=head CABAL=head LLVM=3.9.1
 
   fast_finish: true
@@ -85,39 +96,35 @@ before_install:
   #     case ${LLVM} in
   #       3.5.*) source .travis/install-llvm-trusty.sh ;;
   #     esac
+  - export CUDA_INSTALL_EXTRA_LIBS=0  # cublas, cufft, etc.
   - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
   - source .travis/update-ghc-settings.sh
-  - travis_retry stack install c2hs --fast --no-terminal
 
   # ghc bug? error while loading shared libraries: libffi.so.7
-  - |
-      case ${GHC} in
-        8.4*) export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH ;;
-      esac
+  # (only required for ghc-8.4+)
+  - export LD_LIBRARY_PATH=$(stack path --compiler-bin)/../lib/ghc-${GHC}/rts:$LD_LIBRARY_PATH
 
-install:
+  # build environment
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
   - cabal --version
   - stack --version
-  - c2hs --version
   - llc-${LLVM:0:3} --version; true
   - opt-${LLVM:0:3} --version; true
 
+install:
   # how much do we have to do?
-  - stack build --no-terminal --dry-run
-
-  # build accelerate with optimisations (required for nofib#286)
-  # - travis_retry stack build accelerate --fast --test --no-terminal --only-dependencies --no-copy-bins
-  # - travis_retry travis_wait 60 stack build accelerate --no-terminal
+  - stack build --only-dependencies --no-terminal --dry-run
 
   # build dependencies
-  - travis_retry travis_wait 60 stack build --fast --test --no-terminal --only-dependencies --no-copy-bins
+  - travis_retry                stack build accelerate --fast --no-terminal --no-copy-bins --only-dependencies
+  - travis_retry travis_wait 60 stack build accelerate --fast --no-terminal --no-copy-bins
+  - travis_retry                stack build            --fast --no-terminal --no-copy-bins --only-dependencies --test
 
 script:
-  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests ${HADDOCK}
-  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests ${HADDOCK}
+  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests --haddock --no-haddock-deps
 
   # Run test suite(s)
   # only use a single test thread due to limited memory on the travis boxes

@@ -1,5 +1,7 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -fno-warn-unused-imports   #-}
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin
 -- Copyright   : [2017] Trevor L. McDonell
@@ -89,6 +91,8 @@ pass guts = do
                $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
 #endif
 
+    -- This case is not necessary for GHC-8.6 and above.
+    --
     -- We are building to object code.
     --
     -- Because of separate compilation, we will only encounter the annotation
@@ -99,7 +103,7 @@ pass guts = do
     -- objects required to build the entire project.
     --
     _ -> liftIO $ do
-
+#if __GLASGOW_HASKELL__ < 806
       -- Read the object file index and update (we may have added or removed
       -- objects for the given module)
       --
@@ -132,7 +136,7 @@ pass guts = do
               LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
 #endif
               UnknownLD      -> UnknownLD  -- no linking performed?
-
+#endif
       return ()
 
   return guts

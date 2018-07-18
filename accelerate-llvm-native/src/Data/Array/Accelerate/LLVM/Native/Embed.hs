@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
@@ -78,5 +79,8 @@ embed target (ObjectR uid nms !_) = do
       dec <- TH.forImpD TH.CCall TH.Unsafe ('&':fn) fn' [t| FunPtr () |]
       ann <- TH.pragAnnD (TH.ValueAnnotation fn') [| (Object objFile) |]
       TH.addTopDecls [dec, ann]
+#if __GLASGOW_HASKELL__ >= 806
+      TH.addForeignFilePath TH.RawObject objFile
+#endif
       TH.unsafeTExpCoerce (TH.varE fn')
 

@@ -9,10 +9,11 @@ environment:
   global:
     STACK_ROOT: "c:\\sr"
   matrix:
-    # - GHC: "7.10"   # llvm-4.0
-    # - GHC: "8.0"    # llvm-4.0
-    - GHC: "8.2"
+    # - GHC: "8.6"    # llvm-6.0
     # - GHC: "8.4"    # llvm-6.0
+    - GHC: "8.2"
+    # - GHC: "8.0"    # llvm-4.0
+    # - GHC: "7.10"   # llvm-4.0
 
 before_build:
   - set PATH=%PATH%;C:\Program Files\Git\mingw64\bin
