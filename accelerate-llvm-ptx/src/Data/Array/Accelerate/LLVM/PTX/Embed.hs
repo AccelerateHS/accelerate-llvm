@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -30,7 +31,6 @@ import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Context
 
--- import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 import Foreign.Ptr
@@ -70,7 +70,11 @@ embed target (ObjectR _ cfg obj) = do
     linkQ :: TH.Name -> (Kernel, Q (TExp (Int -> Int))) -> Q (TExp Kernel)
     linkQ jit (Kernel name _ dsmem cta _, grid) =
       [|| unsafePerformIO $ do
+#if MIN_VERSION_cuda(0,10,0)
+            f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(liftSBS name)
+#else
             f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(TH.unsafeTExpCoerce (TH.lift (S8.unpack name)))
+#endif
             return $ Kernel $$(liftSBS name) f dsmem cta $$grid
        ||]
 
