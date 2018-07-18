@@ -4,6 +4,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
@@ -25,7 +26,6 @@ import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..) )
 
 -- accelerate-llvm-*
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -70,7 +70,7 @@ mkFold
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh e))
 mkFold aenv f z acc
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = (+++) <$> mkFoldAll  aenv f (Just z) acc
           <*> mkFoldFill aenv z
 
@@ -93,7 +93,7 @@ mkFold1
     -> IRDelayed PTX aenv (Array (sh :. Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh e))
 mkFold1 aenv f acc
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = mkFoldAll aenv f Nothing acc
 
   | otherwise
@@ -155,7 +155,7 @@ mkFoldAllS dev aenv combine mseed IRDelayed{..} =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   in
   makeOpenAccWith config "foldAllS" (paramOut ++ paramEnv) $ do
 
@@ -211,7 +211,7 @@ mkFoldAllM1 dev aenv combine IRDelayed{..} =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   in
   makeOpenAccWith config "foldAllM1" (paramTmp ++ paramEnv) $ do
 
@@ -266,7 +266,7 @@ mkFoldAllM2 dev aenv combine mseed =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   in
   makeOpenAccWith config "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
 
@@ -332,7 +332,7 @@ mkFoldDim aenv combine mseed IRDelayed{..} = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "fold" (paramOut ++ paramEnv) $ do
 
@@ -401,7 +401,7 @@ mkFoldDim aenv combine mseed IRDelayed{..} = do
                                      go (TypeRpair a b) = OP_Pair (go a) (go b)
                                      go (TypeRscalar t) = ir' t (undef t)
                                  in
-                                 return . IR $ go (eltType (undefined::e))
+                                 return . IR $ go (eltType @e)
 
                      v <- i32 v'
                      y <- reduceBlockSMem dev combine (Just v) x
@@ -456,7 +456,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
     int32 = lift . P.fromIntegral
 
     -- Temporary storage required for each warp
-    bytes           = sizeOf (eltType (undefined::e))
+    bytes           = sizeOf (eltType @e)
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
 
     -- Step 1: Reduction in every warp

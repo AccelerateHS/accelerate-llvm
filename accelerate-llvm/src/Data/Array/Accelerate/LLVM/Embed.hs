@@ -4,6 +4,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Embed
@@ -158,7 +159,7 @@ liftPreOpenAccCommand arch pacc =
     Avar ix           -> [|| Avar $$(liftIdx ix) ||]
     Alet bnd body     -> [|| Alet $$(liftA bnd) $$(liftA body) ||]
     Alloc sh          -> [|| Alloc $$(liftE sh) ||]
-    Use a             -> [|| Use $$(liftArrays (arrays (undefined::a)) a) ||]
+    Use a             -> [|| Use $$(liftArrays (arrays @a) a) ||]
     Unit e            -> [|| Unit $$(liftE e) ||]
     Atuple tup        -> [|| Atuple $$(liftAtuple tup) ||]
     Aprj tix a        -> [|| Aprj $$(liftTupleIdx tix) $$(liftA a) ||]
@@ -184,7 +185,7 @@ liftPreOpenAccSkeleton arch pacc =
       liftE = liftPreOpenExp arch
 
       liftS :: forall sh. Shape sh => sh -> Q (TExp sh)
-      liftS sh = [|| toElt $$(liftConst (eltType (undefined::sh)) (fromElt sh)) ||]
+      liftS sh = [|| toElt $$(liftConst (eltType @sh) (fromElt sh)) ||]
   in
   case pacc of
     Map sh              -> [|| Map $$(liftE sh) ||]
@@ -239,7 +240,7 @@ liftPreOpenExp arch pexp =
     Let bnd body              -> [|| Let $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
     Var ix                    -> [|| Var $$(liftIdx ix) ||]
     Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
-    Const c                   -> [|| Const $$(liftConst (eltType (undefined::t)) c) ||]
+    Const c                   -> [|| Const $$(liftConst (eltType @t) c) ||]
     Undef                     -> [|| Undef ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
     Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]

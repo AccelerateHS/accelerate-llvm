@@ -5,6 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -33,7 +34,6 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.Execute
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
@@ -215,7 +215,7 @@ foldCore
     -> (sh :. Int)
     -> Par PTX (Future (Array sh e))
 foldCore exe gamma aenv sh
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldAllOp exe gamma aenv sh
   --
   | otherwise
@@ -342,7 +342,7 @@ scanCore
     -> Int                    -- output size
     -> Par PTX (Future (Array (sh:.Int) e))
 scanCore exe gamma aenv sz n m
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = scanAllOp exe gamma aenv n m
   --
   | otherwise
@@ -430,7 +430,7 @@ scan'Core
     -> sh :. Int
     -> Par PTX (Future (Array (sh:.Int) e, Array sh e))
 scan'Core exe gamma aenv sh
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = scan'AllOp exe gamma aenv sh
   --
   | otherwise
@@ -581,7 +581,7 @@ stencilCore exe gamma aenv halo shOut =  withExecutable exe $ \ptxExecutable -> 
       shIn = trav (\x y -> x - 2*y) shOut halo
 
       trav :: (Int -> Int -> Int) -> sh -> sh -> sh
-      trav f a b = toElt $ go (eltType a) (fromElt a) (fromElt b)
+      trav f a b = toElt $ go (eltType @sh) (fromElt a) (fromElt b)
         where
           go :: TupleType t -> t -> t -> t
           go TypeRunit         ()      ()      = ()
@@ -625,10 +625,10 @@ stencilBorders
     => sh
     -> sh
     -> [(sh, sh)]
-stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank sh - 1)] ]
+stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank @sh - 1)] ]
   where
     face :: Int -> (sh, sh)
-    face n = let (u,v) = go n (eltType sh) (fromElt sh) (fromElt halo)
+    face n = let (u,v) = go n (eltType @sh) (fromElt sh) (fromElt halo)
              in  (toElt u, toElt v)
 
     go :: Int -> TupleType t -> t -> t -> (t, t)

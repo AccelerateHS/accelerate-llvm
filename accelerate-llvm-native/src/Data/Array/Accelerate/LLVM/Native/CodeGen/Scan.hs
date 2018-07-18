@@ -24,7 +24,6 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -67,7 +66,7 @@ mkScanl
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanl uid aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanS L uid aenv combine (Just seed) arr
                               , mkScanP L uid aenv combine (Just seed) arr
                               , mkScanFill uid aenv seed
@@ -94,7 +93,7 @@ mkScanl1
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanl1 uid aenv combine arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = (+++) <$> mkScanS L uid aenv combine Nothing arr
           <*> mkScanP L uid aenv combine Nothing arr
   --
@@ -119,7 +118,7 @@ mkScanl'
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanl' uid aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'S L uid aenv combine seed arr
                               , mkScan'P L uid aenv combine seed arr
                               , mkScan'Fill uid aenv seed
@@ -147,7 +146,7 @@ mkScanr
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanr uid aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanS R uid aenv combine (Just seed) arr
                               , mkScanP R uid aenv combine (Just seed) arr
                               , mkScanFill uid aenv seed
@@ -174,7 +173,7 @@ mkScanr1
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
 mkScanr1 uid aenv combine arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = (+++) <$> mkScanS R uid aenv combine Nothing arr
           <*> mkScanP R uid aenv combine Nothing arr
   --
@@ -199,7 +198,7 @@ mkScanr'
     -> IRDelayed Native aenv (Array (sh:.Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array (sh:.Int) e, Array sh e))
 mkScanr' uid aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'S R uid aenv combine seed arr
                               , mkScan'P R uid aenv combine seed arr
                               , mkScan'Fill uid aenv seed

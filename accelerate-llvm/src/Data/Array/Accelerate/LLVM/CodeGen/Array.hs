@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -45,7 +46,7 @@ readArray
     -> IR int
     -> CodeGen arch (IR e)
 readArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) =
-  IR <$> readArrayData addrspace volatility ix (eltType (undefined::e)) adata
+  IR <$> readArrayData addrspace volatility ix (eltType @e) adata
 
 readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> CodeGen arch (Operands t)
 readArrayData as v ix = read
@@ -72,7 +73,7 @@ writeArray
     -> IR e
     -> CodeGen arch ()
 writeArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) (IR val) =
-  writeArrayData addrspace volatility ix (eltType (undefined::e)) adata val
+  writeArrayData addrspace volatility ix (eltType @e) adata val
 
 writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen arch ()
 writeArrayData as v ix = write

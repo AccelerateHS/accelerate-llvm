@@ -26,10 +26,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Sugar
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -76,7 +76,7 @@ mkScanl
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e))
 mkScanl aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanAllP1 L aenv combine (Just seed) arr
                               , mkScanAllP2 L aenv combine
                               , mkScanAllP3 L aenv combine (Just seed)
@@ -103,7 +103,7 @@ mkScanl1
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e))
 mkScanl1 aenv combine arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanAllP1 L aenv combine Nothing arr
                               , mkScanAllP2 L aenv combine
                               , mkScanAllP3 L aenv combine Nothing
@@ -129,7 +129,7 @@ mkScanl'
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
 mkScanl' aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'AllP1 L aenv combine seed arr
                               , mkScan'AllP2 L aenv combine
                               , mkScan'AllP3 L aenv combine
@@ -157,7 +157,7 @@ mkScanr
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e))
 mkScanr aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanAllP1 R aenv combine (Just seed) arr
                               , mkScanAllP2 R aenv combine
                               , mkScanAllP3 R aenv combine (Just seed)
@@ -184,7 +184,7 @@ mkScanr1
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e))
 mkScanr1 aenv combine arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScanAllP1 R aenv combine Nothing arr
                               , mkScanAllP2 R aenv combine
                               , mkScanAllP3 R aenv combine Nothing
@@ -210,7 +210,7 @@ mkScanr'
     -> IRDelayed PTX aenv (Array (sh:.Int) e)
     -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
 mkScanr' aenv combine seed arr
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'AllP1 R aenv combine seed arr
                               , mkScan'AllP2 R aenv combine
                               , mkScan'AllP3 R aenv combine
@@ -259,7 +259,7 @@ mkScanAllP1 dir aenv combine mseed IRDelayed{..} = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramEnv) $ do
 
@@ -377,7 +377,7 @@ mkScanAllP2 dir aenv combine = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scanP2" (paramTmp ++ paramEnv) $ do
 
@@ -564,7 +564,7 @@ mkScan'AllP1 dir aenv combine seed IRDelayed{..} = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramEnv) $ do
 
@@ -676,7 +676,7 @@ mkScan'AllP2 dir aenv combine = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
 
@@ -855,7 +855,7 @@ mkScanDim dir aenv combine mseed IRDelayed{..} = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scan" (paramOut ++ paramEnv) $ do
 
@@ -978,7 +978,7 @@ mkScanDim dir aenv combine mseed IRDelayed{..} = do
                           go (TypeRpair a b) = OP_Pair (go a) (go b)
                           go (TypeRscalar t) = ir' t (undef t)
                       in
-                      return . IR $ go (eltType (undefined::e))
+                      return . IR $ go (eltType @e)
 
           -- Thread zero incorporates the carry-in element
           y <- if A.eq singleType tid (lift 0)
@@ -1050,7 +1050,7 @@ mkScan'Dim dir aenv combine seed IRDelayed{..} = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType (undefined :: e))
+          bytes     = sizeOf (eltType @e)
   --
   makeOpenAccWith config "scan" (paramOut ++ paramSum ++ paramEnv) $ do
 
@@ -1248,7 +1248,7 @@ scanBlockSMem dir dev combine nelem = warpScan >=> warpPrefix
 
     -- Temporary storage required for each warp
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
-    warp_smem_bytes = warp_smem_elems  * sizeOf (eltType (undefined::e))
+    warp_smem_bytes = warp_smem_elems  * sizeOf (eltType @e)
 
     -- Step 1: Scan in every warp
     warpScan :: IR e -> CodeGen PTX (IR e)

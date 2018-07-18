@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 -- Copyright   : [2016..2017] Trevor L. McDonell
@@ -17,9 +18,10 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import qualified Data.Array.Accelerate.Array.Representation         as R
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -174,7 +176,7 @@ mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
           Exchange
             -> writeArray arrOut j r
           --
-          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
+          _ | TypeRscalar (SingleScalarType s)  <- eltType @e
             , Just adata                        <- gcast (irArrayData arrOut)
             , Just r'                           <- gcast r
             -> do
@@ -290,7 +292,7 @@ atomically barriers i action = do
 -- strictly rather than performing short-circuit (&&).
 --
 ignore :: forall ix. Shape ix => IR ix -> CodeGen Native (IR Bool)
-ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
+ignore (IR ix) = go (S.eltType @ix) (R.ignore @(EltRepr ix)) ix
   where
     go :: TupleType t -> t -> Operands t -> CodeGen Native (IR Bool)
     go TypeRunit           ()          OP_Unit        = return (lift True)

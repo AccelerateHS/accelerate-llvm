@@ -3,6 +3,7 @@
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -85,7 +86,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
       Debug.didCopyBytesToRemote (i64 bytes)
       transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
-  castRemotePtr _      = CUDA.castDevPtr
+  castRemotePtr        = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo
   totalRemoteMem       = liftIO $ snd `fmap` CUDA.getMemInfo
   remoteAllocationSize = return 4096

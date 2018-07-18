@@ -319,7 +319,7 @@ compileOpenAcc = traverseAcc
               -> DelayedOpenAcc aenv (Array sh a)
               -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
         unzip _ _
-          | TypeRscalar VectorScalarType{}      <- eltType (undefined::a)
+          | TypeRscalar VectorScalarType{}      <- eltType @a
           = Nothing
         unzip f a
           | Lam (Body (Prj tix (Var ZeroIdx)))  <- f

@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
@@ -21,7 +22,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
-import Data.Proxy
 import Data.Typeable
 import Text.Printf
 import Prelude                                                      hiding ( exp, any )
@@ -102,8 +102,8 @@ llvmOfOpenExp top env aenv = cvtE top
         Let bnd body                -> do x <- cvtE bnd
                                           llvmOfOpenExp body (env `Push` x) aenv
         Var ix                      -> return $ prj ix env
-        Const c                     -> return $ IR (constant (eltType (undefined::t)) c)
-        PrimConst c                 -> return $ IR (constant (eltType (undefined::t)) (fromElt (primConst c)))
+        Const c                     -> return $ IR (constant (eltType @t) c)
+        PrimConst c                 -> return $ IR (constant (eltType @t) (fromElt (primConst c)))
         PrimApp f x                 -> primFun f x
         Undef                       -> return undefE
         IndexNil                    -> return indexNil
@@ -135,7 +135,7 @@ llvmOfOpenExp top env aenv = cvtE top
     indexAny = A.lift Any
 
     undefE :: forall t. Elt t => IR t
-    undefE = IR $ go (eltType (undefined::t))
+    undefE = IR $ go (eltType @t)
       where
         go :: TupleType s -> Operands s
         go TypeRunit       = OP_Unit
@@ -173,7 +173,7 @@ llvmOfOpenExp top env aenv = cvtE top
 
     prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IROpenExp arch env aenv e
     prjT tix (IR tup) =
-      case eltType (undefined::t) of
+      case eltType @t of
         TypeRscalar (VectorScalarType v) -> goV tix v tup
         t                                -> goT tix t tup
       where
@@ -181,7 +181,7 @@ llvmOfOpenExp top env aenv = cvtE top
         goT :: TupleIdx s e -> TupleType t' -> Operands t' -> CodeGen arch (IR e)
         goT (SuccTupIdx ix) (TypeRpair t _) (OP_Pair x _) = goT ix t x
         goT ZeroTupIdx      (TypeRpair _ t) (OP_Pair _ x)
-          | Just Refl <- matchTupleType t (eltType (undefined::e))
+          | Just Refl <- matchTupleType t (eltType @e)
           = return $ IR x
         goT _ _ _
           = $internalError "prjT/tup" "inconsistent valuation"
@@ -189,8 +189,8 @@ llvmOfOpenExp top env aenv = cvtE top
         -- for SIMD vectors
         goV :: forall (v :: * -> *) a. TupleIdx (ProdRepr t) e -> VectorType (v a) -> Operands (v a) -> CodeGen arch (IR e)
         goV vix v (op' v -> vec)
-          | Just Refl <- matchProdR (prod Proxy (undefined::t)) (vecProdR v)
-          , Just Refl <- matchVecT (eltType (undefined::e)) (vecElemT v)
+          | Just Refl <- matchProdR (prod @_ @t) (vecProdR v)
+          , Just Refl <- matchVecT (eltType @e) (vecElemT v)
           = instr $ ExtractElement v vix vec
         goV _ _ _
           = $internalError "prjT/vec" "inconsistent valuation"
@@ -216,21 +216,21 @@ llvmOfOpenExp top env aenv = cvtE top
           where
             matchTop :: forall ta tb a b. (Elt a, Elt b) => ProdR Elt (ta,a) -> ProdR Elt (tb,b) -> Maybe (a :~: b)
             matchTop _ _
-              | Just Refl <- matchTupleType (eltType (undefined::a)) (eltType (undefined::b)) = gcast Refl
+              | Just Refl <- matchTupleType (eltType @a) (eltType @b) = gcast Refl
               | otherwise                                                                     = Nothing
         matchProdR _ _
           = Nothing
 
         vecProdR :: VectorType v -> ProdR Elt (ProdRepr v)
-        vecProdR (Vector2Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V2 a)
-        vecProdR (Vector3Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V3 a)
-        vecProdR (Vector4Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V4 a)
-        vecProdR (Vector8Type  e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V8 a)
-        vecProdR (Vector16Type e) | EltDict :: EltDict a <- singleElt e = prod Proxy (undefined::V16 a)
+        vecProdR (Vector2Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V2 a)
+        vecProdR (Vector3Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V3 a)
+        vecProdR (Vector4Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V4 a)
+        vecProdR (Vector8Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V8 a)
+        vecProdR (Vector16Type e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V16 a)
 
     cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> IROpenExp arch env aenv t
     cvtT tup =
-      case eltType (undefined::t) of
+      case eltType @t of
         TypeRscalar (VectorScalarType v) -> IR <$> goV v tup
         t                                -> IR <$> goT t tup
       where
@@ -242,7 +242,7 @@ llvmOfOpenExp top env aenv = cvtE top
           -- We must assert that the reified type 'tb' of 'b' is actually
           -- equivalent to the type of 'b'. This can not fail, but is necessary
           -- because 'tb' observes the representation type of surface type 'b'.
-          | Just Refl <- matchTupleType tb (eltType (undefined::b))
+          | Just Refl <- matchTupleType tb (eltType @b)
           = do a'    <- goT ta a
                IR b' <- cvtE b
                return $ OP_Pair a' b'
@@ -268,7 +268,7 @@ llvmOfOpenExp top env aenv = cvtE top
                 where
                   matchExpType :: forall s. Elt s => DelayedOpenExp env aenv s -> Maybe (s :~: a)
                   matchExpType _
-                    | Just Refl <- matchTupleType (eltType (undefined::s)) (TypeRscalar (SingleScalarType a)) = gcast Refl
+                    | Just Refl <- matchTupleType (eltType @s) (TypeRscalar (SingleScalarType a)) = gcast Refl
                     | otherwise                                                                               = Nothing
             pack _
               = $internalError "cvtT/vec" "impossible evaluation"
@@ -294,7 +294,7 @@ llvmOfOpenExp top env aenv = cvtE top
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
 
     intersect :: forall sh. Shape sh => IR sh -> IR sh -> IROpenExp arch env aenv sh
-    intersect (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+    intersect (IR extent1) (IR extent2) = IR <$> go (eltType @sh) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
@@ -312,7 +312,7 @@ llvmOfOpenExp top env aenv = cvtE top
           = $internalError "intersect" "expected shape with Int components"
 
     union :: forall sh. Shape sh => IR sh -> IR sh -> IROpenExp arch env aenv sh
-    union (IR extent1) (IR extent2) = IR <$> go (eltType (undefined::sh)) extent1 extent2
+    union (IR extent1) (IR extent2) = IR <$> go (eltType @sh) extent1 extent2
       where
         go :: TupleType t -> Operands t -> Operands t -> CodeGen arch (Operands t)
         go TypeRunit OP_Unit OP_Unit
@@ -349,7 +349,7 @@ llvmOfOpenExp top env aenv = cvtE top
         _                            -> error "when a grid's misaligned with another behind / that's a moiré..."
 
     coerce :: forall a b. (Elt a, Elt b) => IR a -> IROpenExp arch env aenv b
-    coerce (IR as) = IR <$> go (eltType (undefined::a)) (eltType (undefined::b)) as
+    coerce (IR as) = IR <$> go (eltType @a) (eltType @b) as
       where
         go :: TupleType s -> TupleType t -> Operands s -> CodeGen arch (Operands t)
         go TypeRunit         TypeRunit         OP_Unit         = return OP_Unit
@@ -477,7 +477,7 @@ indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
 -- | Number of elements contained within a shape
 --
 shapeSize :: forall arch sh. Shape sh => IR sh -> CodeGen arch (IR Int)
-shapeSize (IR extent) = go (eltType (undefined::sh)) extent
+shapeSize (IR extent) = go (eltType @sh) extent
   where
     go :: TupleType t -> Operands t -> CodeGen arch (IR Int)
     go TypeRunit OP_Unit
@@ -488,8 +488,8 @@ shapeSize (IR extent) = go (eltType (undefined::sh)) extent
       = return $ ir t i
 
     go (TypeRpair tsh t) (OP_Pair sh sz)
-      | Just Refl <- matchTupleType t (eltType (undefined::Int))
-      = case matchTupleType tsh (eltType (undefined::Z)) of
+      | Just Refl <- matchTupleType t (eltType @Int)
+      = case matchTupleType tsh (eltType @Z) of
           Just Refl -> return (IR sz)
           Nothing   -> do
             a <- go tsh sh
@@ -502,7 +502,7 @@ shapeSize (IR extent) = go (eltType (undefined::sh)) extent
 -- | Convert a multidimensional array index into a linear index
 --
 intOfIndex :: forall arch sh. Shape sh => IR sh -> IR sh -> CodeGen arch (IR Int)
-intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
+intOfIndex (IR extent) (IR index) = cvt (eltType @sh) extent index
   where
     cvt :: TupleType t -> Operands t -> Operands t -> CodeGen arch (IR Int)
     cvt TypeRunit OP_Unit OP_Unit
@@ -513,10 +513,10 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
       = return $ ir t i
 
     cvt (TypeRpair tsh t) (OP_Pair sh sz) (OP_Pair ix i)
-      | Just Refl <- matchTupleType t (eltType (undefined::Int))
+      | Just Refl <- matchTupleType t (eltType @Int)
       -- If we short-circuit the last dimension, we can avoid inserting
       -- a multiply by zero and add of the result.
-      = case matchTupleType tsh (eltType (undefined::Z)) of
+      = case matchTupleType tsh (eltType @Z) of
           Just Refl -> return (IR i)
           Nothing   -> do
             a <- cvt tsh sh ix
@@ -531,7 +531,7 @@ intOfIndex (IR extent) (IR index) = cvt (eltType (undefined::sh)) extent index
 -- | Convert a linear index into into a multidimensional index
 --
 indexOfInt :: forall arch sh. Shape sh => IR sh -> IR Int -> CodeGen arch (IR sh)
-indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
+indexOfInt (IR extent) index = IR <$> cvt (eltType @sh) extent index
   where
     cvt :: TupleType t -> Operands t -> IR Int -> CodeGen arch (Operands t)
     cvt TypeRunit OP_Unit _
@@ -542,12 +542,12 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType (undefined::sh)) extent index
       = return i
 
     cvt (TypeRpair tsh tsz) (OP_Pair sh sz) i
-      | Just Refl <- matchTupleType tsz (eltType (undefined::Int))
+      | Just Refl <- matchTupleType tsz (eltType @Int)
       = do
            i'    <- A.quot integralType i (IR sz)
            -- If we assume the index is in range, there is no point computing
            -- the remainder of the highest dimension since (i < sz) must hold
-           IR r  <- case matchTupleType tsh (eltType (undefined::Z)) of
+           IR r  <- case matchTupleType tsh (eltType @Z) of
                       Just Refl -> return i     -- TODO: in debug mode assert (i < sz)
                       Nothing   -> A.rem  integralType i (IR sz)
            sh'   <- cvt tsh sh i'

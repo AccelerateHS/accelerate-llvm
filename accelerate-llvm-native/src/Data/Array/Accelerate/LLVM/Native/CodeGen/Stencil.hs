@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
 -- Copyright   : [2018] Trevor L. McDonell
@@ -145,7 +146,7 @@ imapNestFromToTile
     -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
 imapNestFromToTile unroll (IR start) (IR end) extent body =
-  go (eltType (undefined::sh)) start end (body' . IR)
+  go (eltType @sh) start end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
 

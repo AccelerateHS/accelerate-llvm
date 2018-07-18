@@ -242,7 +242,7 @@ createBlocks
 -- | Generate a fresh local reference
 --
 fresh :: forall arch a. Elt a => CodeGen arch (IR a)
-fresh = IR <$> go (eltType (undefined::a))
+fresh = IR <$> go (eltType @a)
   where
     go :: TupleType t -> CodeGen arch (Operands t)
     go TypeRunit         = return OP_Unit
@@ -324,7 +324,7 @@ phi incoming = do
   phi' block crit incoming
 
 phi' :: forall arch a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen arch (IR a)
-phi' target (IR crit) incoming = IR <$> go (eltType (undefined::a)) crit [ (o,b) | (IR o, b) <- incoming ]
+phi' target (IR crit) incoming = IR <$> go (eltType @a) crit [ (o,b) | (IR o, b) <- incoming ]
   where
     go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
     go TypeRunit OP_Unit _

@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE PatternGuards       #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Divide
 -- Copyright   : [2018] Trevor L. McDonell
@@ -18,7 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Divide (
 
 ) where
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Bits
@@ -57,8 +58,8 @@ divideWork
     -> (Int -> sh -> sh -> a)     -- action given start/end index range, and split number in the range [0..]
     -> Seq a
 divideWork
-  | Just Refl <- matchShapeType (undefined::DIM0) (undefined::sh) = divideWork0
-  | Just Refl <- matchShapeType (undefined::DIM1) (undefined::sh) = divideWork1
+  | Just Refl <- matchShapeType @DIM0 @sh = divideWork0
+  | Just Refl <- matchShapeType @DIM1 @sh = divideWork1
   | otherwise                                                     = divideWorkN
   --
   -- It is slightly faster to use lists instead of a Sequence here (though the
@@ -177,6 +178,6 @@ vecToShape :: Shape sh => U.Vector Int -> sh
 vecToShape = listToShape . U.toList
 
 {-# INLINE shapeToVec #-}
-shapeToVec :: Shape sh => sh -> U.Vector Int
-shapeToVec sh = U.fromListN (rank sh) (shapeToList sh)
+shapeToVec :: forall sh. Shape sh => sh -> U.Vector Int
+shapeToVec sh = U.fromListN (rank @sh) (shapeToList sh)
 

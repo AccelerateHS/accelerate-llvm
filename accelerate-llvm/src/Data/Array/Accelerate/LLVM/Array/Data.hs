@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -338,7 +339,7 @@ runArrays
     => arrs
     -> (forall sh e. Array sh e -> m (Array sh e))
     -> m arrs
-runArrays arrs worker = toArr `liftM` runR (arrays arrs) (fromArr arrs)
+runArrays arrs worker = toArr `liftM` runR (arrays @arrs) (fromArr arrs)
   where
     runR :: ArraysR a -> a -> m a
     runR ArraysRunit             ()             = return ()
@@ -351,7 +352,7 @@ runArraysAsync
     => arrs
     -> (forall sh e. Array sh e -> Par arch (FutureR arch (Array sh e)))
     -> Par arch (FutureR arch arrs)
-runArraysAsync arrs worker = toArr `liftF` runR (arrays arrs) (fromArr arrs)
+runArraysAsync arrs worker = toArr `liftF` runR (arrays @arrs) (fromArr arrs)
   where
     runR :: ArraysR a -> a -> Par arch (FutureR arch a)
     runR ArraysRunit ()                         = newFull ()

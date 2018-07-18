@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
@@ -21,7 +22,6 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.Analysis.Match
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -56,7 +56,7 @@ mkFold
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array sh e))
 mkFold uid aenv f z acc
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = (+++) <$> mkFoldAll  uid aenv f (Just z) acc
           <*> mkFoldFill uid aenv z
 
@@ -76,7 +76,7 @@ mkFold1
     -> IRDelayed Native aenv (Array (sh :. Int) e)
     -> CodeGen   Native      (IROpenAcc Native aenv (Array sh e))
 mkFold1 uid aenv f acc
-  | Just Refl <- matchShapeType (undefined::sh) (undefined::Z)
+  | Just Refl <- matchShapeType @sh @Z
   = mkFoldAll uid aenv f Nothing acc
 
   | otherwise

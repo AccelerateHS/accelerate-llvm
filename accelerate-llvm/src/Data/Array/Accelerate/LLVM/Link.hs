@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -115,7 +116,7 @@ linkOpenAcc = travA
       case pacc of
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
-        Use arrs                -> rnfArrs (arrays (undefined::arrs)) arrs `seq` return (Use arrs)
+        Use arrs                -> rnfArrs (arrays @arrs) arrs `seq` return (Use arrs)
         Unit e                  -> Unit         <$> travE e
         Alloc sh                -> Alloc        <$> travE sh
         Alet a b                -> Alet         <$> travA a  <*> travA b
