@@ -298,35 +298,19 @@ streamWith target f arrs = map go arrs
 -- Note that at the splice point the usage of @f@ must monomorphic; i.e. the
 -- types @a@, @b@ and @c@ must be at some known concrete type.
 --
--- In order to link the final program together, the included GHC plugin must be
--- used when compiling and linking the program. Add the following option to the
--- .cabal file of your project:
+-- In order to load modules using 'runQ' into @ghci@, the included GHC plugin
+-- must be used. Add the following pragma to the head of affected modules:
 --
--- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
---
--- Similarly, the plugin must also run when loading modules in @ghci@.
---
--- Additionally, when building a _library_ with Cabal which utilises 'runQ', you
--- will need to use the following custom build @Setup.hs@ to ensure that the
--- library is linked together properly:
---
--- > import Data.Array.Accelerate.LLVM.Native.Distribution.Simple
--- > main = defaultMain
---
--- And in the .cabal file:
---
--- > build-type: Custom
--- > custom-setup
--- >   setup-depends:
--- >       base
--- >     , Cabal
--- >     , accelerate-llvm-native
---
--- The custom @Setup.hs@ is only required when building a library with Cabal.
--- Building executables with cabal requires only the GHC plugin.
+-- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin #-}
 --
 -- See the <https://github.com/tmcdonell/lulesh-accelerate lulesh-accelerate>
 -- project for an example.
+--
+-- [/Note:/]
+--
+-- It is recommended to use GHC-8.6 or later. Earlier GHC versions can
+-- successfully build executables utilising 'runQ', but fail to correctly link
+-- libraries containing this function.
 --
 -- [/Note:/]
 --

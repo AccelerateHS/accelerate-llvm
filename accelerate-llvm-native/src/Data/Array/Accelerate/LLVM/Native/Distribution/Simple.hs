@@ -8,7 +8,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Distribution.Simple (
+module Data.Array.Accelerate.LLVM.Native.Distribution.Simple {-# DEPRECATED "This module is obviated by GHC-8.6 and will be removed in future releases" #-} (
 
   defaultMain,
   simpleUserHooks,
