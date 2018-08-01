@@ -67,7 +67,6 @@ import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 
-import Foreign.C
 import Foreign.LibFFI
 import Foreign.Ptr
 

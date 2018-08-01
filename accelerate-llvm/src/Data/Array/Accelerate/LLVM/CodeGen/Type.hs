@@ -16,52 +16,38 @@ module Data.Array.Accelerate.LLVM.CodeGen.Type
 import LLVM.AST.Type.Representation
 import Data.Array.Accelerate.Array.Sugar
 
+import Data.Constraint
+
 
 -- | Extract some evidence that a reified type implies that type is a valid
 -- element
 --
-data EltDict a where
-  EltDict :: Elt a => EltDict a
-
-singleElt :: SingleType a -> EltDict a
+singleElt :: SingleType a -> Dict (Elt a)
 singleElt (NumSingleType    t) = numElt t
 singleElt (NonNumSingleType t) = nonNumElt t
 
-numElt :: NumType a -> EltDict a
+numElt :: NumType a -> Dict (Elt a)
 numElt (IntegralNumType t) = integralElt t
 numElt (FloatingNumType t) = floatingElt t
 
-integralElt :: IntegralType a -> EltDict a
-integralElt TypeInt{}     = EltDict
-integralElt TypeInt8{}    = EltDict
-integralElt TypeInt16{}   = EltDict
-integralElt TypeInt32{}   = EltDict
-integralElt TypeInt64{}   = EltDict
-integralElt TypeWord{}    = EltDict
-integralElt TypeWord8{}   = EltDict
-integralElt TypeWord16{}  = EltDict
-integralElt TypeWord32{}  = EltDict
-integralElt TypeWord64{}  = EltDict
-integralElt TypeCShort{}  = EltDict
-integralElt TypeCUShort{} = EltDict
-integralElt TypeCInt{}    = EltDict
-integralElt TypeCUInt{}   = EltDict
-integralElt TypeCLong{}   = EltDict
-integralElt TypeCULong{}  = EltDict
-integralElt TypeCLLong{}  = EltDict
-integralElt TypeCULLong{} = EltDict
+integralElt :: IntegralType a -> Dict (Elt a)
+integralElt TypeInt{}    = Dict
+integralElt TypeInt8{}   = Dict
+integralElt TypeInt16{}  = Dict
+integralElt TypeInt32{}  = Dict
+integralElt TypeInt64{}  = Dict
+integralElt TypeWord{}   = Dict
+integralElt TypeWord8{}  = Dict
+integralElt TypeWord16{} = Dict
+integralElt TypeWord32{} = Dict
+integralElt TypeWord64{} = Dict
 
-floatingElt :: FloatingType a -> EltDict a
-floatingElt TypeHalf{}    = EltDict
-floatingElt TypeFloat{}   = EltDict
-floatingElt TypeDouble{}  = EltDict
-floatingElt TypeCFloat{}  = EltDict
-floatingElt TypeCDouble{} = EltDict
+floatingElt :: FloatingType a -> Dict (Elt a)
+floatingElt TypeHalf{}   = Dict
+floatingElt TypeFloat{}  = Dict
+floatingElt TypeDouble{} = Dict
 
-nonNumElt :: NonNumType a -> EltDict a
-nonNumElt TypeBool{}   = EltDict
-nonNumElt TypeChar{}   = EltDict
-nonNumElt TypeCChar{}  = EltDict
-nonNumElt TypeCSChar{} = EltDict
-nonNumElt TypeCUChar{} = EltDict
+nonNumElt :: NonNumType a -> Dict (Elt a)
+nonNumElt TypeBool{} = Dict
+nonNumElt TypeChar{} = Dict
 

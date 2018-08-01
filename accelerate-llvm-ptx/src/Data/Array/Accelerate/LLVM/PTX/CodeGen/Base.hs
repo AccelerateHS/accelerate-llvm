@@ -287,8 +287,6 @@ atomicAdd_f t addr val =
           TypeHalf{}    -> 16
           TypeFloat{}   -> 32
           TypeDouble{}  -> 64
-          TypeCFloat{}  -> 32
-          TypeCDouble{} -> 64
 
       addrspace :: Word32
       (t_addr, t_val, addrspace) =

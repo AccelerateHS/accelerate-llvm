@@ -178,17 +178,16 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#extractelement-instruction>
   --
-  ExtractElement  :: VectorType (v e)
-                  -> TupleIdx (ProdRepr (v e)) e
-                  -> Operand (v e)
-                  -> Instruction e
+  ExtractElement  :: Int32  -- TupleIdx (ProdRepr (Vec n a)) a
+                  -> Operand (Vec n a)
+                  -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#insertelement-instruction>
   --
-  InsertElement   :: Int32  -- TupleIdx (ProdRepr (v a)) a
-                  -> Operand (v a)
+  InsertElement   :: Int32  -- TupleIdx (ProdRepr (Vec n a)) a
+                  -> Operand (Vec n a)
                   -> Operand a
-                  -> Instruction (v a)
+                  -> Instruction (Vec n a)
 
   -- ShuffleVector
 
@@ -387,7 +386,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
     BXor _ x y            -> LLVM.Xor (downcast x) (downcast y) md
     LNot x                -> LLVM.Xor (downcast x) (constant True) md
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
-    ExtractElement t i v  -> extractVector t i (downcast v)
+    ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
     ExtractValue _ i s    -> extractStruct (typeOf s) i (downcast s)
     Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
     Store v p x           -> LLVM.Store (downcast v) (downcast p) (downcast x) atomicity alignment md
@@ -470,16 +469,6 @@ instance Downcast (Instruction a) LLVM.Instruction where
       rem t x y
         | signed t  = LLVM.SRem x y md
         | otherwise = LLVM.URem x y md
-
-      extractVector :: VectorType (v a) -> TupleIdx (ProdRepr (v a)) a -> LLVM.Operand -> LLVM.Instruction
-      extractVector t i v = LLVM.ExtractElement v (constant (size t - fromIntegral (tupleIdxToInt i) - 1)) md
-        where
-          size :: VectorType v -> Int32
-          size Vector2Type{}  = 2
-          size Vector3Type{}  = 3
-          size Vector4Type{}  = 4
-          size Vector8Type{}  = 8
-          size Vector16Type{} = 16
 
       extractStruct :: Type s -> TupleIdx (ProdRepr s) t -> LLVM.Operand -> LLVM.Instruction
       extractStruct t i s = LLVM.ExtractValue s [fromIntegral (size t - tupleIdxToInt i - 1)] md
@@ -580,7 +569,7 @@ instance TypeOf Instruction where
     LAnd x _              -> typeOf x
     LOr x _               -> typeOf x
     LNot x                -> typeOf x
-    ExtractElement v _ _  -> typeOfVec v
+    ExtractElement _ x    -> typeOfVec x
     InsertElement _ x _   -> typeOf x
     ExtractValue t _ _    -> scalar t
     Load t _ _            -> scalar t
@@ -603,15 +592,16 @@ instance TypeOf Instruction where
     Select _ _ x _        -> typeOf x
     Call f _              -> fun f
     where
-      typeOfVec :: VectorType (v a) -> Type a
-      typeOfVec v
-        = PrimType . ScalarPrimType . SingleScalarType
-        $ case v of
-            Vector2Type  t -> t
-            Vector3Type  t -> t
-            Vector4Type  t -> t
-            Vector8Type  t -> t
-            Vector16Type t -> t
+      typeOfVec :: Operand (Vec n a) -> Type a
+      typeOfVec x
+        | PrimType p          <- typeOf x
+        , ScalarPrimType s    <- p
+        , VectorScalarType v  <- s
+        , VectorType _ t      <- v
+        = PrimType (ScalarPrimType (SingleScalarType t))
+        --
+        | otherwise
+        = $internalError "typeOfVec" "unexpected evaluation"
 
       scalar :: ScalarType a -> Type a
       scalar = PrimType . ScalarPrimType
