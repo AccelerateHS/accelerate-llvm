@@ -47,7 +47,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
@@ -174,7 +173,7 @@ llvmOfOpenExp top env aenv = cvtE top
     prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IROpenExp arch env aenv e
     prjT tix (IR tup) =
       case eltType @t of
-        TypeRscalar (VectorScalarType v) -> goV tix v tup
+        TypeRscalar (VectorScalarType v) -> goV     v tup
         t                                -> goT tix t tup
       where
         -- for unzipped tuples
@@ -187,46 +186,17 @@ llvmOfOpenExp top env aenv = cvtE top
           = $internalError "prjT/tup" "inconsistent valuation"
 
         -- for SIMD vectors
-        goV :: forall (v :: * -> *) a. TupleIdx (ProdRepr t) e -> VectorType (v a) -> Operands (v a) -> CodeGen arch (IR e)
-        goV vix v (op' v -> vec)
-          | Just Refl <- matchProdR (prod @_ @t) (vecProdR v)
-          , Just Refl <- matchVecT (eltType @e) (vecElemT v)
-          = instr $ ExtractElement v vix vec
-        goV _ _ _
+        goV :: forall n a. VectorType (Vec n a) -> Operands (Vec n a) -> CodeGen arch (IR e)
+        goV (VectorType n a) (OP_Vec v)
+          | Just Refl <- matchVecT (eltType @e) (TypeRscalar (SingleScalarType a))
+          = instr $ ExtractElement (fromIntegral (n - tupleIdxToInt tix - 1)) v
+        goV _ _
           = $internalError "prjT/vec" "inconsistent valuation"
 
         matchVecT :: TupleType (EltRepr e) -> TupleType a -> Maybe (e :~: a)
         matchVecT e v
           | Just Refl <- matchTupleType e v = gcast Refl
           | otherwise                       = Nothing
-
-        vecElemT :: VectorType (v a) -> TupleType a
-        vecElemT (Vector2Type  a) = TypeRscalar (SingleScalarType a)
-        vecElemT (Vector3Type  a) = TypeRscalar (SingleScalarType a)
-        vecElemT (Vector4Type  a) = TypeRscalar (SingleScalarType a)
-        vecElemT (Vector8Type  a) = TypeRscalar (SingleScalarType a)
-        vecElemT (Vector16Type a) = TypeRscalar (SingleScalarType a)
-
-        matchProdR :: ProdR Elt a -> ProdR Elt b -> Maybe (a :~: b)
-        matchProdR ProdRunit        ProdRunit        = Just Refl
-        matchProdR pa@(ProdRsnoc a) pb@(ProdRsnoc b)
-          | Just Refl <- matchProdR a b
-          , Just Refl <- matchTop pa pb
-          = Just Refl
-          where
-            matchTop :: forall ta tb a b. (Elt a, Elt b) => ProdR Elt (ta,a) -> ProdR Elt (tb,b) -> Maybe (a :~: b)
-            matchTop _ _
-              | Just Refl <- matchTupleType (eltType @a) (eltType @b) = gcast Refl
-              | otherwise                                                                     = Nothing
-        matchProdR _ _
-          = Nothing
-
-        vecProdR :: VectorType v -> ProdR Elt (ProdRepr v)
-        vecProdR (Vector2Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V2 a)
-        vecProdR (Vector3Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V3 a)
-        vecProdR (Vector4Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V4 a)
-        vecProdR (Vector8Type  e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V8 a)
-        vecProdR (Vector16Type e) | EltDict :: EltDict a <- singleElt e = prod @_ @(V16 a)
 
     cvtT :: forall t. (Elt t, IsTuple t) => Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> IROpenExp arch env aenv t
     cvtT tup =
@@ -252,10 +222,10 @@ llvmOfOpenExp top env aenv = cvtE top
                     , "  possible solution: ensure that the 'EltRepr' and 'ProdRepr' instances of your data type are consistent." ]
 
         -- for packed SIMD vectors
-        goV :: forall (v :: * -> *) a. VectorType (v a) -> Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen arch (Operands (v a))
-        goV v ts = ir' v . snd <$> pack ts
+        goV :: forall n a. VectorType (Vec n a) -> Tuple (DelayedOpenExp env aenv) (TupleRepr t) -> CodeGen arch (Operands (Vec n a))
+        goV v@(VectorType _ a) ts = OP_Vec . snd <$> pack ts
           where
-            pack :: Tuple (DelayedOpenExp env aenv) tup -> CodeGen arch (Int32, Operand (v a))
+            pack :: Tuple (DelayedOpenExp env aenv) tup -> CodeGen arch (Int32, Operand (Vec n a))
             pack NilTup
               = return (0, undef (VectorScalarType v))
             pack (SnocTup t x)
@@ -269,17 +239,10 @@ llvmOfOpenExp top env aenv = cvtE top
                   matchExpType :: forall s. Elt s => DelayedOpenExp env aenv s -> Maybe (s :~: a)
                   matchExpType _
                     | Just Refl <- matchTupleType (eltType @s) (TypeRscalar (SingleScalarType a)) = gcast Refl
-                    | otherwise                                                                               = Nothing
+                    | otherwise                                                                   = Nothing
             pack _
               = $internalError "cvtT/vec" "impossible evaluation"
 
-            a :: SingleType a
-            a = case v of
-                  Vector2Type  t -> t
-                  Vector3Type  t -> t
-                  Vector4Type  t -> t
-                  Vector8Type  t -> t
-                  Vector16Type t -> t
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
     linearIndex (IRManifest v) ix =

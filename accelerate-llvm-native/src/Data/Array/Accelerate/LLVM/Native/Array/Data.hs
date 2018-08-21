@@ -1,4 +1,6 @@
+{-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -24,7 +26,7 @@ import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
-import Data.Array.Accelerate.LLVM.Native.Execute.Async
+import Data.Array.Accelerate.LLVM.Native.Execute.Async              ()  -- Async Native
 import Data.Array.Accelerate.LLVM.Native.Target
 
 -- standard library
@@ -34,31 +36,15 @@ import Foreign.C
 import Foreign.Ptr
 import Foreign.Storable
 
+import GHC.Int                                                      ( Int(..) )
+
 
 -- | Data instance for arrays in the native backend. We assume a shared-memory
 -- machine, and just manipulate the underlying Haskell array directly.
 --
 instance Remote Native where
-  {-# INLINE allocateRemote    #-}
-  {-# INLINE useRemoteR        #-}
-  {-# INLINE copyToRemoteR     #-}
-  {-# INLINE copyToHostR       #-}
-  {-# INLINE copyToPeerR       #-}
-  {-# INLINE useRemoteAsync    #-}
-  {-# INLINE copyToRemoteAsync #-}
-  {-# INLINE copyToHostAsync   #-}
-  {-# INLINE copyToPeerAsync   #-}
-  {-# INLINE indexRemoteAsync  #-}
-  allocateRemote    = liftIO . allocateArray
-  useRemoteR _      = newFull
-  copyToRemoteR _   = newFull
-  copyToHostR _     = newFull
-  copyToPeerR _ _   = newFull
-  useRemoteAsync    = newFull
-  copyToRemoteAsync = newFull
-  copyToHostAsync   = newFull
-  copyToPeerAsync _ = newFull
-  indexRemoteAsync (Array _ ad) i = newFull (toElt $ unsafeIndexArrayData ad i)
+  {-# INLINE allocateRemote #-}
+  allocateRemote = liftIO . allocateArray
 
 
 -- | Copy an array into a newly allocated array. This uses 'memcpy'.
@@ -66,58 +52,42 @@ instance Remote Native where
 cloneArray :: (Shape sh, Elt e) => Array sh e -> LLVM Native (Array sh e)
 cloneArray arr@(Array _ src) = liftIO $ do
   out@(Array _ dst) <- allocateArray sh
-  copyR arrayElt src dst
+  copyR arrayElt src dst 1
   return out
   where
     sh  = shape arr
     n   = size sh
 
-    copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> IO ()
-    copyR ArrayEltRunit             _   _   = return ()
-    copyR (ArrayEltRpair aeR1 aeR2) ad1 ad2 =
-      copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) >>
-      copyR aeR2 (sndArrayData ad1) (sndArrayData ad2)
+    copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> Int -> IO ()
+    copyR ArrayEltRunit    !_   !_   !_ = return ()
+    copyR ArrayEltRint     !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRint8    !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRint16   !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRint32   !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRint64   !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRword    !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRword8   !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRword16  !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRword32  !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRword64  !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRhalf    !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRfloat   !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRdouble  !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRbool    !ad1 !ad2 !i = copyPrim ad1 ad2 i
+    copyR ArrayEltRchar    !ad1 !ad2 !i = copyPrim ad1 ad2 i
     --
-    copyR (ArrayEltRvec2 aeR)  (AD_V2 ad1)  (AD_V2 ad2)   = copyR aeR ad1 ad2
-    copyR (ArrayEltRvec3 aeR)  (AD_V3 ad1)  (AD_V3 ad3)   = copyR aeR ad1 ad3
-    copyR (ArrayEltRvec4 aeR)  (AD_V4 ad1)  (AD_V4 ad4)   = copyR aeR ad1 ad4
-    copyR (ArrayEltRvec8 aeR)  (AD_V8 ad1)  (AD_V8 ad8)   = copyR aeR ad1 ad8
-    copyR (ArrayEltRvec16 aeR) (AD_V16 ad1) (AD_V16 ad16) = copyR aeR ad1 ad16
+    copyR (ArrayEltRpair !aeR1 !aeR2) !ad1 !ad2 !i = do
+      copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) i
+      copyR aeR2 (sndArrayData ad1) (sndArrayData ad2) i
     --
-    copyR ArrayEltRint     ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint8    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint16   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint32   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRint64   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword8   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword16  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword32  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRword64  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRhalf    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRfloat   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRdouble  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRbool    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRchar    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcshort  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcushort ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcint    ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcuint   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRclong   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRculong  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcllong  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcullong ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcfloat  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcdouble ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcchar   ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcschar  ad1 ad2 = copyPrim ad1 ad2
-    copyR ArrayEltRcuchar  ad1 ad2 = copyPrim ad1 ad2
+    copyR (ArrayEltRvec !aeR) (AD_Vec w# !ad1) (AD_Vec _ !ad2) !i =
+      copyR aeR ad1 ad2 (I# w# * i)
 
-    copyPrim :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a) => ArrayData e -> ArrayData e -> IO ()
-    copyPrim a1 a2 = do
+    copyPrim :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a) => ArrayData e -> ArrayData e -> Int -> IO ()
+    copyPrim !a1 !a2 !i = do
       let p1 = ptrsOfArrayData a1
           p2 = ptrsOfArrayData a2
-      memcpy (castPtr p2) (castPtr p1) (n * sizeOf (undefined :: a))
+      memcpy (castPtr p2) (castPtr p1) (i * n * sizeOf (undefined :: a))
 
 
 -- Standard C functions

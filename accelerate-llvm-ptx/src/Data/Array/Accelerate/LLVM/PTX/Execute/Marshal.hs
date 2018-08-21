@@ -88,50 +88,28 @@ instance ArrayElt e => M.Marshalable PTX (LLVM PTX) (ArrayData e) where
       wrap :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
            => ArrayData e'
            -> LLVM PTX (DList CUDA.FunParam)
-      wrap ad =
-        fmap (DL.singleton . CUDA.VArg)
-             (unsafeGetDevicePtr ad :: LLVM PTX (CUDA.DevicePtr a))
+      wrap ad = fmap (DL.singleton . CUDA.VArg) (unsafeGetDevicePtr ad)
 
       go :: ArrayEltR e' -> ArrayData e' -> LLVM PTX (DList CUDA.FunParam)
-      go ArrayEltRunit             _  = return DL.empty
-      go (ArrayEltRpair aeR1 aeR2) ad =
-        return DL.append `ap` go aeR1 (fstArrayData ad)
-                         `ap` go aeR2 (sndArrayData ad)
+      go ArrayEltRunit    !_  = return DL.empty
+      go ArrayEltRint     !ad = wrap ad
+      go ArrayEltRint8    !ad = wrap ad
+      go ArrayEltRint16   !ad = wrap ad
+      go ArrayEltRint32   !ad = wrap ad
+      go ArrayEltRint64   !ad = wrap ad
+      go ArrayEltRword    !ad = wrap ad
+      go ArrayEltRword8   !ad = wrap ad
+      go ArrayEltRword16  !ad = wrap ad
+      go ArrayEltRword32  !ad = wrap ad
+      go ArrayEltRword64  !ad = wrap ad
+      go ArrayEltRhalf    !ad = wrap ad
+      go ArrayEltRfloat   !ad = wrap ad
+      go ArrayEltRdouble  !ad = wrap ad
+      go ArrayEltRchar    !ad = wrap ad
+      go ArrayEltRbool    !ad = wrap ad
       --
-      go (ArrayEltRvec2 aeR)  (AD_V2 ad)  = go aeR ad
-      go (ArrayEltRvec3 aeR)  (AD_V3 ad)  = go aeR ad
-      go (ArrayEltRvec4 aeR)  (AD_V4 ad)  = go aeR ad
-      go (ArrayEltRvec8 aeR)  (AD_V8 ad)  = go aeR ad
-      go (ArrayEltRvec16 aeR) (AD_V16 ad) = go aeR ad
-      --
-      go ArrayEltRint     ad = wrap ad
-      go ArrayEltRint8    ad = wrap ad
-      go ArrayEltRint16   ad = wrap ad
-      go ArrayEltRint32   ad = wrap ad
-      go ArrayEltRint64   ad = wrap ad
-      go ArrayEltRword    ad = wrap ad
-      go ArrayEltRword8   ad = wrap ad
-      go ArrayEltRword16  ad = wrap ad
-      go ArrayEltRword32  ad = wrap ad
-      go ArrayEltRword64  ad = wrap ad
-      go ArrayEltRhalf    ad = wrap ad
-      go ArrayEltRfloat   ad = wrap ad
-      go ArrayEltRdouble  ad = wrap ad
-      go ArrayEltRchar    ad = wrap ad
-      go ArrayEltRcshort  ad = wrap ad
-      go ArrayEltRcushort ad = wrap ad
-      go ArrayEltRcint    ad = wrap ad
-      go ArrayEltRcuint   ad = wrap ad
-      go ArrayEltRclong   ad = wrap ad
-      go ArrayEltRculong  ad = wrap ad
-      go ArrayEltRcllong  ad = wrap ad
-      go ArrayEltRcullong ad = wrap ad
-      go ArrayEltRcchar   ad = wrap ad
-      go ArrayEltRcschar  ad = wrap ad
-      go ArrayEltRcuchar  ad = wrap ad
-      go ArrayEltRcfloat  ad = wrap ad
-      go ArrayEltRcdouble ad = wrap ad
-      go ArrayEltRbool    ad = wrap ad
+      go (ArrayEltRvec  !aeR)        (AD_Vec _ !ad)      = go aeR ad
+      go (ArrayEltRpair !aeR1 !aeR2) (AD_Pair !ad1 !ad2) = return DL.append `ap` go aeR1 ad1 `ap` go aeR2 ad2
 
 
 -- TODO FIXME !!!

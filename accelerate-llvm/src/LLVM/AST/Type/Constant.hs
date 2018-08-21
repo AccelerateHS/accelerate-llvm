@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MagicHash             #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Constant
@@ -23,7 +25,12 @@ import qualified LLVM.AST.Constant                                  as LLVM
 import qualified LLVM.AST.Float                                     as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
-import Foreign.C.Types
+import Data.Constraint
+import Data.Primitive.ByteArray
+import Data.Primitive.Types
+
+import Data.Array.Accelerate.Array.Data                             () -- instance 'Prim Half'
+import Data.Array.Accelerate.Error
 
 
 -- | Although constant expressions and instructions have many similarities,
@@ -66,13 +73,10 @@ instance Downcast (Constant a) LLVM.Constant where
       single (NonNumSingleType s) = nonnum s
 
       vector :: VectorType s -> s -> LLVM.Constant
-      vector (Vector2Type s) (V2 a b)     = LLVM.Vector $ map (single s) [a,b]
-      vector (Vector3Type s) (V3 a b c)   = LLVM.Vector $ map (single s) [a,b,c]
-      vector (Vector4Type s) (V4 a b c d) = LLVM.Vector $ map (single s) [a,b,c,d]
-      vector (Vector8Type s) (V8 a b c d e f g h) =
-        LLVM.Vector $ map (single s) [a,b,c,d,e,f,g,h]
-      vector (Vector16Type s) (V16 a b c d e f g h i j k l m n o p) =
-        LLVM.Vector $ map (single s) [a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p]
+      vector (VectorType _ s) (Vec ba#)
+        = LLVM.Vector
+        $ map (single s)
+        $ singlePrim s `withDict` foldrByteArray (:) [] (ByteArray ba#)
 
       num :: NumType s -> s -> LLVM.Constant
       num (IntegralNumType s) v
@@ -82,11 +86,9 @@ instance Downcast (Constant a) LLVM.Constant where
       num (FloatingNumType s) v
         = LLVM.Float
         $ case s of
-            TypeFloat{}                            -> LLVM.Single v
-            TypeDouble{}                           -> LLVM.Double v
-            TypeCDouble{} | CDouble u <- v         -> LLVM.Double u
-            TypeCFloat{}  | CFloat u <- v          -> LLVM.Single u
-            TypeHalf{}    | Half (CUShort u) <- v  -> LLVM.Half u
+            TypeFloat{}                        -> LLVM.Single v
+            TypeDouble{}                       -> LLVM.Double v
+            TypeHalf{} | Half (CUShort u) <- v -> LLVM.Half u
 
       nonnum :: NonNumType s -> s -> LLVM.Constant
       nonnum s v
@@ -94,9 +96,35 @@ instance Downcast (Constant a) LLVM.Constant where
         $ case s of
             TypeBool{}   -> fromIntegral (fromEnum v)
             TypeChar{}   -> fromIntegral (fromEnum v)
-            TypeCChar{}  -> fromIntegral (fromEnum v)
-            TypeCUChar{} -> fromIntegral (fromEnum v)
-            TypeCSChar{} -> fromIntegral (fromEnum v)
+
+      singlePrim :: SingleType s -> Dict (Prim s)
+      singlePrim (NumSingleType s)    = numPrim s
+      singlePrim (NonNumSingleType s) = nonNumPrim s
+
+      numPrim :: NumType s -> Dict (Prim s)
+      numPrim (IntegralNumType s) = integralPrim s
+      numPrim (FloatingNumType s) = floatingPrim s
+
+      integralPrim :: IntegralType s -> Dict (Prim s)
+      integralPrim TypeInt{}    = Dict
+      integralPrim TypeInt8{}   = Dict
+      integralPrim TypeInt16{}  = Dict
+      integralPrim TypeInt32{}  = Dict
+      integralPrim TypeInt64{}  = Dict
+      integralPrim TypeWord{}   = Dict
+      integralPrim TypeWord8{}  = Dict
+      integralPrim TypeWord16{} = Dict
+      integralPrim TypeWord32{} = Dict
+      integralPrim TypeWord64{} = Dict
+
+      floatingPrim :: FloatingType s -> Dict (Prim s)
+      floatingPrim TypeHalf{}   = Dict
+      floatingPrim TypeFloat{}  = Dict
+      floatingPrim TypeDouble{} = Dict
+
+      nonNumPrim :: NonNumType s -> Dict (Prim s)
+      nonNumPrim TypeBool{} = $internalError "Prim" "unexpected vector of boolean values"
+      nonNumPrim TypeChar{} = Dict
 
 
 instance TypeOf Constant where

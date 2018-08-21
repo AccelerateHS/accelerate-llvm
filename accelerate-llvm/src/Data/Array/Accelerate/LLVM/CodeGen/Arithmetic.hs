@@ -20,15 +20,16 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
 -- standard/external libraries
-import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), (/), undefined, otherwise, flip, fromInteger )
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                    ( finiteBitSize )
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Constraint                                              ( Dict(..) )
 import Data.Monoid
 import Data.String
 import Foreign.Storable                                             ( sizeOf )
 import Text.Printf
+import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), (/), undefined, otherwise, flip, fromInteger )
 import qualified Data.Ord                                           as Ord
 import qualified Prelude                                            as P
 
@@ -148,7 +149,7 @@ idiv i x y
   = quot i x y
   --
   | IntegralDict <- integralDict i
-  , EltDict      <- integralElt i
+  , Dict         <- integralElt i
   , zero         <- ir i (integral i 0)
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
@@ -175,7 +176,7 @@ mod i x y
   = rem i x y
   --
   | IntegralDict <- integralDict i
-  , EltDict      <- integralElt i
+  , Dict         <- integralElt i
   , zero         <- ir i (integral i 0)
   , n            <- IntegralNumType i
   , s            <- NumSingleType n
@@ -192,7 +193,7 @@ divMod i x y
   = quotRem i x y
   --
   | IntegralDict <- integralDict i
-  , EltDict      <- integralElt i
+  , Dict         <- integralElt i
   , zero         <- ir i (integral i 0)
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
@@ -693,7 +694,5 @@ lm t n
   $ case t of
       TypeHalf{}    -> n<>"f"   -- XXX: check
       TypeFloat{}   -> n<>"f"
-      TypeCFloat{}  -> n<>"f"
       TypeDouble{}  -> n
-      TypeCDouble{} -> n
 

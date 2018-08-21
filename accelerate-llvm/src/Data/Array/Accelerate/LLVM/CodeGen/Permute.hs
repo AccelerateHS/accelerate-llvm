@@ -49,6 +49,7 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
 import Control.Applicative
+import Data.Constraint                                              ( withDict )
 import Prelude
 
 
@@ -184,21 +185,16 @@ atomicCAS_rmw t update addr =
 
   where
     nonnum :: NonNumType t -> CodeGen arch ()
-    nonnum TypeBool{}      = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeChar{}      = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    nonnum TypeCChar{}     = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeCSChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeCUChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
+    nonnum TypeBool{}     = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
+    nonnum TypeChar{}     = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
 
     floating :: FloatingType t -> CodeGen arch ()
-    floating TypeHalf{}    = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
-    floating TypeFloat{}   = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    floating TypeDouble{}  = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
-    floating TypeCFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    floating TypeCDouble{} = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
+    floating TypeHalf{}   = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
+    floating TypeFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
+    floating TypeDouble{} = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
 
     integral :: IntegralType t -> CodeGen arch ()
-    integral i             = atomicCAS_rmw' t i update addr
+    integral i            = atomicCAS_rmw' t i update addr
 
 
 atomicCAS_rmw'
@@ -207,7 +203,7 @@ atomicCAS_rmw'
     -> (IR t -> CodeGen arch (IR t))
     -> Operand (Ptr t)
     -> CodeGen arch ()
-atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
+atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   spin  <- newBlock "rmw.spin"
@@ -270,21 +266,16 @@ atomicCAS_cmp t cmp addr val =
 
   where
     nonnum :: NonNumType t -> CodeGen arch ()
-    nonnum TypeBool{}      = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeChar{}      = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    nonnum TypeCChar{}     = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeCSChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeCUChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
+    nonnum TypeBool{}     = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
+    nonnum TypeChar{}     = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
 
     floating :: FloatingType t -> CodeGen arch ()
-    floating TypeHalf{}    = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
-    floating TypeFloat{}   = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    floating TypeDouble{}  = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
-    floating TypeCFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    floating TypeCDouble{} = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
+    floating TypeHalf{}   = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
+    floating TypeFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
+    floating TypeDouble{} = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
 
     integral :: IntegralType t -> CodeGen arch ()
-    integral i             = atomicCAS_cmp' t i cmp addr val
+    integral i            = atomicCAS_cmp' t i cmp addr val
 
 
 atomicCAS_cmp'
@@ -294,7 +285,7 @@ atomicCAS_cmp'
     -> Operand (Ptr t)
     -> Operand t
     -> CodeGen arch ()
-atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
+atomicCAS_cmp' t i cmp addr val = withDict (singleElt t) $ do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   test  <- newBlock "cas.cmp"

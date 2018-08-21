@@ -113,55 +113,16 @@ instance IsType Word32 where
 instance IsType Word64 where
   type' = PrimType primType
 
-instance IsType CShort where
-  type' = PrimType primType
-
-instance IsType CUShort where
-  type' = PrimType primType
-
-instance IsType CInt where
-  type' = PrimType primType
-
-instance IsType CUInt where
-  type' = PrimType primType
-
-instance IsType CLong where
-  type' = PrimType primType
-
-instance IsType CULong where
-  type' = PrimType primType
-
-instance IsType CLLong where
-  type' = PrimType primType
-
-instance IsType CULLong where
-  type' = PrimType primType
-
 instance IsType Float where
   type' = PrimType primType
 
 instance IsType Double where
   type' = PrimType primType
 
-instance IsType CFloat where
-  type' = PrimType primType
-
-instance IsType CDouble where
-  type' = PrimType primType
-
 instance IsType Bool where
   type' = PrimType primType
 
 instance IsType Char where
-  type' = PrimType primType
-
-instance IsType CChar where
-  type' = PrimType primType
-
-instance IsType CSChar where
-  type' = PrimType primType
-
-instance IsType CUChar where
   type' = PrimType primType
 
 instance IsType (Ptr Int) where
@@ -194,40 +155,10 @@ instance IsType (Ptr Word32) where
 instance IsType (Ptr Word64) where
   type' = PrimType primType
 
-instance IsType (Ptr CShort) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUShort) where
-  type' = PrimType primType
-
-instance IsType (Ptr CInt) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUInt) where
-  type' = PrimType primType
-
-instance IsType (Ptr CLong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CULong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CLLong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CULLong) where
-  type' = PrimType primType
-
 instance IsType (Ptr Float) where
   type' = PrimType primType
 
 instance IsType (Ptr Double) where
-  type' = PrimType primType
-
-instance IsType (Ptr CFloat) where
-  type' = PrimType primType
-
-instance IsType (Ptr CDouble) where
   type' = PrimType primType
 
 instance IsType (Ptr Bool) where
@@ -235,16 +166,6 @@ instance IsType (Ptr Bool) where
 
 instance IsType (Ptr Char) where
   type' = PrimType primType
-
-instance IsType (Ptr CChar) where
-  type' = PrimType primType
-
-instance IsType (Ptr CSChar) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUChar) where
-  type' = PrimType primType
-
 
 -- | All primitive types
 --
@@ -282,55 +203,16 @@ instance IsPrim Word32 where
 instance IsPrim Word64 where
   primType = ScalarPrimType scalarType
 
-instance IsPrim CShort where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUShort where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CInt where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUInt where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CLong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CULong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CLLong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CULLong where
-  primType = ScalarPrimType scalarType
-
 instance IsPrim Float where
   primType = ScalarPrimType scalarType
 
 instance IsPrim Double where
   primType = ScalarPrimType scalarType
 
-instance IsPrim CFloat where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CDouble where
-  primType = ScalarPrimType scalarType
-
 instance IsPrim Bool where
   primType = ScalarPrimType scalarType
 
 instance IsPrim Char where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CChar where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CSChar where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUChar where
   primType = ScalarPrimType scalarType
 
 instance IsPrim (Ptr Int) where
@@ -363,40 +245,10 @@ instance IsPrim (Ptr Word32) where
 instance IsPrim (Ptr Word64) where
   primType = PtrPrimType primType defaultAddrSpace
 
-instance IsPrim (Ptr CShort) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUShort) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CInt) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUInt) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CLong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CULong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CLLong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CULLong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
 instance IsPrim (Ptr Float) where
   primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Double) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CFloat) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CDouble) where
   primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Bool) where
@@ -404,16 +256,6 @@ instance IsPrim (Ptr Bool) where
 
 instance IsPrim (Ptr Char) where
   primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CSChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
 
 instance Show (Type a) where
   show VoidType        = "()"
@@ -450,11 +292,7 @@ instance IsSigned SingleType where
   signed (NonNumSingleType t) = signed t
 
 instance IsSigned VectorType where
-  signed (Vector2Type t)  = signed t
-  signed (Vector3Type t)  = signed t
-  signed (Vector4Type t)  = signed t
-  signed (Vector8Type t)  = signed t
-  signed (Vector16Type t) = signed t
+  signed (VectorType _ t) = signed t
 
 instance IsSigned BoundedType where
   signed (IntegralBoundedType t) = signed t
@@ -471,10 +309,6 @@ instance IsSigned IntegralType where
     TypeInt16{}   -> True
     TypeInt32{}   -> True
     TypeInt64{}   -> True
-    TypeCShort{}  -> True
-    TypeCInt{}    -> True
-    TypeCLong{}   -> True
-    TypeCLLong{}  -> True
     _             -> False
 
 instance IsSigned FloatingType where
@@ -484,9 +318,6 @@ instance IsSigned NonNumType where
   signed = \case
     TypeBool{}    -> False
     TypeChar{}    -> False
-    TypeCUChar{}  -> False
-    TypeCSChar{}  -> True
-    TypeCChar{}   -> True
 
 
 -- | Recover the type of a container

@@ -87,7 +87,12 @@ instance Semigroup Label where
 
 instance Monoid Label where
   mempty                      = Label mempty
+#if   __GLASGOW_HASKELL__ < 804
+  {-# INLINE mappend #-}
+  mappend                     = (<>)
+#elif __GLASGOW_HASKELL__ < 800
   mappend (Label x) (Label y) = Label (mappend x y)
+#endif
 
 
 -- | Convert to llvm-hs

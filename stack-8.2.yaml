@@ -10,9 +10,10 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: 3b203056d92e986ab33456e42fa7233bcded1f6e
+  commit: 5ee592b438b99b5e109b1b4951ee7cfd516add84
 
-- 'half-0.3'
+- half-0.3
+- primitive-0.6.4.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
