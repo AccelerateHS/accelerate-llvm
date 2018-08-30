@@ -107,9 +107,8 @@ embedOpenAcc arch = liftA
     liftGamma aenv             = [|| IM.fromAscList $$(liftIM (IM.toAscList aenv)) ||]
       where
         liftIM :: [(Int, (Label, Idx' aenv'))] -> Q (TExp [(Int, (Label, Idx' aenv'))])
-        liftIM im = do
-          im' <- mapM (\(k,v) -> TH.unTypeQ [|| (k, $$(liftV v)) ||]) im
-          TH.unsafeTExpCoerce (return $ TH.ListE im')
+        liftIM im =
+          TH.TExp . TH.ListE <$> mapM (\(k,v) -> TH.unTypeQ [|| (k, $$(liftV v)) ||]) im
 #endif
     liftV :: (Label, Idx' aenv') -> Q (TExp (Label, Idx' aenv'))
     liftV (Label n, Idx' ix) = [|| (Label $$(liftSBS n), Idx' $$(liftIdx ix)) ||]
