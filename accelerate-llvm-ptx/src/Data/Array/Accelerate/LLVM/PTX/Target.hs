@@ -34,8 +34,8 @@ import qualified LLVM.CodeGenOpt                                    as CGO
 -- accelerate
 import Data.Array.Accelerate.Error
 
+import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.Util
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )

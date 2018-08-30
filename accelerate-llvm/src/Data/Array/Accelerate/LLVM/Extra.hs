@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.Util
+-- Module      : Data.Array.Accelerate.LLVM.Extra
 -- Copyright   : [2014..2017] Trevor L. McDonell
 --               [2014..2014] Vinod Grover (NVIDIA Corporation)
 -- License     : BSD3
@@ -10,10 +10,8 @@
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
--- Generate types for the reified elements of an array computation
---
 
-module Data.Array.Accelerate.LLVM.Util
+module Data.Array.Accelerate.LLVM.Extra
   where
 
 -- accelerate

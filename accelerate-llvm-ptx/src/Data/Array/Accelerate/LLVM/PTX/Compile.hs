@@ -41,8 +41,8 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
+import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Util
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
