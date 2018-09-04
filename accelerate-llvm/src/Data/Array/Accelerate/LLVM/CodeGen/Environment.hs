@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP             #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -12,8 +11,12 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.CodeGen.Environment
-  where
+module Data.Array.Accelerate.LLVM.CodeGen.Environment (
+
+  module Data.Array.Accelerate.LLVM.Environment,
+  module Data.Array.Accelerate.LLVM.CodeGen.Environment,
+
+) where
 
 import Data.IntMap                                              ( IntMap )
 import Data.String
@@ -25,6 +28,7 @@ import Data.Array.Accelerate.Error                              ( internalError 
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.Environment
 
 import LLVM.AST.Type.Name
 
@@ -32,22 +36,9 @@ import LLVM.AST.Type.Name
 -- Scalar environment
 -- ==================
 
--- | An environment for local scalar expression bindings, encoded at the value
--- level as a heterogenous snoc list, and on the type level as nested tuples.
+-- | An environment for local scalar expression bindings
 --
-data Val env where
-  Empty ::                    Val ()
-  Push  :: Val env -> IR t -> Val (env, t)
-
--- | Projection of a value from the valuation environment using a de Bruijn
--- index.
---
-prj :: Idx env t -> Val env -> IR t
-prj ZeroIdx      (Push _   v) = v
-prj (SuccIdx ix) (Push val _) = prj ix val
-#if __GLASGOW_HASKELL__ < 800
-prj _            _            = $internalError "prj" "inconsistent valuation"
-#endif
+type Val = ValR IR
 
 
 -- Array environment
