@@ -38,7 +38,7 @@ extra-deps:
   commit: ccb2063fd7bea66df31af2d18d5a17860de471b9
 
 - git:    https://github.com/tmcdonell/cuda.git
-  commit: f8d5d4383b70e4db71ece82641a44aa1956c365e
+  commit: 9351c1fb8726d30a8f2d9154e3c840f7dd9d034a
 
 - git:    https://github.com/tmcdonell/nvvm.git
   commit: 86ef5a241639620646109ca319e72bd219789e62
