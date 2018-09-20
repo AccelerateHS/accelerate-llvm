@@ -29,6 +29,7 @@ addons:
       - llvm-toolchain-trusty-6.0
 
     packages: &apt_packages
+      - dpkg
       - g++-4.8
       - libgmp-dev
       - happy-1.19.5
