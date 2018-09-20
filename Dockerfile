@@ -23,8 +23,7 @@ RUN add-apt-repository -y ppa:hvr/ghc \
 RUN curl -sSL https://get.haskellstack.org/ | sh
 
 # Buggy versions of ld.bfd fail to link some Haskell packages:
-# https://sourceware.org/bugzilla/show_bug.cgi?id=17689. Gold is
-# faster anyways and uses less RAM.
+# https://sourceware.org/bugzilla/show_bug.cgi?id=17689.
 RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.gold" 20
 RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 
@@ -42,6 +41,11 @@ RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 # GHC 8.4 requires LLVM 5.0 tools (specifically, llc and opt)
 RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-5.0" 50
 RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-5.0" 50
+
+# GHC 8.4 requires libffi7
+RUN apt-add-repository "deb http://deb.debian.org/debian experimental main" \
+ && apt-get update \
+ && apt-get install -y --allow-unauthenticated libffi7
 
 # Setup stack and build dependencies
 WORKDIR ${PREFIX}
