@@ -68,5 +68,13 @@ RUN stack --no-terminal --color never build accelerate-llvm
 RUN stack --no-terminal --color never build accelerate-llvm-native
 RUN stack --no-terminal --color never build accelerate-llvm-ptx
 
+# libcuda.so.1 is part of the nvidia driver. We need this hack to complete the
+# build because dockerhub is not running with the nvidia-docker tool, which I
+# believe is what is meant to provide this lib in a way allowing passthrough to
+# the actual driver library running on host machine.
+#
+# https://github.com/tmcdonell/cuda/issues/55
+RUN rm /usr/local/cuda/lib64/libcuda.so.1
+
 CMD ["bash"]
 
