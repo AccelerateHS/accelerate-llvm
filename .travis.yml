@@ -27,9 +27,11 @@ addons:
       - llvm-toolchain-trusty-4.0
       - llvm-toolchain-trusty-5.0
       - llvm-toolchain-trusty-6.0
+      - sourceline: "deb http://deb.debian.org/debian experimental main"
 
     packages: &apt_packages
       - dpkg
+      - debian-archive-keyring
       - g++-4.8
       - libgmp-dev
       - happy-1.19.5
@@ -103,9 +105,7 @@ before_install:
   - source .travis/update-ghc-settings.sh
 
   # GHC 8.4+ require libffi7
-  - sudo apt-add-repository "deb http://deb.debian.org/debian experimental main"
-  - sudo apt-get update
-  - sudo apt-get install -y --allow-unauthenticated libffi7
+  - sudo apt-get install -y libffi7
 
   # build environment
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
