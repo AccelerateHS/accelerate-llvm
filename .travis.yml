@@ -32,7 +32,6 @@ addons:
 
     packages: &apt_packages
       - dpkg
-      - debian-archive-keyring
       - g++-4.8
       - libgmp-dev
       - happy-1.19.5
@@ -94,6 +93,10 @@ before_install:
   - source .travis/update-ghc-settings.sh
 
   # GHC 8.4+ require libffi7
+  # - sudo apt-get install debian-archive-keyring
+  - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x7638D0442B90D010
+  - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x8B48AD6246925553
+  - sudo apt-get update
   - sudo apt-get install -y libffi7
 
   # ghc-8.6 builds a broken version of c2hs
