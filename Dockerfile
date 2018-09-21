@@ -44,8 +44,9 @@ RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-5.0" 50
 
 # GHC 8.4 requires libffi7
 RUN apt-add-repository "deb http://deb.debian.org/debian experimental main" \
+ && apt-get install -y debian-archive-keyring \
  && apt-get update \
- && apt-get install -y --allow-unauthenticated libffi7
+ && apt-get install -y libffi7
 
 # Setup stack and build dependencies
 WORKDIR ${PREFIX}
