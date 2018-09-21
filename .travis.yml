@@ -12,10 +12,11 @@ cache:
   timeout: 600
   directories:
     - $HOME/.stack/snapshots
+    - $HOME/.local/bin
     - .stack-work/install
 
 before_cache:
-  - rm -rf $(stack path --local-install-root)/bin
+  # - rm -rf $(stack path --local-install-root)/bin
   - rm -rf $(stack path --local-install-root)/doc
 
 addons:
@@ -24,9 +25,9 @@ addons:
       - hvr-ghc
       - ubuntu-toolchain-r-test
       - llvm-toolchain-trusty
-      - llvm-toolchain-trusty-4.0
-      - llvm-toolchain-trusty-5.0
       - llvm-toolchain-trusty-6.0
+      - llvm-toolchain-trusty-5.0
+      - llvm-toolchain-trusty-4.0
       - sourceline: "deb http://deb.debian.org/debian experimental main"
 
     packages: &apt_packages
@@ -94,6 +95,13 @@ before_install:
 
   # GHC 8.4+ require libffi7
   - sudo apt-get install -y libffi7
+
+  # ghc-8.6 builds a broken version of c2hs
+  - |
+      if [ ${GHC%.*} == "8.6" -a ! -x "$(which c2hs)" ]; then
+        travis_retry stack --stack-yaml=stack-8.4.yaml setup --no-terminal --no-system-ghc
+        travis_retry stack --stack-yaml=stack-8.4.yaml install c2hs --fast --no-terminal
+      fi
 
   # build environment
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
