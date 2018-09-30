@@ -18,8 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.Embed (
 
 ) where
 
-import Data.ByteString.Short.Char8                                  as S8
-import Data.ByteString.Short.Internal                               as BS
+import Data.ByteString.Short.Extra                                  as BS
 
 import Data.Array.Accelerate.Lifetime
 
@@ -80,11 +79,4 @@ embed target (ObjectR _ cfg obj) = do
 
     listE :: [Q (TExp a)] -> Q (TExp [a])
     listE xs = TH.unsafeTExpCoerce (TH.listE (map TH.unTypeQ xs))
-
-    liftSBS :: ShortByteString -> Q (TExp ShortByteString)
-    liftSBS bs =
-      let bytes = BS.unpack bs
-          len   = BS.length bs
-      in
-      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
