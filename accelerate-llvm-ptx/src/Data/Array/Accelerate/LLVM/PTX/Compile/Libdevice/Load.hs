@@ -36,8 +36,10 @@ import Foreign.CUDA.Analysis
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 -- standard library
-import Data.ByteString                                              ( ByteString )
 import System.IO.Unsafe
+import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short.Char8                                  ( ShortByteString )
+import qualified Data.ByteString.Short.Char8                        as S8
 
 
 -- NVVM Reflect
@@ -49,7 +51,7 @@ class NVVMReflect a where
 instance NVVMReflect AST.Module where
   nvvmReflect = nvvmReflectModule
 
-instance NVVMReflect (String, ByteString) where
+instance NVVMReflect (ShortByteString, ByteString) where
   nvvmReflect = $$( nvvmReflectBitcode nvvmReflectModule )
 
 
@@ -78,7 +80,7 @@ instance Libdevice AST.Module where
       (6,_)             -> libdevice_50_mdl   -- 6.x
       _                 -> $internalError "libdevice" "no binary for this architecture"
 
-instance Libdevice (String, ByteString) where
+instance Libdevice (ShortByteString, ByteString) where
   libdevice _
     | CUDA.libraryVersion >= 9000
     = libdevice_50_bc
@@ -116,7 +118,7 @@ libdevice_50_mdl = unsafePerformIO $ libdeviceModule (Compute 5 0)
 
 -- Load the libdevice bitcode files as raw binary data.
 --
-libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (String,ByteString)
+libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
 libdevice_20_bc = $$( libdeviceBitcode (Compute 2 0) )
 libdevice_30_bc = $$( libdeviceBitcode (Compute 3 0) )
 libdevice_35_bc = $$( libdeviceBitcode (Compute 3 5) )
@@ -135,9 +137,11 @@ libdevice_50_bc = $$( libdeviceBitcode (Compute 5 0) )
 --
 libdeviceModule :: Compute -> IO AST.Module
 libdeviceModule arch = do
-  let bc :: (String, ByteString)
-      bc = libdevice arch
+  let
+      name :: ShortByteString
+      bc   :: ByteString
+      (name, bc) = libdevice arch
   --
   withContext $ \ctx ->
-    withModuleFromBitcode ctx bc moduleAST
+    withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
 

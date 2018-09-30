@@ -141,7 +141,7 @@ Library
         , llvm-hs                       >= 4.1 && < 7.1
         , llvm-hs-pure                  >= 4.1 && < 7.1
         , mtl                           >= 2.2.1
-        , nvvm                          >= 0.7.5
+        , nvvm                          >= 0.9
         , pretty                        >= 1.1
         , process                       >= 1.4.3
         , template-haskell

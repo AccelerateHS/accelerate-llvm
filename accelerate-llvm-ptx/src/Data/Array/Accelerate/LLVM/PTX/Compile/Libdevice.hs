@@ -119,7 +119,7 @@ withLibdeviceNVVM
     :: DeviceProperties
     -> Context
     -> Module
-    -> ([(String, ByteString)] -> LLVM.Module -> IO a)
+    -> ([(ShortByteString, ByteString)] -> LLVM.Module -> IO a)
     -> IO a
 withLibdeviceNVVM dev ctx ast next =
   LLVM.withModuleFromAST ctx ast $ \mdl -> do

@@ -36,14 +36,19 @@ import Foreign.CUDA.Analysis
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 import Data.ByteString                                              ( ByteString )
+import Data.ByteString.Short                                        ( ShortByteString )
 import Data.FileEmbed
 import Data.List
 import Data.Maybe
-import Language.Haskell.TH.Syntax                                   hiding ( Name )
+import Language.Haskell.TH.Syntax                                   ( Q, TExp )
 import System.Directory
 import System.FilePath
 import Text.Printf
 import qualified Data.ByteString.Short                              as BS
+import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.ByteString.Short.Extra                        as BS
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
 
 
 -- This is a hacky module that can be linked against in order to provide the
@@ -86,14 +91,14 @@ nvvmReflectModule =
 
 -- Lower the given NVVM Reflect module into bitcode.
 --
-nvvmReflectBitcode :: AST.Module -> Q (TExp (String, ByteString))
+nvvmReflectBitcode :: AST.Module -> Q (TExp (ShortByteString, ByteString))
 nvvmReflectBitcode mdl = do
   let name = "__nvvm_reflect"
   --
-  bs <- runIO $ LLVM.withContext $ \ctx -> do
-                  LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly
-  be <- bsToExp bs
-  return . TExp $ TupE [ LitE (StringL name), be ]
+  bs <- TH.runIO $ LLVM.withContext $ \ctx ->
+                     LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly
+  TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS name)
+                                , bsToExp bs ]
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name
@@ -105,7 +110,7 @@ nvvmReflectBitcode mdl = do
 -- search the libdevice PATH for all files of the appropriate compute capability
 -- and load the "most recent" (by sort order).
 --
-libdeviceBitcode :: Compute -> Q (TExp (String, ByteString))
+libdeviceBitcode :: Compute -> Q (TExp (ShortByteString, ByteString))
 libdeviceBitcode (Compute m n) = do
   let basename
         | CUDA.libraryVersion < 9000 = printf "libdevice.compute_%d%d" m n
@@ -115,13 +120,13 @@ libdeviceBitcode (Compute m n) = do
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
       base    = cudaInstallPath </> "nvvm" </> "libdevice"
   --
-  files <- runIO $ getDirectoryContents base
+  files <- TH.runIO $ getDirectoryContents base
   --
   let name  = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
       path  = base </> name
   --
-  bc    <- embedFile path
-  return . TExp $ TupE [ LitE (StringL name), bc ]
+  TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS (S8.pack name))
+                                , embedFile path ]
 
 
 -- Determine the location of the libdevice bitcode libraries. We search for the
