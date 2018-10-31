@@ -113,6 +113,9 @@ instance IsType Word32 where
 instance IsType Word64 where
   type' = PrimType primType
 
+instance IsType Half where
+  type' = PrimType primType
+
 instance IsType Float where
   type' = PrimType primType
 
@@ -203,6 +206,9 @@ instance IsPrim Word32 where
 instance IsPrim Word64 where
   primType = ScalarPrimType scalarType
 
+instance IsPrim Half where
+  primType = ScalarPrimType scalarType
+
 instance IsPrim Float where
   primType = ScalarPrimType scalarType
 
@@ -243,6 +249,9 @@ instance IsPrim (Ptr Word32) where
   primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Word64) where
+  primType = PtrPrimType primType defaultAddrSpace
+
+instance IsPrim (Ptr Half) where
   primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Float) where
