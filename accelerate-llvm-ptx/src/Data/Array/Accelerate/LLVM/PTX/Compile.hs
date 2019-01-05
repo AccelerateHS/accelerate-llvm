@@ -62,6 +62,7 @@ import Control.DeepSeq
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.State
+import Data.Bifunctor                                               ( first )
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
@@ -233,7 +234,7 @@ compileModuleNVVM dev name libdevice mdl = do
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
   bc  <- LLVM.moduleBitcode mdl
-  ptx <- NVVM.compileModules (("",header) : (S8.unpack name,bc) : libdevice) flags
+  ptx <- NVVM.compileModules (("",header) : (name,bc) : (fmap (first S8.pack) libdevice)) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)

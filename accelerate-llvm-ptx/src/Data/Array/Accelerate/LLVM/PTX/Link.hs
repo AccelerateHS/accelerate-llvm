@@ -97,7 +97,7 @@ linkFunctionQ
     -> LaunchConfig
     -> IO (Kernel, Q (TExp (Int -> Int)))
 linkFunctionQ mdl name configure = do
-  f     <- CUDA.getFun mdl (unpack name)
+  f     <- CUDA.getFun mdl name
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes
