@@ -1,138 +1,23 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-# resolver: ghc-8.6.0.20180627 #rc1
-resolver: ghc-8.6.0.20180714 #rc2
-compiler-check: match-exact
-allow-newer: true
-
-setup-info:
-  ghc:
-    # # rc1
-    # linux64: # x86_64-unknown-linux
-    #   8.6.0.20180627:
-    #     url:    https://downloads.haskell.org/~ghc/8.6.1-alpha1/ghc-8.6.0.20180627-x86_64-deb8-linux.tar.xz
-    #     sha256: e891e9e6ad0d53382e79b5c1005af6123501fbc95088ed849c3a1c22979db319
-    # windows64:
-    #   8.6.0.20180627:
-    #     url:    https://downloads.haskell.org/~ghc/8.6.1-alpha1/ghc-8.6.0.20180627-x86_64-unknown-mingw32.tar.xz
-    #     sha256: ccff1f896425f932581c804e1fd6dd14dea7b7423f7f4970ff1d99ab03c97504
-
-    # rc2
-    linux64:
-      8.6.0.20180714:
-        url:    https://downloads.haskell.org/~ghc/8.6.1-alpha2/ghc-8.6.0.20180714-x86_64-deb8-linux.tar.xz
-        sha256: 5cfbac190b2d8be4457c7f39ac9697bfa7f458c3b456c254f685f6fcbb7ab48b
-    windows64:
-      8.6.0.20180714:
-        url:    https://downloads.haskell.org/~ghc/8.6.1-alpha2/ghc-8.6.0.20180714-x86_64-unknown-mingw32.tar.xz
-        sha256: a9704c4ef91a4301a79de428455e283a4ac40dd30c4ff6635c766896153bcc07
+resolver: lts-13.4
 
 packages:
-- 'accelerate-llvm'
-- 'accelerate-llvm-native'
-- 'accelerate-llvm-ptx'
+- accelerate-llvm
+- accelerate-llvm-native
+- accelerate-llvm-ptx
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
-  commit: ccb2063fd7bea66df31af2d18d5a17860de471b9
 
-- git:    https://github.com/tmcdonell/cuda.git
-  commit: 9351c1fb8726d30a8f2d9154e3c840f7dd9d034a
-
-- git:    https://github.com/tmcdonell/nvvm.git
-  commit: 86ef5a241639620646109ca319e72bd219789e62
-
-- git:    https://github.com/tmcdonell/hs-memory.git
-  commit: feee6256e19ed178dc75b071dc54983bc6320f26
-
-- git:    https://github.com/tmcdonell/tasty.git
-  commit: 540c85d14e6601bb8c92e9fea22dbb8bd27cbe85
+- git :   https://github.com/llvm-hs/llvm-hs.git
+  commit: 1e512dcf2a40d253a95d231b7991b48f1f2a8a9e
   subdirs:
-    - core
+    - llvm-hs
+    - llvm-hs-pure
 
-- git:    https://github.com/tmcdonell/language-c.git
-  commit: e6e3684d76015cdbdd5e716e1acc9a3a23f38fdf
-
-- abstract-deque-0.3
-- adjunctions-4.4
-- ansi-terminal-0.8.0.4
-- ansi-wl-pprint-0.6.8.2
-- async-2.2.1
-- atomic-primops-0.8.2
-- attoparsec-0.13.2.2
-- base-orphans-0.8
-- basement-0.0.8
-- bifunctors-5.5.3
-- cabal-doctest-1.0.6
-- call-stack-0.1.0
-- cereal-0.5.5.0
-- clock-0.7.2
-- colour-2.3.4
-- comonad-5.0.4
-- concurrent-output-1.10.6
-- constraints-0.10.1
-- contravariant-1.5
-- cryptonite-0.25
-- data-default-class-0.1.2.0
-- distributive-0.6
-- dlist-0.8.0.4
-- exceptions-0.10.0
-- fail-4.9.0.0
-- file-embed-0.0.10.1
-- foundation-0.0.21
-- free-5.1
-- half-0.3
-- happy-1.19.9
-- hashable-1.2.7.0
-- hashtables-1.2.3.1
-- haskell-lexer-1.0.1
-- hedgehog-0.6
-- integer-logarithms-1.0.2.1
-- invariant-0.5.1
-- kan-extensions-5.2
-- lens-4.17
-- libffi-0.1
-- lifted-async-0.10.0.2
-- lifted-base-0.2.3.12
-- llvm-hs-6.3.0
-- llvm-hs-pure-6.2.1
-- lockfree-queue-0.2.3.1
-- mintty-0.1.2
-- mmorph-1.1.2
-- monad-control-1.0.2.3
-- optparse-applicative-0.14.2.0
-- parallel-3.2.2.0
-- pretty-show-1.7
-- primitive-0.6.4.0
-- profunctors-5.3
-- random-1.1
-- reflection-2.1.4
-- resourcet-1.2.1
-- scientific-0.3.6.2
-- semigroupoids-5.3.1
-- semigroups-0.18.5
-- StateVar-1.1.1.0
-- syb-0.7
-- tagged-0.8.6
-- tasty-expected-failure-0.11.1.1
 - tasty-hedgehog-0.2.0.0
-- tasty-hunit-0.10.0.1
-- terminal-size-0.3.2.1
-- th-abstraction-0.2.8.0
-- th-lift-0.7.10
-- transformers-base-0.4.5.2
-- transformers-compat-0.6.2
-- unbounded-delays-0.1.1.0
-- unique-0
-- unliftio-core-0.1.1.0
-- unordered-containers-0.2.9.0
-- utf8-string-1.0.1.1
-- uuid-types-1.0.3
-- vector-0.12.0.1
-- void-0.7.2
-- wcwidth-0.0.2
-- wl-pprint-annotated-0.1.0.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
@@ -150,6 +35,7 @@ extra-deps:
 # require-stack-version: -any # Default
 # require-stack-version: >= 0.1.4.0
 
+  commit: ccb2063fd7bea66df31af2d18d5a17860de471b9
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386
 # arch: x86_64
