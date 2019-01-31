@@ -12,10 +12,8 @@ extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
   commit: 99b5de898f9fe600c1a053fd53887407fa836b10
 
-- git:    https://github.com/tmcdonell/cuda.git
-  commit: 9351c1fb8726d30a8f2d9154e3c840f7dd9d034a
-
-- nvvm-0.8.0.3
+- cuda-0.10.0.0
+- nvvm-0.9.0.0
 - primitive-0.6.4.0
 
 # Override default flag values for local packages and extra-deps

@@ -13,11 +13,11 @@ extra-deps:
   commit: 99b5de898f9fe600c1a053fd53887407fa836b10
 
 - Cabal-2.0.1.1
-- cuda-0.9.0.3
+- cuda-0.10.0.0
 - half-0.3
-- hashtables-1.2.3.0
+- hashtables-1.2.3.1
 - lockfree-queue-0.2.3.1
-- nvvm-0.8.0.3
+- nvvm-0.9.0.0
 - primitive-0.6.4.0
 - tasty-hedgehog-0.2.0.0
 
