@@ -37,7 +37,6 @@ module Data.Array.Accelerate.LLVM.Array.Data (
 -- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Sugar
-import qualified Data.Array.Accelerate.Array.Representation         as R
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
@@ -111,8 +110,8 @@ class Async arch => Remote arch where
   {-# INLINE useRemoteAsync #-}
   useRemoteAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
   useRemoteAsync arrs =
-    runArraysAsync arrs $ \arr@(Array sh _) ->
-      let n = R.size sh
+    runArraysAsync arrs $ \arr ->
+      let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             useRemoteR (n*m) ad
 
@@ -121,8 +120,8 @@ class Async arch => Remote arch where
   {-# INLINE copyToRemoteAsync #-}
   copyToRemoteAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
   copyToRemoteAsync arrs =
-    runArraysAsync arrs $ \arr@(Array sh _) ->
-      let n = R.size sh
+    runArraysAsync arrs $ \arr ->
+      let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToRemoteR (n*m) ad
 
@@ -131,8 +130,8 @@ class Async arch => Remote arch where
   {-# INLINE copyToHostAsync #-}
   copyToHostAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
   copyToHostAsync arrs =
-    runArraysAsync arrs $ \arr@(Array sh _) ->
-      let n = R.size sh
+    runArraysAsync arrs $ \arr ->
+      let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToHostR (n*m) ad
 
@@ -143,8 +142,8 @@ class Async arch => Remote arch where
   {-# INLINE copyToPeerAsync #-}
   copyToPeerAsync :: Arrays arrs => arch -> arrs -> Par arch (FutureR arch arrs)
   copyToPeerAsync peer arrs =
-    runArraysAsync arrs $ \arr@(Array sh _) ->
-      let n = R.size sh
+    runArraysAsync arrs $ \arr ->
+      let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToPeerR peer (n*m) ad
 
@@ -152,7 +151,8 @@ class Async arch => Remote arch where
   --
   {-# INLINE indexRemoteAsync #-}
   indexRemoteAsync
-      :: Array sh e
+      :: Elt e
+      => Array sh e
       -> Int
       -> Par arch (FutureR arch e)
   indexRemoteAsync (Array _ ad) i = newFull (toElt $ unsafeIndexArrayData ad i)
@@ -225,7 +225,7 @@ copyToPeer peer arrs = do
 -- This is synchronous with respect to both the host and remote device.
 --
 {-# INLINE indexRemote #-}
-indexRemote :: Remote arch => Array sh e -> Int -> Par arch e
+indexRemote :: (Remote arch, Elt e) => Array sh e -> Int -> Par arch e
 indexRemote arr i =
   block =<< indexRemoteAsync arr i
 
@@ -237,7 +237,7 @@ indexRemote arr i =
 --
 {-# INLINE runIndexArray #-}
 runIndexArray
-    :: forall m sh e. Monad m
+    :: forall m sh e. (Monad m, Elt e)
     => (forall s a. (ArrayElt s, ArrayPtrs s ~ Ptr a, Storable a, Typeable a, Typeable s) => ArrayData s -> Int -> Int -> m (ArrayData s))
     -> Array sh e
     -> Int
@@ -267,7 +267,7 @@ runIndexArray worker (Array _ adata) i = toElt . flip unsafeIndexArrayData 0 <$>
 
 {-# INLINE runIndexArrayAsync #-}
 runIndexArrayAsync
-    :: forall arch sh e. Async arch
+    :: forall arch sh e. (Async arch, Elt e)
     => (forall s a. (ArrayElt s, ArrayPtrs s ~ Ptr a, Storable a, Typeable a, Typeable s) => ArrayData s -> Int -> Int -> Par arch (FutureR arch (ArrayData s)))
     -> Array sh e
     -> Int
@@ -319,7 +319,7 @@ runIndexArrayAsync worker (Array _ adata) i = (toElt . flip unsafeIndexArrayData
 runArrays
     :: forall m arrs. (Monad m, Arrays arrs)
     => arrs
-    -> (forall sh e. Array sh e -> m (Array sh e))
+    -> (forall sh e. (Shape sh, Elt e) => Array sh e -> m (Array sh e))
     -> m arrs
 runArrays arrs worker = toArr `liftM` runR (arrays @arrs) (fromArr arrs)
   where
@@ -332,7 +332,7 @@ runArrays arrs worker = toArr `liftM` runR (arrays @arrs) (fromArr arrs)
 runArraysAsync
     :: forall arch arrs. (Async arch, Arrays arrs)
     => arrs
-    -> (forall sh e. Array sh e -> Par arch (FutureR arch (Array sh e)))
+    -> (forall sh e. (Shape sh, Elt e) => Array sh e -> Par arch (FutureR arch (Array sh e)))
     -> Par arch (FutureR arch arrs)
 runArraysAsync arrs worker = toArr `liftF` runR (arrays @arrs) (fromArr arrs)
   where
@@ -347,7 +347,7 @@ runArraysAsync arrs worker = toArr `liftF` runR (arrays @arrs) (fromArr arrs)
 --
 {-# INLINE runArray #-}
 runArray
-    :: forall m sh e. Monad m
+    :: forall m sh e. (Monad m, Elt e)
     => Array sh e
     -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => Int -> ArrayData e' -> m (ArrayData e'))
     -> m (Array sh e)
@@ -376,7 +376,7 @@ runArray (Array sh adata) worker = Array sh `liftM` runR arrayElt adata 1
 
 {-# INLINE runArrayAsync #-}
 runArrayAsync
-    :: forall arch sh e. Async arch
+    :: forall arch sh e. (Async arch, Elt e)
     => Array sh e
     -> (forall e' p. (ArrayElt e', ArrayPtrs e' ~ Ptr p, Storable p, Typeable p, Typeable e') => Int -> ArrayData e' -> Par arch (FutureR arch (ArrayData e')))
     -> Par arch (FutureR arch (Array sh e))

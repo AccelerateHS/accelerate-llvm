@@ -10,6 +10,7 @@ packages:
 
 extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
+  commit: 99b5de898f9fe600c1a053fd53887407fa836b10
 
 - git :   https://github.com/llvm-hs/llvm-hs.git
   commit: 1e512dcf2a40d253a95d231b7991b48f1f2a8a9e
@@ -35,7 +36,6 @@ extra-deps:
 # require-stack-version: -any # Default
 # require-stack-version: >= 0.1.4.0
 
-  commit: ccb2063fd7bea66df31af2d18d5a17860de471b9
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386
 # arch: x86_64

@@ -539,7 +539,7 @@ executeOpenExp rootExp env aenv = travE rootExp
         extend (SliceAll sliceIdx)   (slx, ()) (sh, sz) = (extend sliceIdx slx sh, sz)
         extend (SliceFixed sliceIdx) (slx, sz) sh       = (extend sliceIdx slx sh, sz)
 
-    index :: Shape sh => Array sh e -> sh -> Par arch (FutureR arch e)
+    index :: (Shape sh, Elt e) => Array sh e -> sh -> Par arch (FutureR arch e)
     index arr ix = indexRemoteAsync arr (toIndex (shape arr) ix)
 
 
