@@ -26,7 +26,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/homebrew-llvm/llvm-6.0
+    > brew install llvm-hs/llvm/llvm-7
     .
     /Debian & Ubuntu/
     .
@@ -35,13 +35,13 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-6.0-dev
+    > apt-get install llvm-7-dev
     .
     /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/6.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/7.0.0/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
@@ -153,8 +153,8 @@ Library
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 6.4
-        , llvm-hs-pure                  >= 4.1 && < 6.3
+        , llvm-hs                       >= 4.1 && < 7.1
+        , llvm-hs-pure                  >= 4.1 && < 7.1
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
