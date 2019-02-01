@@ -418,8 +418,8 @@ instance Downcast (Instruction a) LLVM.Instruction where
       exact :: Bool     -- does not lose any information
       exact = False
 
-      inbounds :: Bool  -- XXX: when should GEP use inbounds?
-      inbounds = False
+      inbounds :: Bool
+      inbounds = True
 
       atomicity :: Maybe LLVM.Atomicity
       atomicity = Nothing
