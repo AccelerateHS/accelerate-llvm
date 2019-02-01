@@ -22,7 +22,8 @@ addons:
       - llvm-toolchain-trusty
     packages: &apt_packages
       - dpkg
-      - g++-5
+      - gcc-8
+      - g++-8
       - libgmp-dev
       - happy-1.19.5
       - alex-3.1.7
@@ -79,7 +80,9 @@ before_install:
   - export CUDA_INSTALL_EXTRA_LIBS=0  # cublas, cufft, etc.
   - source .travis/install-cuda-trusty.sh
   - source .travis/install-stack.sh
-  - source .travis/update-ghc-settings.sh
+
+  # llvm-hs requires new g++
+  - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 60 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
   # GHC 8.4+ require libffi7
   - echo "deb http://deb.debian.org/debian experimental main" | sudo tee -a /etc/apt/sources.list
