@@ -103,21 +103,22 @@ before_install:
 
 install:
   # how much do we have to do?
-  - stack build --only-dependencies --no-terminal --dry-run
+  - export FLAGS="--fast --no-terminal --no-copy-bins --flag accelerate:nofib"
+  - stack build $FLAGS --only-dependencies --test --dry-run
 
   # build dependencies
-  - travis_retry                stack build accelerate --fast --no-terminal --no-copy-bins --only-dependencies
-  - travis_retry travis_wait 60 stack build accelerate --fast --no-terminal --no-copy-bins
-  - travis_retry                stack build            --fast --no-terminal --no-copy-bins --only-dependencies --test
+  - travis_retry                stack build accelerate $FLAGS --only-dependencies
+  - travis_retry travis_wait 60 stack build accelerate $FLAGS
+  - travis_retry                stack build            $FLAGS --only-dependencies
 
 script:
-  - travis_retry stack build accelerate-llvm        --no-terminal --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-native --no-terminal --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-ptx    --no-terminal --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm        $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-native $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm-ptx    $FLAGS --test --no-run-tests --haddock --no-haddock-deps
 
   # Run test suite(s)
   # only use a single test thread due to limited memory on the travis boxes
-  - stack test accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
+  - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
 after_success:
   - source .travis/update-accelerate-buildbot.sh
