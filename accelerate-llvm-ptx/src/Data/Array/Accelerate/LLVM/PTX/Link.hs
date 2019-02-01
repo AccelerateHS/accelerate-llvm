@@ -97,11 +97,7 @@ linkFunctionQ
     -> LaunchConfig
     -> IO (Kernel, Q (TExp (Int -> Int)))
 linkFunctionQ mdl name configure = do
-#if MIN_VERSION_cuda(0,10,0)
   f     <- CUDA.getFun mdl name
-#else
-  f     <- CUDA.getFun mdl (unpack name)
-#endif
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes

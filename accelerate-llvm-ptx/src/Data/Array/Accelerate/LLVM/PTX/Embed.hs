@@ -69,11 +69,7 @@ embed target (ObjectR _ cfg obj) = do
     linkQ :: TH.Name -> (Kernel, Q (TExp (Int -> Int))) -> Q (TExp Kernel)
     linkQ jit (Kernel name _ dsmem cta _, grid) =
       [|| unsafePerformIO $ do
-#if MIN_VERSION_cuda(0,10,0)
             f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(liftSBS name)
-#else
-            f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(TH.unsafeTExpCoerce (TH.lift (S8.unpack name)))
-#endif
             return $ Kernel $$(liftSBS name) f dsmem cta $$grid
        ||]
 
