@@ -20,8 +20,6 @@ addons:
       - hvr-ghc
       - ubuntu-toolchain-r-test
       - llvm-toolchain-trusty
-      - sourceline: "deb http://deb.debian.org/debian experimental main"
-
     packages: &apt_packages
       - dpkg
       - g++-5
@@ -84,6 +82,7 @@ before_install:
   - source .travis/update-ghc-settings.sh
 
   # GHC 8.4+ require libffi7
+  - echo "deb http://deb.debian.org/debian experimental main" | sudo tee -a /etc/apt/sources.list
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x7638D0442B90D010 0x8B48AD6246925553 0x04EE7237B7D453EC
   - sudo apt-get install debian-archive-keyring
   - sudo apt-get update
