@@ -84,7 +84,7 @@ before_install:
   # llvm-hs requires new g++
   - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 60 --slave /usr/bin/g++ g++ /usr/bin/g++-8
 
-  # GHC 8.4+ require libffi7
+  # ghc-8.4+ require libffi7
   - echo "deb http://deb.debian.org/debian experimental main" | sudo tee -a /etc/apt/sources.list
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x7638D0442B90D010 0x8B48AD6246925553 0x04EE7237B7D453EC
   - sudo apt-get install debian-archive-keyring
@@ -97,6 +97,13 @@ before_install:
   #       travis_retry stack --stack-yaml=stack-8.4.yaml setup --no-terminal --no-system-ghc
   #       travis_retry stack --stack-yaml=stack-8.4.yaml install c2hs --fast --no-terminal
   #     fi
+
+  # ghc-8.0/haddock crashes on dsImpSpecs
+  - |
+      case ${GHC%.*} in
+        8.0) ;; # too slow ._.
+        *  ) export HADDOCK="--haddock --no-haddock-deps" ;;
+      esac
 
   # build environment
   - echo "$(stack exec ghc -- --version) [$(stack exec ghc -- --print-project-git-commit-id 2> /dev/null || echo '?')]"
@@ -115,9 +122,9 @@ install:
   - travis_retry                stack build            $FLAGS --only-dependencies --test
 
 script:
-  - travis_retry stack build accelerate-llvm        $FLAGS --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-native $FLAGS --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-ptx    $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
+  - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
 
   # Run test suite(s)
   # only use a single test thread due to limited memory on the travis boxes
