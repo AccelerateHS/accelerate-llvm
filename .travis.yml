@@ -31,7 +31,7 @@ addons:
 matrix:
   fast_finish: true
   include:
-    - env: GHC=8.6.3 LLVM=7.0.0 CUDA=8.0.61-1
+    - env: GHC=8.6.3 LLVM=7.0.1 CUDA=8.0.61-1
       compiler: "GHC 8.6"
       addons:
         apt:
@@ -42,7 +42,7 @@ matrix:
             - *apt_packages
             - llvm-7-dev
 
-    - env: GHC=8.4.3 LLVM=6.0.0 CUDA=8.0.61-1
+    - env: GHC=8.4.3 LLVM=6.0.1 CUDA=8.0.61-1
       compiler: "GHC 8.4"
       addons:
         apt:
@@ -53,7 +53,7 @@ matrix:
             - *apt_packages
             - llvm-6.0-dev
 
-    - env: GHC=8.2.2 LLVM=5.0.0 CUDA=8.0.61-1
+    - env: GHC=8.2.2 LLVM=5.0.2 CUDA=8.0.61-1
       compiler: "GHC 8.2"
       addons:
         apt:
@@ -64,7 +64,7 @@ matrix:
             - *apt_packages
             - llvm-5.0-dev
 
-    - env: GHC=8.0.2 LLVM=4.0.0 CUDA=8.0.61-1
+    - env: GHC=8.0.2 LLVM=4.0.1 CUDA=8.0.61-1
       compiler: "GHC 8.0"
       addons:
         apt:
@@ -115,14 +115,16 @@ install:
   - travis_retry                stack build            $FLAGS --only-dependencies
 
 script:
-  - travis_retry stack build accelerate-llvm        $FLAGS --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-native $FLAGS --test --no-run-tests --haddock --no-haddock-deps
-  - travis_retry stack build accelerate-llvm-ptx    $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  - true
 
-  # Run test suite(s)
-  # only use a single test thread due to limited memory on the travis boxes
-  - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
+  # - travis_retry stack build accelerate-llvm        $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  # - travis_retry stack build accelerate-llvm-native $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+  # - travis_retry stack build accelerate-llvm-ptx    $FLAGS --test --no-run-tests --haddock --no-haddock-deps
+
+  # # Run test suite(s)
+  # # only use a single test thread due to limited memory on the travis boxes
+  # - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
 after_success:
-  - source .travis/update-accelerate-buildbot.sh
+  # - source .travis/update-accelerate-buildbot.sh
 
