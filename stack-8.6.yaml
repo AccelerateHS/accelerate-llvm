@@ -12,12 +12,7 @@ extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
   commit: 99b5de898f9fe600c1a053fd53887407fa836b10
 
-- git :   https://github.com/llvm-hs/llvm-hs.git
-  commit: 1e512dcf2a40d253a95d231b7991b48f1f2a8a9e
-  subdirs:
-    - llvm-hs
-    - llvm-hs-pure
-
+- llvm-hs-7.0.1
 - tasty-hedgehog-0.2.0.0
 
 # Override default flag values for local packages and extra-deps
