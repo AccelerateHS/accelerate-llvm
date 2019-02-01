@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-9.0
+resolver: lts-9.21
 
 packages:
 - accelerate-llvm
