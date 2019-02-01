@@ -101,6 +101,7 @@ before_install:
   # - sudo apt-get install debian-archive-keyring
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x7638D0442B90D010
   - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x8B48AD6246925553
+  - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key 0x04EE7237B7D453EC
   - sudo apt-get update
   - sudo apt-get install -y libffi7
 
