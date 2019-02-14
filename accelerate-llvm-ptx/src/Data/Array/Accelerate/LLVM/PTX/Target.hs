@@ -171,7 +171,8 @@ ptxISAVersion 5 2 = "ptx41"
 ptxISAVersion 5 3 = "ptx42"
 ptxISAVersion 6 _ = "ptx50"
 ptxISAVersion 7 0 = "ptx60"
-ptxISAVersion 7 2 = "ptx61"
+ptxISAVersion 7 2 = "ptx61"   -- llvm-7
+ptxISAVersion 7 5 = "ptx63"   -- llvm-8
 ptxISAVersion _ _ = "ptx40"
 
 
