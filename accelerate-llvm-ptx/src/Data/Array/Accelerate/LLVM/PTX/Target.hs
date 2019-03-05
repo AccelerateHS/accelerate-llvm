@@ -43,12 +43,13 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir 
 import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
-import qualified Foreign.CUDA.Driver                                as CUDA
+import Foreign.CUDA.Analysis.Device
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.String
+import Debug.Trace
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                           as Map
@@ -83,7 +84,7 @@ instance Target PTX where
 -- | Extract the properties of the device the current PTX execution state is
 -- executing on.
 --
-ptxDeviceProperties :: PTX -> CUDA.DeviceProperties
+ptxDeviceProperties :: PTX -> DeviceProperties
 ptxDeviceProperties = deviceProperties . ptxContext
 
 
@@ -131,29 +132,26 @@ ptxTargetTriple =
 -- | Bracket creation and destruction of the NVVM TargetMachine.
 --
 withPTXTargetMachine
-    :: CUDA.DeviceProperties
+    :: DeviceProperties
     -> (TargetMachine -> IO a)
     -> IO a
 withPTXTargetMachine dev go =
-  let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = CPUFeature (ptxISAVersion m n)
-      sm               = fromString (printf "sm_%d%d" m n)
+  let (sm, isa) = ptxTargetVersion (computeCapability dev)
   in
   withTargetOptions $ \options -> do
     withTargetMachine
-        ptxTarget
-        ptxTargetTriple
-        sm
-        (Map.singleton isa True)    -- CPU features
-        options                     -- target options
-        R.Default                   -- relocation model
-        CM.Default                  -- code model
-        CGO.Default                 -- optimisation level
-        go
+      ptxTarget
+      ptxTargetTriple
+      sm                                    -- CPU
+      (Map.singleton (CPUFeature isa) True) -- CPU features
+      options                               -- target options
+      R.Default                             -- relocation model
+      CM.Default                            -- code model
+      CGO.Default                           -- optimisation level
+      go
 
--- Compile using the earliest version of the PTX ISA supported by the given
--- compute device. We could also take the LUB of the latest version supported by
--- the installed version of both LLVM and CUDA.
+-- Compile using the earliest version of the SM target PTX ISA supported by
+-- the given compute device and this version of LLVM.
 --
 -- Note that we require at least ptx40 for some libnvvm device functions.
 --
@@ -165,16 +163,37 @@ withPTXTargetMachine dev go =
 --
 --   https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#release-notes
 --
-ptxISAVersion :: Int -> Int -> ByteString
-ptxISAVersion 3 7 = "ptx41"
-ptxISAVersion 5 2 = "ptx41"
-ptxISAVersion 5 3 = "ptx42"
-ptxISAVersion 6 _ = "ptx50"
-ptxISAVersion 7 0 = "ptx60"
-ptxISAVersion 7 2 = "ptx61"   -- llvm-7
-ptxISAVersion 7 5 = "ptx63"   -- llvm-8
-ptxISAVersion _ _ = "ptx40"
-
+ptxTargetVersion :: Compute -> (ByteString, ByteString)
+ptxTargetVersion compute@(Compute m n)
+#if MIN_VERSION_llvm_hs(8,0,0)
+  | m >= 7 && n >= 5    = ("sm_75", "ptx63")
+#endif
+#if MIN_VERSION_llvm_hs(7,0,0)
+  | m >= 7 && n >= 2    = ("sm_72", "ptx61")
+#endif
+#if MIN_VERSION_llvm_hs(6,0,0)
+  | m >= 7              = ("sm_70", "ptx60")
+#endif
+  | m >  6              = ("sm_62", "ptx50")  -- fallthrough
+  --
+  | m == 6 && n == 2    = ("sm_62", "ptx50")
+  | m == 6 && n == 1    = ("sm_61", "ptx50")
+  | m == 6              = ("sm_60", "ptx50")
+  | m == 5 && n == 3    = ("sm_53", "ptx42")
+  | m == 5 && n == 2    = ("sm_52", "ptx41")
+  | m == 5              = ("sm_50", "ptx40")
+  | m == 3 && n == 7    = ("sm_37", "ptx41")
+  | m == 3 && n == 5    = ("sm_35", "ptx40")
+  | m == 3 && n == 2    = ("sm_32", "ptx40")
+  | m == 3              = ("sm_30", "ptx40")
+  | m == 2 && n == 1    = ("sm_21", "ptx40")
+  | m == 2              = ("sm_20", "ptx40")
+  --
+  | otherwise
+  = trace warning (fromString (printf "sm_%d%d" m n), "ptx40")
+  where
+    warning = unlines [ "*** Warning: Unhandled CUDA device compute capability: " ++ show compute
+                      , "*** Please submit a bug report at https://github.com/AccelerateHS/accelerate/issues" ]
 
 -- | The NVPTX target for this host.
 --
