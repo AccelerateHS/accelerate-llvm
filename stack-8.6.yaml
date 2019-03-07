@@ -12,6 +12,9 @@ extra-deps:
 - git:    https://github.com/tmcdonell/accelerate.git
   commit: 99b5de898f9fe600c1a053fd53887407fa836b10
 
+- git:    https://github.com/tmcdonell/cuda.git
+  commit: 13f2bc0e5d7d96637a8ce0ac898156ec141231da
+
 - llvm-hs-7.0.1
 - tasty-hedgehog-0.2.0.0
 
