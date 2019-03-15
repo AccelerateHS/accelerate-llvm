@@ -24,8 +24,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
 import qualified Foreign.CUDA.Analysis                          as CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
-import qualified Foreign.CUDA.Driver.Device                     as CUDA
-import qualified Foreign.CUDA.Driver.Context                    as CUDA
 
 import Control.Concurrent
 import Control.Exception
