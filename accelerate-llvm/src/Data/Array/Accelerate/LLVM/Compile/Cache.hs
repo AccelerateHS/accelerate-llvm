@@ -74,7 +74,7 @@ cacheOfUID
     -> LLVM arch FilePath
 cacheOfUID uid = do
   dbg       <- liftIO $ if debuggingIsEnabled then getFlag debug else return False
-  appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
+  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
   let
       (base, file)  = splitFileName template
@@ -92,7 +92,7 @@ cacheOfUID uid = do
 {-# INLINEABLE removeCacheDirectory #-}
 removeCacheDirectory :: Persistent arch => LLVM arch ()
 removeCacheDirectory = do
-  appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
+  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
   let
       (base, _)     = splitFileName template
