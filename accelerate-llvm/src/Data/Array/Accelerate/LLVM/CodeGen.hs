@@ -20,7 +20,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen (
 
   Skeleton(..), Intrinsic(..), KernelMetadata,
-  llvmOfOpenAcc,
+  llvmOfPreOpenAcc,
 
 ) where
 
@@ -52,15 +52,14 @@ import Prelude                                                      hiding ( map
 
 -- | Generate code for a given target architecture.
 --
-{-# INLINEABLE llvmOfOpenAcc #-}
-llvmOfOpenAcc
+{-# INLINEABLE llvmOfPreOpenAcc #-}
+llvmOfPreOpenAcc
     :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => UID
-    -> DelayedOpenAcc aenv arrs
+    -> PreOpenAcc DelayedOpenAcc aenv arrs
     -> Gamma aenv
     -> LLVM arch (Module arch aenv arrs)
-llvmOfOpenAcc _    Delayed{}      _    = $internalError "llvmOfOpenAcc" "expected manifest array"
-llvmOfOpenAcc uid (Manifest pacc) aenv = evalCodeGen $
+llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
   case pacc of
     -- Producers
     Map f a                 -> map uid aenv (travF1 f) (travD a)
@@ -103,7 +102,7 @@ llvmOfOpenAcc uid (Manifest pacc) aenv = evalCodeGen $
   where
     -- code generation for delayed arrays
     travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed arch aenv (Array sh e)
-    travD Manifest{}  = $internalError "llvmOfOpenAcc" "expected delayed array"
+    travD Manifest{}  = $internalError "llvmOfPreOpenAcc" "expected delayed array"
     travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
 
     -- scalar code generation
@@ -130,6 +129,6 @@ llvmOfOpenAcc uid (Manifest pacc) aenv = evalCodeGen $
 
     -- sadness
     fusionError, unexpectedError :: error
-    fusionError      = $internalError "llvmOfOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc
-    unexpectedError  = $internalError "llvmOfOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp pacc
+    fusionError      = $internalError "llvmOfPreOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc
+    unexpectedError  = $internalError "llvmOfPreOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp pacc
 

@@ -34,6 +34,7 @@ import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Inte
 import qualified LLVM.Analysis                                      as LLVM
 
 -- accelerate
+import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
 import Data.Array.Accelerate.Error                                  ( internalError )
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
@@ -97,14 +98,14 @@ instance Compile PTX where
 -- This generates the target code together with a list of each kernel function
 -- defined in the module paired with its occupancy information.
 --
-compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
-compile acc aenv = do
+compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
+compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
   dev               <- gets ptxDeviceProperties
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
-  Module ast md     <- llvmOfOpenAcc uid acc aenv
+  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
+  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
   let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
   -- Lower the generated LLVM into a CUBIN object code.

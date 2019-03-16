@@ -13,14 +13,15 @@ module Data.Array.Accelerate.LLVM.Compile.Cache (
 
   Persistent(..), UID,
   cacheOfUID,
-  cacheOfOpenAcc,
+  cacheOfPreOpenAcc,
   removeCacheDirectory,
 
 ) where
 
+import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Analysis.Hash
 import Data.Array.Accelerate.Debug
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Analysis.Hash
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -53,13 +54,14 @@ type UID = Hash
 -- | Return the unique cache file path corresponding to a given accelerate
 -- computation.
 --
-{-# INLINEABLE cacheOfOpenAcc #-}
-cacheOfOpenAcc
+{-# INLINEABLE cacheOfPreOpenAcc #-}
+cacheOfPreOpenAcc
     :: Persistent arch
-    => DelayedOpenAcc aenv a
+    => PreOpenAcc DelayedOpenAcc aenv a
     -> LLVM arch (UID, FilePath)
-cacheOfOpenAcc acc = do
-  let uid = hashDelayedOpenAcc acc
+cacheOfPreOpenAcc pacc = do
+  let opt = defaultHashOptions { perfect=False }
+      uid = hashPreOpenAccWith opt encodeDelayedOpenAcc pacc
   cacheFile <- cacheOfUID uid
   return (uid, cacheFile)
 

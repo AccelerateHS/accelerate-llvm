@@ -52,14 +52,13 @@ import Prelude                                                      hiding ( map
 
 class Foreign arch => Compile arch where
   data ObjectR arch
-  -- TODO: Provide serialisation facilities, for on-disk caching etc.
 
   -- | Compile an accelerate computation into some backend-specific code that
   -- will be used to execute the given array expression. The code is not yet
   -- linked into the running executable.
   --
   compileForTarget
-      :: DelayedOpenAcc aenv a
+      :: PreOpenAcc DelayedOpenAcc aenv a
       -> Gamma aenv
       -> LLVM arch (ObjectR arch)
 
@@ -134,8 +133,8 @@ compileOpenAcc = traverseAcc
     -- These will be required during code generation and execution.
     --
     traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (CompiledOpenAcc arch aenv arrs)
-    traverseAcc Delayed{}              = $internalError "compileOpenAcc" "unexpected delayed array"
-    traverseAcc topAcc@(Manifest pacc) =
+    traverseAcc Delayed{}       = $internalError "compileOpenAcc" "unexpected delayed array"
+    traverseAcc (Manifest pacc) =
       case pacc of
         -- Environment and control flow
         Avar ix                     -> plain $ pure (AST.Avar ix)
@@ -281,7 +280,7 @@ compileOpenAcc = traverseAcc
               -> LLVM arch (CompiledOpenAcc arch aenv arrs)
         build (aenv, eacc) = do
           let aval = makeGamma aenv
-          kernel <- compileForTarget topAcc aval
+          kernel <- compileForTarget pacc aval
           return $! BuildAcc aval kernel eacc
 
         plain :: Arrays arrs'

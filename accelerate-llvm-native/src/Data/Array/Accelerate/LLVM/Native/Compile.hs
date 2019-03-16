@@ -26,6 +26,7 @@ import LLVM.Context
 import LLVM.Target
 
 -- accelerate
+import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
 import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -67,13 +68,17 @@ instance Intrinsic Native
 
 -- | Compile an Accelerate expression to object code
 --
-compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
-compile acc aenv = do
+compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
+compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
-  Module ast md     <- llvmOfOpenAcc uid acc aenv
+  -- We require the metadata result, which will give us the names of the
+  -- functions which will be contained in the object code, but the actual
+  -- code generation step is executed lazily.
+  --
+  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
+  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
 
   let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
