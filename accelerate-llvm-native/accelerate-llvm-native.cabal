@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-native
-version:                1.2.0.0
+version:                1.2.0.1
 cabal-version:          >= 1.10
 tested-with:            GHC >= 7.10
 build-type:             Simple
@@ -127,21 +127,21 @@ Library
     Paths_accelerate_llvm_native
 
   build-depends:
-          base                          >= 4.7 && < 4.12
+          base                          >= 4.7 && < 4.13
         , accelerate                    == 1.2.*
         , accelerate-llvm               == 1.2.*
         , bytestring                    >= 0.10.4
         , Cabal                         >= 2.0
         , cereal                        >= 0.4
-        , containers                    >= 0.5 && < 0.6
+        , containers                    >= 0.5 && < 0.7
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , filepath                      >= 1.0
         , ghc
         , hashable                      >= 1.0
         , libffi                        >= 0.1
-        , llvm-hs                       >= 4.1 && < 6.1
-        , llvm-hs-pure                  >= 4.1 && < 6.1
+        , llvm-hs                       >= 4.1 && < 6.4
+        , llvm-hs-pure                  >= 4.1 && < 6.3
         , mtl                           >= 2.2.1
         , template-haskell
         , time                          >= 1.4

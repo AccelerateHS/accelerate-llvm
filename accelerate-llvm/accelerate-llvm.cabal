@@ -1,5 +1,5 @@
 name:                   accelerate-llvm
-version:                1.2.0.0
+version:                1.2.0.1
 cabal-version:          >= 1.10
 tested-with:            GHC >= 7.10
 build-type:             Simple
@@ -163,7 +163,7 @@ Library
     Paths_accelerate_llvm
 
   build-depends:
-          base                          >= 4.7 && < 4.12
+          base                          >= 4.7 && < 4.13
         , abstract-deque                >= 0.3
         , accelerate                    == 1.2.*
         , bytestring                    >= 0.10.4
@@ -174,8 +174,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , filepath                      >= 1.0
-        , llvm-hs                       >= 4.1 && < 6.1
-        , llvm-hs-pure                  >= 4.1 && < 6.1
+        , llvm-hs                       >= 4.1 && < 6.4
+        , llvm-hs-pure                  >= 4.1 && < 6.3
         , mtl                           >= 2.0
         , mwc-random                    >= 0.13
         , primitive                     >= 0.6

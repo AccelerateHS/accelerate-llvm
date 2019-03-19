@@ -1,5 +1,5 @@
 name:                   accelerate-llvm-ptx
-version:                1.2.0.0
+version:                1.2.0.1
 cabal-version:          >= 1.10
 tested-with:            GHC >= 7.10
 build-type:             Simple
@@ -141,11 +141,11 @@ Library
     Paths_accelerate_llvm_ptx
 
   build-depends:
-          base                          >= 4.7 && < 4.12
+          base                          >= 4.7 && < 4.13
         , accelerate                    == 1.2.*
         , accelerate-llvm               == 1.2.*
         , bytestring                    >= 0.10.4
-        , containers                    >= 0.5 && <0.6
+        , containers                    >= 0.5 && <0.7
         , cuda                          >= 0.9
         , deepseq                       >= 1.3
         , directory                     >= 1.0
@@ -153,8 +153,8 @@ Library
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 6.1
-        , llvm-hs-pure                  >= 4.1 && < 6.1
+        , llvm-hs                       >= 4.1 && < 6.4
+        , llvm-hs-pure                  >= 4.1 && < 6.3
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
