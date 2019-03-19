@@ -57,9 +57,13 @@ import qualified LLVM.AST.Global                                    as L
 import qualified LLVM.AST.Instruction                               as L
 import qualified LLVM.AST.IntegerPredicate                          as IP
 import qualified LLVM.AST.Name                                      as L
-import qualified LLVM.AST.Operand                                   as L
+import qualified LLVM.AST.Operand                                   as LO
 import qualified LLVM.AST.RMWOperation                              as LA
 import qualified LLVM.AST.Type                                      as L
+#if MIN_VERSION_llvm_hs_pure(6,1,0)
+#else
+import qualified LLVM.AST.Type.Metadata                             as LM
+#endif
 
 
 -- | Convert a value from our representation of the LLVM AST which uses
@@ -359,25 +363,35 @@ instance Downcast (Constant a) LC.Constant where
 -- LLVM.General.AST.Type.Operand
 -- -----------------------------
 
-instance Downcast (Operand a) L.Operand where
-  downcast (LocalReference t n) = L.LocalReference (downcast t) (downcast n)
-  downcast (ConstantOperand c)  = L.ConstantOperand (downcast c)
+instance Downcast (Operand a) LO.Operand where
+  downcast (LocalReference t n) = LO.LocalReference (downcast t) (downcast n)
+  downcast (ConstantOperand c)  = LO.ConstantOperand (downcast c)
 
 
 -- LLVM.General.AST.Type.Metadata
 -- ------------------------------
 
-instance Downcast Metadata L.Operand where
-  downcast = L.MetadataOperand . downcast
+instance Downcast Metadata LO.Operand where
+  downcast = LO.MetadataOperand . downcast
 
-instance Downcast Metadata L.Metadata where
-  downcast (MetadataStringOperand s)   = L.MDString s
-  downcast (MetadataConstantOperand o) = L.MDValue (L.ConstantOperand o)
-  downcast (MetadataNodeOperand n)     = L.MDNode (downcast n)
+instance Downcast Metadata LO.Metadata where
+  downcast (MetadataStringOperand s)   = LO.MDString s
+  downcast (MetadataConstantOperand o) = LO.MDValue (LO.ConstantOperand o)
+  downcast (MetadataNodeOperand n)     = LO.MDNode (downcast n)
 
-instance Downcast MetadataNode L.MetadataNode where
-  downcast (MetadataNode n)          = L.MetadataNode (downcast n)
-  downcast (MetadataNodeReference r) = L.MetadataNodeReference r
+#if MIN_VERSION_llvm_hs_pure(6,1,0)
+instance Downcast MetadataNode (LO.MDRef LO.MDNode) where
+  downcast (MetadataNode n)            = LO.MDInline (downcast n)
+  downcast (MetadataNodeReference r)   = LO.MDRef r
+
+instance Downcast [Maybe Metadata] LO.MDNode where
+  downcast = LO.MDTuple . map downcast
+#else
+instance Downcast MetadataNode LM.MetadataNode where
+  downcast (MetadataNode n)          = LM.MetadataNode (downcast n)
+  downcast (MetadataNodeReference r) = LM.MetadataNodeReference r
+#endif
+
 
 
 -- LLVM.General.AST.Type.Terminator
@@ -409,7 +423,7 @@ instance Downcast (Parameter a) L.Parameter where
 
 -- Function -> callable operands (for Call instruction)
 --
-instance Downcast (GlobalFunction args t) L.CallableOperand where
+instance Downcast (GlobalFunction args t) LO.CallableOperand where
   downcast f
     = let trav :: GlobalFunction args t -> ([L.Type], L.Type, L.Name)
           trav (Body t n)  = ([], downcast t, downcast n)
@@ -419,9 +433,9 @@ instance Downcast (GlobalFunction args t) L.CallableOperand where
           (args, result, name)  = trav f
           ty                    = L.PointerType (L.FunctionType result args False) (L.AddrSpace 0)
       in
-      Right (L.ConstantOperand (LC.GlobalReference ty name))
+      Right (LO.ConstantOperand (LC.GlobalReference ty name))
 
-instance Downcast (GlobalFunction args t) [(L.Operand, [L.ParameterAttribute])] where
+instance Downcast (GlobalFunction args t) [(LO.Operand, [L.ParameterAttribute])] where
   downcast Body{}      = []
   downcast (Lam _ x l) = (downcast x, []) : downcast l
 
