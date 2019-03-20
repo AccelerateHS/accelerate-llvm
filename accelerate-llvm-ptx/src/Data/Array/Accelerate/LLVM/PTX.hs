@@ -523,7 +523,7 @@ registerPinnedAllocatorWith target =
 -- =========
 
 dumpStats :: MonadIO m => a -> m a
-dumpStats x = dumpSimplStats >> return x
+dumpStats x = liftIO dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> m a -> m a
 phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go

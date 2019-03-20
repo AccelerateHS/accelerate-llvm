@@ -424,7 +424,7 @@ config target = phases
 -- =========
 
 dumpStats :: MonadIO m => a -> m a
-dumpStats x = dumpSimplStats >> return x
+dumpStats x = liftIO dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
 phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go
