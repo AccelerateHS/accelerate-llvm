@@ -113,8 +113,8 @@ before_install:
 
 install:
   # how much do we have to do?
-  - export FLAGS="--fast --jobs=2 --no-terminal --no-copy-bins --flag accelerate:nofib"
-  - stack build $FLAGS --only-dependencies --test --dry-run
+  - export FLAGS="--jobs=2 --no-terminal --no-copy-bins --flag accelerate:nofib"
+  - stack build $FLAGS --test --dry-run
 
   # build dependencies
   - travis_retry                stack build accelerate $FLAGS --only-dependencies
