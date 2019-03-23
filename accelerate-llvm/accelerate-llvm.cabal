@@ -1,7 +1,7 @@
 name:                   accelerate-llvm
 version:                1.3.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC >= 7.10
+tested-with:            GHC >= 8.0
 build-type:             Simple
 
 synopsis:               Accelerate backend component generating LLVM IR
@@ -27,7 +27,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/llvm/llvm-7
+    > brew install llvm-hs/llvm/llvm-8
     .
     /Debian & Ubuntu/
     .
@@ -36,7 +36,7 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-7-dev
+    > apt-get install llvm-8-dev
     .
     /Building from source/
     .
@@ -140,8 +140,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , filepath                      >= 1.0
-        , llvm-hs                       >= 4.1 && < 7.1
-        , llvm-hs-pure                  >= 4.1 && < 7.1
+        , llvm-hs                       >= 4.1 && < 8.1
+        , llvm-hs-pure                  >= 4.1 && < 8.1
         , mtl                           >= 2.0
         , primitive                     >= 0.6.4
         , template-haskell
