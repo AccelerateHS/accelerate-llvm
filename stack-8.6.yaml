@@ -12,12 +12,9 @@ extra-deps:
 - 'accelerate-1.2.0.1'
 - 'tasty-hedgehog-0.2.0.0'
 - 'cuda-0.10.0.0'
+- 'llvm-hs-8.0.0'
+- 'llvm-hs-pure-8.0.0'
 - 'nvvm-0.9.0.0'
-- git: 'https://github.com/llvm-hs/llvm-hs.git'
-  commit: 48e7d9b3bad571e479753cd091b25b513bf91f23
-  subdirs:
-    - llvm-hs
-    - llvm-hs-pure
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
