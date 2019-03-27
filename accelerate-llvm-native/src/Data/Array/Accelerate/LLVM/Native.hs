@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
 {-# LANGUAGE TemplateHaskell      #-}
@@ -298,11 +299,6 @@ streamWith target f arrs = map go arrs
 -- Note that at the splice point the usage of @f@ must monomorphic; i.e. the
 -- types @a@, @b@ and @c@ must be at some known concrete type.
 --
--- In order to load modules using 'runQ' into @ghci@, the included GHC plugin
--- must be used. Add the following pragma to the head of affected modules:
---
--- > {-# OPTIONS_GHC -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin #-}
---
 -- See the <https://github.com/tmcdonell/lulesh-accelerate lulesh-accelerate>
 -- project for an example.
 --
@@ -367,6 +363,11 @@ runQAsyncWith f = do
 
 runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
 runQ' using target f = do
+#if MIN_VERSION_template_haskell(2,13,0)
+  -- The plugin ensures that objects are loaded correctly into GHCi
+  TH.addCorePlugin "Data.Array.Accelerate.LLVM.Native.Plugin"
+#endif
+
   -- Reification of the program for segmented folds depends on whether we are
   -- executing in parallel or sequentially, where the parallel case requires
   -- some extra work to convert the segments descriptor into a segment offset
