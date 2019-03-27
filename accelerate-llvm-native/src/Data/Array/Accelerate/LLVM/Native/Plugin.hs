@@ -44,6 +44,9 @@ import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 plugin :: Plugin
 plugin = defaultPlugin
   { installCoreToDos = install
+#if __GLASGOW_HASKELL__ >= 806
+  , pluginRecompile  = purePlugin
+#endif
   }
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
