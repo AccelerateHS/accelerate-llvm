@@ -387,9 +387,9 @@ instance Downcast MetadataNode (LO.MDRef LO.MDNode) where
 instance Downcast [Maybe Metadata] LO.MDNode where
   downcast = LO.MDTuple . map downcast
 #else
-instance Downcast MetadataNode LM.MetadataNode where
-  downcast (MetadataNode n)          = LM.MetadataNode (downcast n)
-  downcast (MetadataNodeReference r) = LM.MetadataNodeReference r
+instance Downcast MetadataNode LO.MetadataNode where
+  downcast (MetadataNode n)          = LO.MetadataNode (downcast n)
+  downcast (MetadataNodeReference r) = LO.MetadataNodeReference r
 #endif
 
 

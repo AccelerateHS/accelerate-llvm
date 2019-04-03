@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-6.35
+resolver: lts-13.10
 
 packages:
 - 'accelerate-llvm'
@@ -9,30 +9,22 @@ packages:
 - 'accelerate-llvm-ptx'
 
 extra-deps:
-- 'accelerate-1.2.0.0'
-- 'Cabal-2.0.1.1'
-- 'chaselev-deque-0.5.0.5'
-- 'constraints-0.9.1'
-- 'cuda-0.9.0.3'
-- 'hashtables-1.2.3.0'
-- 'hedgehog-0.5.3'
-- 'libffi-0.1'
-- 'llvm-hs-6.0.0'
-- 'llvm-hs-pure-6.0.0'
-- 'nvvm-0.8.0.3'
-- 'parsec-3.1.13.0'
-- 'process-1.4.3.0'
+- 'accelerate-1.2.0.1'
 - 'tasty-hedgehog-0.2.0.0'
-- 'unique-0'
-- 'wl-pprint-annotated-0.1.0.0'
+- git: 'https://github.com/llvm-hs/llvm-hs.git'
+  commit: 48e7d9b3bad571e479753cd091b25b513bf91f23
+  subdirs:
+    - llvm-hs
+    - llvm-hs-pure
 
 # Override default flag values for local packages and extra-deps
+# flags: {}
 flags:
-  llvm-hs-pure:
-    semigroups: true
-  llvm-hs:
-    shared-llvm: true
-    semigroups: true
+  accelerate:
+    nofib: false
+
+# Extra global and per-package GHC options
+# ghc-options: {}
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
@@ -41,7 +33,8 @@ flags:
 # system-ghc: true
 
 # Require a specific version of stack, using version ranges
-# require-stack-version: ">= 1.6"
+# require-stack-version: -any # Default
+# require-stack-version: >= 0.1.4.0
 
 # Override the architecture used by stack, especially useful on Windows
 # arch: i386

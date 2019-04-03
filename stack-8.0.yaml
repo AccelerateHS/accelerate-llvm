@@ -15,9 +15,13 @@ extra-deps:
 - 'hashtables-1.2.3.0'
 - 'nvvm-0.8.0.3'
 - 'tasty-hedgehog-0.2.0.0'
+- 'llvm-hs-6.3.0'
+- 'llvm-hs-pure-6.2.1'
 
 # Override default flag values for local packages and extra-deps
-# flags: {}
+flags:
+  accelerate:
+    nofib: false
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
