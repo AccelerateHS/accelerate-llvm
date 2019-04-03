@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Distribution.Simple.Build
 -- Copyright   : [2017] Trevor L. McDonell
@@ -61,7 +62,11 @@ import Distribution.Simple.Test.LibV09
 import Distribution.Simple.Utils
 
 import Distribution.Text
+#if MIN_VERSION_Cabal(2,4,0)
+import Distribution.System (buildPlatform, Platform)
+#else
 import Distribution.System (buildPlatform)
+#endif
 import Distribution.Verbosity
 
 import Distribution.Compat.Graph (IsNode(..))
@@ -267,6 +272,18 @@ testSuiteExeV10AsExe test@TestSuite { testInterface = TestSuiteExeV10 _ mainFile
     }
 testSuiteExeV10AsExe TestSuite{} = error "testSuiteExeV10AsExe: wrong kind"
 
+#if MIN_VERSION_Cabal(2,4,0)
+setBuildDepends :: [Dependency] -> PackageDescription -> PackageDescription
+setBuildDepends deps pkg_descr = pkg_descr {targetBuildDepends = deps}
+exeExtension' :: Platform -> String
+exeExtension' = exeExtension
+#else
+setBuildDepends :: [Dependency] -> PackageDescription -> PackageDescription
+setBuildDepends deps pkg_descr = pkg_descr {buildDepends = deps}
+exeExtension' :: a -> String
+exeExtension' _ = exeExtension
+#endif
+
 
 -- | Translate a lib-style 'TestSuite' component into a lib + exe for building
 testSuiteLibV09AsLibAndExe :: PackageDescription
@@ -314,9 +331,8 @@ testSuiteLibV09AsLibAndExe pkg_descr
                 , componentCompatPackageKey = compat_key
                 , componentExposedModules = [IPI.ExposedModule m Nothing]
                 }
-    pkg = pkg_descr {
+    pkg = setBuildDepends (targetBuildDepends $ testBuildInfo test) $ pkg_descr {
             package      = (package pkg_descr) { pkgName = mkPackageName $ unMungedPackageName compat_name }
-          , targetBuildDepends = targetBuildDepends $ testBuildInfo test
           , executables  = []
           , testSuites   = []
           , subLibraries = [lib]
@@ -405,7 +421,7 @@ addInternalBuildTools pkg lbi bi progs =
       [ simpleConfiguredProgram toolName' (FoundOnSystem toolLocation)
       | toolName <- getAllInternalToolDependencies pkg bi
       , let toolName' = unUnqualComponentName toolName
-      , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension buildPlatform ]
+      , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension' buildPlatform ]
 
 
 -- TODO: build separate libs in separate dirs so that we can build
