@@ -76,6 +76,16 @@ matrix:
             - cabal-install-2.0
             - llvm-6.0-dev
 
+    - env: GHC=8.6.3 CABAL=2.0 LLVM=6.0.0 CUDA=8.0.61-1
+      compiler: "GHC 8.6"
+      addons:
+        apt:
+          sources: *apt_sources
+          packages:
+            - *apt_packages
+            - cabal-install-2.0
+            - llvm-6.0-dev
+
     # - env: GHC=head CABAL=head LLVM=3.9.1
     #   compiler: "GHC HEAD"
     #   addons: { apt: { sources: [ hvr-ghc, ubuntu-toolchain-r-test ], packages: [ nvidia-cuda-toolkit, g++-4.8, ghc-head, cabal-install-head, happy-1.19.5, alex-3.1.7 ] }}
