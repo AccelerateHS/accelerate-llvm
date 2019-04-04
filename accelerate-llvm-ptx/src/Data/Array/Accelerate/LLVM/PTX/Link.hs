@@ -1,5 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE CPP             #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Link
@@ -97,7 +98,11 @@ linkFunctionQ
     -> LaunchConfig
     -> IO (Kernel, Q (TExp (Int -> Int)))
 linkFunctionQ mdl name configure = do
+#if MIN_VERSION_nvvm(9,0,0)
+  f     <- CUDA.getFun mdl name
+#else
   f     <- CUDA.getFun mdl (unpack name)
+#endif
   regs  <- CUDA.requires f CUDA.NumRegs
   ssmem <- CUDA.requires f CUDA.SharedSizeBytes
   cmem  <- CUDA.requires f CUDA.ConstSizeBytes
