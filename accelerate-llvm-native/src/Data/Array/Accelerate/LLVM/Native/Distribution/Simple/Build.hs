@@ -274,7 +274,12 @@ testSuiteExeV10AsExe TestSuite{} = error "testSuiteExeV10AsExe: wrong kind"
 
 #if MIN_VERSION_Cabal(2,4,0)
 setBuildDepends :: [Dependency] -> PackageDescription -> PackageDescription
-setBuildDepends deps pkg_descr = pkg_descr {targetBuildDepends = deps}
+setBuildDepends deps pkg_descr@PackageDescription{ setupBuildInfo = Just buildInfo'}
+  = pkg_descr { setupBuildInfo = Just (buildInfo' {setupDepends = deps})}
+setBuildDepends deps pkg_descr@PackageDescription{ setupBuildInfo = Nothing}
+  = pkg_descr
+    { setupBuildInfo = Just (SetupBuildInfo {setupDepends = deps, defaultSetupDepends = True})
+    }
 exeExtension' :: Platform -> String
 exeExtension' = exeExtension
 #else
