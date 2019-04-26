@@ -1,7 +1,7 @@
 # vim: nospell
 #
 language: minimal
-dist: trusty
+dist: xenial
 
 cache:
   timeout: 600
@@ -19,7 +19,7 @@ addons:
     sources: &apt_sources
       - hvr-ghc
       - ubuntu-toolchain-r-test
-      - llvm-toolchain-trusty
+      - llvm-toolchain-xenial
     packages: &apt_packages
       - dpkg
       - gcc-8
@@ -37,7 +37,7 @@ matrix:
         apt:
           sources:
             - *apt_sources
-            - llvm-toolchain-trusty-8
+            - llvm-toolchain-xenial-8
           packages:
             - *apt_packages
             - llvm-8-dev
@@ -48,7 +48,7 @@ matrix:
         apt:
           sources:
             - *apt_sources
-            - llvm-toolchain-trusty-6.0
+            - llvm-toolchain-xenial-6.0
           packages:
             - *apt_packages
             - llvm-6.0-dev
@@ -59,7 +59,7 @@ matrix:
         apt:
           sources:
             - *apt_sources
-            - llvm-toolchain-trusty-5.0
+            - llvm-toolchain-xenial-5.0
           packages:
             - *apt_packages
             - llvm-5.0-dev
@@ -70,7 +70,7 @@ matrix:
         apt:
           sources:
             - *apt_sources
-            - llvm-toolchain-trusty-4.0
+            - llvm-toolchain-xenial-4.0
           packages:
             - *apt_packages
             - llvm-4.0-dev
@@ -81,7 +81,7 @@ matrix:
 before_install:
   - export PATH=/opt/alex/3.1.7/bin:/opt/happy/1.19.5/bin:$PATH
   - export CUDA_INSTALL_EXTRA_LIBS=0  # cublas, cufft, etc.
-  - source .travis/install-cuda-trusty.sh
+  - source .travis/install-cuda-xenial.sh
   - source .travis/install-stack.sh
 
   # llvm-hs requires new g++
