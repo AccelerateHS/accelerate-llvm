@@ -122,17 +122,18 @@ install:
   # build dependencies
   - travis_retry                stack build accelerate $FLAGS --only-dependencies
   - travis_retry travis_wait 60 stack build accelerate $FLAGS
-  - travis_retry                stack build            $FLAGS --only-dependencies --test
+  # - travis_retry                stack build            $FLAGS --only-dependencies --test
 
 script:
-  - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
-  - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
-  - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
+  - true
+  # - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
+  # - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
+  # - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
 
   # Run test suite(s)
   # only use a single test thread due to limited memory on the travis boxes
-  - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
+  # - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
-after_success:
-  - source .travis/update-accelerate-buildbot.sh
+# after_success:
+#   - source .travis/update-accelerate-buildbot.sh
 
