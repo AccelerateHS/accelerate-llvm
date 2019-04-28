@@ -122,11 +122,10 @@ install:
   # build dependencies
   - travis_retry                stack build accelerate $FLAGS --only-dependencies
   - travis_retry travis_wait 60 stack build accelerate $FLAGS
-  # - travis_retry                stack build            $FLAGS --only-dependencies --test
+  - travis_retry                stack build            $FLAGS --only-dependencies --test
 
 script:
-  - true
-  # - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
+  - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
   # - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
   # - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
 
