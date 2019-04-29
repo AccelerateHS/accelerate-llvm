@@ -13,6 +13,7 @@ extra-deps:
 - Cabal-2.0.1.1
 - cuda-0.10.0.0
 - hashtables-1.2.3.0
+- lockfree-queue-0.2.3.1
 - nvvm-0.9.0.0
 - tasty-hedgehog-0.2.0.0
 

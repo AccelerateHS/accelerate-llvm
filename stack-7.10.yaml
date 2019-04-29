@@ -19,6 +19,7 @@ extra-deps:
 - libffi-0.1
 - llvm-hs-4.2.0
 - llvm-hs-pure-4.1.0.0
+- lockfree-queue-0.2.3.1
 - nvvm-0.9.0.0
 - parsec-3.1.13.0
 - process-1.4.3.0
