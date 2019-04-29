@@ -120,9 +120,7 @@ install:
   - stack build $FLAGS --test --dry-run
 
   # build dependencies
-  - travis_retry                stack build accelerate $FLAGS --only-dependencies
-  - travis_retry travis_wait 60 stack build accelerate $FLAGS
-  - travis_retry                stack build            $FLAGS --only-dependencies --test
+  - travis_retry travis_wait 60 stack build $FLAGS --only-dependencies --test
 
 script:
   - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
