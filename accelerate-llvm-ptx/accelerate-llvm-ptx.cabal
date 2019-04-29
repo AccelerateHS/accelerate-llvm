@@ -41,7 +41,7 @@ description:
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/7.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/8.0.0/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
