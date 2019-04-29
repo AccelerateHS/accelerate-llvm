@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
+## [1.2.0.1] - 2019-04-29
+### Added
+ * support for GHC-8.6
+ * support for LLVM-7
+ * support for LLVM-8
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+ * Trevor L. McDonell (@tmcdonell)
+ * Viktor Kronvall (@considerate)
+
 ## [1.2.0.0] - 2018-04-03
 ### Added
  * support for half-precision floats
@@ -38,6 +51,7 @@ Special thanks to those who contributed patches as part of this release:
  * initial release
 
 
+[1.2.0.1]:    https://github.com/AccelerateHS/accelerate-llvm/compare/v1.2.0.0...v1.2.0.1
 [1.2.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.1.0.0...v1.2.0.0
 [1.1.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/1.0.0.0...1.1.0.0
 [1.0.0.0]:    https://github.com/AccelerateHS/accelerate-llvm/compare/be7f91295f77434b2103c70aa1cabb6a4f2b09a8...1.0.0.0
