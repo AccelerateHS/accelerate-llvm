@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC
 -- Copyright   : [2017] Trevor L. McDonell
@@ -38,6 +39,7 @@ import Distribution.Version
 import Distribution.System
 import Distribution.Verbosity
 import Distribution.Text
+import Distribution.Types.UnitId(UnitId)
 import Distribution.Utils.NubList
 import Language.Haskell.Extension
 
@@ -55,6 +57,27 @@ buildLib, replLib :: Verbosity          -> Cabal.Flag (Maybe Int)
                   -> Library            -> ComponentLocalBuildInfo -> IO ()
 buildLib = buildOrReplLib False
 replLib  = buildOrReplLib True
+
+
+#if MIN_VERSION_Cabal(2,4,0)
+nubList :: a -> a
+nubList = id
+
+overNubListR' :: a -> a
+overNubListR' = id
+
+mkSharedLibName' :: Platform -> CompilerId -> UnitId -> String 
+mkSharedLibName' = mkSharedLibName
+#else
+nubList :: (Ord a) => [a] -> NubListR a
+nubList = toNubListR
+
+overNubListR' :: (Ord a) => ([a] -> [a]) -> NubListR a -> NubListR a
+overNubListR' = overNubListR
+
+mkSharedLibName' :: Platform -> CompilerId -> UnitId -> String 
+mkSharedLibName' _ compiler_uid path = mkSharedLibName compiler_uid path
+#endif
 
 buildOrReplLib :: Bool -> Verbosity  -> Cabal.Flag (Maybe Int)
                -> PackageDescription -> LocalBuildInfo
@@ -120,7 +143,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
                                               (withProfLibDetail lbi),
                       ghcOptHiSuffix      = toFlag "p_hi",
                       ghcOptObjSuffix     = toFlag "p_o",
-                      ghcOptExtra         = toNubListR $ hcProfOptions GHC libBi,
+                      ghcOptExtra         = nubList $ hcProfOptions GHC libBi,
                       ghcOptHPCDir        = hpcdir Hpc.Prof
                     }
 
@@ -129,12 +152,12 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
                       ghcOptFPic        = toFlag True,
                       ghcOptHiSuffix    = toFlag "dyn_hi",
                       ghcOptObjSuffix   = toFlag "dyn_o",
-                      ghcOptExtra       = toNubListR $ hcSharedOptions GHC libBi,
+                      ghcOptExtra       = nubList $ hcSharedOptions GHC libBi,
                       ghcOptHPCDir      = hpcdir Hpc.Dyn
                     }
       linkerOpts = mempty {
-                      ghcOptLinkOptions       = toNubListR $ PD.ldOptions libBi,
-                      ghcOptLinkLibs          = toNubListR $ extraLibs libBi,
+                      ghcOptLinkOptions       = nubList $ PD.ldOptions libBi,
+                      ghcOptLinkLibs          = nubList $ extraLibs libBi,
                       ghcOptLinkLibPath       = toNubListR $ extraLibDirs libBi,
                       ghcOptLinkFrameworks    = toNubListR $
                                                 PD.frameworks libBi,
@@ -144,8 +167,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
                                              [libTargetDir </> x | x <- cObjs]
                    }
       replOpts    = vanillaOpts {
-                      ghcOptExtra        = overNubListR
-                                           Internal.filterGhciFlags $
+                      ghcOptExtra        = overNubListR' Internal.filterGhciFlags $
                                            ghcOptExtra vanillaOpts,
                       ghcOptNumJobs      = mempty
                     }
@@ -239,10 +261,10 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
         compiler_id = compilerId (compiler lbi)
         vanillaLibFilePath = libTargetDir </> mkLibName uid
         profileLibFilePath = libTargetDir </> mkProfLibName uid
-        sharedLibFilePath  = libTargetDir </> mkSharedLibName compiler_id uid
+        sharedLibFilePath  = libTargetDir </> mkSharedLibName' buildPlatform compiler_id uid
         ghciLibFilePath    = libTargetDir </> Internal.mkGHCiLibName uid
         libInstallPath = libdir $ absoluteComponentInstallDirs pkg_descr lbi uid NoCopyDest
-        sharedLibInstallPath = libInstallPath </> mkSharedLibName compiler_id uid
+        sharedLibInstallPath = libInstallPath </> mkSharedLibName' buildPlatform compiler_id uid
 
     stubObjs <- catMaybes <$> sequenceA
       [ findFileWithExtension [objExtension] [libTargetDir]
@@ -312,8 +334,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
                 ghcOptDynLinkMode        = toFlag GhcDynamicOnly,
                 ghcOptInputFiles         = toNubListR dynamicObjectFiles,
                 ghcOptOutputFile         = toFlag sharedLibFilePath,
-                ghcOptExtra              = toNubListR $
-                                           hcSharedOptions GHC libBi,
+                ghcOptExtra              = nubList $ hcSharedOptions GHC libBi,
                 -- For dynamic libs, Mac OS/X needs to know the install location
                 -- at build time. This only applies to GHC < 7.8 - see the
                 -- discussion in #1660.
@@ -340,7 +361,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
                     _ -> [],
                 ghcOptPackages           = toNubListR $
                                            Internal.mkGhcOptPackages clbi ,
-                ghcOptLinkLibs           = toNubListR $ extraLibs libBi,
+                ghcOptLinkLibs           = nubList $ extraLibs libBi,
                 ghcOptLinkLibPath        = toNubListR $ extraLibDirs libBi,
                 ghcOptLinkFrameworks     = toNubListR $ PD.frameworks libBi,
                 ghcOptLinkFrameworkDirs  =

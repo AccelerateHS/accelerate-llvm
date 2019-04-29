@@ -233,7 +233,11 @@ compileModuleNVVM dev name libdevice mdl = do
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
   bc  <- LLVM.moduleBitcode mdl
+#if MIN_VERSION_nvvm(0,9,0)
+  ptx <- NVVM.compileModules (("",header) : (name,bc) : fmap (\(n,b) -> (S8.pack n, b)) libdevice) flags
+#else
   ptx <- NVVM.compileModules (("",header) : (S8.unpack name,bc) : libdevice) flags
+#endif
 
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)

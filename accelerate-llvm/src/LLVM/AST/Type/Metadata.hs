@@ -31,4 +31,3 @@ data Metadata
   = MetadataStringOperand {-# UNPACK #-} !ShortByteString
   | MetadataConstantOperand !LLVM.Constant
   | MetadataNodeOperand !MetadataNode
-

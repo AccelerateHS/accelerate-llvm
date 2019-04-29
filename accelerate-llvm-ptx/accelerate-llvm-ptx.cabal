@@ -1,7 +1,7 @@
 name:                   accelerate-llvm-ptx
-version:                1.2.0.0
+version:                1.2.0.1
 cabal-version:          >= 1.10
-tested-with:            GHC >= 7.10
+tested-with:            GHC >= 8.0
 build-type:             Simple
 
 synopsis:               Accelerate backend for NVIDIA GPUs
@@ -26,7 +26,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/homebrew-llvm/llvm-6.0
+    > brew install llvm-hs/llvm/llvm-8
     .
     /Debian & Ubuntu/
     .
@@ -35,13 +35,13 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-6.0-dev
+    > apt-get install llvm-8-dev
     .
     /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/6.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/7.0.0/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
@@ -141,11 +141,11 @@ Library
     Paths_accelerate_llvm_ptx
 
   build-depends:
-          base                          >= 4.7 && < 4.12
+          base                          >= 4.7 && < 4.13
         , accelerate                    == 1.2.*
         , accelerate-llvm               == 1.2.*
         , bytestring                    >= 0.10.4
-        , containers                    >= 0.5 && <0.6
+        , containers                    >= 0.5 && <0.7
         , cuda                          >= 0.9
         , deepseq                       >= 1.3
         , directory                     >= 1.0
@@ -153,8 +153,8 @@ Library
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 6.1
-        , llvm-hs-pure                  >= 4.1 && < 6.1
+        , llvm-hs                       >= 4.1 && < 8.1
+        , llvm-hs-pure                  >= 4.1 && < 8.1
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.7.5
         , pretty                        >= 1.1
@@ -215,7 +215,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.2.0.0
+  tag:                  v1.2.0.1
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell

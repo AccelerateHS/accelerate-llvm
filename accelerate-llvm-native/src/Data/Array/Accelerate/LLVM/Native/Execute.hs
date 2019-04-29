@@ -58,7 +58,6 @@ import Data.Word                                                    ( Word8 )
 import Text.Printf                                                  ( printf )
 import Prelude                                                      hiding ( map, sum, scanl, scanr, init )
 import qualified Data.ByteString.Short.Char8                        as S8
-import qualified Prelude                                            as P
 
 import Foreign.C
 import Foreign.LibFFI

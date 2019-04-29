@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Distribution.Simple.Build
 -- Copyright   : [2017] Trevor L. McDonell
@@ -36,8 +37,6 @@ import Distribution.Backpack
 import Distribution.Backpack.DescribeUnitId
 import qualified Distribution.Simple.GHC   as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
-import qualified Distribution.Simple.JHC   as JHC
-import qualified Distribution.Simple.LHC   as LHC
 import qualified Distribution.Simple.UHC   as UHC
 import qualified Distribution.Simple.HaskellSuite as HaskellSuite
 import qualified Distribution.Simple.PackageIndex as Index
@@ -63,6 +62,11 @@ import Distribution.Simple.Test.LibV09
 import Distribution.Simple.Utils
 
 import Distribution.Text
+#if MIN_VERSION_Cabal(2,4,0)
+import Distribution.System (buildPlatform, Platform)
+#else
+import Distribution.System (buildPlatform)
+#endif
 import Distribution.Verbosity
 
 import Distribution.Compat.Graph (IsNode(..))
@@ -268,6 +272,23 @@ testSuiteExeV10AsExe test@TestSuite { testInterface = TestSuiteExeV10 _ mainFile
     }
 testSuiteExeV10AsExe TestSuite{} = error "testSuiteExeV10AsExe: wrong kind"
 
+#if MIN_VERSION_Cabal(2,4,0)
+setBuildDepends :: [Dependency] -> PackageDescription -> PackageDescription
+setBuildDepends deps pkg_descr@PackageDescription{ setupBuildInfo = Just buildInfo'}
+  = pkg_descr { setupBuildInfo = Just (buildInfo' {setupDepends = deps})}
+setBuildDepends deps pkg_descr@PackageDescription{ setupBuildInfo = Nothing}
+  = pkg_descr
+    { setupBuildInfo = Just (SetupBuildInfo {setupDepends = deps, defaultSetupDepends = True})
+    }
+exeExtension' :: Platform -> String
+exeExtension' = exeExtension
+#else
+setBuildDepends :: [Dependency] -> PackageDescription -> PackageDescription
+setBuildDepends deps pkg_descr = pkg_descr {buildDepends = deps}
+exeExtension' :: a -> String
+exeExtension' _ = exeExtension
+#endif
+
 
 -- | Translate a lib-style 'TestSuite' component into a lib + exe for building
 testSuiteLibV09AsLibAndExe :: PackageDescription
@@ -315,9 +336,8 @@ testSuiteLibV09AsLibAndExe pkg_descr
                 , componentCompatPackageKey = compat_key
                 , componentExposedModules = [IPI.ExposedModule m Nothing]
                 }
-    pkg = pkg_descr {
+    pkg = setBuildDepends (targetBuildDepends $ testBuildInfo test) $ pkg_descr {
             package      = (package pkg_descr) { pkgName = mkPackageName $ unMungedPackageName compat_name }
-          , buildDepends = targetBuildDepends $ testBuildInfo test
           , executables  = []
           , testSuites   = []
           , subLibraries = [lib]
@@ -406,7 +426,7 @@ addInternalBuildTools pkg lbi bi progs =
       [ simpleConfiguredProgram toolName' (FoundOnSystem toolLocation)
       | toolName <- getAllInternalToolDependencies pkg bi
       , let toolName' = unUnqualComponentName toolName
-      , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension ]
+      , let toolLocation = buildDir lbi </> toolName' </> toolName' <.> exeExtension' buildPlatform ]
 
 
 -- TODO: build separate libs in separate dirs so that we can build
@@ -418,8 +438,6 @@ buildLib verbosity numJobs pkg_descr lbi lib clbi =
   case compilerFlavor (compiler lbi) of
     GHC   -> Acc.buildLib   verbosity numJobs pkg_descr lbi lib clbi    -- XXX only change here
     GHCJS -> GHCJS.buildLib verbosity numJobs pkg_descr lbi lib clbi
-    JHC   -> JHC.buildLib   verbosity         pkg_descr lbi lib clbi
-    LHC   -> LHC.buildLib   verbosity         pkg_descr lbi lib clbi
     UHC   -> UHC.buildLib   verbosity         pkg_descr lbi lib clbi
     HaskellSuite {} -> HaskellSuite.buildLib verbosity pkg_descr lbi lib clbi
     _    -> die' verbosity "Building is not supported with this compiler."
@@ -443,8 +461,6 @@ buildExe verbosity numJobs pkg_descr lbi exe clbi =
   case compilerFlavor (compiler lbi) of
     GHC   -> GHC.buildExe   verbosity numJobs pkg_descr lbi exe clbi
     GHCJS -> GHCJS.buildExe verbosity numJobs pkg_descr lbi exe clbi
-    JHC   -> JHC.buildExe   verbosity         pkg_descr lbi exe clbi
-    LHC   -> LHC.buildExe   verbosity         pkg_descr lbi exe clbi
     UHC   -> UHC.buildExe   verbosity         pkg_descr lbi exe clbi
     _     -> die' verbosity "Building is not supported with this compiler."
 
