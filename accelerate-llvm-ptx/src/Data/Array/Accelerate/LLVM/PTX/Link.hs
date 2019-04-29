@@ -1,6 +1,6 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies    #-}
-{-# LANGUAGE CPP             #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Link
@@ -98,7 +98,7 @@ linkFunctionQ
     -> LaunchConfig
     -> IO (Kernel, Q (TExp (Int -> Int)))
 linkFunctionQ mdl name configure = do
-#if MIN_VERSION_nvvm(9,0,0)
+#if MIN_VERSION_nvvm(0,9,0)
   f     <- CUDA.getFun mdl name
 #else
   f     <- CUDA.getFun mdl (unpack name)
