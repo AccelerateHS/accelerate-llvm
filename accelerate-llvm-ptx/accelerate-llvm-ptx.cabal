@@ -215,7 +215,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  1.2.0.0
+  tag:                  v1.2.0.1
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell
