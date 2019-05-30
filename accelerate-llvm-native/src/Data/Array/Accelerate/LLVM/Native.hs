@@ -56,6 +56,7 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
+import Data.BitSet                                                  ( insert )
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
@@ -378,11 +379,13 @@ runQ' using target f = do
   -- TLM: We could also just reify the program twice and select at runtime which
   --      version to execute.
   --
-  afun  <- let acc = convertAfunWith (phases { convertOffsetOfSegment = True }) f
-           in  TH.runIO $ do
-                 dumpGraph acc
-                 evalNative (defaultTarget { segmentOffset = True }) $
-                   phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+  afun  <- let opt = defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
+               acc = convertAfunWith opt f
+           in
+           TH.runIO $ do
+             dumpGraph acc
+             evalNative (defaultTarget { segmentOffset = True }) $
+              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
 
   -- generate a lambda function with the correct number of arguments and apply
   -- directly to the body expression.
@@ -413,12 +416,11 @@ runQ' using target f = do
 
 -- How the Accelerate program should be evaluated.
 --
--- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
---
-config :: Native -> Phase
-config target = phases
-  { convertOffsetOfSegment = segmentOffset target
-  }
+config :: Native -> Config
+config target =
+  if segmentOffset target
+    then defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
+    else defaultOptions
 
 
 -- Debugging

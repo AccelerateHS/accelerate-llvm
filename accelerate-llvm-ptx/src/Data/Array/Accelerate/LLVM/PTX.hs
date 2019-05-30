@@ -52,6 +52,7 @@ module Data.Array.Accelerate.LLVM.PTX (
 ) where
 
 -- accelerate
+import Data.BitSet                                                  ( insert )
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
@@ -481,12 +482,9 @@ runQ'_ using k f = do
 
 -- How the Accelerate program should be evaluated.
 --
--- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
---
-config :: Phase
-config =  phases
-  { convertOffsetOfSegment = True
-  }
+config :: Config
+config =
+  defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
 
 
 -- Controlling host-side allocation
