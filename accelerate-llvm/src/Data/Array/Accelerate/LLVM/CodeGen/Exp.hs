@@ -151,7 +151,7 @@ llvmOfOpenExp top env aenv = cvtE top
         restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
         restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
           let sl' = restrict sliceIdx slx sl
-          in  OP_Pair sl' sz
+           in OP_Pair sl' sz
         restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
           restrict sliceIdx slx sl
 
@@ -165,10 +165,10 @@ llvmOfOpenExp top env aenv = cvtE top
         extend SliceNil              OP_Unit               OP_Unit         = OP_Unit
         extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
           let sh' = extend sliceIdx slx sl
-          in  OP_Pair sh' sz
+           in OP_Pair sh' sz
         extend (SliceFixed sliceIdx) (OP_Pair slx sz)      sl              =
           let sh' = extend sliceIdx slx sl
-          in  OP_Pair sh' sz
+           in OP_Pair sh' sz
 
     prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IROpenExp arch env aenv e
     prjT tix (IR tup) =
@@ -251,7 +251,7 @@ llvmOfOpenExp top env aenv = cvtE top
     index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
     index (IRManifest v) ix =
       let arr = irArray (aprj v aenv)
-      in  readArray arr =<< intOfIndex (irArrayShape arr) ix
+       in readArray arr =<< intOfIndex (irArrayShape arr) ix
 
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
