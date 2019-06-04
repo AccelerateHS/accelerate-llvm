@@ -147,6 +147,17 @@ Library
         , template-haskell
         , unordered-containers          >= 0.2
 
+  if impl(ghc >= 8.6)
+    build-depends:
+          ghc-heap
+  else
+    build-depends:
+          ghc
+        , ghci
+
+    cpp-options:
+        -DUNBOXED_TUPLES=1
+
   hs-source-dirs:
         src
 

@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE UnboxedTuples       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Data
@@ -25,10 +27,11 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                            as S
 import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import qualified Data.Array.Accelerate.Debug                        as Debug
 import qualified Data.Array.Accelerate.Array.Representation         as R
 
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -48,9 +51,19 @@ import Data.Typeable
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe
+import Text.Printf
 import Prelude
 
 import GHC.Int                                                      ( Int(..) )
+#if __GLASGOW_HASKELL__ >= 806
+import GHC.Exts.Heap
+#elif UNBOXED_TUPLES
+import Util                                                         ( ghciTablesNextToCode )
+import GHC.Base
+import GHC.Ptr
+import GHCi.InfoTable
+#include "rts/storage/ClosureTypes.h"
+#endif
 
 
 -- | Remote memory management for the PTX target. Data can be copied
@@ -63,7 +76,7 @@ instance Remote PTX where
   {-# INLINEABLE copyToHostR      #-}
   {-# INLINEABLE copyToRemoteR    #-}
   allocateRemote !sh = do
-    let !n = size sh
+    let !n = S.size sh
     arr    <- liftIO $ allocateArray sh  -- shadow array on the host
     liftPar $ runArray arr (\m ad -> Prim.mallocArray (n*m) ad >> return ad)
 
@@ -114,18 +127,58 @@ copyToHostLazy future@(Future ref) = do
           --
           -- https://github.com/AccelerateHS/accelerate/issues/437
           --
+          -- Furthermore, we only want to transfer the data if the host pointer
+          -- is currently unevaluated. This situation can occur for example if
+          -- the argument to 'use' or 'unit' is returned as part of the result
+          -- of a 'run'. Peek at GHC's underlying closure representation and
+          -- check whether the pointer is a thunk, and only initiate the
+          -- transfer if so.
+          --
           peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
                 => ArrayData e
                 -> UniqueArray a
                 -> Int
                 -> IO (UniqueArray a)
-          peekR ad (UniqueArray uid (Lifetime lft weak fp)) n = do
-            fp' <- unsafeInterleaveIO . evalPTX ptx . evalPar $ do
-              !_ <- get future -- stream synchronisation
-              !_ <- block =<< Prim.peekArrayAsync n ad
-              return fp
+          peekR ad (UniqueArray uid (Lifetime lft weak fp)) n = unsafeInterleaveIO $ do
+            ok  <- evaluated fp
+            fp' <- if ok
+                     then return fp
+                     else unsafeInterleaveIO . evalPTX ptx . evalPar $ do
+                            !_ <- get future -- stream synchronisation
+                            !_ <- block =<< Prim.peekArrayAsync n ad
+                            return fp
             --
             return $ UniqueArray uid (Lifetime lft weak fp')
+
+          evaluated :: a -> IO Bool
+#if __GLASGOW_HASKELL__ >= 806
+          evaluated x = do
+            c <- getClosureData x
+            Debug.when Debug.verbose $
+              Debug.traceIO Debug.dump_gc $
+                printf "copyToHostLazy/evaluated: %s" (show c)
+            --
+            return $ case c of
+                       ConstrClosure{} -> True
+                       _               -> False
+#else
+#if UNBOXED_TUPLES
+          evaluated x =
+            case unpackClosure# x of
+              (# iptr, _, _ #) -> do
+                  let iptr0 = Ptr iptr
+                  let iptr1
+                        | ghciTablesNextToCode = iptr0
+                        | otherwise            = iptr0 `plusPtr` negate (sizeOf (undefined::Word))
+                  itbl <- peekItbl iptr1
+                  case tipe itbl of
+                    i | i >= CONSTR && i <= CONSTR_NOCAF  -> return True
+                    _                                     -> return False
+#else
+          evaluated _ =
+            return False
+#endif
+#endif
 
           runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
           runR ArrayEltRunit               AD_Unit             !_ = return AD_Unit
@@ -161,7 +214,7 @@ cloneArrayAsync
     -> Par PTX (Future (Array sh e))
 cloneArrayAsync arr@(Array _ src) = do
   Array _ dst <- allocateRemote sh  :: Par PTX (Array sh e)
-  Array (fromElt sh) `liftF` copyR arrayElt src dst (size sh)
+  Array (fromElt sh) `liftF` copyR arrayElt src dst (S.size sh)
   where
     sh  = shape arr
 
