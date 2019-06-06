@@ -132,6 +132,11 @@ copyToHostLazy future@(Future ref) = do
           -- check whether the pointer is a thunk, and only initiate the
           -- transfer if so.
           --
+          -- XXX: The current approach of checking the heap representation
+          -- (function 'evaluated' below) is not particularly reliable. We
+          -- should improve this situation somehow.
+          --    -- TLM 2019-06-06
+          --
           peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
                 => ArrayData e
                 -> UniqueArray a
