@@ -21,12 +21,12 @@ addons:
       - ubuntu-toolchain-r-test
       - llvm-toolchain-xenial
     packages: &apt_packages
-      - dpkg
-      - gcc-8
-      - g++-8
-      - libgmp-dev
-      - happy-1.19.5
       - alex-3.1.7
+      - dpkg
+      - g++-8
+      - gcc-8
+      - happy-1.19.5
+      - libgmp-dev
 
 matrix:
   fast_finish: true
@@ -123,16 +123,14 @@ install:
   - travis_retry travis_wait 60 stack build $FLAGS --only-dependencies --test
 
 script:
-  - true
+  - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
+  - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
+  - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
 
-#   - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
-#   - travis_retry stack build accelerate-llvm-native $FLAGS $HADDOCK --test --no-run-tests
-#   - travis_retry stack build accelerate-llvm-ptx    $FLAGS $HADDOCK --test --no-run-tests
+  # Run test suite(s)
+  # only use a single test thread due to limited memory on the travis boxes
+  - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
-#   # Run test suite(s)
-#   # only use a single test thread due to limited memory on the travis boxes
-#   - stack test accelerate-llvm-native $FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
-
-# after_success:
-#   - source .travis/update-accelerate-buildbot.sh
+after_success:
+  - source .travis/update-accelerate-buildbot.sh
 
