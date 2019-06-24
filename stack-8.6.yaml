@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- git:    https://github.com/tmcdonell/accelerate.git
-  commit: 9251a9fc5895642753e9930642732373c399d0e0
+- github: tmcdonell/accelerate
+  commit: 42aa50c743620cfd50b40948d0f40b122ea1e45b
 
 - cuda-0.10.1.0
 - hedgehog-1.0
