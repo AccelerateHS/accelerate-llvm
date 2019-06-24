@@ -12,3 +12,4 @@ cabal.sandbox.config
 stack.yaml
 tags
 local/
+/stack.yaml.lock
