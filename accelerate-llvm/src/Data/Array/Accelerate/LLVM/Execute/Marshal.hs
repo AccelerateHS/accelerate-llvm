@@ -1,5 +1,7 @@
+{-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
@@ -28,7 +30,6 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Type
 
 -- libraries
-import Data.Proxy                                               ( Proxy )
 import Data.DList                                               ( DList )
 import qualified Data.DList                                     as DL
 
@@ -38,8 +39,8 @@ import qualified Data.DList                                     as DL
 
 -- | Convert function arguments into stream a form suitable for function calls
 --
-marshal :: Marshalable arch m args => Proxy arch -> args -> m [ArgR arch]
-marshal proxy args = DL.toList `fmap` marshal' proxy args
+marshal :: forall arch m args. Marshalable arch m args => args -> m [ArgR arch]
+marshal args = DL.toList `fmap` marshal' @arch args
 
 
 -- | A type family that is used to specify a concrete kernel argument and
@@ -58,82 +59,87 @@ type family ArgR arch
 --   * (Gamma aenv, Aval aenv)  -- for free array variables
 --
 class Monad m => Marshalable arch m a where
-  marshal' :: Proxy arch -> a -> m (DList (ArgR arch))
+  marshal' :: a -> m (DList (ArgR arch))
 
 instance Monad m => Marshalable arch m () where
-  marshal' _ () = return DL.empty
+  marshal' () = return DL.empty
 
 instance (Marshalable arch m a, Marshalable arch m b) => Marshalable arch m (a, b) where
-  marshal' proxy (a, b) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b]
+  marshal' (a, b) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c) => Marshalable arch m (a, b, c) where
-  marshal' proxy (a, b, c) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c]
+  marshal' (a, b, c) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d) => Marshalable arch m (a, b, c, d) where
-  marshal' proxy (a, b, c, d) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c, marshal' proxy d]
+  marshal' (a, b, c, d) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e)
     => Marshalable arch m (a, b, c, d, e) where
-  marshal' proxy (a, b, c, d, e) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c, marshal' proxy d, marshal' proxy e]
+  marshal' (a, b, c, d, e) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f)
     => Marshalable arch m (a, b, c, d, e, f) where
-  marshal' proxy (a, b, c, d, e, f) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c, marshal' proxy d, marshal' proxy e, marshal' proxy f]
+  marshal' (a, b, c, d, e, f) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f, Marshalable arch m g)
     => Marshalable arch m (a, b, c, d, e, f, g) where
-  marshal' proxy (a, b, c, d, e, f, g) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c, marshal' proxy d, marshal' proxy e, marshal' proxy f, marshal' proxy g]
+  marshal' (a, b, c, d, e, f, g) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f, marshal' @arch g]
 
 instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f, Marshalable arch m g, Marshalable arch m h)
     => Marshalable arch m (a, b, c, d, e, f, g, h) where
-  marshal' proxy (a, b, c, d, e, f, g, h) =
-    DL.concat `fmap` sequence [marshal' proxy a, marshal' proxy b, marshal' proxy c, marshal' proxy d, marshal' proxy e, marshal' proxy f, marshal' proxy g, marshal' proxy h]
+  marshal' (a, b, c, d, e, f, g, h) =
+    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f, marshal' @arch g, marshal' @arch h]
 
 instance Marshalable arch m a => Marshalable arch m [a] where
-  marshal' proxy = fmap DL.concat . mapM (marshal' proxy)
+  marshal' = fmap DL.concat . mapM (marshal' @arch)
+
+instance Marshalable arch m a => Marshalable arch m (Maybe a) where
+  marshal' = \case
+    Nothing -> return DL.empty
+    Just a  -> marshal' @arch a
 
 -- instance Monad m => Marshalable arch m (DList (ArgR arch)) where
---   marshal' _ = return
+--   marshal' = return
 
 -- instance (Async arch, Marshalable arch (Par arch) a) => Marshalable arch (Par arch) (FutureR arch a) where
---   marshal' proxy future = marshal' proxy =<< get future
+--   marshal' future = marshal' @arch =<< get future
 
 instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRepr e)))
     => Marshalable arch m (Array sh e) where
-  marshal' proxy (Array sh adata) =
-    DL.concat `fmap` sequence [marshal' proxy adata, go proxy (eltType @sh) sh]
+  marshal' (Array sh adata) =
+    DL.concat `fmap` sequence [marshal' @arch adata, go (eltType @sh) sh]
     where
-      go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
-      go _ TypeRunit         ()       = return DL.empty
-      go p (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go p ta sa, go p tb sb]
-      go p (TypeRscalar t)   i
-        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' p i
+      go :: TupleType a -> a -> m (DList (ArgR arch))
+      go TypeRunit         ()       = return DL.empty
+      go (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go ta sa, go tb sb]
+      go (TypeRscalar t)   i
+        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' @arch i
         | otherwise                                                         = $internalError "marshal" "expected Int argument"
 
 instance {-# INCOHERENT #-} (Shape sh, Monad m, Marshalable arch m Int)
     => Marshalable arch m sh where
-  marshal' proxy sh = go proxy (eltType @sh) (fromElt sh)
+  marshal' sh = go (eltType @sh) (fromElt sh)
     where
-      go :: Proxy arch -> TupleType a -> a -> m (DList (ArgR arch))
-      go _ TypeRunit         ()       = return DL.empty
-      go p (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go p ta sa, go p tb sb]
-      go p (TypeRscalar t)   i
-        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' p i
+      go :: TupleType a -> a -> m (DList (ArgR arch))
+      go TypeRunit         ()       = return DL.empty
+      go (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go ta sa, go tb sb]
+      go (TypeRscalar t)   i
+        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' @arch i
         | otherwise                                                         = $internalError "marshal" "expected Int argument"
 
 -- instance Monad m => Marshalable arch m Z where
---   marshal' _ Z = return DL.empty
+--   marshal' Z = return DL.empty
 
 -- instance (Shape sh, Marshalable arch m sh, Marshalable arch m Int)
 --     => Marshalable arch m (sh :. Int) where
---   marshal' proxy (sh :. sz) =
---     DL.concat `fmap` sequence [marshal' proxy sh, marshal' proxy sz]
+--   marshal' (sh :. sz) =
+--     DL.concat `fmap` sequence [marshal' @arch sh, marshal' @arch sz]
 
 -- instance Marshalable arch (Gamma aenv, ValR arch aenv) where
 --   marshal' (gamma, aenv)

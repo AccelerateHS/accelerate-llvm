@@ -7,6 +7,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 #if __GLASGOW_HASKELL__ <= 708
@@ -62,27 +63,27 @@ type instance M.ArgR PTX  = CUDA.FunParam
 
 
 instance Monad m => M.Marshalable PTX m (DList CUDA.FunParam) where
-  marshal' _ = return
+  marshal' = return
 
 instance Monad m => M.Marshalable PTX m Int where
-  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+  marshal' x = return $ DL.singleton (CUDA.VArg x)
 
 instance Monad m => M.Marshalable PTX m Int32 where
-  marshal' _ x = return $ DL.singleton (CUDA.VArg x)
+  marshal' x = return $ DL.singleton (CUDA.VArg x)
 
 instance {-# OVERLAPS #-} M.Marshalable PTX (Par PTX) (Gamma aenv, Val aenv) where
-  marshal' proxy (gamma, aenv)
+  marshal' (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' proxy =<< get (prj idx aenv)) (IM.elems gamma)
+    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' @PTX =<< get (prj idx aenv)) (IM.elems gamma)
 
 instance (M.Marshalable PTX (Par PTX) a) => M.Marshalable PTX (Par PTX) (Future a) where
-  marshal' proxy future = M.marshal' proxy =<< get future
+  marshal' future = M.marshal' @PTX =<< get future
 
 instance ArrayElt e => M.Marshalable PTX (Par PTX) (ArrayData e) where
-  marshal' proxy adata = liftPar (M.marshal' proxy adata)
+  marshal' adata = liftPar (M.marshal' @PTX adata)
 
 instance ArrayElt e => M.Marshalable PTX (LLVM PTX) (ArrayData e) where
-  marshal' _ adata = go arrayElt adata
+  marshal' adata = go arrayElt adata
     where
       wrap :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
            => ArrayData e'

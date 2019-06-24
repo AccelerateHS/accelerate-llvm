@@ -57,7 +57,6 @@ import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
-import Data.Proxy                                               ( Proxy(..) )
 import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
@@ -708,7 +707,7 @@ executeOp kernel gamma aenv sh args =
   let n = size sh
   in  when (n > 0) $ do
         stream <- asks ptxStream
-        argv   <- marshal (Proxy::Proxy PTX) (args, (gamma, aenv))
+        argv   <- marshal @PTX (args, (gamma, aenv))
         liftIO  $ launch kernel stream n argv
 
 

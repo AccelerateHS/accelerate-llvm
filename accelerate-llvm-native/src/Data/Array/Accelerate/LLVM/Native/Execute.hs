@@ -56,7 +56,6 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
-import Data.Proxy                                                   ( Proxy(..) )
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
 import Data.Word                                                    ( Word8 )
@@ -839,10 +838,10 @@ mkTasksUsing
       -> args
       -> Par Native (Seq Action)
 mkTasksUsing ranges (name, f) gamma aenv args = do
-  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  argv  <- marshal' @Native (args, (gamma, aenv))
   return $ flip fmap ranges $ \(_,u,v) -> do
     sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
+    callFFI f retVoid =<< marshal @Native (u, v, argv)
 
 {-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
 {-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
@@ -855,10 +854,10 @@ mkTasksUsingIndex
       -> args
       -> Par Native (Seq Action)
 mkTasksUsingIndex ranges (name, f) gamma aenv args = do
-  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  argv  <- marshal' @Native (args, (gamma, aenv))
   return $ flip fmap ranges $ \(i,u,v) -> do
     sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
+    callFFI f retVoid =<< marshal @Native (u, v, i, argv)
 
 
 -- Standard C functions
