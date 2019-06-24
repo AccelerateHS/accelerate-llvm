@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Prelude                                                  hiding ( fromIntegral )
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -36,7 +36,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
-mkMap :: forall aenv sh a b. Elt b
+mkMap :: forall aenv sh a b. (Shape sh, Elt b)
       => Gamma         aenv
       -> IRFun1    PTX aenv (a -> b)
       -> IRDelayed PTX aenv (Array sh a)

@@ -42,6 +42,8 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
+import qualified LLVM.AST.Global                                    as LLVM
+
 import Control.Monad
 
 
@@ -58,39 +60,43 @@ import Control.Monad
 mkStencil1
     :: (Stencil sh a stencil, Elt b)
     => UID
-    -> Gamma aenv
-    -> IRFun1     Native aenv (stencil -> b)
-    -> IRBoundary Native aenv (Array sh a)
-    -> IRDelayed  Native aenv (Array sh a)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh b))
-mkStencil1 uid aenv f bnd arr =
-  (+++) <$> mkInside uid aenv (IRFun1 $ app1 f <=< stencilAccess Nothing    arr)
-        <*> mkBorder uid aenv (IRFun1 $ app1 f <=< stencilAccess (Just bnd) arr)
+    -> Gamma              aenv
+    -> IRFun1      Native aenv (stencil -> b)
+    -> IRBoundary  Native aenv (Array sh a)
+    -> MIRDelayed  Native aenv (Array sh a)
+    -> CodeGen     Native      (IROpenAcc Native aenv (Array sh b))
+mkStencil1 uid aenv f bnd marr =
+  let (arrIn, paramIn) = delayedArray "in" marr
+   in (+++) <$> mkInside uid aenv (IRFun1 $ app1 f <=< stencilAccess Nothing    arrIn) paramIn
+            <*> mkBorder uid aenv (IRFun1 $ app1 f <=< stencilAccess (Just bnd) arrIn) paramIn
 
 mkStencil2
     :: (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
     => UID
-    -> Gamma aenv
-    -> IRFun2     Native aenv (stencil1 -> stencil2 -> c)
-    -> IRBoundary Native aenv (Array sh a)
-    -> IRDelayed  Native aenv (Array sh a)
-    -> IRBoundary Native aenv (Array sh b)
-    -> IRDelayed  Native aenv (Array sh b)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh c))
-mkStencil2 uid aenv f bnd1 arr1 bnd2 arr2 =
+    -> Gamma              aenv
+    -> IRFun2      Native aenv (stencil1 -> stencil2 -> c)
+    -> IRBoundary  Native aenv (Array sh a)
+    -> MIRDelayed  Native aenv (Array sh a)
+    -> IRBoundary  Native aenv (Array sh b)
+    -> MIRDelayed  Native aenv (Array sh b)
+    -> CodeGen     Native      (IROpenAcc Native aenv (Array sh c))
+mkStencil2 uid aenv f bnd1 marr1 bnd2 marr2 =
   let
+      (arrIn1, paramIn1)  = delayedArray "in1" marr1
+      (arrIn2, paramIn2)  = delayedArray "in2" marr2
+
       inside  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess Nothing arr1 ix
-        stencil2 <- stencilAccess Nothing arr2 ix
+        stencil1 <- stencilAccess Nothing arrIn1 ix
+        stencil2 <- stencilAccess Nothing arrIn2 ix
         app2 f stencil1 stencil2
       --
       border  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess (Just bnd1) arr1 ix
-        stencil2 <- stencilAccess (Just bnd2) arr2 ix
+        stencil1 <- stencilAccess (Just bnd1) arrIn1 ix
+        stencil2 <- stencilAccess (Just bnd2) arrIn2 ix
         app2 f stencil1 stencil2
   in
-  (+++) <$> mkInside uid aenv inside
-        <*> mkBorder uid aenv border
+  (+++) <$> mkInside uid aenv inside (paramIn1 ++ paramIn2)
+        <*> mkBorder uid aenv border (paramIn1 ++ paramIn2)
 
 
 mkInside
@@ -98,15 +104,16 @@ mkInside
     => UID
     -> Gamma aenv
     -> IRFun1  Native aenv (sh -> e)
+    -> [LLVM.Parameter]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkInside uid aenv apply =
+mkInside uid aenv apply paramIn =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (start, end, paramGang)   = gangParam    @sh
+      (arrOut, paramOut)        = mutableArray @sh "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in
-  makeOpenAcc uid "stencil_inside" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "stencil_inside" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     imapNestFromToTile 4 start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
@@ -119,15 +126,16 @@ mkBorder
     => UID
     -> Gamma aenv
     -> IRFun1  Native aenv (sh -> e)
+    -> [LLVM.Parameter]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkBorder uid aenv apply =
+mkBorder uid aenv apply paramIn =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (start, end, paramGang)   = gangParam    @sh
+      (arrOut, paramOut)        = mutableArray @sh "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in
-  makeOpenAcc uid "stencil_border" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "stencil_border" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     imapNestFromTo start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function

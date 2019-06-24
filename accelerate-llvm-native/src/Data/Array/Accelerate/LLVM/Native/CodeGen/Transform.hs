@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+-- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 -- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
@@ -11,7 +11,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
   where
 
 -- accelerate
@@ -20,6 +20,7 @@ import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -29,27 +30,32 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 
--- Construct a new array by applying a function to each index. Each thread
--- processes multiple adjacent elements.
+-- Hybrid map/backpermute operation
 --
-mkGenerate
-    :: forall aenv sh e. (Shape sh, Elt e)
+mkTransform
+    :: forall aenv sh sh' a b. (Shape sh, Shape sh', Elt a, Elt b)
     => UID
     -> Gamma aenv
-    -> IRFun1  Native aenv (sh -> e)
-    -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkGenerate uid aenv apply =
+    -> IRFun1  Native aenv (sh' -> sh)
+    -> IRFun1  Native aenv (a -> b)
+    -> CodeGen Native      (IROpenAcc Native aenv (Array sh' b))
+mkTransform uid aenv p f =
   let
-      (start, end, paramGang)   = gangParam    @sh
-      (arrOut, paramOut)        = mutableArray @sh "out"
+      (start, end, paramGang)   = gangParam    @sh'
+      (arrIn,  paramIn)         = mutableArray @sh  "in"
+      (arrOut, paramOut)        = mutableArray @sh' "out"
       paramEnv                  = envParam aenv
+      shIn                      = irArrayShape arrIn
       shOut                     = irArrayShape arrOut
   in
-  makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "transform" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    imapNestFromTo start end shOut $ \ix i -> do
-      r <- app1 apply ix                        -- apply generator function
-      writeArray arrOut i r                     -- store result
+    imapNestFromTo start end shOut $ \ix' i' -> do
+      ix  <- app1 p ix'
+      i   <- intOfIndex shIn ix
+      a   <- readArray arrIn i
+      b   <- app1 f a
+      writeArray arrOut i' b
 
     return_
 
