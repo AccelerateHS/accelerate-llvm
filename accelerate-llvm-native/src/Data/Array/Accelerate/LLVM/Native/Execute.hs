@@ -385,7 +385,7 @@ scanOp
 scanOp exe gamma aenv arr@(delayedShape -> (sz :. n)) =
   case n of
     0 -> generateOp exe gamma aenv (sz :. 1)
-    _ -> scanCore exe gamma aenv n (n+1) arr
+    _ -> scanCore exe gamma aenv (n+1) arr
 
 {-# INLINE scan1Op #-}
 scan1Op
@@ -397,7 +397,7 @@ scan1Op
     -> Par Native (Future (Array (sh:.Int) e))
 scan1Op exe gamma aenv arr@(delayedShape -> (_ :. n))
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv n n arr
+  $ scanCore exe gamma aenv n arr
 
 {-# INLINE scanCore #-}
 scanCore
@@ -405,11 +405,10 @@ scanCore
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> Int        -- input size of innermost dimension
     -> Int        -- output size of innermost dimension
     -> Delayed (Array (sh:.Int) e)
     -> Par Native (Future (Array (sh:.Int) e))
-scanCore NativeR{..} gamma aenv n m input@(delayedShape -> (sz :. _)) = do
+scanCore NativeR{..} gamma aenv m input@(delayedShape -> (sz :. n)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote (sz :. m)
@@ -561,8 +560,8 @@ permuteOp inplace NativeR{..} gamma aenv defaults@(shape -> shOut) input@(delaye
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- if inplace
-                   then return defaults
-                   else liftPar (cloneArray defaults)
+                   then Debug.trace Debug.dump_exec               "exec: permute/inplace"                            $ return defaults
+                   else Debug.timed Debug.dump_exec (\wall cpu -> "exec: permute/clone " ++ Debug.elapsedS wall cpu) $ liftPar (cloneArray defaults)
   let
       splits  = numWorkers workers
       minsize = case rank @sh of
