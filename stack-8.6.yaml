@@ -10,7 +10,7 @@ packages:
 
 extra-deps:
 - github: tmcdonell/accelerate
-  commit: 42aa50c743620cfd50b40948d0f40b122ea1e45b
+  commit: 27a13986d4fc87eaea853b8517475e19bd11fc94
 
 - cuda-0.10.1.0
 - hedgehog-1.0
