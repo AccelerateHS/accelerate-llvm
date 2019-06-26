@@ -37,6 +37,16 @@ import Control.Applicative
 import Prelude
 
 
+-- Stencil boundary conditions
+--
+data IRBoundary arch aenv t where
+  IRClamp     :: IRBoundary arch aenv t
+  IRMirror    :: IRBoundary arch aenv t
+  IRWrap      :: IRBoundary arch aenv t
+  IRConstant  :: Elt e => IR e -> IRBoundary arch aenv (Array sh e)
+  IRFunction  :: (Shape sh, Elt e) => IRFun1 arch aenv (sh -> e) -> IRBoundary arch aenv (Array sh e)
+
+
 -- Generate the stencil pattern including boundary conditions
 --
 stencilAccess

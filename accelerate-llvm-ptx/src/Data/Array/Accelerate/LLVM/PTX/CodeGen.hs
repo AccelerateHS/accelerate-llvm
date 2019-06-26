@@ -27,12 +27,14 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
   map _       = mkMap
   generate _  = mkGenerate
+  transform _ = mkTransform
   fold _      = mkFold
   fold1 _     = mkFold1
   foldSeg _   = mkFoldSeg

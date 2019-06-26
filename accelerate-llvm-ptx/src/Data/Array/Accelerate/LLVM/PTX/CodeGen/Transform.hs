@@ -3,7 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 -- |
--- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
+-- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 -- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
@@ -12,7 +12,7 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
+module Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
   where
 
 -- accelerate
@@ -34,25 +34,30 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
-mkMap :: forall aenv sh a b. (Shape sh, Elt a, Elt b)
-      => Gamma       aenv
-      -> IRFun1  PTX aenv (a -> b)
-      -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
-mkMap aenv apply =
+mkTransform
+    :: forall aenv sh sh' a b. (Shape sh, Shape sh', Elt a, Elt b)
+    => Gamma       aenv
+    -> IRFun1  PTX aenv (sh' -> sh)
+    -> IRFun1  PTX aenv (a -> b)
+    -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh' b))
+mkTransform aenv p f =
   let
-      (arrOut, paramOut)  = mutableArray @sh "out"
-      (arrIn,  paramIn)   = mutableArray @sh "in"
+      (arrOut, paramOut)  = mutableArray @sh' "out"
+      (arrIn,  paramIn)   = mutableArray @sh  "in"
       paramEnv            = envParam aenv
   in
-  makeOpenAcc "map" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc "transform" (paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrIn)
+    end   <- shapeSize (irArrayShape arrOut)
 
-    imapFromTo start end $ \i -> do
-      xs <- readArray arrIn i
-      ys <- app1 apply xs
-      writeArray arrOut i ys
+    imapFromTo start end $ \i' -> do
+      ix' <- indexOfInt (irArrayShape arrOut) i'
+      ix  <- app1 p ix'
+      i   <- intOfIndex (irArrayShape arrIn) ix
+      a   <- readArray arrIn i
+      b   <- app1 f a
+      writeArray arrOut i' b
 
     return_
 

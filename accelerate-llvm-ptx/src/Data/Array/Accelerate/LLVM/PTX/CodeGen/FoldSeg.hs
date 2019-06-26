@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Shape(rank), (:.), Elt(..) )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Shape(rank), (:.), Elt(..), DIM1 )
 
 -- accelerate-llvm-*
 import LLVM.AST.Type.Representation
@@ -58,12 +58,12 @@ import Prelude                                                      as P
 --
 mkFoldSeg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma         aenv
-    -> IRFun2    PTX aenv (e -> e -> e)
-    -> IRExp     PTX aenv e
-    -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> IRExp      PTX aenv e
+    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Segments i)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFoldSeg aenv combine seed arr seg =
   (+++) <$> mkFoldSegP_block aenv combine (Just seed) arr seg
         <*> mkFoldSegP_warp  aenv combine (Just seed) arr seg
@@ -74,11 +74,11 @@ mkFoldSeg aenv combine seed arr seg =
 --
 mkFold1Seg
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma         aenv
-    -> IRFun2    PTX aenv (e -> e -> e)
-    -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Segments i)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
 mkFold1Seg aenv combine arr seg =
   (+++) <$> mkFoldSegP_block aenv combine Nothing arr seg
         <*> mkFoldSegP_warp  aenv combine Nothing arr seg
@@ -93,17 +93,19 @@ mkFold1Seg aenv combine arr seg =
 --
 mkFoldSegP_block
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma aenv
-    -> IRFun2 PTX aenv (e -> e -> e)
-    -> Maybe (IRExp PTX aenv e)
-    -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_block aenv combine mseed arr seg = do
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> MIRExp     PTX aenv e
+    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Segments i)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSegP_block aenv combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
+      (arrOut, paramOut)  = mutableArray @(sh:.Int) "out"
+      (arrIn,  paramIn)   = delayedArray @(sh:.Int) "in"  marr
+      (arrSeg, paramSeg)  = delayedArray @DIM1      "seg" mseg
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
@@ -114,7 +116,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = sizeOf (eltType @e)
   --
-  makeOpenAccWith config "foldSeg_block" (paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldSeg_block" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
     -- We use a dynamically scheduled work queue in order to evenly distribute
     -- the uneven workload, due to the variable length of each segment, over the
@@ -138,8 +140,8 @@ mkFoldSegP_block aenv combine mseed arr seg = do
     -- 'scanl (+) 0' of the segment length array, so its size has increased by
     -- one.
     --
-    sz    <- indexHead <$> delayedExtent arr
-    ss    <- do n <- indexHead <$> delayedExtent seg
+    sz    <- indexHead <$> delayedExtent arrIn
+    ss    <- do n <- indexHead <$> delayedExtent arrSeg
                 A.sub numType n (lift 1)
 
     -- Each thread block cooperatively reduces a segment.
@@ -160,7 +162,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
                0 -> return s
                _ -> A.rem integralType s ss
         j <- A.add numType i =<< int tid
-        v <- app1 (delayedLinearIndex seg) j
+        v <- app1 (delayedLinearIndex arrSeg) j
         writeArray smem tid =<< int v
 
       -- Once all threads have caught up, begin work on the new segment.
@@ -204,7 +206,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
             --
             i0 <- A.add numType inf =<< int tid
             x0 <- if A.lt singleType i0 sup
-                    then app1 (delayedLinearIndex arr) i0
+                    then app1 (delayedLinearIndex arrIn) i0
                     else let
                              go :: TupleType a -> Operands a
                              go TypeRunit       = OP_Unit
@@ -233,7 +235,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
-                               x <- app1 (delayedLinearIndex arr) i'
+                               x <- app1 (delayedLinearIndex arrIn) i'
                                y <- reduceBlockSMem dev combine Nothing x
                                return y
 
@@ -243,7 +245,7 @@ mkFoldSegP_block aenv combine mseed arr seg = do
                              -- points, similar to the above NOTE.
                              else do
                                x <- if A.lt singleType i' sup
-                                      then app1 (delayedLinearIndex arr) i'
+                                      then app1 (delayedLinearIndex arrIn) i'
                                       else let
                                                go :: TupleType a -> Operands a
                                                go TypeRunit       = OP_Unit
@@ -285,17 +287,19 @@ mkFoldSegP_block aenv combine mseed arr seg = do
 --
 mkFoldSegP_warp
     :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma aenv
-    -> IRFun2 PTX aenv (e -> e -> e)
-    -> Maybe (IRExp PTX aenv e)
-    -> IRDelayed PTX aenv (Array (sh :. Int) e)
-    -> IRDelayed PTX aenv (Segments i)
-    -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_warp aenv combine mseed arr seg = do
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> MIRExp     PTX aenv e
+    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Segments i)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
+mkFoldSegP_warp aenv combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array (sh :. Int) e))
+      (arrOut, paramOut)  = mutableArray @(sh:.Int) "out"
+      (arrIn,  paramIn)   = delayedArray @(sh:.Int) "in"  marr
+      (arrSeg, paramSeg)  = delayedArray @DIM1      "seg" mseg
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
@@ -313,7 +317,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
       int32 :: Integral a => a -> IR Int32
       int32 = lift . P.fromIntegral
   --
-  makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramEnv) $ do
+  makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
     -- Each warp works independently.
     -- Determine the ID of this warp within the thread block.
@@ -363,8 +367,8 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
     -- reduces. Note that this is a segment-offset array computed by 'scanl (+) 0'
     -- of the segment length array, so its size has increased by one.
     --
-    sz    <- indexHead <$> delayedExtent arr
-    ss    <- do a <- indexHead <$> delayedExtent seg
+    sz    <- indexHead <$> delayedExtent arrIn
+    ss    <- do a <- indexHead <$> delayedExtent arrSeg
                 b <- A.sub numType a (lift 1)
                 return b
 
@@ -387,7 +391,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
                0 -> return s
                _ -> A.rem integralType s ss
         b <- A.add numType a =<< int lane
-        c <- app1 (delayedLinearIndex seg) b
+        c <- app1 (delayedLinearIndex arrSeg) b
         writeArray lim lane =<< int c
 
       __syncwarp
@@ -425,7 +429,7 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
             --
             i0  <- A.add numType inf =<< int lane
             x0  <- if A.lt singleType i0 sup
-                     then app1 (delayedLinearIndex arr) i0
+                     then app1 (delayedLinearIndex arrIn) i0
                      else let
                               go :: TupleType a -> Operands a
                               go TypeRunit       = OP_Unit
@@ -452,13 +456,13 @@ mkFoldSegP_warp aenv combine mseed arr seg = do
                     r' <- if A.gte singleType v' (lift ws)
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
-                              x <- app1 (delayedLinearIndex arr) i'
+                              x <- app1 (delayedLinearIndex arrIn) i'
                               y <- reduceWarpSMem dev combine smem Nothing x
                               return y
 
                             else do
                               x <- if A.lt singleType i' sup
-                                     then app1 (delayedLinearIndex arr) i'
+                                     then app1 (delayedLinearIndex arrIn) i'
                                      else let
                                               go :: TupleType a -> Operands a
                                               go TypeRunit       = OP_Unit

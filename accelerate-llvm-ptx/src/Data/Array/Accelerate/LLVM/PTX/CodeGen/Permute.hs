@@ -24,7 +24,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute (
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, DIM1, Elt, EltRepr, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
 import qualified Data.Array.Accelerate.Array.Representation         as R
@@ -81,10 +81,10 @@ import Prelude
 --
 mkPermute
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => Gamma aenv
+    => Gamma            aenv
     -> IRPermuteFun PTX aenv (e -> e -> e)
     -> IRFun1       PTX aenv (sh -> sh')
-    -> IRDelayed    PTX aenv (Array sh e)
+    -> MIRDelayed   PTX aenv (Array sh e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute aenv IRPermuteFun{..} project arr =
   let
@@ -121,15 +121,16 @@ mkPermute_rmw
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
     -> RMWOperation
-    -> IRFun1    PTX aenv (e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw aenv rmw update project IRDelayed{..} = do
+    -> IRFun1     PTX aenv (e -> e)
+    -> IRFun1     PTX aenv (sh -> sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_rmw aenv rmw update project marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh' e))
+      (arrOut, paramOut)  = mutableArray @sh' "out"
+      (arrIn,  paramIn)   = delayedArray @sh  "in" marr
       paramEnv            = envParam aenv
       start               = lift 0
       --
@@ -138,9 +139,9 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
       compute32           = Compute 3 2
       compute60           = Compute 6 0
   --
-  makeOpenAcc "permute_rmw" (paramOut ++ paramEnv) $ do
+  makeOpenAcc "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
 
-    shIn  <- delayedExtent
+    shIn  <- delayedExtent arrIn
     end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
@@ -150,7 +151,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
 
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+        x <- app1 (delayedLinearIndex arrIn) i
         r <- app1 update x
 
         case rmw of
@@ -226,21 +227,22 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
 --
 mkPermute_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => Gamma aenv
-    -> IRFun2    PTX aenv (e -> e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex aenv combine project IRDelayed{..} =
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> IRFun1     PTX aenv (sh -> sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_mutex aenv combine project marr =
   let
-      (arrOut, paramOut)    = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)  = mutableArray ("lock" :: Name (Vector Word32))
+      (arrOut,  paramOut)   = mutableArray @sh'  "out"
+      (arrLock, paramLock)  = mutableArray @DIM1 "lock"
+      (arrIn,   paramIn)    = delayedArray @sh   "in" marr
       paramEnv              = envParam aenv
       start                 = lift 0
   in
-  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
-    shIn  <- delayedExtent
+    shIn  <- delayedExtent arrIn
     end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
@@ -251,7 +253,7 @@ mkPermute_mutex aenv combine project IRDelayed{..} =
       -- project element onto the destination array and (atomically) update
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+        x <- app1 (delayedLinearIndex arrIn) i
 
         atomically arrLock j $ do
           y <- readArray arrOut j

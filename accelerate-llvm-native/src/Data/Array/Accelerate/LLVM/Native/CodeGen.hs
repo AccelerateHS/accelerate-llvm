@@ -26,12 +26,14 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Map
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
+import Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 import Data.Array.Accelerate.LLVM.Native.Target
 
 
 instance Skeleton Native where
   map         = mkMap
   generate    = mkGenerate
+  transform   = mkTransform
   fold        = mkFold
   fold1       = mkFold1
   foldSeg     = mkFoldSeg

@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -12,12 +13,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.CodeGen.Base (
-
-  module Data.Array.Accelerate.LLVM.Native.CodeGen.Base,
-  module Data.Proxy,
-
-) where
+module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
+  where
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
@@ -37,7 +34,6 @@ import qualified LLVM.AST.Type                                      as LLVM
 
 import Control.Monad
 import Data.Monoid
-import Data.Proxy
 import Data.String
 import Text.Printf
 import Prelude                                                      as P
@@ -46,8 +42,8 @@ import Prelude                                                      as P
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
 --
-gangParam :: forall sh. Shape sh => Proxy sh -> (IR sh, IR sh, [LLVM.Parameter])
-gangParam _ =
+gangParam :: forall sh. Shape sh => (IR sh, IR sh, [LLVM.Parameter])
+gangParam =
   let start = "ix.start" :: Name sh
       end   = "ix.end"   :: Name sh
   in

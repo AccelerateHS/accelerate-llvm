@@ -40,6 +40,8 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
 
+import qualified LLVM.AST.Global                                    as LLVM
+
 import Control.Monad
 
 
@@ -55,45 +57,49 @@ import Control.Monad
 --
 mkStencil1
     :: forall aenv stencil sh a b. (Stencil sh a stencil, Elt b)
-    => Gamma aenv
-    -> IRFun1     PTX aenv (stencil -> b)
-    -> IRBoundary PTX aenv (Array sh a)
-    -> IRDelayed  PTX aenv (Array sh a)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh b))
-mkStencil1 aenv fun bnd arr =
-  let halo = stencilBorder (stencil :: StencilR sh a stencil)
+    => Gamma           aenv
+    -> IRFun1      PTX aenv (stencil -> b)
+    -> IRBoundary  PTX aenv (Array sh a)
+    -> MIRDelayed  PTX aenv (Array sh a)
+    -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh b))
+mkStencil1 aenv fun bnd marr =
+  let halo             = stencilBorder (stencil :: StencilR sh a stencil)
+      (arrIn, paramIn) = delayedArray "in" marr
   in
-  (+++) <$> mkInside aenv halo (IRFun1 $ app1 fun <=< stencilAccess Nothing    arr)
-        <*> mkBorder aenv      (IRFun1 $ app1 fun <=< stencilAccess (Just bnd) arr)
+  (+++) <$> mkInside aenv halo (IRFun1 $ app1 fun <=< stencilAccess Nothing    arrIn) paramIn
+        <*> mkBorder aenv      (IRFun1 $ app1 fun <=< stencilAccess (Just bnd) arrIn) paramIn
 
 
 mkStencil2
     :: forall aenv stencil1 stencil2 sh a b c. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
-    => Gamma aenv
-    -> IRFun2     PTX aenv (stencil1 -> stencil2 -> c)
-    -> IRBoundary PTX aenv (Array sh a)
-    -> IRDelayed  PTX aenv (Array sh a)
-    -> IRBoundary PTX aenv (Array sh b)
-    -> IRDelayed  PTX aenv (Array sh b)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh c))
-mkStencil2 aenv f bnd1 arr1 bnd2 arr2 =
+    => Gamma           aenv
+    -> IRFun2      PTX aenv (stencil1 -> stencil2 -> c)
+    -> IRBoundary  PTX aenv (Array sh a)
+    -> MIRDelayed  PTX aenv (Array sh a)
+    -> IRBoundary  PTX aenv (Array sh b)
+    -> MIRDelayed  PTX aenv (Array sh b)
+    -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh c))
+mkStencil2 aenv f bnd1 marr1 bnd2 marr2 =
   let
+      (arrIn1, paramIn1)  = delayedArray "in1" marr1
+      (arrIn2, paramIn2)  = delayedArray "in2" marr2
+
       inside  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess Nothing arr1 ix
-        stencil2 <- stencilAccess Nothing arr2 ix
+        stencil1 <- stencilAccess Nothing arrIn1 ix
+        stencil2 <- stencilAccess Nothing arrIn2 ix
         app2 f stencil1 stencil2
       --
       border  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess (Just bnd1) arr1 ix
-        stencil2 <- stencilAccess (Just bnd2) arr2 ix
+        stencil1 <- stencilAccess (Just bnd1) arrIn1 ix
+        stencil2 <- stencilAccess (Just bnd2) arrIn2 ix
         app2 f stencil1 stencil2
 
       halo1   = stencilBorder (stencil :: StencilR sh a stencil1)
       halo2   = stencilBorder (stencil :: StencilR sh b stencil2)
       halo    = halo1 `union` halo2
   in
-  (+++) <$> mkInside aenv halo inside
-        <*> mkBorder aenv      border
+  (+++) <$> mkInside aenv halo inside (paramIn1 ++ paramIn2)
+        <*> mkBorder aenv      border (paramIn1 ++ paramIn2)
 
 
 mkInside
@@ -101,26 +107,27 @@ mkInside
     => Gamma aenv
     -> sh
     -> IRFun1  PTX aenv (sh -> e)
+    -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkInside aenv halo apply =
+mkInside aenv halo apply paramIn =
   let
-      (arrOut, paramOut)  = mutableArray ("out"  :: Name (Array sh e))
-      paramIn             = parameter    ("shIn" :: Name sh)
-      shIn                = local        ("shIn" :: Name sh)
+      (arrOut, paramOut)  = mutableArray @sh "out"
+      paramInside         = parameter    @sh "shInside"
+      shInside            = local        @sh "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc "stencil_inside" (paramIn ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "stencil_inside" (paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (lift 0)
-    end   <- shapeSize shIn
+    end   <- shapeSize shInside
 
     -- iterate over the inside region as a linear index space
     --
     imapFromTo start end $ \i -> do
 
-      ixIn  <- indexOfInt shIn i        -- convert to multidimensional index of inside region
+      ixIn  <- indexOfInt shInside i    -- convert to multidimensional index of inside region
       ixOut <- offset ixIn (lift halo)  -- shift to multidimensional index of outside region
       r     <- app1 apply ixOut         -- apply generator function
       j     <- intOfIndex shOut ixOut
@@ -133,26 +140,27 @@ mkBorder
     :: forall aenv sh e. (Shape sh, Elt e)
     => Gamma aenv
     -> IRFun1  PTX aenv (sh -> e)
+    -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkBorder aenv apply =
+mkBorder aenv apply paramIn =
   let
-      (arrOut, paramOut)  = mutableArray ("out"    :: Name (Array sh e))
-      paramFrom           = parameter    ("shFrom" :: Name sh)
-      shFrom              = local        ("shFrom" :: Name sh)
-      paramIn             = parameter    ("shIn"   :: Name sh)
-      shIn                = local        ("shIn"   :: Name sh)
+      (arrOut, paramOut)  = mutableArray @sh "out"
+      paramFrom           = parameter    @sh "shFrom"
+      shFrom              = local        @sh "shFrom"
+      paramInside         = parameter    @sh "shInside"
+      shInside            = local        @sh "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc "stencil_border" (paramFrom ++ paramIn ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc "stencil_border" (paramFrom ++ paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (lift 0)
-    end   <- shapeSize shIn
+    end   <- shapeSize shInside
 
     imapFromTo start end $ \i -> do
 
-      ixIn  <- indexOfInt shIn i        -- convert to multidimensional index of inside region
+      ixIn  <- indexOfInt shInside i    -- convert to multidimensional index of inside region
       ixOut <- offset ixIn shFrom       -- shift to multidimensional index of outside region
       r     <- app1 apply ixOut         -- apply generator function
       j     <- intOfIndex shOut ixOut

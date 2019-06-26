@@ -245,13 +245,10 @@ llvmOfOpenExp top env aenv = cvtE top
 
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
-    linearIndex (IRManifest v) ix =
-      readArray (irArray (aprj v aenv)) ix
+    linearIndex (IRManifest v) = linearIndexArray (irArray (aprj v aenv))
 
     index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
-    index (IRManifest v) ix =
-      let arr = irArray (aprj v aenv)
-       in readArray arr =<< intOfIndex (irArrayShape arr) ix
+    index (IRManifest v) = indexArray (irArray (aprj v aenv))
 
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
@@ -518,4 +515,14 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType @sh) extent index
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"
+
+-- | Read an element at a multidimensional index
+--
+indexArray :: (Shape sh, Elt e) => IRArray (Array sh e) -> IR sh -> IROpenExp arch env aenv e
+indexArray arr ix = linearIndexArray arr =<< intOfIndex (irArrayShape arr) ix
+
+-- | Read an element at a linear index
+--
+linearIndexArray :: (Shape sh, Elt e) => IRArray (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+linearIndexArray = readArray
 

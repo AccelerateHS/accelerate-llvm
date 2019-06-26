@@ -41,7 +41,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 --
 {-# INLINEABLE readArray #-}
 readArray
-    :: forall arch int sh e. IsIntegral int
+    :: forall arch int sh e. (IsIntegral int, Elt e)
     => IRArray (Array sh e)
     -> IR int
     -> CodeGen arch (IR e)
@@ -67,7 +67,7 @@ readArrayPrim t v arr ix = do
 --
 {-# INLINEABLE writeArray #-}
 writeArray
-    :: forall arch int sh e. IsIntegral int
+    :: forall arch int sh e. (IsIntegral int, Elt e)
     => IRArray (Array sh e)
     -> IR int
     -> IR e
