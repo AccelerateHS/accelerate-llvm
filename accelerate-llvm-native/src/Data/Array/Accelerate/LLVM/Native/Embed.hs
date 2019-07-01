@@ -58,11 +58,8 @@ instance Embed Native where
 --
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do
-  objFile <- TH.runIO (evalNative target (cacheOfUID uid))
+  objFile <- getObjectFile
   funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 65) fn)), $$(makeFFI fn objFile) ) ||]
-#if __GLASGOW_HASKELL__ >= 806
-  addObjectFile objFile
-#endif
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where
@@ -87,12 +84,16 @@ embed target (ObjectR uid nms !_) = do
     -- means that we might still run into problems if runQ is invoked at
     -- multiple modules.
     --
-    addObjectFile :: FilePath -> Q ()
-    addObjectFile objFile = do
-      objs <- fromMaybe Set.empty <$> TH.getQ
-      if Set.member objFile objs
+    getObjectFile :: Q FilePath
+    getObjectFile = do
+      this <- TH.runIO (evalNative target (cacheOfUID uid))
+#if __GLASGOW_HASKELL__ >= 806
+      rest <- fromMaybe Set.empty <$> TH.getQ
+      if Set.member this rest
          then return ()
          else do
-           TH.addForeignFilePath TH.RawObject objFile
-           TH.putQ (Set.insert objFile objs)
+           TH.addForeignFilePath TH.RawObject this
+           TH.putQ (Set.insert this rest)
+#endif
+      return this
 
