@@ -39,10 +39,12 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Control.Concurrent.Unique
 import Control.Monad
 import Data.Hashable
+import Data.Maybe
 import Foreign.Ptr
 import Language.Haskell.TH                                          ( Q, TExp )
 import Numeric
 import System.IO.Unsafe
+import qualified Data.Set                                           as Set
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
@@ -58,6 +60,9 @@ embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do
   objFile <- TH.runIO (evalNative target (cacheOfUID uid))
   funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 65) fn)), $$(makeFFI fn objFile) ) ||]
+#if __GLASGOW_HASKELL__ >= 806
+  addObjectFile objFile
+#endif
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where
@@ -71,8 +76,23 @@ embed target (ObjectR uid nms !_) = do
       dec <- TH.forImpD TH.CCall TH.Unsafe ('&':fn) fn' [t| FunPtr () |]
       ann <- TH.pragAnnD (TH.ValueAnnotation fn') [| (Object objFile) |]
       TH.addTopDecls [dec, ann]
-#if __GLASGOW_HASKELL__ >= 806
-      TH.addForeignFilePath TH.RawObject objFile
-#endif
       TH.unsafeTExpCoerce (TH.varE fn')
+
+    -- Note: [Template Haskell and raw object files]
+    --
+    -- We can only addForeignFilePath once per object file, otherwise the
+    -- linker will complain about duplicate symbols. To work around this,
+    -- we use putQ/getQ to keep track of which object files have already
+    -- been encountered during compilation _of the current module_. This
+    -- means that we might still run into problems if runQ is invoked at
+    -- multiple modules.
+    --
+    addObjectFile :: FilePath -> Q ()
+    addObjectFile objFile = do
+      objs <- fromMaybe Set.empty <$> TH.getQ
+      if Set.member objFile objs
+         then return ()
+         else do
+           TH.addForeignFilePath TH.RawObject objFile
+           TH.putQ (Set.insert objFile objs)
 
