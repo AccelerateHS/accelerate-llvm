@@ -22,6 +22,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 
 import Control.Applicative
 import Prelude                                                          hiding ( read )
+import Data.Bits
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Instruction
@@ -29,26 +30,29 @@ import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
+import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
+
 
 
 -- | Read a value from an array at the given index
 --
 {-# INLINEABLE readArray #-}
 readArray
-    :: forall arch int sh e. IsIntegral int
+    :: forall arch sh e. (Elt e)
     => IRArray (Array sh e)
-    -> IR int
+    -> IR Int
     -> CodeGen arch (IR e)
 readArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) =
   IR <$> readArrayData addrspace volatility ix (eltType @e) adata
 
-readArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> CodeGen arch (Operands t)
+readArrayData :: AddrSpace -> Volatility -> Operand Int -> TupleType t -> Operands t -> CodeGen arch (Operands t)
 readArrayData as v ix = read
   where
     read :: TupleType t -> Operands t -> CodeGen arch (Operands t)
@@ -56,12 +60,47 @@ readArrayData as v ix = read
     read (TypeRpair t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
     read (TypeRscalar t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
 
-readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand int -> CodeGen arch (Operand e)
-readArrayPrim t v arr ix = do
+readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand Int -> CodeGen arch (Operand e)
+readArrayPrim (SingleScalarType t) = readArrayPrimSingle t
+readArrayPrim (VectorScalarType t) = readArrayPrimVector t
+
+readArrayPrimSingle :: SingleType e -> Volatility -> Operand (Ptr e) -> Operand Int -> CodeGen arch (Operand e)
+readArrayPrimSingle t v arr ix = do
   p <- instr' $ GetElementPtr arr [ix]
-  x <- instr' $ Load t v p
+  x <- instr' $ Load (SingleScalarType t) v p
   return x
 
+readArrayPrimVector
+    :: VectorType e
+    -> Volatility
+    -> Operand (Ptr e)
+    -> Operand Int
+    -> CodeGen arch (Operand e)
+readArrayPrimVector t@(VectorType sz e) v arr ix
+  -- This case is for when the vector has a length L that is a power of 2 and
+  -- L>1 because that case is handled by readArrayPrimSingle
+  | popCount sz == 1 =
+      do
+        p <- instr' $ GetElementPtr arr [ix]
+        x <- instr' $ Load (VectorScalarType t) v p
+        return x
+  -- This case is for when the vector has a length that is not a power of 2 and
+  -- L>1. We need to do something special. tbd.
+  | otherwise =
+      let e' = PtrPrimType
+                 (ScalarPrimType . SingleScalarType $ e)
+                 defaultAddrSpace
+      in do
+        -- Pointer magic 1:
+        arr' <- instr' $ PtrCast e' arr
+        ix'  <- instr' $ Mul numType (scalar scalarType sz) ix
+        p    <- instr' $ GetElementPtr arr' [ix']
+
+        -- Pointer magic 2:
+        p'   <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (VectorScalarType t)) defaultAddrSpace) p
+
+        x    <- instr' $ Load (VectorScalarType t) v p'
+        return x
 
 -- | Write a value into an array at the given index
 --
