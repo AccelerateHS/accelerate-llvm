@@ -246,7 +246,7 @@ liftPreOpenExp arch pexp =
     Const c                   -> [|| Const $$(liftConst (eltType @t) c) ||]
     Undef                     -> [|| Undef ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
-    Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
+    Prj tix e                 -> withSigE [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
     IndexNil                  -> [|| IndexNil ||]
     IndexCons sh sz           -> [|| IndexCons $$(liftE sh) $$(liftE sz) ||]
     IndexHead sh              -> [|| IndexHead $$(liftE sh) ||]
