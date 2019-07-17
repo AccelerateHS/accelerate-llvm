@@ -12,7 +12,6 @@ extra-deps:
 - github: tmcdonell/accelerate
   commit: 6ffa011435d2f66cd2fc69dc2c356f784f83ef81
 
-- Cabal-2.0.1.1
 - cuda-0.10.0.0
 - half-0.3
 - hashtables-1.2.3.1
