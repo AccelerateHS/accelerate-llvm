@@ -344,33 +344,18 @@ foldSegOp
 foldSegOp NativeR{..} gamma aenv input@(delayedShape -> (sh :. _)) segments@(delayedShape -> (Z :. ss)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
+  let
+      n       = ss-1
+      splits  = numWorkers workers
+      minsize = case rank @(sh:.Int) of
+                  1 -> 64
+                  _ -> 16
   --
-  if segmentOffset
-    then do
-      -- We can execute in parallel. The segments array represents offset
-      -- indices into the source array, rather than the length of each segment.
-      --
-      let
-          n       = ss-1
-          splits  = numWorkers workers
-          minsize = case rank @(sh:.Int) of
-                      1 -> 64
-                      _ -> 16
-      --
-      result  <- allocateRemote (sh :. n)
-      scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv (Z :. size (sh:.n)) (result, manifest input, manifest segments)
-        `andThen` do putIO workers future result
-                     touchLifetime nativeExecutable
+  result  <- allocateRemote (sh :. n)
+  scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv (Z :. size (sh:.n)) (result, manifest input, manifest segments)
+    `andThen` do putIO workers future result
+                 touchLifetime nativeExecutable
 
-    else do
-      -- Execute on a single processor. The segments array contains the length
-      -- of each segment.
-      --
-      result  <- allocateRemote (sh :. ss)
-      scheduleOpUsing (Seq.singleton (0, empty, Z :. size (sh:.ss))) (nativeExecutable !# "foldSegS") gamma aenv (result, manifest input, manifest segments)
-        `andThen` do putIO workers future result
-                     touchLifetime nativeExecutable
-  --
   return future
 
 

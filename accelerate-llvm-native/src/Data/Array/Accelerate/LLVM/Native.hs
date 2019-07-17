@@ -55,7 +55,6 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.BitSet                                                  ( insert )
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
@@ -112,7 +111,7 @@ runAsyncWith target a = async (runWithIO target a)
 runWithIO :: Arrays a => Native -> Acc a -> IO a
 runWithIO target a = execute
   where
-    !acc    = convertAccWith (config target) a
+    !acc    = convertAcc a
     execute = do
       dumpGraph acc
       evalNative target $ do
@@ -182,7 +181,7 @@ runN = runNWith defaultTarget
 runNWith :: Afunction f => Native -> f -> AfunctionR f
 runNWith target f = exec
   where
-    !acc  = convertAfunWith (config target) f
+    !acc  = convertAfun f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
@@ -224,7 +223,7 @@ runNAsync = runNAsyncWith defaultTarget
 runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => Native -> f -> r
 runNAsyncWith target f = exec
   where
-    !acc  = convertAfunWith (config target) f
+    !acc  = convertAfun f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
@@ -378,13 +377,11 @@ runQ' using target f = do
   -- TLM: We could also just reify the program twice and select at runtime which
   --      version to execute.
   --
-  afun  <- let opt = defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
-               acc = convertAfunWith opt f
-           in
-           TH.runIO $ do
-             dumpGraph acc
-             evalNative (defaultTarget { segmentOffset = True }) $
-              phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+  afun  <- let acc = convertAfun f
+            in TH.runIO $ do
+                 dumpGraph acc
+                 evalNative defaultTarget $
+                  phase "compile" elapsedS (compileAfun acc) >>= dumpStats
 
   -- generate a lambda function with the correct number of arguments and apply
   -- directly to the body expression.
@@ -400,10 +397,10 @@ runQ' using target f = do
         r <- TH.newName "r" -- result
         let
             aenv  = foldr (\a gamma -> [| $gamma `Push` $a |]) [| Empty |] as
-            body  = embedOpenAcc (defaultTarget { segmentOffset = True }) b
+            body  = embedOpenAcc defaultTarget b
         --
         TH.lamE (reverse xs)
-                [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) . evalPar $
+                [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
                       $(TH.doE ( reverse stmts ++   -- useRemoteAsync
                                [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
                                , TH.noBindS [| get $(TH.varE r) |]
@@ -411,15 +408,6 @@ runQ' using target f = do
                  |]
   --
   go afun [] [] []
-
-
--- How the Accelerate program should be evaluated.
---
-config :: Native -> Config
-config target =
-  if segmentOffset target
-    then defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
-    else defaultOptions
 
 
 -- Debugging

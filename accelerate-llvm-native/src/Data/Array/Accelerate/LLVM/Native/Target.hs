@@ -38,7 +38,6 @@ import System.IO.Unsafe
 data Native = Native
   { linkCache     :: !LinkCache
   , workers       :: !Workers
-  , segmentOffset :: !Bool
   }
 
 instance Target Native where

@@ -25,9 +25,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Exp                       ( indexHead )
-import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -55,8 +53,7 @@ mkFoldSeg
     -> MIRDelayed Native aenv (Segments i)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFoldSeg uid aenv combine seed arr seg =
-  (+++) <$> mkFoldSegS uid aenv combine (Just seed) arr seg
-        <*> mkFoldSegP uid aenv combine (Just seed) arr seg
+  mkFoldSegP uid aenv combine (Just seed) arr seg
 
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
@@ -71,10 +68,10 @@ mkFold1Seg
     -> MIRDelayed Native aenv (Segments i)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
 mkFold1Seg uid aenv combine arr seg =
-  (+++) <$> mkFoldSegS uid aenv combine Nothing arr seg
-        <*> mkFoldSegP uid aenv combine Nothing arr seg
+  mkFoldSegP uid aenv combine Nothing arr seg
 
 
+{--
 -- Segmented reduction where a single processor reduces the entire array. The
 -- segments array contains the length of each segment.
 --
@@ -126,6 +123,7 @@ mkFoldSegS uid aenv combine mseed marr mseg =
 
     void $ while test body initial
     return_
+--}
 
 
 -- This implementation assumes that the segments array represents the offset

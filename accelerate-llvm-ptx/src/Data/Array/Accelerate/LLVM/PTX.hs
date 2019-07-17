@@ -51,7 +51,6 @@ module Data.Array.Accelerate.LLVM.PTX (
 ) where
 
 -- accelerate
-import Data.BitSet                                                  ( insert )
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
@@ -133,7 +132,7 @@ runIO a = withPool defaultTargetPool (\target -> runWithIO target a)
 runWithIO :: Arrays a => PTX -> Acc a -> IO a
 runWithIO target a = execute
   where
-    !acc    = convertAccWith config a
+    !acc    = convertAcc a
     execute = do
       dumpGraph acc
       evalPTX target $ do
@@ -205,7 +204,7 @@ run1With = runNWith
 runN :: Afunction f => f -> AfunctionR f
 runN f = exec
   where
-    !acc  = convertAfunWith config f
+    !acc  = convertAfun f
     !exec = unsafeWithPool defaultTargetPool
           $ \target -> fromJust (lookup (ptxContext target) afun)
 
@@ -226,7 +225,7 @@ runN f = exec
 runNWith :: Afunction f => PTX -> f -> AfunctionR f
 runNWith target f = exec
   where
-    !acc  = convertAfunWith config f
+    !acc  = convertAfun f
     !exec = runNWith' target acc
 
 runNWith' :: PTX -> DelayedAfun f -> f
@@ -268,7 +267,7 @@ run1AsyncWith = runNAsyncWith
 runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
 runNAsync f = exec
   where
-    !acc  = convertAfunWith config f
+    !acc  = convertAfun f
     !exec = unsafeWithPool defaultTargetPool
           $ \target -> fromJust (lookup (ptxContext target) afun)
 
@@ -281,7 +280,7 @@ runNAsync f = exec
 runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => PTX -> f -> r
 runNAsyncWith target f = exec
   where
-    !acc  = convertAfunWith config f
+    !acc  = convertAfun f
     !exec = runNAsyncWith' target acc
 
 runNAsyncWith' :: RunAsync f => PTX -> DelayedAfun (RunAsyncR f) -> f
@@ -449,7 +448,7 @@ runQWith' using target = runQ'_ using (\go -> [| evalPTX $target (evalPar $go) |
 --
 runQ'_ :: Afunction f => TH.ExpQ -> (TH.ExpQ -> TH.ExpQ) -> f -> TH.ExpQ
 runQ'_ using k f = do
-  afun  <- let acc = convertAfunWith config f
+  afun  <- let acc = convertAfun f
            in  TH.runIO $ do
                  dumpGraph acc
                  evalPTX defaultTarget $
@@ -477,13 +476,6 @@ runQ'_ using k f = do
                  |]
   --
   go afun [] [] []
-
-
--- How the Accelerate program should be evaluated.
---
-config :: Config
-config =
-  defaultOptions { options = convert_segment_offset `insert` options defaultOptions }
 
 
 -- Controlling host-side allocation

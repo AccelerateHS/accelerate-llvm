@@ -49,7 +49,7 @@ createTarget
 createTarget cpus = do
   gang    <- hireWorkersOn cpus
   linker  <- LC.new
-  return  $! Native linker gang (numWorkers gang > 1)
+  return  $! Native linker gang
 
 {--
 -- | The strategy for balancing work amongst the available worker threads.
