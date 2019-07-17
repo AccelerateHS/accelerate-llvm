@@ -31,6 +31,7 @@ import Data.Array.Accelerate.Array.Sugar                            hiding ( For
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Debug
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -50,6 +51,7 @@ import LLVM.AST.Type.Representation
 
 import Control.Applicative
 import Data.Constraint                                              ( withDict )
+import System.IO.Unsafe
 import Prelude
 
 
@@ -89,14 +91,14 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     atomicRMW
       -- If the old value is not used (i.e. permute const) then we can just
       -- store the new value directly. Since we do not require the return value
-      -- we can do this for any scalar value with a regular Store. This is not
-      -- possible for product types however since we use an unzipped
-      -- struct-of-array representation; this requires multiple store
-      -- instructions so the different fields could get their value from
-      -- different threads.
+      -- we can do this for any scalar value with a regular Store. However,
+      -- as we use an unzipped struct-of-array representation for product
+      -- types, the multiple store instructions for the different fields
+      -- could come from different threads, so we only allow the non-atomic
+      -- version if the flag @-ffast-permute-const@ is set.
       --
       | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType @e
+      , True                  <- fast
       , Just body'            <- strengthenE latest body
       , fun'                  <- llvmOfFun1 (Lam (Body body')) aenv
       = Just (Exchange, fun')
@@ -119,6 +121,11 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
 
       | otherwise
       = Nothing
+
+    fast :: Elt e => Bool
+    fast
+      | TypeRscalar{} <- eltType @e = True
+      | otherwise                   = unsafePerformIO (getFlag fast_permute_const)
 
     rmwOp :: DelayedOpenExp (((),e),e) aenv e -> Maybe (RMWOperation, DelayedOpenExp (((),e),e) aenv e)
     rmwOp (PrimApp f xs)
