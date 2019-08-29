@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-13.20
+resolver: lts-13.25
 
 packages:
 - accelerate-llvm
@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- git:    https://github.com/tmcdonell/accelerate.git
-  commit: 5f2c082c993a3ed4b814b2402bdeed96228c536f
+- github: tmcdonell/accelerate
+  commit: 1010d97f8cc8cbecff28200cf6e176455769c644
 
 - cuda-0.10.1.0
 - hedgehog-1.0

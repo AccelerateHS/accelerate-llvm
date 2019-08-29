@@ -67,7 +67,6 @@ Library
     Data.Array.Accelerate.LLVM.Native
     Data.Array.Accelerate.LLVM.Native.Plugin
     Data.Array.Accelerate.LLVM.Native.Foreign
-    Data.Array.Accelerate.LLVM.Native.Distribution.Simple
 
   other-modules:
     Data.Array.Accelerate.LLVM.Native.Array.Data
@@ -85,6 +84,7 @@ Library
     Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
     Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
     Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
+    Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.Native.Compile
     Data.Array.Accelerate.LLVM.Native.Compile.Cache
@@ -106,10 +106,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
     Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
-    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.Build
-    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC
-    Data.Array.Accelerate.LLVM.Native.Distribution.Simple.GHC.Internal
-
     Paths_accelerate_llvm_native
 
   build-depends:
@@ -117,7 +113,6 @@ Library
         , accelerate                    == 1.3.*
         , accelerate-llvm               == 1.3.*
         , bytestring                    >= 0.10.4
-        , Cabal                         >= 2.0
         , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.7
         , deepseq                       >= 1.4

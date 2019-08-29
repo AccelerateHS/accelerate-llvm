@@ -5,6 +5,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 #if __GLASGOW_HASKELL__ <= 708
@@ -13,11 +14,10 @@
 #endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
--- Copyright   : [2014..2018] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -53,15 +53,15 @@ type instance M.ArgR Native = FFI.Arg
 
 
 instance Monad m => M.Marshalable Native m (DList FFI.Arg) where
-  marshal' _ = return
+  marshal' = return
 
 instance Monad m => M.Marshalable Native m Int where
-  marshal' _ x = return $ DL.singleton (FFI.argInt x)
+  marshal' x = return $ DL.singleton (FFI.argInt x)
 
 instance {-# OVERLAPS #-} M.Marshalable Native (Par Native) (Gamma aenv, Val aenv) where
-  marshal' proxy (gamma, aenv)
+  marshal' (gamma, aenv)
     = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' proxy =<< get (prj idx aenv)) (IM.elems gamma)
+    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' @Native =<< get (prj idx aenv)) (IM.elems gamma)
 
 -- instance M.Marshalable Native (Gamma aenv, Val aenv) where
 --   marshal' t s (gamma, aenv)
@@ -71,10 +71,10 @@ instance {-# OVERLAPS #-} M.Marshalable Native (Par Native) (Gamma aenv, Val aen
 --       sync (AsyncR () a) = a
 
 instance ArrayElt e => M.Marshalable Native (Par Native) (ArrayData e) where
-  marshal' proxy adata = liftPar (M.marshal' proxy adata)
+  marshal' adata = liftPar (M.marshal' @Native adata)
 
 instance ArrayElt e => M.Marshalable Native (LLVM Native) (ArrayData e) where
-  marshal' _ adata = return $ marshalR arrayElt adata
+  marshal' adata = return $ marshalR arrayElt adata
     where
       marshalR :: ArrayEltR e' -> ArrayData e' -> DList FFI.Arg
       marshalR ArrayEltRunit    !_  = DL.empty

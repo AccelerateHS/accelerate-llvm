@@ -105,9 +105,9 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
-    -- Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Cache
@@ -146,6 +146,17 @@ Library
         , process                       >= 1.4.3
         , template-haskell
         , unordered-containers          >= 0.2
+
+  if impl(ghc >= 8.6)
+    build-depends:
+          ghc-heap
+  else
+    build-depends:
+          ghc
+        , ghci
+
+    cpp-options:
+        -DUNBOXED_TUPLES=1
 
   hs-source-dirs:
         src

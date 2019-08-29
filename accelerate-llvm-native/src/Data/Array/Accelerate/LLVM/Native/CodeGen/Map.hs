@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt, DIM1 )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, DIM1 )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -76,22 +76,22 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- The map operation can always treat an array of any dimension in its flat
 -- underlying representation, which simplifies code generation.
 --
-mkMap :: forall aenv sh a b. Elt b
+mkMap :: forall aenv sh a b. (Shape sh, Elt a, Elt b)
       => UID
       -> Gamma            aenv
       -> IRFun1    Native aenv (a -> b)
-      -> IRDelayed Native aenv (Array sh a)
       -> CodeGen   Native      (IROpenAcc Native aenv (Array sh b))
-mkMap uid aenv apply IRDelayed{..} =
+mkMap uid aenv apply =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy DIM1)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
+      (start, end, paramGang)   = gangParam @DIM1
+      (arrIn,  paramIn)         = mutableArray @sh "in"
+      (arrOut, paramOut)        = mutableArray @sh "out"
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     imapFromTo (indexHead start) (indexHead end) $ \i -> do
-      xs <- app1 delayedLinearIndex i
+      xs <- readArray arrIn i
       ys <- app1 apply xs
       writeArray arrOut i ys
 

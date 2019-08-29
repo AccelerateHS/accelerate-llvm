@@ -13,11 +13,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
--- Copyright   : [2014..2018] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -57,7 +56,6 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
-import Data.Proxy                                                   ( Proxy(..) )
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
 import Data.Word                                                    ( Word8 )
@@ -110,9 +108,9 @@ instance Execute Native where
   {-# INLINE stencil2    #-}
   {-# INLINE aforeign    #-}
   map           = mapOp
-  generate      = simpleOp
-  transform     = simpleOp
-  backpermute   = simpleOp
+  generate      = generateOp
+  transform     = transformOp
+  backpermute   = transformOp
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
@@ -137,34 +135,13 @@ instance Execute Native where
 {-# INLINE simpleOp #-}
 simpleOp
     :: (Shape sh, Elt e)
-    => ExecutableR Native
-    -> Gamma aenv
-    -> Val aenv
-    -> sh
-    -> Par Native (Future (Array sh e))
-simpleOp NativeR{..} gamma aenv sh = do
-  let fun = case functionTable (unsafeGetValue nativeExecutable) of
-              f:_ -> f
-              _   -> $internalError "simpleOp" "no functions found"
-  --
-  Native{..} <- gets llvmTarget
-  future     <- new
-  result     <- allocateRemote sh
-  scheduleOp fun gamma aenv sh result
-    `andThen` do putIO workers future result
-                 touchLifetime nativeExecutable   -- XXX: must not unload the object code early
-  return future
-
-{-# INLINE simpleNamed #-}
-simpleNamed
-    :: (Shape sh, Elt e)
     => ShortByteString
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> Par Native (Future (Array sh e))
-simpleNamed name NativeR{..} gamma aenv sh = do
+simpleOp name NativeR{..} gamma aenv sh = do
   let fun = nativeExecutable !# name
   Native{..} <- gets llvmTarget
   future     <- new
@@ -174,26 +151,58 @@ simpleNamed name NativeR{..} gamma aenv sh = do
                  touchLifetime nativeExecutable   -- XXX: must not unload the object code early
   return future
 
-
--- Map over an array can ignore the dimensionality of the array and treat it as
--- its underlying linear representation.
+-- Mapping over an array can ignore the dimensionality of the array and
+-- treat it as its underlying linear representation.
 --
 {-# INLINE mapOp #-}
 mapOp
+    :: (Shape sh, Elt a, Elt b)
+    => Maybe (a :~: b)
+    -> ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> Array sh a
+    -> Par Native (Future (Array sh b))
+mapOp inplace NativeR{..} gamma aenv input = do
+  let fun = nativeExecutable !# "map"
+      sh  = shape input
+  Native{..} <- gets llvmTarget
+  future     <- new
+  result     <- case inplace of
+                  Just Refl -> return input
+                  Nothing   -> allocateRemote sh
+  scheduleOp fun gamma aenv (Z :. size sh) (result, input)
+    `andThen` do putIO workers future result
+                 touchLifetime nativeExecutable
+  return future
+
+{-# INLINE generateOp #-}
+generateOp
     :: (Shape sh, Elt e)
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> Par Native (Future (Array sh e))
-mapOp NativeR{..} gamma aenv sh = do
-  let fun = nativeExecutable !# "map"
+generateOp = simpleOp "generate"
+
+{-# INLINE transformOp #-}
+transformOp
+    :: (Shape sh, Shape sh', Elt a, Elt b)
+    => ExecutableR Native
+    -> Gamma aenv
+    -> Val aenv
+    -> sh'
+    -> Array sh a
+    -> Par Native (Future (Array sh' b))
+transformOp NativeR{..} gamma aenv sh' input = do
+  let fun = nativeExecutable !# "transform"
   Native{..} <- gets llvmTarget
   future     <- new
-  result     <- allocateRemote sh
-  scheduleOp fun gamma aenv (Z :. size sh) result
+  result     <- allocateRemote sh'
+  scheduleOp fun gamma aenv sh' (result, input)
     `andThen` do putIO workers future result
-                 touchLifetime nativeExecutable   -- XXX: must not unload the object code early
+                 touchLifetime nativeExecutable
   return future
 
 
@@ -225,13 +234,13 @@ fold1Op
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> (sh :. Int)
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array sh e))
-fold1Op exe gamma aenv sh@(sx :. sz)
+fold1Op exe gamma aenv arr@(delayedShape -> sh@(sx :. sz))
   = $boundsCheck "fold1" "empty array" (sz > 0)
   $ case size sh of
       0 -> newFull =<< allocateRemote sx    -- empty, but possibly with non-zero dimensions
-      _ -> foldCore exe gamma aenv sh
+      _ -> foldCore exe gamma aenv arr
 
 {-# INLINE foldOp #-}
 foldOp
@@ -239,12 +248,12 @@ foldOp
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> (sh :. Int)
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array sh e))
-foldOp exe gamma aenv sh@(sx :. _) =
+foldOp exe gamma aenv arr@(delayedShape -> sh@(sx :. _)) =
   case size sh of
-    0 -> simpleNamed "generate" exe gamma aenv sx
-    _ -> foldCore exe gamma aenv sh
+    0 -> generateOp exe gamma aenv sx
+    _ -> foldCore exe gamma aenv arr
 
 {-# INLINE foldCore #-}
 foldCore
@@ -252,14 +261,14 @@ foldCore
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> (sh :. Int)
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array sh e))
-foldCore exe gamma aenv sh
+foldCore exe gamma aenv arr
   | Just Refl <- matchShapeType @sh @DIM0
-  = foldAllOp exe gamma aenv sh
+  = foldAllOp exe gamma aenv arr
   --
   | otherwise
-  = foldDimOp exe gamma aenv sh
+  = foldDimOp exe gamma aenv arr
 
 {-# INLINE foldAllOp #-}
 foldAllOp
@@ -267,9 +276,9 @@ foldAllOp
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> DIM1
+    -> Delayed (Vector e)
     -> Par Native (Future (Scalar e))
-foldAllOp NativeR{..} gamma aenv sh = do
+foldAllOp NativeR{..} gamma aenv arr = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote Z
@@ -278,10 +287,11 @@ foldAllOp NativeR{..} gamma aenv sh = do
       splits  = numWorkers workers
       ranges  = divideWork splits minsize empty sh (,,)
       steps   = Seq.length ranges
+      sh      = delayedShape arr
   --
   if steps <= 1
     then
-      scheduleOpUsing ranges (nativeExecutable !# "foldAllS") gamma aenv result
+      scheduleOpUsing ranges (nativeExecutable !# "foldAllS") gamma aenv (result, manifest arr)
         `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
@@ -291,7 +301,7 @@ foldAllOp NativeR{..} gamma aenv sh = do
                  `andThen` do putIO workers future result
                               touchLifetime nativeExecutable
 
-      job1  <- mkJobUsingIndex ranges (nativeExecutable !# "foldAllP1") gamma aenv tmp
+      job1  <- mkJobUsingIndex ranges (nativeExecutable !# "foldAllP1") gamma aenv (tmp, manifest arr)
                  `andThen` do schedule workers job2
 
       liftIO $ schedule workers job1
@@ -305,9 +315,9 @@ foldDimOp
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> (sh :. Int)
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array sh e))
-foldDimOp NativeR{..} gamma aenv (sh :. _) = do
+foldDimOp NativeR{..} gamma aenv arr@(delayedShape -> (sh :. _)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote sh
@@ -316,7 +326,7 @@ foldDimOp NativeR{..} gamma aenv (sh :. _) = do
       splits  = numWorkers workers
       minsize = 1
   --
-  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) result
+  scheduleOpWith splits minsize fun gamma aenv (Z :. size sh) (result, manifest arr)
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
   return future
@@ -324,43 +334,28 @@ foldDimOp NativeR{..} gamma aenv (sh :. _) = do
 
 {-# INLINE foldSegOp #-}
 foldSegOp
-    :: forall aenv sh e. (Shape sh, Elt e)
+    :: forall aenv sh e i. (Shape sh, Elt e, Elt i, IsIntegral i)
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> (sh :. Int)
-    -> (Z  :. Int)
+    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Segments i)
     -> Par Native (Future (Array (sh :. Int) e))
-foldSegOp NativeR{..} gamma aenv (sh :. _) (Z :. ss) = do
+foldSegOp NativeR{..} gamma aenv input@(delayedShape -> (sh :. _)) segments@(delayedShape -> (Z :. ss)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
+  let
+      n       = ss-1
+      splits  = numWorkers workers
+      minsize = case rank @(sh:.Int) of
+                  1 -> 64
+                  _ -> 16
   --
-  if segmentOffset
-    then do
-      -- We can execute in parallel. The segments array represents offset
-      -- indices into the source array, rather than the length of each segment.
-      --
-      let
-          n       = ss-1
-          splits  = numWorkers workers
-          minsize = case rank @(sh:.Int) of
-                      1 -> 64
-                      _ -> 16
-      --
-      result  <- allocateRemote (sh :. n)
-      scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv (Z :. size (sh:.n)) result
-        `andThen` do putIO workers future result
-                     touchLifetime nativeExecutable
+  result  <- allocateRemote (sh :. n)
+  scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv (Z :. size (sh:.n)) (result, manifest input, manifest segments)
+    `andThen` do putIO workers future result
+                 touchLifetime nativeExecutable
 
-    else do
-      -- Execute on a single processor. The segments array contains the length
-      -- of each segment.
-      --
-      result  <- allocateRemote (sh :. ss)
-      scheduleOpUsing (Seq.singleton (0, empty, Z :. size (sh:.ss))) (nativeExecutable !# "foldSegS") gamma aenv result
-        `andThen` do putIO workers future result
-                     touchLifetime nativeExecutable
-  --
   return future
 
 
@@ -370,12 +365,12 @@ scanOp
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh :. Int
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array (sh:.Int) e))
-scanOp exe gamma aenv (sz :. n) =
+scanOp exe gamma aenv arr@(delayedShape -> (sz :. n)) =
   case n of
-    0 -> simpleNamed "generate" exe gamma aenv (sz :. 1)
-    _ -> scanCore exe gamma aenv sz n (n+1)
+    0 -> generateOp exe gamma aenv (sz :. 1)
+    _ -> scanCore exe gamma aenv (n+1) arr
 
 {-# INLINE scan1Op #-}
 scan1Op
@@ -383,11 +378,11 @@ scan1Op
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh :. Int
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array (sh:.Int) e))
-scan1Op exe gamma aenv (sz :. n)
+scan1Op exe gamma aenv arr@(delayedShape -> (_ :. n))
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv sz n n
+  $ scanCore exe gamma aenv n arr
 
 {-# INLINE scanCore #-}
 scanCore
@@ -395,11 +390,10 @@ scanCore
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh         -- outer dimension size
-    -> Int        -- input size of innermost dimension
     -> Int        -- output size of innermost dimension
+    -> Delayed (Array (sh:.Int) e)
     -> Par Native (Future (Array (sh:.Int) e))
-scanCore NativeR{..} gamma aenv sz n m = do
+scanCore NativeR{..} gamma aenv m input@(delayedShape -> (sz :. n)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote (sz :. m)
@@ -413,7 +407,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
           splits  = numWorkers workers
           minsize = 1
       in
-      scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) result
+      scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) (result, manifest input)
         `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
@@ -424,7 +418,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
       if n < 8192
         -- sequential execution
         then
-          scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv result
+          scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv (result, manifest input)
             `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
 
@@ -445,7 +439,7 @@ scanCore NativeR{..} gamma aenv sz n m = do
                                   touchLifetime nativeExecutable
           job2  <- mkJobUsing (Seq.singleton (0, empty, Z:.steps)) (nativeExecutable !# "scanP2") gamma aenv tmp
                      `andThen` schedule workers job3
-          job1  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP1") gamma aenv (steps, result, tmp)
+          job1  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP1") gamma aenv (steps, result, tmp, manifest input)
                      `andThen` schedule workers job2
 
           liftIO $ schedule workers job1
@@ -459,19 +453,19 @@ scan'Op
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh :. Int
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array (sh:.Int) e, Array sh e))
-scan'Op exe gamma aenv sh@(sz :. n) = do
+scan'Op exe gamma aenv arr@(delayedShape -> (sz :. n)) = do
   case n of
     0 -> do
       out     <- allocateRemote (sz :. 0)
-      sum     <- simpleNamed "generate" exe gamma aenv sz
+      sum     <- generateOp exe gamma aenv sz
       future  <- new
       fork $ do sum' <- get sum
                 put future (out, sum')
       return future
     --
-    _ -> scan'Core exe gamma aenv sh
+    _ -> scan'Core exe gamma aenv arr
 
 {-# INLINE scan'Core #-}
 scan'Core
@@ -479,9 +473,9 @@ scan'Core
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh :. Int
+    -> Delayed (Array (sh :. Int) e)
     -> Par Native (Future (Array (sh:.Int) e, Array sh e))
-scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
+scan'Core NativeR{..} gamma aenv input@(delayedShape -> sh@(sz :. n)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote sh
@@ -496,7 +490,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
           splits  = numWorkers workers
           minsize = 1
       in
-      scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) (result, sums)
+      scheduleOpWith splits minsize fun gamma aenv (Z :. size sz) (result, sums, manifest input)
         `andThen` do putIO workers future (result, sums)
                      touchLifetime nativeExecutable
 
@@ -508,7 +502,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
       if n < 8192
         -- sequential execution
         then
-          scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv (result, sums)
+          scheduleOpUsing (Seq.singleton (0, empty, Z:.1::DIM1)) (nativeExecutable !# "scanS") gamma aenv (result, sums, manifest input)
             `andThen` do putIO workers future (result, sums)
                          touchLifetime nativeExecutable
 
@@ -526,7 +520,7 @@ scan'Core NativeR{..} gamma aenv sh@(sz :. n) = do
                                   touchLifetime nativeExecutable
           job2  <- mkJobUsing (Seq.singleton (0, empty, Z:.steps)) (nativeExecutable !# "scanP2") gamma aenv (sums, tmp)
                      `andThen` schedule workers job3
-          job1  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP1") gamma aenv (steps, result, tmp)
+          job1  <- mkJobUsingIndex ranges (nativeExecutable !# "scanP1") gamma aenv (steps, result, tmp, manifest input)
                      `andThen` schedule workers job2
 
           liftIO $ schedule workers job1
@@ -544,15 +538,15 @@ permuteOp
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh
     -> Array sh' e
+    -> Delayed (Array sh e)
     -> Par Native (Future (Array sh' e))
-permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
+permuteOp inplace NativeR{..} gamma aenv defaults@(shape -> shOut) input@(delayedShape -> shIn) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- if inplace
-                   then return defaults
-                   else liftPar (cloneArray defaults)
+                   then Debug.trace Debug.dump_exec               "exec: permute/inplace"                            $ return defaults
+                   else Debug.timed Debug.dump_exec (\wall cpu -> "exec: permute/clone " ++ Debug.elapsedS wall cpu) $ liftPar (cloneArray defaults)
   let
       splits  = numWorkers workers
       minsize = case rank @sh of
@@ -565,7 +559,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
   if steps <= 1
     -- sequential execution does not require handling critical sections
     then
-      scheduleOpUsing ranges (nativeExecutable !# "permuteS") gamma aenv result
+      scheduleOpUsing ranges (nativeExecutable !# "permuteS") gamma aenv (result, manifest input)
         `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
@@ -574,7 +568,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
       case lookupFunction "permuteP_rmw" nativeExecutable of
         -- using atomic operations
         Just f ->
-          scheduleOpUsing ranges f gamma aenv result
+          scheduleOpUsing ranges f gamma aenv (result, manifest input)
             `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
 
@@ -584,7 +578,7 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
           --
           barrier@(Array _ adb) <- allocateRemote (Z :. m) :: Par Native (Vector Word8)
           liftIO $ memset (ptrsOfArrayData adb) 0 m
-          scheduleOpUsing ranges (nativeExecutable !# "permuteP_mutex") gamma aenv (result, barrier)
+          scheduleOpUsing ranges (nativeExecutable !# "permuteP_mutex") gamma aenv (result, barrier, manifest input)
             `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
   --
@@ -593,39 +587,40 @@ permuteOp inplace NativeR{..} gamma aenv shIn defaults@(shape -> shOut) = do
 
 {-# INLINE stencil1Op #-}
 stencil1Op
-    :: (Shape sh, Elt e)
+    :: (Shape sh, Elt a, Elt b)
     => sh
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh
-    -> Par Native (Future (Array sh e))
-stencil1Op halo exe gamma aenv sh =
-  stencilCore exe gamma aenv halo sh
+    -> Delayed (Array sh a)
+    -> Par Native (Future (Array sh b))
+stencil1Op halo exe gamma aenv input@(delayedShape -> sh) =
+  stencilCore exe gamma aenv halo sh (manifest input)
 
 {-# INLINE stencil2Op #-}
 stencil2Op
-    :: (Shape sh, Elt e)
+    :: (Shape sh, Elt a, Elt b, Elt c)
     => sh
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
-    -> sh
-    -> sh
-    -> Par Native (Future (Array sh e))
-stencil2Op halo exe gamma aenv sh1 sh2 =
-  stencilCore exe gamma aenv halo (sh1 `intersect` sh2)
+    -> Delayed (Array sh a)
+    -> Delayed (Array sh b)
+    -> Par Native (Future (Array sh c))
+stencil2Op halo exe gamma aenv input1@(delayedShape -> sh1) input2@(delayedShape -> sh2) =
+  stencilCore exe gamma aenv halo (sh1 `intersect` sh2) (manifest input1, manifest input2)
 
 {-# INLINE stencilCore #-}
 stencilCore
-    :: forall aenv sh e. (Shape sh, Elt e)
+    :: forall aenv sh e args. (Shape sh, Elt e, Marshalable (Par Native) args)
     => ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> sh                       -- border dimensions (i.e. index of first interior element)
     -> sh                       -- output array size
+    -> args
     -> Par Native (Future (Array sh e))
-stencilCore NativeR{..} gamma aenv halo sh = do
+stencilCore NativeR{..} gamma aenv halo sh args = do
   Native{..} <- gets llvmTarget
   future     <- new
   result     <- allocateRemote sh :: Par Native (Array sh e)
@@ -652,8 +647,8 @@ stencilCore NativeR{..} gamma aenv halo sh = do
             | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = x-y
             | otherwise                                                         = $internalError "stencilCore" "expected Int dimensions"
   --
-  jobsInside <- mkTasksUsing ins  inside gamma aenv result
-  jobsBorder <- mkTasksUsing outs border gamma aenv result
+  jobsInside <- mkTasksUsing ins  inside gamma aenv (result, args)
+  jobsBorder <- mkTasksUsing outs border gamma aenv (result, args)
   let jobTasks  = jobsInside Seq.>< jobsBorder
       jobDone   = Just $ do putIO workers future result
                             touchLifetime nativeExecutable
@@ -722,6 +717,14 @@ lookupFunction name nativeExecutable = do
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
+
+delayedShape :: Shape sh => Delayed (Array sh e) -> sh
+delayedShape (Delayed sh) = sh
+delayedShape (Manifest a) = shape a
+
+manifest :: Delayed (Array sh e) -> Maybe (Array sh e)
+manifest (Manifest a) = Just a
+manifest Delayed{}    = Nothing
 
 
 {-# SPECIALISE scheduleOp :: Marshalable (Par Native) args => Function -> Gamma aenv -> Val aenv -> DIM0 -> args -> Maybe Action -> Par Native () #-}
@@ -840,10 +843,10 @@ mkTasksUsing
       -> args
       -> Par Native (Seq Action)
 mkTasksUsing ranges (name, f) gamma aenv args = do
-  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  argv  <- marshal' @Native (args, (gamma, aenv))
   return $ flip fmap ranges $ \(_,u,v) -> do
     sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, argv)
+    callFFI f retVoid =<< marshal @Native (u, v, argv)
 
 {-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
 {-# SPECIALISE mkTasksUsingIndex :: Marshalable (Par Native) args => Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> args -> Par Native (Seq Action) #-}
@@ -856,10 +859,10 @@ mkTasksUsingIndex
       -> args
       -> Par Native (Seq Action)
 mkTasksUsingIndex ranges (name, f) gamma aenv args = do
-  argv  <- marshal' (Proxy::Proxy Native) (args, (gamma, aenv))
+  argv  <- marshal' @Native (args, (gamma, aenv))
   return $ flip fmap ranges $ \(i,u,v) -> do
     sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape u) (showShape v)
-    callFFI f retVoid =<< marshal (Proxy::Proxy Native) (u, v, i, argv)
+    callFFI f retVoid =<< marshal @Native (u, v, i, argv)
 
 
 -- Standard C functions

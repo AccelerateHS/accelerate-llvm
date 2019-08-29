@@ -3,11 +3,10 @@
 {-# OPTIONS -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Multi.Execute.Async
--- Copyright   : [2014..2015] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2015] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --

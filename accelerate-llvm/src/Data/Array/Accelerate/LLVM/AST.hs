@@ -5,16 +5,17 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.AST
--- Copyright   : [2017..2018] Trevor L. McDonell
+-- Copyright   : [2017..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
 
 module Data.Array.Accelerate.LLVM.AST (
 
+  DelayedOpenAcc(..),
   PreOpenAccCommand(..),
   PreOpenAccSkeleton(..),
 
@@ -29,6 +30,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 
 import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
     ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp )
 
@@ -107,77 +109,98 @@ data PreOpenAccCommand acc arch aenv a where
 --
 data PreOpenAccSkeleton acc arch aenv a where
 
-  Map         :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
+  -- Producers. The only way these terms can appear in the AST is if they
+  -- are applied to a manifest array.
+  --
+  Map         :: (Shape sh, Elt a, Elt b)
+              => acc                    arch aenv (Array sh a)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
   Generate    :: (Shape sh, Elt e)
               => PreExp            (acc arch) aenv sh
               -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
 
-  Transform   :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
+  Transform   :: (Shape sh, Shape sh', Elt a, Elt  b)
+              => PreExp            (acc arch) aenv sh'
+              -> acc                    arch  aenv (Array sh  a)
+              -> PreOpenAccSkeleton acc arch  aenv (Array sh' b)
 
-  Backpermute :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
-
-  Fold        :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
-
-  Fold1       :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
-
-  FoldSeg     :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreExp            (acc arch) aenv (Z  :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Fold1Seg    :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreExp            (acc arch) aenv (Z  :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Scanl       :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Scanl1      :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Scanl'      :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e, Array sh e)
-
-  Scanr       :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Scanr1      :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e)
-
-  Scanr'      :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv (sh :. Int)
-              -> PreOpenAccSkeleton acc arch  aenv (Array (sh:.Int) e, Array sh e)
-
-  Permute     :: (Shape sh, Shape sh', Elt e)
-              => PreExp            (acc arch) aenv sh               -- source
-              -> acc                    arch  aenv (Array sh' e)    -- default values
+  Backpermute :: (Shape sh, Shape sh', Elt e)
+              => PreExp            (acc arch) aenv sh'
+              -> acc                    arch  aenv (Array sh  e)
               -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
 
-  Stencil1    :: (Shape sh, Elt b)
-              => sh                                                 -- stencil offset/halo size
-              -> PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh b)
+  -- Consumers. These may have been applied to either manifest or delayed
+  -- array data.
+  --
+  Fold        :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
-  Stencil2    :: (Shape sh, Elt c)
+  Fold1       :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh e)
+
+  FoldSeg     :: (Shape sh, Elt e, Elt i, IsIntegral i)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> DelayedOpenAcc     acc arch aenv (Segments i)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Fold1Seg    :: (Shape sh, Elt e, Elt i, IsIntegral i)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> DelayedOpenAcc     acc arch aenv (Segments i)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Scanl       :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Scanl1      :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Scanl'      :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e, Array sh e)
+
+  Scanr       :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Scanr1      :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+
+  Scanr'      :: (Shape sh, Elt e)
+              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e, Array sh e)
+
+  Permute     :: (Shape sh, Shape sh', Elt e)
+              => acc                    arch aenv (Array sh' e)     -- target array (default values)
+              -> DelayedOpenAcc     acc arch aenv (Array sh  e)     -- source values
+              -> PreOpenAccSkeleton acc arch aenv (Array sh' e)
+
+  Stencil1    :: (Shape sh, Elt a, Elt b)
               => sh                                                 -- stencil offset/halo size
-              -> PreExp            (acc arch) aenv sh
-              -> PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh c)
+              -> DelayedOpenAcc     acc arch aenv (Array sh a)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh b)
+
+  Stencil2    :: (Shape sh, Elt a, Elt b, Elt c)
+              => sh                                                 -- stencil offset/halo size
+              -> DelayedOpenAcc     acc arch aenv (Array sh a)
+              -> DelayedOpenAcc     acc arch aenv (Array sh b)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh c)
+
+-- | Representation for array arguments.
+--
+-- If the argument is a delayed array (that is, it was fused into its
+-- consumer) we only need to keep track of the extent of the argument. If
+-- the argument is a manifest array, we recurse into the subterm.
+--
+data DelayedOpenAcc acc arch aenv a where
+  Delayed     :: PreExp (acc arch) aenv sh
+              -> DelayedOpenAcc acc arch aenv (Array sh e)
+
+  Manifest    :: acc arch aenv (Array sh e)
+              -> DelayedOpenAcc acc arch aenv (Array sh e)
 

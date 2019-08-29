@@ -5,10 +5,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Array
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -41,7 +41,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 --
 {-# INLINEABLE readArray #-}
 readArray
-    :: forall arch int sh e. IsIntegral int
+    :: forall arch int sh e. (IsIntegral int, Elt e)
     => IRArray (Array sh e)
     -> IR int
     -> CodeGen arch (IR e)
@@ -67,7 +67,7 @@ readArrayPrim t v arr ix = do
 --
 {-# INLINEABLE writeArray #-}
 writeArray
-    :: forall arch int sh e. IsIntegral int
+    :: forall arch int sh e. (IsIntegral int, Elt e)
     => IRArray (Array sh e)
     -> IR int
     -> IR e

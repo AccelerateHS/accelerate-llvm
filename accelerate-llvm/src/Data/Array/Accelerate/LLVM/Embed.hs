@@ -8,10 +8,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Embed
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -180,6 +180,10 @@ liftPreOpenAccSkeleton arch pacc =
       liftA :: Typeable arrs => CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
       liftA = embedOpenAcc arch
 
+      liftD :: Typeable arrs => DelayedOpenAcc CompiledOpenAcc arch aenv arrs -> Q (TExp (DelayedOpenAcc ExecOpenAcc arch aenv arrs))
+      liftD (Delayed sh) = [|| Delayed $$(liftE sh) ||]
+      liftD (Manifest a) = [|| Manifest $$(liftA a) ||]
+
       liftE :: PreExp (CompiledOpenAcc arch) aenv t -> Q (TExp (PreExp (ExecOpenAcc arch) aenv t))
       liftE = liftPreOpenExp arch
 
@@ -187,23 +191,23 @@ liftPreOpenAccSkeleton arch pacc =
       liftS sh = [|| toElt $$(liftConst (eltType @sh) (fromElt sh)) ||]
   in
   case pacc of
-    Map sh              -> [|| Map $$(liftE sh) ||]
-    Generate sh         -> [|| Generate $$(liftE sh) ||]
-    Transform sh        -> [|| Transform $$(liftE sh) ||]
-    Backpermute sh      -> [|| Backpermute $$(liftE sh) ||]
-    Fold sh             -> [|| Fold $$(liftE sh) ||]
-    Fold1 sh            -> [|| Fold1 $$(liftE sh) ||]
-    FoldSeg sa ss       -> [|| FoldSeg $$(liftE sa) $$(liftE ss) ||]
-    Fold1Seg sa ss      -> [|| Fold1Seg $$(liftE sa) $$(liftE ss) ||]
-    Scanl sh            -> [|| Scanl $$(liftE sh) ||]
-    Scanl1 sh           -> [|| Scanl1 $$(liftE sh) ||]
-    Scanl' sh           -> [|| Scanl' $$(liftE sh) ||]
-    Scanr sh            -> [|| Scanr $$(liftE sh) ||]
-    Scanr1 sh           -> [|| Scanr1 $$(liftE sh) ||]
-    Scanr' sh           -> [|| Scanr' $$(liftE sh) ||]
-    Permute sh a        -> [|| Permute $$(liftE sh) $$(liftA a) ||]
-    Stencil1 h sh       -> [|| Stencil1 $$(liftS h) $$(liftE sh) ||]
-    Stencil2 h sh1 sh2  -> [|| Stencil2 $$(liftS h) $$(liftE sh1) $$(liftE sh2) ||]
+    Map a             -> [|| Map $$(liftA a) ||]
+    Generate sh       -> [|| Generate $$(liftE sh) ||]
+    Transform sh a    -> [|| Transform $$(liftE sh) $$(liftA a) ||]
+    Backpermute sh a  -> [|| Backpermute $$(liftE sh) $$(liftA a) ||]
+    Fold a            -> [|| Fold $$(liftD a) ||]
+    Fold1 a           -> [|| Fold1 $$(liftD a) ||]
+    FoldSeg a s       -> [|| FoldSeg $$(liftD a) $$(liftD s) ||]
+    Fold1Seg a s      -> [|| Fold1Seg $$(liftD a) $$(liftD s) ||]
+    Scanl a           -> [|| Scanl $$(liftD a) ||]
+    Scanl1 a          -> [|| Scanl1 $$(liftD a) ||]
+    Scanl' a          -> [|| Scanl' $$(liftD a) ||]
+    Scanr a           -> [|| Scanr $$(liftD a) ||]
+    Scanr1 a          -> [|| Scanr1 $$(liftD a) ||]
+    Scanr' a          -> [|| Scanr' $$(liftD a) ||]
+    Permute d a       -> [|| Permute $$(liftA d) $$(liftD a) ||]
+    Stencil1 h a      -> [|| Stencil1 $$(liftS h) $$(liftD a) ||]
+    Stencil2 h a b    -> [|| Stencil2 $$(liftS h) $$(liftD a) $$(liftD b) ||]
 
 {-# INLINEABLE liftPreOpenFun #-}
 liftPreOpenFun
@@ -242,7 +246,7 @@ liftPreOpenExp arch pexp =
     Const c                   -> [|| Const $$(liftConst (eltType @t) c) ||]
     Undef                     -> [|| Undef ||]
     Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
-    Prj tix e                 -> [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
+    Prj tix e                 -> withSigE [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
     IndexNil                  -> [|| IndexNil ||]
     IndexCons sh sz           -> [|| IndexCons $$(liftE sh) $$(liftE sz) ||]
     IndexHead sh              -> [|| IndexHead $$(liftE sh) ||]

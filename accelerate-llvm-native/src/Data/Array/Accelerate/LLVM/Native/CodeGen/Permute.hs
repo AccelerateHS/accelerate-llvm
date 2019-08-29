@@ -6,10 +6,10 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, DIM1, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
 import qualified Data.Array.Accelerate.Array.Representation         as R
@@ -64,10 +64,10 @@ import Prelude
 mkPermute
     :: (Shape sh, Shape sh', Elt e)
     => UID
-    -> Gamma aenv
+    -> Gamma               aenv
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
+    -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermute uid aenv combine project arr =
   (+++) <$> mkPermuteS uid aenv combine project arr
@@ -85,20 +85,21 @@ mkPermute uid aenv combine project arr =
 mkPermuteS
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => UID
-    -> Gamma aenv
+    -> Gamma               aenv
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
+    -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
-mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
+mkPermuteS uid aenv IRPermuteFun{..} project marr =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    @sh
+      (arrOut, paramOut)      = mutableArray @sh' "out"
+      (arrIn,  paramIn)       = delayedArray @sh  "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "permuteS" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
     imapNestFromTo start end sh $ \ix _ -> do
 
@@ -108,7 +109,7 @@ mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
         j <- intOfIndex (irArrayShape arrOut) ix'
 
         -- project element onto the destination array and update
-        x <- app1 delayedIndex ix
+        x <- app1 (delayedIndex arrIn) ix
         y <- readArray arrOut j
         r <- app2 combine x y
 
@@ -130,10 +131,10 @@ mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
 mkPermuteP
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => UID
-    -> Gamma aenv
+    -> Gamma               aenv
     -> IRPermuteFun Native aenv (e -> e -> e)
     -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
+    -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP uid aenv IRPermuteFun{..} project arr =
   case atomicRMW of
@@ -149,19 +150,20 @@ mkPermuteP_rmw
     => UID
     -> Gamma aenv
     -> RMWOperation
-    -> IRFun1    Native aenv (e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
+    -> IRFun1     Native aenv (e -> e)
+    -> IRFun1     Native aenv (sh -> sh')
+    -> MIRDelayed Native aenv (Array sh e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP_rmw uid aenv rmw update project marr =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    @sh
+      (arrOut, paramOut)      = mutableArray @sh' "out"
+      (arrIn,  paramIn)       = delayedArray @sh  "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteP_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "permuteP_rmw" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
     imapNestFromTo start end sh $ \ix _ -> do
 
@@ -169,7 +171,7 @@ mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
 
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedIndex ix
+        x <- app1 (delayedIndex arrIn) ix
         r <- app1 update x
 
         case rmw of
@@ -202,21 +204,22 @@ mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
 mkPermuteP_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => UID
-    -> Gamma aenv
-    -> IRFun2    Native aenv (e -> e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen   Native      (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
+    -> Gamma             aenv
+    -> IRFun2     Native aenv (e -> e -> e)
+    -> IRFun1     Native aenv (sh -> sh')
+    -> MIRDelayed Native aenv (Array sh e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP_mutex uid aenv combine project marr =
   let
-      (start, end, paramGang)   = gangParam    (Proxy  :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    @sh
+      (arrOut,  paramOut)     = mutableArray @sh'  "out"
+      (arrLock, paramLock)    = mutableArray @DIM1 "lock"
+      (arrIn,   paramIn)      = delayedArray @sh   "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc uid "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
     imapNestFromTo start end sh $ \ix _ -> do
 
@@ -225,7 +228,7 @@ mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
       -- project element onto the destination array and (atomically) update
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedIndex ix
+        x <- app1 (delayedIndex arrIn) ix
 
         atomically arrLock j $ do
           y <- readArray arrOut j

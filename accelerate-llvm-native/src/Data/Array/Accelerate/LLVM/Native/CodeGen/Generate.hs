@@ -1,12 +1,12 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -40,8 +40,8 @@ mkGenerate
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkGenerate uid aenv apply =
   let
-      (start, end, paramGang)   = gangParam    (Proxy :: Proxy sh)
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh e))
+      (start, end, paramGang)   = gangParam    @sh
+      (arrOut, paramOut)        = mutableArray @sh "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in

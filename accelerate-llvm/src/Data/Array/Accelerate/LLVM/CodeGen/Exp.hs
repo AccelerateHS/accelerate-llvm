@@ -9,10 +9,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Exp
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -151,7 +151,7 @@ llvmOfOpenExp top env aenv = cvtE top
         restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
         restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
           let sl' = restrict sliceIdx slx sl
-          in  OP_Pair sl' sz
+           in OP_Pair sl' sz
         restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
           restrict sliceIdx slx sl
 
@@ -165,10 +165,10 @@ llvmOfOpenExp top env aenv = cvtE top
         extend SliceNil              OP_Unit               OP_Unit         = OP_Unit
         extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
           let sh' = extend sliceIdx slx sl
-          in  OP_Pair sh' sz
+           in OP_Pair sh' sz
         extend (SliceFixed sliceIdx) (OP_Pair slx sz)      sl              =
           let sh' = extend sliceIdx slx sl
-          in  OP_Pair sh' sz
+           in OP_Pair sh' sz
 
     prjT :: forall t e. (Elt t, IsTuple t, Elt e) => TupleIdx (TupleRepr t) e -> IR t -> IROpenExp arch env aenv e
     prjT tix (IR tup) =
@@ -245,13 +245,10 @@ llvmOfOpenExp top env aenv = cvtE top
 
 
     linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
-    linearIndex (IRManifest v) ix =
-      readArray (irArray (aprj v aenv)) ix
+    linearIndex (IRManifest v) = linearIndexArray (irArray (aprj v aenv))
 
     index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
-    index (IRManifest v) ix =
-      let arr = irArray (aprj v aenv)
-      in  readArray arr =<< intOfIndex (irArrayShape arr) ix
+    index (IRManifest v) = indexArray (irArray (aprj v aenv))
 
     shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
     shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
@@ -518,4 +515,14 @@ indexOfInt (IR extent) index = IR <$> cvt (eltType @sh) extent index
 
     cvt _ _ _
       = $internalError "indexOfInt" "expected shape with Int components"
+
+-- | Read an element at a multidimensional index
+--
+indexArray :: (Shape sh, Elt e) => IRArray (Array sh e) -> IR sh -> IROpenExp arch env aenv e
+indexArray arr ix = linearIndexArray arr =<< intOfIndex (irArrayShape arr) ix
+
+-- | Read an element at a linear index
+--
+linearIndexArray :: (Shape sh, Elt e) => IRArray (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+linearIndexArray = readArray
 

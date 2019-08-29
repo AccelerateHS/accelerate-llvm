@@ -9,10 +9,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -41,6 +41,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Skeleton
+import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Foreign
@@ -62,10 +63,10 @@ llvmOfPreOpenAcc
 llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
   case pacc of
     -- Producers
-    Map f a                 -> map uid aenv (travF1 f) (travD a)
+    Map f _                 -> map uid aenv (travF1 f)
     Generate _ f            -> generate uid aenv (travF1 f)
-    Transform _ p f a       -> transform uid aenv (travF1 p) (travF1 f) (travD a)
-    Backpermute _ p a       -> backpermute uid aenv (travF1 p) (travD a)
+    Transform _ p f _       -> transform uid aenv (travF1 p) (travF1 f)
+    Backpermute _ p _       -> backpermute uid aenv (travF1 p)
 
     -- Consumers
     Fold f z a              -> fold uid aenv (travF2 f) (travE z) (travD a)
@@ -101,9 +102,9 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
 
   where
     -- code generation for delayed arrays
-    travD :: DelayedOpenAcc aenv (Array sh e) -> IRDelayed arch aenv (Array sh e)
-    travD Manifest{}  = $internalError "llvmOfPreOpenAcc" "expected delayed array"
-    travD Delayed{..} = IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
+    travD :: DelayedOpenAcc aenv (Array sh e) -> MIRDelayed arch aenv (Array sh e)
+    travD Delayed{..} = Just $ IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
+    travD Manifest{}  = Nothing
 
     -- scalar code generation
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 arch aenv (a -> b)

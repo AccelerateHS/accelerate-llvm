@@ -9,11 +9,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -161,10 +160,10 @@ compileOpenAcc = traverseAcc
 
         -- Skeleton operations resulting in compiled code
         -- Producers
-        Map f a                     -> build =<< liftA2 map           <$> travF f  <*> travD a
+        Map f a                     -> build =<< liftA2 map           <$> travF f  <*> travA a
         Generate sh f               -> build =<< liftA2 generate      <$> travE sh <*> travF f
-        Transform sh p f a          -> build =<< liftA4 transform     <$> travE sh <*> travF p <*> travF f <*> travD a
-        Backpermute sh f a          -> build =<< liftA3 backpermute   <$> travE sh <*> travF f <*> travD a
+        Transform sh p f a          -> build =<< liftA4 transform     <$> travE sh <*> travF p <*> travF f <*> travA a
+        Backpermute sh f a          -> build =<< liftA3 backpermute   <$> travE sh <*> travF f <*> travA a
 
         -- Consumers
         Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travE z <*> travD a
@@ -189,8 +188,8 @@ compileOpenAcc = traverseAcc
       where
         map _ a             = AST.Map a
         generate sh _       = AST.Generate sh
-        transform sh _ _ _  = AST.Transform sh
-        backpermute sh _ _  = AST.Backpermute sh
+        transform sh _ _ a  = AST.Transform sh a
+        backpermute sh _ a  = AST.Backpermute sh a
         fold _ _ a          = AST.Fold a
         fold1 _ a           = AST.Fold1 a
         foldSeg _ _ a s     = AST.FoldSeg a s
@@ -201,22 +200,22 @@ compileOpenAcc = traverseAcc
         scanr _ _ a         = AST.Scanr a
         scanr1 _ a          = AST.Scanr1 a
         scanr' _ _ a        = AST.Scanr' a
-        permute _ d _ a     = AST.Permute a d
+        permute _ d _ a     = AST.Permute d a
 
         stencil1 :: forall sh a b stencil. (Stencil sh a stencil, Elt b)
                  => CompiledFun                  arch  aenv (stencil -> b)
                  -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch aenv (Array sh a)
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
         stencil1 _ _ a = AST.Stencil1 (halo (stencil :: StencilR sh a stencil)) a
 
         stencil2 :: forall sh a b c stencil1 stencil2. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
                  => CompiledFun                  arch  aenv (stencil1 -> stencil2 -> c)
-                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
-                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh b)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
-                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh c)
+                 -> PreBoundary           (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh a)
+                 -> PreBoundary           (CompiledOpenAcc arch) aenv (Array sh b)
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh b)
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch  aenv (Array sh c)
         stencil2 _ _ a _ b = AST.Stencil2 (halo stencilR1 `union` halo stencilR2) a b
           where
             stencilR1 = stencil :: StencilR sh a stencil1
@@ -244,9 +243,12 @@ compileOpenAcc = traverseAcc
 
         travD :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), PreExp (CompiledOpenAcc arch) aenv sh)
-        travD Manifest{}  = $internalError "compileOpenAcc" "expected delayed array"
-        travD Delayed{..} = liftA2 (flip const) <$> travF indexD <*> travE extentD
+              -> LLVM arch ( IntMap (Idx' aenv)
+                           , AST.DelayedOpenAcc CompiledOpenAcc arch aenv (Array sh e))
+        travD acc =
+          case acc of
+            Delayed{..} -> liftA2 (const . AST.Delayed) <$> travE extentD <*> travF indexD
+            _           -> liftA           AST.Manifest <$> travA acc
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)

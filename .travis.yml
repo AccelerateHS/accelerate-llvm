@@ -6,9 +6,9 @@ dist: xenial
 cache:
   timeout: 600
   directories:
-    - $HOME/.stack/snapshots
+    - $HOME/.stack
     - $HOME/.local/bin
-    - .stack-work/install
+    - $TRAVIS_BUILD_DIR/.stack-work
 
 before_cache:
   # - rm -rf $(stack path --local-install-root)/bin
@@ -21,12 +21,12 @@ addons:
       - ubuntu-toolchain-r-test
       - llvm-toolchain-xenial
     packages: &apt_packages
-      - dpkg
-      - gcc-8
-      - g++-8
-      - libgmp-dev
-      - happy-1.19.5
       - alex-3.1.7
+      - dpkg
+      - g++-8
+      - gcc-8
+      - happy-1.19.5
+      - libgmp-dev
 
 matrix:
   fast_finish: true
@@ -120,7 +120,7 @@ install:
   - stack build $FLAGS --test --dry-run
 
   # build dependencies
-  - travis_retry travis_wait 60 stack build $FLAGS --only-dependencies --test
+  - travis_retry stack build $FLAGS --only-dependencies --test --no-run-tests
 
 script:
   - travis_retry stack build accelerate-llvm        $FLAGS $HADDOCK --test --no-run-tests
