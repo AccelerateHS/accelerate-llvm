@@ -365,7 +365,7 @@ mkScanAllP2 dir aenv combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      (arrTmp, paramTmp)  = mutableArray @DIM1 "tmp"
       paramEnv            = envParam aenv
       start               = lift 0
       end                 = indexHead (irArrayShape arrTmp)
@@ -411,6 +411,7 @@ mkScanAllP2 dir aenv combine = do
 
       when (valid i0) $ do
 
+        -- wait for the carry-in value to be updated
         __syncthreads
 
         x0 <- readArray arrTmp i0
@@ -664,8 +665,8 @@ mkScan'AllP2 dir aenv combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
-      (arrSum, paramSum)  = mutableArray ("sum" :: Name (Scalar e))
+      (arrTmp, paramTmp)  = mutableArray @DIM1 "tmp"
+      (arrSum, paramSum)  = mutableArray @DIM0 "sum"
       paramEnv            = envParam aenv
       start               = lift 0
       end                 = indexHead (irArrayShape arrTmp)
@@ -705,37 +706,45 @@ mkScan'AllP2 dir aenv combine = do
                       L -> A.lt  singleType i end
                       R -> A.gte singleType i start
 
-      when (valid i0) $ do
+      -- wait for the carry-in value to be updated
+      __syncthreads
 
-        -- wait for the carry-in value to be updated
-        __syncthreads
+      x0 <- if valid i0
+              then readArray arrTmp i0
+              else
+                let go :: TupleType a -> Operands a
+                    go TypeRunit       = OP_Unit
+                    go (TypeRpair a b) = OP_Pair (go a) (go b)
+                    go (TypeRscalar t) = ir' t (undef t)
+                in
+                return . IR $ go (eltType @e)
 
-        x0 <- readArray arrTmp i0
-        x1 <- if A.gt singleType offset (lift 0) `A.land` A.eq singleType tid (lift 0)
-                then do
-                  c <- readArray carry (lift 0 :: IR Int32)
-                  case dir of
-                    L -> app2 combine c x0
-                    R -> app2 combine x0 c
-                else
-                  return x0
+      x1 <- if A.gt singleType offset (lift 0) `A.land` A.eq singleType tid (lift 0)
+              then do
+                c <- readArray carry (lift 0 :: IR Int32)
+                case dir of
+                  L -> app2 combine c x0
+                  R -> app2 combine x0 c
+              else
+                return x0
 
-        n  <- A.sub numType end offset
-        n' <- i32 n
-        x2 <- if A.gte singleType n bd
-                then scanBlockSMem dir dev combine Nothing   x1
-                else scanBlockSMem dir dev combine (Just n') x1
+      n  <- A.sub numType end offset
+      n' <- i32 n
+      x2 <- if A.gte singleType n bd
+              then scanBlockSMem dir dev combine Nothing   x1
+              else scanBlockSMem dir dev combine (Just n') x1
 
-        -- Update the partial results array
+      -- Update the partial results array
+      when (valid i0) $
         writeArray arrTmp i0 x2
 
-        -- The last active thread saves its result as the carry-out value.
-        m  <- do x <- A.min singleType bd n
-                 y <- A.sub numType x (lift 1)
-                 z <- i32 y
-                 return z
-        when (A.eq singleType tid m) $
-          writeArray carry (lift 0 :: IR Int32) x2
+      -- The last active thread saves its result as the carry-out value.
+      m  <- do x <- A.min singleType bd n
+               y <- A.sub numType x (lift 1)
+               z <- i32 y
+               return z
+      when (A.eq singleType tid m) $
+        writeArray carry (lift 0 :: IR Int32) x2
 
     -- First thread stores the final carry-out values at the final reduction
     -- result for the entire array
@@ -762,8 +771,8 @@ mkScan'AllP3 dir aenv combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Vector e))
-      (arrTmp, paramTmp)  = mutableArray ("tmp" :: Name (Vector e))
+      (arrOut, paramOut)  = mutableArray @DIM1 "out"
+      (arrTmp, paramTmp)  = mutableArray @DIM1 "tmp"
       paramEnv            = envParam aenv
       --
       stride              = local     ("ix.stride" :: Name Int)
@@ -1168,26 +1177,37 @@ mkScan'Dim dir aenv combine seed marr = do
                     -- Only threads that are in bounds can participate. This is
                     -- the last iteration of the loop. The last active thread
                     -- still needs to store its value into the carry-in slot.
+                    --
+                    -- Note that all threads must call the block-wide scan.
+                    -- SEE: [Synchronisation problems with SM_70 and greater]
                     else do
-                      when (A.lt singleType tid' n) $ do
-                        x <- app1 (delayedLinearIndex arrIn) i
-                        y <- if A.eq singleType tid (lift 0)
-                                then do
-                                  c <- readArray carry (lift 0 :: IR Int32)
-                                  case dir of
-                                    L -> app2 combine c x
-                                    R -> app2 combine x c
-                                else
-                                  return x
-                        l <- i32 n
-                        z <- scanBlockSMem dir dev combine (Just l) y
+                      x <- if A.lt singleType tid' n
+                              then do
+                                x <- app1 (delayedLinearIndex arrIn) i
+                                y <- if A.eq singleType tid (lift 0)
+                                        then do
+                                          c <- readArray carry (lift 0 :: IR Int32)
+                                          case dir of
+                                            L -> app2 combine c x
+                                            R -> app2 combine x c
+                                        else
+                                          return x
+                                return y
+                              else
+                                let
+                                    go :: TupleType a -> Operands a
+                                    go TypeRunit       = OP_Unit
+                                    go (TypeRpair a b) = OP_Pair (go a) (go b)
+                                    go (TypeRscalar t) = ir' t (undef t)
+                                in
+                                return . IR $ go (eltType @e)
 
-                        m <- A.sub numType n (lift 1)
-                        _ <- if A.lt singleType tid' m
-                               then writeArray arrOut j                   z >> return (lift ())
-                               else writeArray carry (lift 0 :: IR Int32) z >> return (lift ())
+                      l <- i32 n
+                      y <- scanBlockSMem dir dev combine (Just l) x
 
-                        return ()
+                      m <- A.sub numType l (lift 1)
+                      when (A.lt singleType tid m) $ writeArray arrOut j              y
+                      when (A.eq singleType tid m) $ writeArray carry (lift @Int32 0) y
 
                       return (lift ())
 
@@ -1236,6 +1256,16 @@ mkScan'Fill aenv seed =
 -- allocated shared memory.
 --
 -- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/block/specializations/block_scan_warp_scans.cuh
+--
+-- NOTE: [Synchronisation problems with SM_70 and greater]
+--
+-- This operation uses thread synchronisation. When calling this operation, it
+-- is important that all active (that is, non-exited) threads of the thread
+-- block participate. It seems that sm_70+ (devices with independent thread
+-- scheduling) are stricter about the requirement that all non-existed threads
+-- participate in every barrier.
+--
+-- See: https://github.com/AccelerateHS/accelerate/issues/436
 --
 scanBlockSMem
     :: forall aenv e. Elt e
