@@ -30,7 +30,6 @@ import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -40,68 +39,45 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 
 
-
 -- | Read a value from an array at the given index
 --
 {-# INLINEABLE readArray #-}
 readArray
---     :: forall arch int sh e. (IsIntegral int, Elt e)
-    :: forall arch sh e. (Elt e)
+    :: forall arch int sh e. (IsIntegral int, Elt e)
     => IRArray (Array sh e)
-    -> IR Int
+    -> IR int
     -> CodeGen arch (IR e)
 readArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) =
-  IR <$> readArrayData addrspace volatility ix (eltType @e) adata
+  IR <$> readArrayData addrspace volatility integralType ix (eltType @e) adata
 
-readArrayData :: AddrSpace -> Volatility -> Operand Int -> TupleType t -> Operands t -> CodeGen arch (Operands t)
-readArrayData as v ix = read
+readArrayData
+    :: AddrSpace
+    -> Volatility
+    -> IntegralType int
+    -> Operand int
+    -> TupleType e
+    -> Operands e
+    -> CodeGen arch (Operands e)
+readArrayData a v i ix = read
   where
-    read :: TupleType t -> Operands t -> CodeGen arch (Operands t)
-    read TypeRunit          OP_Unit                  = return OP_Unit
-    read (TypeRpair t2 t1) (OP_Pair a2 a1)           = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (TypeRscalar t)   (asPtr as . op' t -> arr) = ir' t   <$> readArrayPrim t v arr ix
+    read :: TupleType e -> Operands e -> CodeGen arch (Operands e)
+    read TypeRunit          OP_Unit                 = return OP_Unit
+    read (TypeRpair t2 t1) (OP_Pair a2 a1)          = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (TypeRscalar e)   (asPtr a . op' e -> arr) = ir' e   <$> readArrayPrim a v e i arr ix
 
-readArrayPrim :: ScalarType e -> Volatility -> Operand (Ptr e) -> Operand Int -> CodeGen arch (Operand e)
-readArrayPrim (SingleScalarType t) = readArrayPrimSingle t
-readArrayPrim (VectorScalarType t) = readArrayPrimVector t
-
-readArrayPrimSingle :: SingleType e -> Volatility -> Operand (Ptr e) -> Operand Int -> CodeGen arch (Operand e)
-readArrayPrimSingle t v arr ix = do
-  p <- instr' $ GetElementPtr arr [ix]
-  x <- instr' $ Load (SingleScalarType t) v p
+readArrayPrim
+    :: AddrSpace
+    -> Volatility
+    -> ScalarType e
+    -> IntegralType int
+    -> Operand (Ptr e)
+    -> Operand int
+    -> CodeGen arch (Operand e)
+readArrayPrim a v e i arr ix = do
+  p <- getElementPtr a e i arr ix
+  x <- instr' $ Load e v p
   return x
 
-readArrayPrimVector
-    :: VectorType e
-    -> Volatility
-    -> Operand (Ptr e)
-    -> Operand Int
-    -> CodeGen arch (Operand e)
-readArrayPrimVector t@(VectorType sz e) v arr ix
-  -- This case is for when the vector has a length L that is a power of 2 and
-  -- L>1 because that case is handled by readArrayPrimSingle
-  | popCount sz == 1 =
-      do
-        p <- instr' $ GetElementPtr arr [ix]
-        x <- instr' $ Load (VectorScalarType t) v p
-        return x
-  -- This case is for when the vector has a length that is not a power of 2 and
-  -- L>1. We need to do something special. tbd.
-  | otherwise =
-      let e' = PtrPrimType
-                 (ScalarPrimType . SingleScalarType $ e)
-                 defaultAddrSpace
-      in do
-        -- Pointer magic 1:
-        arr' <- instr' $ PtrCast e' arr
-        ix'  <- instr' $ Mul numType (scalar scalarType sz) ix
-        p    <- instr' $ GetElementPtr arr' [ix']
-
-        -- Pointer magic 2:
-        p'   <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (VectorScalarType t)) defaultAddrSpace) p
-
-        x    <- instr' $ Load (VectorScalarType t) v p'
-        return x
 
 -- | Write a value into an array at the given index
 --
@@ -128,4 +104,33 @@ writeArrayPrim v arr i x = do
   p <- instr' $ GetElementPtr arr [i]
   _ <- do_    $ Store v p x
   return ()
+
+
+-- | A wrapper around the GetElementPtr instruction, which correctly
+-- computes the pointer offset for non-power-of-two SIMD types
+--
+getElementPtr
+    :: AddrSpace
+    -> ScalarType e
+    -> IntegralType int
+    -> Operand (Ptr e)
+    -> Operand int
+    -> CodeGen arch (Operand (Ptr e))
+getElementPtr _ SingleScalarType{}   _ arr ix = instr' $ GetElementPtr arr [ix]
+getElementPtr a (VectorScalarType v) i arr ix
+  | popCount n == 1                           = instr' $ GetElementPtr arr [ix]
+  | IntegralDict <- integralDict i            = do
+      -- The GEP instruction only computes pointer offsets for element
+      -- types which are a power-of-two number of bytes. To work around
+      -- this we compute the offset ourselves using the base (non-SIMD)
+      -- type.
+      arr' <- instr' $ PtrCast ps arr
+      ix'  <- instr' $ Mul (IntegralNumType i) ix (integral i (fromIntegral n))
+      p'   <- instr' $ GetElementPtr arr' [ix']
+      p    <- instr' $ PtrCast pv p'
+      return p
+  where
+    VectorType n t = v
+    pv             = PtrPrimType (ScalarPrimType (VectorScalarType v)) a
+    ps             = PtrPrimType (ScalarPrimType (SingleScalarType t)) a
 
