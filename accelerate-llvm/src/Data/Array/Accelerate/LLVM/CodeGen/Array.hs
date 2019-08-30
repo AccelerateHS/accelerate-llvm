@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Array (
 ) where
 
 import Control.Applicative
-import Prelude                                                          hiding ( read )
+import Prelude                                                      hiding ( read )
 import Data.Bits
 
 import LLVM.AST.Type.AddrSpace
@@ -30,7 +30,7 @@ import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Sugar                            hiding ( size )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -89,20 +89,36 @@ writeArray
     -> IR e
     -> CodeGen arch ()
 writeArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) (IR val) =
-  writeArrayData addrspace volatility ix (eltType @e) adata val
+  writeArrayData addrspace volatility integralType ix (eltType @e) adata val
 
-writeArrayData :: AddrSpace -> Volatility -> Operand int -> TupleType t -> Operands t -> Operands t -> CodeGen arch ()
-writeArrayData as v ix = write
+writeArrayData
+    :: AddrSpace
+    -> Volatility
+    -> IntegralType int
+    -> Operand int
+    -> TupleType e
+    -> Operands e
+    -> Operands e
+    -> CodeGen arch ()
+writeArrayData a v i ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen arch ()
-    write TypeRunit          OP_Unit                   OP_Unit        = return ()
-    write (TypeRpair t2 t1) (OP_Pair a2 a1)           (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (TypeRscalar t)   (asPtr as . op' t -> arr) (op' t -> val)  = writeArrayPrim v arr ix val
+    write TypeRunit          OP_Unit                  OP_Unit        = return ()
+    write (TypeRpair t2 t1) (OP_Pair a2 a1)          (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
+    write (TypeRscalar e)   (asPtr a . op' e -> arr) (op' e -> val)  = writeArrayPrim a v e i arr ix val
 
-writeArrayPrim :: Volatility -> Operand (Ptr e) -> Operand int -> Operand e -> CodeGen arch ()
-writeArrayPrim v arr i x = do
-  p <- instr' $ GetElementPtr arr [i]
-  _ <- do_    $ Store v p x
+writeArrayPrim
+    :: AddrSpace
+    -> Volatility
+    -> ScalarType e
+    -> IntegralType int
+    -> Operand (Ptr e)
+    -> Operand int
+    -> Operand e
+    -> CodeGen arch ()
+writeArrayPrim a v e i arr ix x = do
+  p <- getElementPtr a e i arr ix
+  _ <- store a v e p x
   return ()
 
 
@@ -120,17 +136,73 @@ getElementPtr _ SingleScalarType{}   _ arr ix = instr' $ GetElementPtr arr [ix]
 getElementPtr a (VectorScalarType v) i arr ix
   | popCount n == 1                           = instr' $ GetElementPtr arr [ix]
   | IntegralDict <- integralDict i            = do
-      -- The GEP instruction only computes pointer offsets for element
-      -- types which are a power-of-two number of bytes. To work around
-      -- this we compute the offset ourselves using the base (non-SIMD)
-      -- type.
-      arr' <- instr' $ PtrCast ps arr
+      -- Note the initial zero into to the GEP instruction. It is not
+      -- really recommended to use GEP to index into vector elements, but
+      -- is not forcefully disallowed (at this time)
       ix'  <- instr' $ Mul (IntegralNumType i) ix (integral i (fromIntegral n))
-      p'   <- instr' $ GetElementPtr arr' [ix']
+      p'   <- instr' $ GetElementPtr arr [integral i 0, ix']
       p    <- instr' $ PtrCast pv p'
       return p
   where
-    VectorType n t = v
+    VectorType n _ = v
     pv             = PtrPrimType (ScalarPrimType (VectorScalarType v)) a
-    ps             = PtrPrimType (ScalarPrimType (SingleScalarType t)) a
+
+
+-- | A wrapper around the Store instruction, which splits non-power-of-two
+-- SIMD types into a sequence of smaller writes
+--
+store
+    :: AddrSpace
+    -> Volatility
+    -> ScalarType e
+    -> Operand (Ptr e)
+    -> Operand e
+    -> CodeGen arch ()
+store _         volatility SingleScalarType{}     ptr val
+  = do_ $ Store volatility ptr val
+
+store addrspace volatility (VectorScalarType vec) ptr val
+  | popCount size == 1
+  = do_ $ Store volatility ptr val
+
+  | otherwise
+  = do
+      let
+          go :: forall arch n t. SingleType t -> Int32 -> Operand (Ptr t) -> Operand (Vec n t) -> CodeGen arch ()
+          go t offset ptr' val'
+            | offset >= size = return ()
+            | otherwise      = do
+                let remaining = size - offset
+                    this      = setBit 0 (finiteBitSize remaining - countLeadingZeros remaining - 1)
+
+                    vec'      = VectorType (fromIntegral this) t
+                    ptr_vec'  = PtrPrimType (ScalarPrimType (VectorScalarType vec')) addrspace
+
+                    repack :: Int32 -> Operand (Vec m t) -> CodeGen arch (Operand (Vec m t))
+                    repack j u
+                      | j >= this = return u
+                      | otherwise = do
+                          x <- instr' $ ExtractElement (offset + j) val'
+                          v <- instr' $ InsertElement j u x
+                          repack (j+1) v
+
+                if remaining == 1
+                   then do
+                     x <- instr' $ ExtractElement offset val'
+                     _ <- instr' $ Store volatility ptr' x
+                     return ()
+
+                   else do
+                     v <- repack 0 $ undef (VectorScalarType vec')
+                     p <- instr' $ PtrCast ptr_vec' ptr'
+                     _ <- instr' $ Store volatility p v
+
+                     q <- instr' $ GetElementPtr ptr' [integral integralType this]
+                     go t (offset + this) q val'
+
+      ptr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (SingleScalarType base)) addrspace) ptr
+      go base 0 ptr' val
+
+  where
+    VectorType (fromIntegral -> size) base = vec
 
