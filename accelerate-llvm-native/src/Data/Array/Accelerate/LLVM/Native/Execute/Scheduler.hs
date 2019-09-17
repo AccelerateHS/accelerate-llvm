@@ -28,6 +28,8 @@ import Control.Exception
 import Control.Monad
 import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
+import Data.Array (Array)
+import qualified Data.Array as A
 import Data.Int
 import Data.Sequence                                                ( Seq )
 import Text.Printf
@@ -49,9 +51,10 @@ data Job = Job
   }
 
 data Workers = Workers
-  { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreadIds)
-  , workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
-  , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
+  { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreads)
+  , workerThreadIds   :: ![ThreadId] -- to send signals to / kill
+  , workerActivate    :: !(Array Int (MVar ())) -- Each thread has one MVar, fill to signal the thread to wake up
+  -- , workerJobId       :: !AtomicCounter         -- the index for the next task
   , workerTaskQueue   :: !(LinkedQueue Task)    -- tasks currently being executed; may be from different jobs
   , workerException   :: !(MVar (Seq (ThreadId, SomeException)))  -- XXX: what should we do with these?
   }
@@ -62,7 +65,7 @@ data Workers = Workers
 --
 {-# INLINEABLE schedule #-}
 schedule :: Workers -> Job -> IO ()
-schedule Workers{..} Job{..} = do
+schedule w@Workers{..} Job{..} = do
   -- Generate the work list. If there is a finalisation action, there is a bit
   -- of extra work to do at each step.
   --
@@ -87,10 +90,8 @@ schedule Workers{..} Job{..} = do
   -- to successfully pop an item from the queue.
   --
   -- _ <- tryPutMVar workerActive ()  -- TLM: disabled 2018-05-07
-  mapM_ (pushL workerTaskQueue) tasks
-  _ <- tryPutMVar workerActive ()
-  return ()
-
+  -- putStrLn "Add work to queue"
+  pushTasks w tasks
 
 -- Workers can either be executing tasks (real work), waiting for work, or going
 -- into retirement (whence the thread will exit).
@@ -105,6 +106,12 @@ runWorker activate queue = loop 0
   where
     loop :: Int16 -> IO ()
     loop !retries = do
+      t <- myThreadId
+
+      -- Make sure that the MVar is empty, such that we can later wait on it to be
+      -- filled, waiting for new work.
+      _ <- tryTakeMVar activate
+
       req <- tryPopR queue
       case req of
         -- The number of retries and thread delay on failure are knobs which can
@@ -121,9 +128,7 @@ runWorker activate queue = loop 0
                          D.when D.dump_sched $ do
                            tid <- myThreadId
                            message $ printf "sched: %s sleeping" (show tid)
-                         --
-                         _  <- tryTakeMVar activate -- another worker might have already signalled sleep
-                         () <- readMVar activate    -- blocking, multiple wake-up
+                         () <- readMVar activate    -- blocking, wake-up when new work has been added
                          loop 0
         --
         Just task -> case task of
@@ -146,29 +151,42 @@ hireWorkers = do
 --
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
-  workerActive    <- newEmptyMVar
   workerException <- newEmptyMVar
   workerTaskQueue <- newQ
-  workerThreadIds <- forM caps $ \cpu -> do
+  threads <- forM caps $ \cpu -> do
+                       active <- newEmptyMVar
                        tid <- mask_ $ forkOnWithUnmask cpu $ \restore ->
                                 catch
-                                  (restore $ runWorker workerActive workerTaskQueue)
+                                  (restore $ runWorker active workerTaskQueue)
                                   (\e -> do tid <- myThreadId
                                             appendMVar workerException (tid, e))
                        --
                        message $ printf "sched: fork %s on capability %d" (show tid) cpu
-                       return tid
-  --
-  workerThreadIds `deepseq` return Workers { workerCount = length workerThreadIds, ..}
-
+                       return (tid, active)
+  let workerThreadIds = fst <$> threads
+  let workerCount = length threads
+  let workerActivate = A.listArray (0, workerCount - 1) $ map snd threads
+  threads `deepseq` return Workers {..}
 
 -- Submit a job telling every worker to retire. Currently pending tasks will be
 -- completed first.
 --
 retireWorkers :: Workers -> IO ()
-retireWorkers Workers{..} = do
-  mapM_ (pushL workerTaskQueue) (Seq.replicate workerCount Retire)
-  void $ tryPutMVar workerActive ()
+retireWorkers w@Workers{..} = do
+  pushTasks w $ Seq.replicate workerCount Retire
+
+pushTasks :: Workers -> Seq Task -> IO ()
+pushTasks Workers{..} tasks = do
+  mapM_ (pushL workerTaskQueue) tasks
+  -- idx <- readCounter workerJobId
+  -- void $ tryPutMVar workerActive idx
+  activate 0
+  where
+    activate i
+      | i >= workerCount = return ()
+      | otherwise = do
+        tryPutMVar (workerActivate A.! i) ()
+        activate (i + 1)
 
 -- Kill worker threads immediately.
 --
