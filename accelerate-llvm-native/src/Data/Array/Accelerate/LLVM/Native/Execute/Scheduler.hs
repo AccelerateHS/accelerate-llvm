@@ -51,7 +51,7 @@ data Job = Job
 data Workers = Workers
   { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreadIds)
   , workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
-  , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
+  , workerActive      :: !(IORef (MVar ()))     -- fill to signal to the threads to wake up
   , workerTaskQueue   :: !(LinkedQueue Task)    -- tasks currently being executed; may be from different jobs
   , workerException   :: !(MVar (Seq (ThreadId, SomeException)))  -- XXX: what should we do with these?
   }
@@ -62,7 +62,7 @@ data Workers = Workers
 --
 {-# INLINEABLE schedule #-}
 schedule :: Workers -> Job -> IO ()
-schedule Workers{..} Job{..} = do
+schedule workers Job{..} = do
   -- Generate the work list. If there is a finalisation action, there is a bit
   -- of extra work to do at each step.
   --
@@ -80,17 +80,7 @@ schedule Workers{..} Job{..} = do
 
   -- Submit the tasks to the queue to be executed by the worker threads.
   --
-  -- The signal MVar is filled to indicate to workers that new tasks are
-  -- available. We signal twice so that threads can start work immediately, but
-  -- since this is racey we signal again after adding all items to the queue,
-  -- just in case a thread woke up and failed too many times before being able
-  -- to successfully pop an item from the queue.
-  --
-  -- _ <- tryPutMVar workerActive ()  -- TLM: disabled 2018-05-07
-  mapM_ (pushL workerTaskQueue) tasks
-  _ <- tryPutMVar workerActive ()
-  return ()
-
+  pushTasks workers tasks
 
 -- Workers can either be executing tasks (real work), waiting for work, or going
 -- into retirement (whence the thread will exit).
@@ -100,11 +90,12 @@ schedule Workers{..} Job{..} = do
 -- retries. Note that 'readMVar' is multiple wake up, so all threads will be
 -- efficiently woken up when new work is added via 'submit'.
 --
-runWorker :: MVar () -> LinkedQueue Task -> IO ()
+runWorker :: IORef (MVar ()) -> LinkedQueue Task -> IO ()
 runWorker activate queue = loop 0
   where
     loop :: Int16 -> IO ()
     loop !retries = do
+      activateVar <- readIORef activate
       req <- tryPopR queue
       case req of
         -- The number of retries and thread delay on failure are knobs which can
@@ -121,9 +112,7 @@ runWorker activate queue = loop 0
                          D.when D.dump_sched $ do
                            tid <- myThreadId
                            message $ printf "sched: %s sleeping" (show tid)
-                         --
-                         _  <- tryTakeMVar activate -- another worker might have already signalled sleep
-                         () <- readMVar activate    -- blocking, multiple wake-up
+                         () <- readMVar activateVar -- blocking, wake-up when new work is available
                          loop 0
         --
         Just task -> case task of
@@ -146,7 +135,8 @@ hireWorkers = do
 --
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
-  workerActive    <- newEmptyMVar
+  active          <- newEmptyMVar
+  workerActive    <- newIORef active
   workerException <- newEmptyMVar
   workerTaskQueue <- newQ
   workerThreadIds <- forM caps $ \cpu -> do
@@ -166,9 +156,21 @@ hireWorkersOn caps = do
 -- completed first.
 --
 retireWorkers :: Workers -> IO ()
-retireWorkers Workers{..} = do
-  mapM_ (pushL workerTaskQueue) (Seq.replicate workerCount Retire)
-  void $ tryPutMVar workerActive ()
+retireWorkers workers@Workers{..} =
+  pushTasks workers (Seq.replicate workerCount Retire)
+
+-- Pushes tasks to the task queue.
+-- Wakes up the worker threads if needed, by writing to workerActive.
+-- We replace workerActive with a new, empty MVar, such that we can
+-- wake them up later when we again have new work.
+--
+pushTasks :: Workers -> Seq Task -> IO ()
+pushTasks Workers{..} tasks = do
+  mapM_ (pushL workerTaskQueue) tasks
+  var <- readIORef workerActive
+  tryPutMVar var ()
+  newVar <- newEmptyMVar
+  writeIORef workerActive newVar
 
 -- Kill worker threads immediately.
 --
