@@ -167,10 +167,9 @@ retireWorkers workers@Workers{..} =
 pushTasks :: Workers -> Seq Task -> IO ()
 pushTasks Workers{..} tasks = do
   mapM_ (pushL workerTaskQueue) tasks
-  var <- readIORef workerActive
-  tryPutMVar var ()
   newVar <- newEmptyMVar
-  writeIORef workerActive newVar
+  oldVar <- atomicModifyIORef' workerActive (\old -> (newVar, old))
+  putMVar oldVar ()
 
 -- Kill worker threads immediately.
 --
