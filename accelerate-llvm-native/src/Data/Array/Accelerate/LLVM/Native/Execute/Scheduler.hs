@@ -1,7 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE UnboxedTuples       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 -- Copyright   : [2018..2019] The Accelerate Team
@@ -33,6 +36,10 @@ import Data.Int
 import Data.Sequence                                                ( Seq )
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
+
+import GHC.Base
+
+#include "MachDeps.h"
 
 
 -- An individual computation is a job consisting of a sequence of actions to be
@@ -73,11 +80,11 @@ schedule workers Job{..} = do
                 -- The thread which finishes the last task runs the finalisation
                 -- action, so keep track of how many items have been completed.
                 --
-                count <- newIORef (Seq.length jobTasks)
+                count <- newAtomic (Seq.length jobTasks)
                 return $ flip fmap jobTasks $ \io -> Work $ do
                   _result   <- io
-                  remaining <- atomicModifyIORef' count (\i -> let i' = i-1 in (i',i'))
-                  when (remaining == 0) done
+                  remaining <- fetchSubAtomic count -- returns old value
+                  when (remaining == 1) done
 
   -- Submit the tasks to the queue to be executed by the worker threads.
   --
@@ -216,6 +223,22 @@ numWorkers = workerCount
 
 -- Utility
 -- -------
+
+data Atomic = Atomic !(MutableByteArray# RealWorld)
+
+{-# INLINE newAtomic #-}
+newAtomic :: Int -> IO Atomic
+newAtomic (I# n#) = IO $ \s0 ->
+  case SIZEOF_HSINT                 of { I# size#       ->
+  case newByteArray# size# s0       of { (# s1, mba# #) ->
+  case writeIntArray# mba# 0# n# s1 of { s2             ->  -- non-atomic is ok
+    (# s2, Atomic mba# #) }}}
+
+{-# INLINE fetchSubAtomic #-}
+fetchSubAtomic :: Atomic -> IO Int
+fetchSubAtomic (Atomic mba#) = IO $ \s0 ->
+  case fetchSubIntArray# mba# 0# 1# s0 of { (# s1, old# #) ->
+    (# s1, I# old# #) }
 
 {-# INLINE appendMVar #-}
 appendMVar :: MVar (Seq a) -> a -> IO ()
