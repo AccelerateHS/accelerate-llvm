@@ -116,7 +116,7 @@ before_install:
 
 install:
   # how much do we have to do?
-  - export FLAGS="--jobs=2 --no-terminal --no-copy-bins --flag accelerate:nofib"
+  - export FLAGS="--no-terminal --no-copy-bins --flag accelerate:nofib"
   - stack build $FLAGS --test --dry-run
 
   # build dependencies
