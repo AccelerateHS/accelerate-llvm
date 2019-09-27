@@ -12,6 +12,12 @@ extra-deps:
 - github: tmcdonell/accelerate
   commit: 156b5ce9232f3d9bbb94f3054daf51e23454fb0b
 
+- github: tmcdonell/llvm-hs
+  commit: de47ce4eb8f20cc7ac20e988a0ad44500b6c414d
+  subdirs:
+    - llvm-hs
+    - llvm-hs-pure
+
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

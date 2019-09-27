@@ -1,5 +1,7 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Instruction.RMW
@@ -13,6 +15,8 @@
 
 module LLVM.AST.Type.Instruction.RMW
   where
+
+import Data.Array.Accelerate.Error
 
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Representation
@@ -38,6 +42,10 @@ data RMWOperation
 
 -- | Convert to llvm-hs
 --
+instance Downcast (NumType a, RMWOperation) LLVM.RMWOperation where
+  downcast (IntegralNumType t, rmw) = downcast (t,rmw)
+  downcast (FloatingNumType t, rmw) = downcast (t,rmw)
+
 instance Downcast (IntegralType a, RMWOperation) LLVM.RMWOperation where
   downcast (t, rmw) =
     case rmw of
@@ -52,4 +60,14 @@ instance Downcast (IntegralType a, RMWOperation) LLVM.RMWOperation where
           | otherwise -> LLVM.UMin
       Max | signed t  -> LLVM.Max
           | otherwise -> LLVM.UMax
+
+instance Downcast (FloatingType a, RMWOperation) LLVM.RMWOperation where
+  downcast (_, rmw) =
+    case rmw of
+      Exchange        -> LLVM.Xchg
+#if MIN_VERSION_llvm_hs_pure(9,0,0)
+      Add             -> LLVM.FAdd
+      Sub             -> LLVM.FSub
+#endif
+      _               -> $internalError "downcast" "unsupported operand type to RMWOperation"
 
