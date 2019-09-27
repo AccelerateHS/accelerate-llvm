@@ -127,6 +127,11 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       | TypeRscalar{} <- eltType @e = True
       | otherwise                   = unsafePerformIO (getFlag fast_permute_const)
 
+    -- XXX: This doesn't work for newtypes because the coercion gets in the
+    -- way. This should be generalised to work for product types (e.g.
+    -- complex numbers) and take this factor into account as well.
+    --    TLM-2019-09-27
+    --
     rmwOp :: DelayedOpenExp (((),e),e) aenv e -> Maybe (RMWOperation, DelayedOpenExp (((),e),e) aenv e)
     rmwOp (PrimApp f xs)
       | PrimAdd{}  <- f = (RMW.Add,) <$> extract xs

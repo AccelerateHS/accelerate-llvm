@@ -27,7 +27,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/llvm/llvm-8
+    > brew install llvm-hs/llvm/llvm-9
     .
     /Debian & Ubuntu/
     .
@@ -140,8 +140,8 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , filepath                      >= 1.0
-        , llvm-hs                       >= 4.1 && < 8.1
-        , llvm-hs-pure                  >= 4.1 && < 8.1
+        , llvm-hs                       >= 4.1 && < 9.1
+        , llvm-hs-pure                  >= 4.1 && < 9.1
         , mtl                           >= 2.0
         , primitive                     >= 0.6.4
         , template-haskell

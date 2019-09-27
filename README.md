@@ -67,7 +67,7 @@ you install (or build) LLVM with the 'nvptx' target.
 Example using [Homebrew](http://brew.sh) on macOS:
 
 ```sh
-$ brew install llvm-hs/llvm/llvm-8
+$ brew install llvm-hs/llvm/llvm-9
 ```
 
 ## Debian/Ubuntu
@@ -137,7 +137,7 @@ $ stack install
 ```
 
 Note that the version of [`llvm-hs`](https://hackage.haskell.org/package/llvm-hs)
-used must match the installed version of LLVM, which is currently 8.0.
+used must match the installed version of LLVM, which is currently 9.0.
 
 
 ## libNVVM
@@ -155,16 +155,16 @@ install `accelerate-llvm` with a "compatible" version of LLVM, which will depend
 on the version of the CUDA toolkit you have installed. The following table shows
 combinations which have been tested:
 
-|               | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 | LLVM-4.0 | LLVM-5.0 | LLVM-6.0 | LLVM-7.0 | LLVM-8.0 |
-| ------------- | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :------: |
-| **CUDA-7.0**  | ⭕       | ❌       |          |          |          |          |          |          |          |          |
-| **CUDA-7.5**  |          | ⭕       | ⭕       | ❌       |          |          |          |          |          |          |
-| **CUDA-8.0**  |          |          | ⭕       | ⭕       | ❌       | ❌       |          |          |          |          |
-| **CUDA-9.0**  |          |          |          |          |          | ❌       | ❌       |          |          |          |
-| **CUDA-9.1**  |          |          |          |          |          |          |          |          |          |          |
-| **CUDA-9.2**  |          |          |          |          |          |          |          |          |          |          |
-| **CUDA-10.0** |          |          |          |          |          |          |          |          |          |          |
-| **CUDA-10.1** |          |          |          |          |          |          |          |          |          |          |
+|               | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 | LLVM-4.0 | LLVM-5.0 | LLVM-6.0 | LLVM-7 | LLVM-8 | LLVM-9 |
+| ------------- | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :----: | :----: | :----: |
+| **CUDA-7.0**  | ⭕       | ❌       |          |          |          |          |          |          |        |        |        |
+| **CUDA-7.5**  |          | ⭕       | ⭕       | ❌       |          |          |          |          |        |        |        |
+| **CUDA-8.0**  |          |          | ⭕       | ⭕       | ❌       | ❌       |          |          |        |        |        |
+| **CUDA-9.0**  |          |          |          |          |          | ❌       | ❌       |          |        |        |        |
+| **CUDA-9.1**  |          |          |          |          |          |          |          |          |        |        |        |
+| **CUDA-9.2**  |          |          |          |          |          |          |          |          |        |        |        |
+| **CUDA-10.0** |          |          |          |          |          |          |          |          |        |        |        |
+| **CUDA-10.1** |          |          |          |          |          |          |          |          |        |        |        |
 
 Where ⭕ = Works, and ❌ = Does not work.
 

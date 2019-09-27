@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -185,13 +186,17 @@ mkPermuteP_rmw uid aenv rmw update project marr =
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   case s of
-                    NumSingleType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
-                    NumSingleType t | RMW.Add <- rmw  -> atomicCAS_rmw s (A.add t r') addr
-                    NumSingleType t | RMW.Sub <- rmw  -> atomicCAS_rmw s (A.sub t r') addr
-                    _ -> case rmw of
-                           RMW.Min                    -> atomicCAS_cmp s A.lt addr (op s r')
-                           RMW.Max                    -> atomicCAS_cmp s A.gt addr (op s r')
-                           _                          -> $internalError "mkPermute_rmw" "unexpected transition"
+#if MIN_VERSION_llvm_hs(9,0,0)
+                    NumSingleType t             -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+#else
+                    NumSingleType t
+                      | IntegralNumType{} <- t  -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
+                      | RMW.Add <- rmw          -> atomicCAS_rmw s (A.add t r') addr
+                      | RMW.Sub <- rmw          -> atomicCAS_rmw s (A.sub t r') addr
+#endif
+                    _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r')
+                      | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r')
+                    _                           -> $internalError "mkPermute_rmw" "unexpected transition"
           --
           _ -> $internalError "mkPermute_rmw" "unexpected transition"
 
@@ -271,7 +276,7 @@ atomically barriers i action = do
   -- was unlocked we just acquired it, otherwise the state remains unchanged and
   -- we spin until it becomes available.
   setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlocked
   _    <- cbr ok crit spin
 
@@ -281,7 +286,7 @@ atomically barriers i action = do
   -- rules.
   setBlock crit
   r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, Release)
   _    <- br exit
 
   setBlock exit

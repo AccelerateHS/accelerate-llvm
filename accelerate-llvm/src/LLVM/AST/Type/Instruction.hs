@@ -248,7 +248,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
   --
-  AtomicRMW       :: IntegralType a
+  AtomicRMW       :: NumType a
                   -> Volatility
                   -> RMWOperation
                   -> Operand (Ptr a)
