@@ -6,6 +6,7 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
@@ -31,6 +32,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
@@ -230,10 +232,22 @@ compileOpenAcc = traverseAcc
             go StencilRunit7 = Z :. 3
             go StencilRunit9 = Z :. 4
             --
-            go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
-            go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
-            go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
-            go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+            go (StencilRtup3 a b c            ) = 1 `cons` foldl1 union [go a, go b, go c]
+            go (StencilRtup5 a b c d e        ) = 2 `cons` foldl1 union [go a, go b, go c, go d, go e]
+            go (StencilRtup7 a b c d e f g    ) = 3 `cons` foldl1 union [go a, go b, go c, go d, go e, go f, go g]
+            go (StencilRtup9 a b c d e f g h i) = 4 `cons` foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i]
+
+        cons :: forall sh. Shape sh => Int -> sh -> (sh :. Int)
+        cons ix extent = toElt $ go (eltType @sh) (fromElt extent)
+          where
+            go :: TupleType t -> t -> (t, Int)
+            go TypeRunit         ()       = ((), ix)
+            go (TypeRpair th tz) (sh, sz)
+              | TypeRscalar t <- tz
+              , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
+              = (go th sh, sz)
+            go _ _
+              = $internalError "cons" "expected shape with Int components"
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
