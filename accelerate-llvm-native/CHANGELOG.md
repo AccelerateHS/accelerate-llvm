@@ -14,6 +14,7 @@ Policy (PVP)](https://pvp.haskell.org)
 
 ### Fixed
  * Stability improvements
+ * Race condition in thread scheduler ([accelerate-llvm#49])
 
 ### Contributors
 
@@ -21,6 +22,7 @@ Special thanks to those who contributed patches as part of this release:
 
  * Trevor L. McDonell ([@tmcdonell][tmcdonell])
  * Josh Meredith ([@JoshMeredith][JoshMeredith])
+ * Ivo Gabe de Wolff (@ivogabe)
 
 
 ## [1.2.0.0] - 2018-04-03
@@ -75,4 +77,5 @@ Special thanks to those who contributed patches as part of this release:
 
 [#409]:                 https://github.com/AccelerateHS/accelerate/issues/409
 [accelerate-llvm#17]:   https://github.com/AccelerateHS/accelerate-llvm/issues/17
+[accelerate-llvm#49]:   https://github.com/AccelerateHS/accelerate-llvm/pull/49
 
