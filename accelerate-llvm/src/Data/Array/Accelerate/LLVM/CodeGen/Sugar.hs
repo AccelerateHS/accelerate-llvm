@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
   IROpenExp, IROpenFun1(..), IROpenFun2(..),
   IROpenAcc(..),
   IRDelayed(..), MIRDelayed,
-  IRManifest(..),
 
   IRArray(..),
 
@@ -28,7 +27,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Instruction.Volatile
 
-import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Array.Sugar
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -73,9 +71,6 @@ data IRDelayed arch aenv a where
                , delayedLinearIndex :: IRFun1 arch aenv (Int -> e)
                }
             -> IRDelayed arch aenv (Array sh e)
-
-data IRManifest arch aenv a where
-  IRManifest :: Arrays arrs => Idx aenv arrs -> IRManifest arch aenv arrs
 
 data IRArray a where
   IRArray :: { irArrayShape       :: IR sh        -- Array extent

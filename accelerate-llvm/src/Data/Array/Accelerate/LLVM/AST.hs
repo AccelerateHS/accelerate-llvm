@@ -22,7 +22,8 @@ module Data.Array.Accelerate.LLVM.AST (
   PreAfun, PreOpenAfun(..),
   PreFun,  PreOpenFun(..),
   PreExp,  PreOpenExp(..),
-  Idx(..),
+  Idx(..), ArrayVar(..), LeftHandSide(..),
+  HasArraysRepr(..),
 
 ) where
 
@@ -32,7 +33,7 @@ import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp, ArrayVar(..), LeftHandSide(..), HasArraysRepr(..) )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -40,67 +41,60 @@ import Data.Array.Accelerate.AST
 --
 data PreOpenAccCommand acc arch aenv a where
 
-  Avar        :: Arrays arrs
-              => Idx                        aenv arrs
+  Avar        :: ArrayVar                   aenv arrs
               -> PreOpenAccCommand acc arch aenv arrs
 
-  Alet        :: (Arrays bnd, Arrays body)
-              => acc                   arch aenv        bnd
-              -> acc                   arch (aenv, bnd) body
-              -> PreOpenAccCommand acc arch aenv        body
+  Alet        :: LeftHandSide bnd aenv aenv'
+              -> acc                   arch aenv  bnd
+              -> acc                   arch aenv' body
+              -> PreOpenAccCommand acc arch aenv  body
 
   Alloc       :: (Shape sh, Elt e)
               => PreExp           (acc arch) aenv sh
               -> PreOpenAccCommand acc arch  aenv (Array sh e)
 
-  Use         :: Arrays arrs
-              => ArrRepr arrs
-              -> PreOpenAccCommand acc arch aenv arrs
+  Use         :: (Shape sh, Elt e)
+              => Array sh e
+              -> PreOpenAccCommand acc arch aenv (Array sh e)
 
   Unit        :: Elt e
               => PreExp           (acc arch) aenv e
               -> PreOpenAccCommand acc arch  aenv (Scalar e)
 
-  Atuple      :: (Arrays arrs, IsAtuple arrs)
-              => Atuple           (acc arch aenv) (TupleRepr arrs)
-              -> PreOpenAccCommand acc arch aenv  arrs
+  Apair       :: acc                   arch aenv arrs1
+              -> acc                   arch aenv arrs2
+              -> PreOpenAccCommand acc arch aenv (arrs1, arrs2)
 
-  Aprj        :: (Arrays arrs, IsAtuple arrs, Arrays a)
-              => TupleIdx (TupleRepr arrs) a
-              -> acc                   arch aenv arrs
-              -> PreOpenAccCommand acc arch aenv a
+  Anil        :: PreOpenAccCommand acc arch aenv ()
 
-  Apply       :: (Arrays as, Arrays bs)
-              => PreOpenAfun      (acc arch) aenv (as -> bs)
+  Apply       :: PreOpenAfun      (acc arch) aenv (as -> bs)
               -> acc                   arch  aenv as
               -> PreOpenAccCommand acc arch  aenv bs
 
-  Aforeign    :: (Arrays as, Arrays bs)
-              => String
+  Aforeign    :: String
+              -> ArraysR bs
               -> (as -> Par arch (FutureR arch bs))
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 
-  Acond       :: Arrays arrs
-              => PreExp           (acc arch) aenv Bool
+  Acond       :: PreExp           (acc arch) aenv Bool
               -> acc                   arch  aenv arrs
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
 
-  Awhile      :: Arrays arrs
-              => PreOpenAfun      (acc arch) aenv (arrs -> Scalar Bool)
+  Awhile      :: PreOpenAfun      (acc arch) aenv (arrs -> Scalar Bool)
               -> PreOpenAfun      (acc arch) aenv (arrs -> arrs)
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
 
   Reshape     :: (Shape sh, Shape sh', Elt e)
               => PreExp           (acc arch) aenv sh
-              -> Idx                         aenv (Array sh' e)
+              -> ArrayVar                    aenv (Array sh' e)
               -> PreOpenAccCommand acc arch  aenv (Array sh  e)
 
   Unzip       :: (Elt tup, Elt e)
               => TupleIdx (TupleRepr tup) e
-              -> Idx                        aenv (Array sh tup)
+              -> ArrayVar                   aenv (Array sh tup)
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
 
@@ -161,7 +155,7 @@ data PreOpenAccSkeleton acc arch aenv a where
 
   Scanl'      :: (Shape sh, Elt e)
               => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e, Array sh e)
+              -> PreOpenAccSkeleton acc arch aenv (ArrRepr (Array (sh :. Int) e, Array sh e))
 
   Scanr       :: (Shape sh, Elt e)
               => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
@@ -173,7 +167,7 @@ data PreOpenAccSkeleton acc arch aenv a where
 
   Scanr'      :: (Shape sh, Elt e)
               => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e, Array sh e)
+              -> PreOpenAccSkeleton acc arch aenv (ArrRepr (Array (sh :. Int) e, Array sh e))
 
   Permute     :: (Shape sh, Shape sh', Elt e)
               => acc                    arch aenv (Array sh' e)     -- target array (default values)
@@ -204,3 +198,38 @@ data DelayedOpenAcc acc arch aenv a where
   Manifest    :: acc arch aenv (Array sh e)
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
+instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccCommand acc arch) where
+  arraysRepr (Avar (ArrayVar _))    = ArraysRarray
+  arraysRepr (Alet _ _ a)           = arraysRepr a
+  arraysRepr Alloc{}                = ArraysRarray
+  arraysRepr (Use _)                = ArraysRarray
+  arraysRepr Unit{}                 = ArraysRarray
+  arraysRepr (Apair a1 a2)          = arraysRepr a1 `ArraysRpair` arraysRepr a2
+  arraysRepr Anil                   = ArraysRunit
+  arraysRepr (Apply fn _)           = case fn of
+    Alam _ (Abody a) -> arraysRepr a
+    _                -> error "Where do you think you're going?" 
+  arraysRepr (Aforeign _ repr _ _ ) = repr
+  arraysRepr (Acond _ a1 _)         = arraysRepr a1
+  arraysRepr (Awhile _ _ a)         = arraysRepr a
+  arraysRepr Reshape{}              = ArraysRarray
+  arraysRepr (Unzip _ (ArrayVar _)) = ArraysRarray
+
+instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccSkeleton acc arch) where
+  arraysRepr Map{}                  = ArraysRarray
+  arraysRepr Generate{}             = ArraysRarray
+  arraysRepr Transform{}            = ArraysRarray
+  arraysRepr Backpermute{}          = ArraysRarray
+  arraysRepr Fold{}                 = ArraysRarray
+  arraysRepr Fold1{}                = ArraysRarray
+  arraysRepr FoldSeg{}              = ArraysRarray
+  arraysRepr Fold1Seg{}             = ArraysRarray
+  arraysRepr Scanl{}                = ArraysRarray
+  arraysRepr Scanl1{}               = ArraysRarray
+  arraysRepr Scanl'{}               = arraysRtuple2
+  arraysRepr Scanr{}                = ArraysRarray
+  arraysRepr Scanr1{}               = ArraysRarray
+  arraysRepr Scanr'{}               = arraysRtuple2
+  arraysRepr Permute{}              = ArraysRarray
+  arraysRepr Stencil1{}             = ArraysRarray
+  arraysRepr Stencil2{}             = ArraysRarray

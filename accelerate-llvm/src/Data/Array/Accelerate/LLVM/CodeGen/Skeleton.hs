@@ -109,7 +109,7 @@ class Skeleton arch where
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh:.Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
+                -> CodeGen    arch      (IROpenAcc arch aenv (((), Array (sh:.Int) e), Array sh e))
 
   scanl1        :: (Shape sh, Elt e)
                 => UID
@@ -132,7 +132,7 @@ class Skeleton arch where
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh:.Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh:.Int) e, Array sh e))
+                -> CodeGen    arch      (IROpenAcc arch aenv (((), Array (sh:.Int) e), Array sh e))
 
   scanr1        :: (Shape sh, Elt e)
                 => UID

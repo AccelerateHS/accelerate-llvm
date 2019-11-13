@@ -101,10 +101,10 @@ instance Remote PTX where
 --
 {-# INLINEABLE copyToHostLazy #-}
 copyToHostLazy
-    :: Arrays arrs
-    => Future arrs
+    :: ArraysR arrs
+    -> Future arrs
     -> Par PTX arrs
-copyToHostLazy future@(Future ref) = do
+copyToHostLazy repr future@(Future ref) = do
   ptx   <- gets llvmTarget
   arrs  <- liftIO $ do
     ivar  <- readIORef ref
@@ -113,7 +113,7 @@ copyToHostLazy future@(Future ref) = do
                Pending _ _ a  -> return a
                Empty          -> $internalError "copyToHostLazy" "blocked on an IVar"
     --
-    runArrays arrs $ \(Array sh adata) ->
+    runArrays repr arrs $ \(Array sh adata) ->
       let
           -- Note: [Lazy device-host transfers]
           --

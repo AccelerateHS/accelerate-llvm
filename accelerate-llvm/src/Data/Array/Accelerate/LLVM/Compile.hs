@@ -68,8 +68,7 @@ data CompiledOpenAcc arch aenv a where
             -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
-  PlainAcc  :: Arrays a
-            => AST.PreOpenAccCommand  CompiledOpenAcc arch aenv a
+  PlainAcc  :: AST.PreOpenAccCommand  CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
 
@@ -111,8 +110,8 @@ compileOpenAfun
     :: Compile arch
     => DelayedOpenAfun aenv f
     -> LLVM arch (CompiledOpenAfun arch aenv f)
-compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
-compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
+compileOpenAfun (Alam lhs l) = Alam lhs <$> compileOpenAfun l
+compileOpenAfun (Abody b)    = Abody    <$> compileOpenAcc b
 
 
 {-# INLINEABLE compileOpenAcc #-}
@@ -137,12 +136,12 @@ compileOpenAcc = traverseAcc
       case pacc of
         -- Environment and control flow
         Avar ix                     -> plain $ pure (AST.Avar ix)
-        Alet a b                    -> plain . pure =<< AST.Alet      <$> traverseAcc a <*> traverseAcc b
+        Alet lhs a b                -> plain . pure =<< AST.Alet lhs  <$> traverseAcc a <*> traverseAcc b
         Apply f a                   -> plain =<< liftA2 AST.Apply     <$> travAF f <*> travA a
         Awhile p f a                -> plain =<< liftA3 AST.Awhile    <$> travAF p <*> travAF f <*> travA a
         Acond p t e                 -> plain =<< liftA3 AST.Acond     <$> travE  p <*> travA  t <*> travA e
-        Atuple tup                  -> plain =<< liftA  AST.Atuple    <$> travAtup tup
-        Aprj ix tup                 -> plain =<< liftA (AST.Aprj ix)  <$> travA    tup
+        Apair a1 a2                 -> plain =<< liftA2 AST.Apair     <$> travA a1 <*> travA a2
+        Anil                        -> plain $ pure AST.Anil
 
         -- Foreign arrays operations
         Aforeign ff afun a          -> foreignA ff afun a
@@ -252,18 +251,13 @@ compileOpenAcc = traverseAcc
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), Idx aenv (Array sh e))
+              -> LLVM arch (IntMap (Idx' aenv), ArrayVar aenv (Array sh e))
         travM (Manifest (Avar ix)) = return (freevar ix, ix)
         travM _                    = $internalError "compileOpenAcc" "expected array variable"
 
         travAF :: DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
         travAF afun = pure <$> compileOpenAfun afun
-
-        travAtup :: Atuple (DelayedOpenAcc aenv) a
-                 -> LLVM arch (IntMap (Idx' aenv), Atuple (CompiledOpenAcc arch aenv) a)
-        travAtup NilAtup        = return (pure NilAtup)
-        travAtup (SnocAtup t a) = liftA2 SnocAtup <$> travAtup t <*> travA a
 
         travF :: DelayedOpenFun env aenv t
               -> LLVM arch (IntMap (Idx' aenv), CompiledOpenFun arch env aenv t)
@@ -285,8 +279,7 @@ compileOpenAcc = traverseAcc
           kernel <- compileForTarget pacc aval
           return $! BuildAcc aval kernel eacc
 
-        plain :: Arrays arrs'
-              => (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
+        plain :: (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
         plain (_, eacc) = return (PlainAcc eacc)
 
@@ -318,7 +311,7 @@ compileOpenAcc = traverseAcc
         unzip :: forall sh a b. Elt a
               => PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
-              -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
+              -> Maybe (TupleIdx (TupleRepr a) b, ArrayVar aenv (Array sh a))
         unzip _ _
           | TypeRscalar VectorScalarType{}      <- eltType @a
           = Nothing
@@ -338,14 +331,14 @@ compileOpenAcc = traverseAcc
         -- this term and continue walking down the list of alternate
         -- implementations.
         --
-        foreignA :: (Arrays a, Arrays b, A.Foreign asm)
+        foreignA :: forall a b asm. (Arrays a, Arrays b, A.Foreign asm)
                  => asm         (a -> b)
-                 -> DelayedAfun (a -> b)
-                 -> DelayedOpenAcc aenv a
-                 -> LLVM arch (CompiledOpenAcc arch aenv b)
+                 -> DelayedAfun (ArrRepr a -> ArrRepr b)
+                 -> DelayedOpenAcc aenv (ArrRepr a)
+                 -> LLVM arch (CompiledOpenAcc arch aenv (ArrRepr b))
         foreignA ff f a =
           case foreignAcc ff of
-            Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) asm) <$> travA a
+            Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) (arrays @b) asm) <$> travA a
             Nothing  -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
               absurd :: Idx () t -> Idx aenv t
@@ -439,3 +432,6 @@ liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 liftA5 :: Applicative f => (a -> b -> c -> d -> e -> g) -> f a -> f b -> f c -> f d -> f e -> f g
 liftA5 f a b c d g = f <$> a <*> b <*> c <*> d <*> g
 
+instance HasArraysRepr (CompiledOpenAcc arch) where
+  arraysRepr (BuildAcc _ _ acc) = arraysRepr acc
+  arraysRepr (PlainAcc     acc) = arraysRepr acc

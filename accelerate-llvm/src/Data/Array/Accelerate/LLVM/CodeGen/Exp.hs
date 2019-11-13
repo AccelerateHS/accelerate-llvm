@@ -87,8 +87,8 @@ llvmOfOpenExp
     -> IROpenExp arch env aenv _t
 llvmOfOpenExp top env aenv = cvtE top
   where
-    cvtM :: DelayedOpenAcc aenv (Array sh e) -> IRManifest arch aenv (Array sh e)
-    cvtM (Manifest (Avar ix)) = IRManifest ix
+    cvtM :: DelayedOpenAcc aenv (Array sh e) -> ArrayVar aenv (Array sh e)
+    cvtM (Manifest (Avar ix)) = ix
     cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
 
     cvtF1 :: DelayedOpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
@@ -244,14 +244,14 @@ llvmOfOpenExp top env aenv = cvtE top
               = $internalError "cvtT/vec" "impossible evaluation"
 
 
-    linearIndex :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
-    linearIndex (IRManifest v) = linearIndexArray (irArray (aprj v aenv))
+    linearIndex :: (Shape sh, Elt e) => ArrayVar aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+    linearIndex (ArrayVar v) = linearIndexArray (irArray (aprj v aenv))
 
-    index :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
-    index (IRManifest v) = indexArray (irArray (aprj v aenv))
+    index :: (Shape sh, Elt e) => ArrayVar aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
+    index (ArrayVar v) = indexArray (irArray (aprj v aenv))
 
-    shape :: (Shape sh, Elt e) => IRManifest arch aenv (Array sh e) -> IR sh
-    shape (IRManifest v) = irArrayShape (irArray (aprj v aenv))
+    shape :: (Shape sh, Elt e) => ArrayVar aenv (Array sh e) -> IR sh
+    shape (ArrayVar v) = irArrayShape (irArray (aprj v aenv))
 
     intersect :: forall sh. Shape sh => IR sh -> IR sh -> IROpenExp arch env aenv sh
     intersect (IR extent1) (IR extent2) = IR <$> go (eltType @sh) extent1 extent2
