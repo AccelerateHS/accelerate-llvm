@@ -44,7 +44,7 @@ import Data.Typeable
 
 instance Foreign Native where
   foreignAcc (ff :: asm (a -> b))
-    | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just asm
+    | Just (ForeignAcc _ asm :: ForeignAcc (S.ArrRepr a -> S.ArrRepr b)) <- cast ff = Just asm
     | otherwise                                                 = Nothing
 
   foreignExp (ff :: asm (x -> y))

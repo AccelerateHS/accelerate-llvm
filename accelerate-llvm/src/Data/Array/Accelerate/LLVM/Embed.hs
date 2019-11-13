@@ -22,6 +22,8 @@ module Data.Array.Accelerate.LLVM.Embed (
   embedAfun, embedOpenAfun,
   embedOpenAcc,
 
+  HasTypeable(..), arraysTypeable, lhsTypeable
+
 ) where
 
 import LLVM.AST.Type.Name

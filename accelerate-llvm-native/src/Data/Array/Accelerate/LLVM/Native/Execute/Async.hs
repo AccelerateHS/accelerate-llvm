@@ -17,7 +17,7 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 
-  Async(..), Future(..), IVar(..),
+  Async(..), Future(..), IVar(..), getArrays,
   evalPar, liftPar, putIO,
 
 ) where
