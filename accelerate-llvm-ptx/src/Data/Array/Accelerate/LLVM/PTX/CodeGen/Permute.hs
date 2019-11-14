@@ -167,7 +167,7 @@ mkPermute_rmw aenv rmw update project marr = do
                   let
                       rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_integral t ptr val
-                        | primOk    = void . instr' $ AtomicRMW t NonVolatile rmw ptr val (CrossThread, AcquireRelease)
+                        | primOk    = void . instr' $ AtomicRMW (IntegralNumType t) NonVolatile rmw ptr val (CrossThread, AcquireRelease)
                         | otherwise =
                             case rmw of
                               RMW.And -> atomicCAS_rmw s' (A.band t (ir t val)) ptr
@@ -209,7 +209,7 @@ mkPermute_rmw aenv rmw update project marr = do
                       rmw_nonnum TypeChar{} ptr val = do
                         ptr32 <- instr' $ PtrCast (primType   :: PrimType (Ptr Word32)) ptr
                         val32 <- instr' $ BitCast (scalarType :: ScalarType Word32)     val
-                        void   $ instr' $ AtomicRMW (integralType :: IntegralType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
+                        void   $ instr' $ AtomicRMW (numType :: NumType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
                       rmw_nonnum _ _ _ = -- C character types are 8-bit, and thus not supported
                         $internalError "mkPermute_rmw.nonnum" "unexpected transition"
                   case s of
@@ -330,14 +330,14 @@ atomically barriers i action = do
   -- unlocked then we just acquired the lock and the thread can perform the
   -- critical section, otherwise skip to the bottom of the critical section.
   setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlock'
   no   <- cbr ok crit skip
 
   -- If we just acquired the lock, execute the critical section
   setBlock crit
   r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, Release)
   yes  <- br skip
 
   -- At the base of the critical section, threads participate in a memory fence

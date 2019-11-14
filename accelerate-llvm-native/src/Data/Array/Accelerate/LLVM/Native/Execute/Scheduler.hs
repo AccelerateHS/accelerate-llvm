@@ -1,6 +1,10 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE UnboxedTuples       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 -- Copyright   : [2018..2019] The Accelerate Team
@@ -33,6 +37,10 @@ import Data.Sequence                                                ( Seq )
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
 
+import GHC.Base
+
+#include "MachDeps.h"
+
 
 -- An individual computation is a job consisting of a sequence of actions to be
 -- executed by the worker threads in parallel.
@@ -49,10 +57,10 @@ data Job = Job
   }
 
 data Workers = Workers
-  { workerCount       :: {-# UNPACK #-} !Int    -- number of worker threads (length workerThreadIds)
-  , workerThreadIds   :: ![ThreadId]            -- to send signals to / kill
-  , workerActive      :: !(MVar ())             -- fill to signal to the threads to wake up
-  , workerTaskQueue   :: !(LinkedQueue Task)    -- tasks currently being executed; may be from different jobs
+  { workerCount       :: {-# UNPACK #-} !Int                      -- number of worker threads (length workerThreadIds)
+  , workerActive      :: {-# UNPACK #-} !(IORef (MVar ()))        -- fill to signal to the threads to wake up
+  , workerTaskQueue   :: {-# UNPACK #-} !(LinkedQueue Task)       -- tasks currently being executed; may be from different jobs
+  , workerThreadIds   :: ![ThreadId]                              -- to send signals to / kill
   , workerException   :: !(MVar (Seq (ThreadId, SomeException)))  -- XXX: what should we do with these?
   }
 
@@ -62,7 +70,7 @@ data Workers = Workers
 --
 {-# INLINEABLE schedule #-}
 schedule :: Workers -> Job -> IO ()
-schedule Workers{..} Job{..} = do
+schedule workers Job{..} = do
   -- Generate the work list. If there is a finalisation action, there is a bit
   -- of extra work to do at each step.
   --
@@ -72,39 +80,43 @@ schedule Workers{..} Job{..} = do
                 -- The thread which finishes the last task runs the finalisation
                 -- action, so keep track of how many items have been completed.
                 --
-                count <- newIORef (Seq.length jobTasks)
+                count <- newAtomic (Seq.length jobTasks)
                 return $ flip fmap jobTasks $ \io -> Work $ do
                   _result   <- io
-                  remaining <- atomicModifyIORef' count (\i -> let i' = i-1 in (i',i'))
-                  when (remaining == 0) done
+                  remaining <- fetchSubAtomic count -- returns old value
+                  when (remaining == 1) done
 
   -- Submit the tasks to the queue to be executed by the worker threads.
   --
-  -- The signal MVar is filled to indicate to workers that new tasks are
-  -- available. We signal twice so that threads can start work immediately, but
-  -- since this is racey we signal again after adding all items to the queue,
-  -- just in case a thread woke up and failed too many times before being able
-  -- to successfully pop an item from the queue.
-  --
-  -- _ <- tryPutMVar workerActive ()  -- TLM: disabled 2018-05-07
-  mapM_ (pushL workerTaskQueue) tasks
-  _ <- tryPutMVar workerActive ()
-  return ()
+  pushTasks workers tasks
 
 
--- Workers can either be executing tasks (real work), waiting for work, or going
--- into retirement (whence the thread will exit).
+-- Workers can either be executing tasks (real work), waiting for work, or
+-- going into retirement (whence the thread will exit).
 --
--- So that threads don't spin endlessly on an empty queue waiting for work, they
--- will automatically sleep waiting on the signal MVar after several failed
--- retries. Note that 'readMVar' is multiple wake up, so all threads will be
--- efficiently woken up when new work is added via 'submit'.
+-- So that threads don't spin endlessly on an empty queue waiting for work,
+-- they will automatically sleep waiting on the signal MVar after several
+-- failed retries. Note that 'readMVar' is multiple wake up, so all threads
+-- will be efficiently woken up when new work is added via 'submit'.
 --
-runWorker :: MVar () -> LinkedQueue Task -> IO ()
-runWorker activate queue = loop 0
+-- The MVar is stored in an IORef. When scheduling new work, we resolve the
+-- old MVar by putting a value in it, and we put a new, at that moment
+-- unresolved, MVar in the IORef. If the queue is empty in runWorker, then
+-- we will after some attempts wait on an MVar. It is essential that we
+-- first get the MVar out of the IORef, before trying to read from the
+-- queue. If this would have been done the other way around, we could have
+-- a race condition, where new work is pushed after we tried to dequeue
+-- work and before we wait on an MVar. We then wait on the new MVar, which
+-- may cause that this thread stalls forever.
+--
+runWorker :: ThreadId -> IORef (MVar ()) -> LinkedQueue Task -> IO ()
+runWorker tid ref queue = loop 0
   where
     loop :: Int16 -> IO ()
     loop !retries = do
+      -- Extract the activation MVar from the IORef, before trying to claim
+      -- an item from the work queue
+      var <- readIORef ref
       req <- tryPopR queue
       case req of
         -- The number of retries and thread delay on failure are knobs which can
@@ -118,20 +130,20 @@ runWorker activate queue = loop 0
         Nothing   -> if retries < 16
                        then loop (retries+1)
                        else do
-                         D.when D.dump_sched $ do
-                           tid <- myThreadId
-                           message $ printf "sched: %s sleeping" (show tid)
+                         -- This thread will sleep, by waiting on the MVar (var) we previously
+                         -- extracted from the IORef (ref)
                          --
-                         _  <- tryTakeMVar activate -- another worker might have already signalled sleep
-                         () <- readMVar activate    -- blocking, multiple wake-up
+                         -- When some other thread pushes new work, it will also write to that MVar
+                         -- and this thread will wake up.
+                         message $ printf "sched: %s sleeping" (show tid)
+
+                         -- blocking, wake-up when new work is available
+                         () <- readMVar var
                          loop 0
         --
         Just task -> case task of
                        Work io -> io >> loop 0
-                       Retire  ->
-                         D.when D.dump_sched $ do
-                           tid <- myThreadId
-                           message $ printf "sched: %s shutting down" (show tid)
+                       Retire  -> message $ printf "sched: %s shutting down" (show tid)
 
 
 -- Spawn a new worker thread for each capability
@@ -146,15 +158,16 @@ hireWorkers = do
 --
 hireWorkersOn :: [Int] -> IO Workers
 hireWorkersOn caps = do
-  workerActive    <- newEmptyMVar
+  active          <- newEmptyMVar
+  workerActive    <- newIORef active
   workerException <- newEmptyMVar
   workerTaskQueue <- newQ
   workerThreadIds <- forM caps $ \cpu -> do
-                       tid <- mask_ $ forkOnWithUnmask cpu $ \restore ->
+                       tid <- mask_ $ forkOnWithUnmask cpu $ \restore -> do
+                                tid <- myThreadId
                                 catch
-                                  (restore $ runWorker workerActive workerTaskQueue)
-                                  (\e -> do tid <- myThreadId
-                                            appendMVar workerException (tid, e))
+                                  (restore $ runWorker tid workerActive workerTaskQueue)
+                                  (appendMVar workerException . (tid,))
                        --
                        message $ printf "sched: fork %s on capability %d" (show tid) cpu
                        return tid
@@ -166,9 +179,35 @@ hireWorkersOn caps = do
 -- completed first.
 --
 retireWorkers :: Workers -> IO ()
-retireWorkers Workers{..} = do
-  mapM_ (pushL workerTaskQueue) (Seq.replicate workerCount Retire)
-  void $ tryPutMVar workerActive ()
+retireWorkers workers@Workers{..} =
+  pushTasks workers (Seq.replicate workerCount Retire)
+
+
+-- Pushes work to the task queue
+--
+-- Wakes up the worker threads if needed, by writing to the old MVar in
+-- workerActive. We replace workerActive with a new, empty MVar, such that
+-- we can wake them up later when we again have new work.
+--
+pushTasks :: Workers -> Seq Task -> IO ()
+pushTasks Workers{..} tasks = do
+  -- Push work to the queue
+  mapM_ (pushL workerTaskQueue) tasks
+
+  -- Create a new MVar, which we use in a later call to pushTasks to wake
+  -- up the threads, then swap the MVar in the IORef workerActive, with the
+  -- new MVar.
+  --
+  -- This must be atomic, to prevent race conditions when two threads are
+  -- adding new work. Without the atomic, it may occur that some MVar is
+  -- never resolved, causing that a worker thread which waits on that MVar
+  -- to stall.
+  new <- newEmptyMVar
+  old <- atomicModifyIORef' workerActive (new,)
+
+  -- Resolve the old MVar to wake up all waiting threads
+  putMVar old ()
+
 
 -- Kill worker threads immediately.
 --
@@ -184,6 +223,22 @@ numWorkers = workerCount
 
 -- Utility
 -- -------
+
+data Atomic = Atomic !(MutableByteArray# RealWorld)
+
+{-# INLINE newAtomic #-}
+newAtomic :: Int -> IO Atomic
+newAtomic (I# n#) = IO $ \s0 ->
+  case SIZEOF_HSINT                 of { I# size#       ->
+  case newByteArray# size# s0       of { (# s1, mba# #) ->
+  case writeIntArray# mba# 0# n# s1 of { s2             ->  -- non-atomic is ok
+    (# s2, Atomic mba# #) }}}
+
+{-# INLINE fetchSubAtomic #-}
+fetchSubAtomic :: Atomic -> IO Int
+fetchSubAtomic (Atomic mba#) = IO $ \s0 ->
+  case fetchSubIntArray# mba# 0# 1# s0 of { (# s1, old# #) ->
+    (# s1, I# old# #) }
 
 {-# INLINE appendMVar #-}
 appendMVar :: MVar (Seq a) -> a -> IO ()

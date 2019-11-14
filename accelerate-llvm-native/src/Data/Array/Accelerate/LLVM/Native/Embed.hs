@@ -39,14 +39,17 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Control.Concurrent.Unique
 import Control.Monad
 import Data.Hashable
-import Data.Maybe
 import Foreign.Ptr
 import Language.Haskell.TH                                          ( Q, TExp )
 import Numeric
 import System.IO.Unsafe
-import qualified Data.Set                                           as Set
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
+
+#if __GLASGOW_HASKELL__ >= 806
+import Data.Maybe
+import qualified Data.Set                                           as Set
+#endif
 
 
 instance Embed Native where
