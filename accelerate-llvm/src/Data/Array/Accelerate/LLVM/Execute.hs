@@ -367,7 +367,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
           r2 <- new
           fork $ do
             x' <- x
-            (a :: a, b :: b) <- get x'
+            (a, b) <- get x'
             put r1 a
             put r2 b
           return (((), r1), r2)
