@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: tmcdonell/accelerate
-  commit: 156b5ce9232f3d9bbb94f3054daf51e23454fb0b
+- github: ivogabe/accelerate
+  commit: 52ee6eadc0f4f75de8c6e16cf2e611a8f94fd8f1
 
 - github: tmcdonell/llvm-hs
   commit: de47ce4eb8f20cc7ac20e988a0ad44500b6c414d
