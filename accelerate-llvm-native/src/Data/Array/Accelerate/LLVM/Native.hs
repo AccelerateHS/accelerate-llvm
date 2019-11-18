@@ -58,7 +58,7 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, lhsToArraysR, liftLHS )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays, toArr, fromArr, arrays, ArrRepr )
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
 import Data.Array.Accelerate.Smart                                  ( Acc )
@@ -246,7 +246,7 @@ instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
   runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
   runAsync' target (Alam lhs l) k arrs =
     let k' = do aenv  <- k
-                a     <- useRemoteAsync (lhsToArraysR lhs) $ fromArr arrs
+                a     <- useRemoteAsync (arrays @a) $ fromArr arrs
                 return (aenv `push` (lhs, a))
     in runAsync' target l k'
 
@@ -397,7 +397,7 @@ runQ' using target f = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
         s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
-        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), fromArr $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
@@ -409,7 +409,7 @@ runQ' using target f = do
                 [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
                       $(TH.doE ( reverse stmts ++   -- useRemoteAsync
                                [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                               , TH.noBindS [| get $(TH.varE r) |]
+                               , TH.noBindS [| toArr <$> get $(TH.varE r) |]
                                ]))
                  |]
   --

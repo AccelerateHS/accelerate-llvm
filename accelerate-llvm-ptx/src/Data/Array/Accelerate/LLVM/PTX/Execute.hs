@@ -62,8 +62,8 @@ import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 
 
-{-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (Future a) #-}
-{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc PTX aenv a -> Val aenv -> Par PTX (Future a) #-}
+{-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (FutureArraysR PTX a) #-}
+{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc PTX aenv a -> Val aenv -> Par PTX (FutureArraysR PTX a) #-}
 
 -- Array expression evaluation
 -- ---------------------------
@@ -696,12 +696,12 @@ stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank @sh - 1)] ]
 --
 {-# INLINE aforeignOp #-}
 aforeignOp
-    :: (Arrays as, Arrays bs)
-    => String
+    :: String
+    -> ArraysR bs
     -> (as -> Par PTX (Future bs))
     -> as
     -> Par PTX (Future bs)
-aforeignOp name asm arr = do
+aforeignOp name _ asm arr = do
   stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
