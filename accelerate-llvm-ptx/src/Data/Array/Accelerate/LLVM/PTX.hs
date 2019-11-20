@@ -254,10 +254,10 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
     go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
       aenv <- k
       fut  <- executeOpenAcc b aenv
-      res  <- spawn $ do
-                      ans <- getArrays (arrays @tf) fut
-                      newFull ans
-      toArr <$> copyToHostLazy (arrays @tf) res
+      --res  <- spawn $ do
+      ans <- getArrays (arrays @tf) fut
+      --                newFull ans
+      toArr <$> copyToHost (arrays @tf) ans
     go _ _ _ = error "But that's not right, oh, no, what's the story?"
 
 
