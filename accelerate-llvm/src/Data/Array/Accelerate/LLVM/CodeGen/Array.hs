@@ -75,7 +75,7 @@ readArrayPrim
     -> CodeGen arch (Operand e)
 readArrayPrim a v e i arr ix = do
   p <- getElementPtr a e i arr ix
-  x <- instr' $ Load e v p
+  x <- load a e v p
   return x
 
 
@@ -148,25 +148,78 @@ getElementPtr a (VectorScalarType v) i arr ix
           return p
 
 
--- | A wrapper around the Store instruction, which splits non-power-of-two
--- SIMD types into a sequence of smaller writes
+-- | A wrapper around the Load instruction, which splits non-power-of-two
+-- SIMD types into a sequence of smaller reads.
 --
-store
-    :: AddrSpace
-    -> Volatility
-    -> ScalarType e
-    -> Operand (Ptr e)
-    -> Operand e
-    -> CodeGen arch ()
-store _         volatility SingleScalarType{}     ptr val
-  = do_ $ Store volatility ptr val
+-- Note: [Non-power-of-two loads and stores]
+--
+-- Splitting this operation a sequence of smaller power-of-two stores does
+-- not work because those instructions may (will) violate alignment
+-- restrictions, causing a general protection fault. So, we simply
+-- implement those stores as a sequence of stores for each individual
+-- element.
+--
+-- We could do runtime checks for what the pointer alignment is and perform
+-- a vector store when we align on the right boundary, but I'm not sure the
+-- extra complexity is worth it.
+--
+load :: AddrSpace
+     -> ScalarType e
+     -> Volatility
+     -> Operand (Ptr e)
+     -> CodeGen arch (Operand e)
+load addrspace e v p
+  | SingleScalarType{} <- e = instr' $ Load e v p
+  | VectorScalarType s <- e
+  , VectorType n base  <- s
+  , m                  <- fromIntegral n
+  = if popCount m == 1
+       then instr' $ Load e v p
+       else do
+         p' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (SingleScalarType base)) addrspace) p
+         --
+         let go i w
+               | i >= m    = return w
+               | otherwise = do
+                   q  <- instr' $ GetElementPtr p' [integral integralType i]
+                   r  <- instr' $ Load (SingleScalarType base) v q
+                   w' <- instr' $ InsertElement i w r
+                   go (i+1) w'
+         --
+         go 0 (undef e)
 
-store addrspace volatility (VectorScalarType vec) ptr val
-  | popCount size == 1
-  = do_ $ Store volatility ptr val
 
-  | otherwise
-  = do
+-- | A wrapper around the Store instruction, which splits non-power-of-two
+-- SIMD types into a sequence of smaller writes.
+--
+-- See: [Non-power-of-two loads and stores]
+--
+store :: AddrSpace
+      -> Volatility
+      -> ScalarType e
+      -> Operand (Ptr e)
+      -> Operand e
+      -> CodeGen arch ()
+store addrspace volatility e p v
+  | SingleScalarType{} <- e = do_ $ Store volatility p v
+  | VectorScalarType s <- e
+  , VectorType n base  <- s
+  , m                  <- fromIntegral n
+  = if popCount m == 1
+       then do_ $ Store volatility p v
+       else do
+         p' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (SingleScalarType base)) addrspace) p
+         --
+         let go i
+               | i >= m    = return ()
+               | otherwise = do
+                   x <- instr' $ ExtractElement i v
+                   q <- instr' $ GetElementPtr p' [integral integralType i]
+                   _ <- instr' $ Store volatility q x
+                   go (i+1)
+         go 0
+
+{--
       let
           go :: forall arch n t. SingleType t -> Int32 -> Operand (Ptr t) -> Operand (Vec n t) -> CodeGen arch ()
           go t offset ptr' val'
@@ -205,4 +258,5 @@ store addrspace volatility (VectorScalarType vec) ptr val
 
   where
     VectorType (fromIntegral -> size) base = vec
+--}
 
