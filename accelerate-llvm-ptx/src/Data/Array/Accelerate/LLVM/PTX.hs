@@ -69,7 +69,7 @@ import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Embed
 import Data.Array.Accelerate.LLVM.PTX.Execute
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar, getArrays, spawn, newFull )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar, getArrays )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
@@ -144,7 +144,6 @@ runWithIO target a = execute
         build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
         res   <- phase "execute" (evalPar (executeAcc exec
-                                            >>= (\fut -> spawn $ getArrays (arrays @a) fut >>= newFull)
                                             >>= copyToHostLazy (arrays @a)))
         return $ toArr res
 
@@ -254,10 +253,7 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
     go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
       aenv <- k
       fut  <- executeOpenAcc b aenv
-      --res  <- spawn $ do
-      ans <- getArrays (arrays @tf) fut
-      --                newFull ans
-      toArr <$> copyToHost (arrays @tf) ans
+      toArr <$> copyToHostLazy (arrays @tf) fut
     go _ _ _ = error "But that's not right, oh, no, what's the story?"
 
 
