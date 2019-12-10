@@ -36,6 +36,7 @@ import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Execute
+import Data.Array.Accelerate.LLVM.Execute.Async (FutureArraysR)
 import Data.Array.Accelerate.LLVM.State
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data
@@ -68,9 +69,8 @@ import Prelude                                                      hiding ( map
 import Foreign.LibFFI
 import Foreign.Ptr
 
-
-{-# SPECIALISE INLINE executeAcc     :: ExecAcc     Native      a ->             Par Native (Future a) #-}
-{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc Native aenv a -> Val aenv -> Par Native (Future a) #-}
+{-# SPECIALISE INLINE executeAcc     :: ExecAcc     Native      a ->             Par Native (FutureArraysR Native a) #-}
+{-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc Native aenv a -> Val aenv -> Par Native (FutureArraysR Native a) #-}
 
 -- Array expression evaluation
 -- ---------------------------
@@ -690,12 +690,12 @@ stencilBorders sh halo = Seq.fromFunction (2 * rank @sh) face
 
 {-# INLINE aforeignOp #-}
 aforeignOp
-    :: (Arrays as, Arrays bs)
-    => String
+    :: String
+    -> ArraysR bs
     -> (as -> Par Native (Future bs))
     -> as
     -> Par Native (Future bs)
-aforeignOp name asm arr = do
+aforeignOp name _ asm arr = do
   wallBegin <- liftIO getMonotonicTime
   result    <- Debug.timed Debug.dump_exec (\wall cpu -> printf "exec: %s %s" name (Debug.elapsedP wall cpu)) (asm arr)
   wallEnd   <- liftIO getMonotonicTime

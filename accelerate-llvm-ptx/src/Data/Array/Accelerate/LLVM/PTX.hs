@@ -1,8 +1,12 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
@@ -51,20 +55,21 @@ module Data.Array.Accelerate.LLVM.PTX (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
-import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), liftLHS, arraysRepr, lhsToArraysR )
+import Data.Array.Accelerate.Array.Sugar                            ( Arrays, ArrRepr, arrays, toArr, fromArr )
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
 import Data.Array.Accelerate.Error                                  ( internalError )
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Debug                                  as Debug
 
+import Data.Array.Accelerate.LLVM.Embed                             ( HasTypeable(..), lhsTypeable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Embed
 import Data.Array.Accelerate.LLVM.PTX.Execute
-import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar, getArrays )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.State
@@ -129,7 +134,7 @@ runAsyncWith target a = asyncBound (runWithIO target a)
 runIO :: Arrays a => Acc a -> IO a
 runIO a = withPool defaultTargetPool (\target -> runWithIO target a)
 
-runWithIO :: Arrays a => PTX -> Acc a -> IO a
+runWithIO :: forall a. Arrays a => PTX -> Acc a -> IO a
 runWithIO target a = execute
   where
     !acc    = convertAcc a
@@ -138,8 +143,9 @@ runWithIO target a = execute
       evalPTX target $ do
         build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy))
-        return res
+        res   <- phase "execute" (evalPar (executeAcc exec
+                                            >>= copyToHostLazy (arrays @a)))
+        return $ toArr res
 
 
 -- | This is 'runN', specialised to an array program of one argument.
@@ -201,7 +207,7 @@ run1With = runNWith
 -- See also 'runQ', which compiles the Accelerate program at _Haskell_ compile
 -- time, thus eliminating the runtime overhead altogether.
 --
-runN :: Afunction f => f -> AfunctionR f
+runN :: forall f. Afunction f => f -> AfunctionR f
 runN f = exec
   where
     !acc  = convertAfun f
@@ -217,19 +223,19 @@ runN f = exec
     -- depending on which GPU gets scheduled.
     --
     !afun = flip map (unmanaged defaultTargetPool)
-          $ \target -> (ptxContext target, runNWith' target acc)
+          $ \target -> (ptxContext target, runNWith' @f target acc)
 
 
 -- | As 'runN', but execute using the specified target device.
 --
-runNWith :: Afunction f => PTX -> f -> AfunctionR f
+runNWith :: forall f. Afunction f => PTX -> f -> AfunctionR f
 runNWith target f = exec
   where
     !acc  = convertAfun f
-    !exec = runNWith' target acc
+    !exec = runNWith' @f target acc
 
-runNWith' :: PTX -> DelayedAfun f -> f
-runNWith' target acc = exec
+runNWith' :: forall f. Afunction f => PTX -> DelayedAfun (AreprFunctionR f) -> AfunctionR f
+runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
   where
     !afun = unsafePerformIO $ do
               dumpGraph acc
@@ -237,18 +243,18 @@ runNWith' target acc = exec
                 build <- phase "compile" (compileAfun acc) >>= dumpStats
                 link  <- phase "link"    (linkAfun build)
                 return link
-    !exec = go afun (return Empty)
 
-    go :: ExecOpenAfun PTX aenv t -> Par PTX (Val aenv) -> t
-    go (Alam l) k = \ !arrs ->
+    go :: forall aenv t tf trepr. AfunctionRepr t tf trepr -> ExecOpenAfun PTX aenv trepr -> Par PTX (Val aenv) -> tf
+    go (AfunctionReprLam repr) (Alam lhs l) k = \ !arrs ->
       let k' = do aenv <- k
-                  a    <- useRemoteAsync arrs
-                  return (aenv `Push` a)
-      in go l k'
-    go (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
+                  a    <- useRemoteAsync (lhsToArraysR lhs) $ fromArr arrs
+                  return (aenv `push` (lhs, a))
+      in go repr l k'
+    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
       aenv <- k
-      res  <- executeOpenAcc b aenv
-      copyToHostLazy res
+      fut  <- executeOpenAcc b aenv
+      toArr <$> copyToHostLazy (arrays @tf) fut
+    go _ _ _ = error "But that's not right, oh, no, what's the story?"
 
 
 -- | As 'run1', but the computation is executed asynchronously.
@@ -264,7 +270,7 @@ run1AsyncWith = runNAsyncWith
 
 -- | As 'runN', but execute asynchronously.
 --
-runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
+runNAsync :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => f -> r
 runNAsync f = exec
   where
     !acc  = convertAfun f
@@ -277,7 +283,7 @@ runNAsync f = exec
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => PTX -> f -> r
+runNAsyncWith :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => PTX -> f -> r
 runNAsyncWith target f = exec
   where
     !acc  = convertAfun f
@@ -298,22 +304,23 @@ class RunAsync f where
   type RunAsyncR f
   runAsync' :: PTX -> ExecOpenAfun PTX aenv (RunAsyncR f) -> Par PTX (Val aenv) -> f
 
-instance RunAsync b => RunAsync (a -> b) where
-  type RunAsyncR (a -> b) = a -> RunAsyncR b
+instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
+  type RunAsyncR (a -> b) = ArrRepr a -> RunAsyncR b
   runAsync' _      Abody{}  _ _     = error "runAsync: function oversaturated"
-  runAsync' target (Alam l) k !arrs =
+  runAsync' target (Alam lhs l) k !arrs =
     let k' = do aenv  <- k
-                a     <- useRemoteAsync arrs
-                return (aenv `Push` a)
+                a     <- useRemoteAsync (arrays @a) $ fromArr arrs
+                return (aenv `push` (lhs, a))
     in runAsync' target l k'
 
-instance RunAsync (IO (Async b)) where
-  type RunAsyncR (IO (Async b)) = b
+instance Arrays b => RunAsync (IO (Async b)) where
+  type RunAsyncR (IO (Async b)) = ArrRepr b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
   runAsync' target (Abody b) k = asyncBound . phase "execute" . evalPTX target . evalPar $ do
     aenv <- k
-    res  <- executeOpenAcc b aenv
-    copyToHostLazy res
+    ans  <- executeOpenAcc b aenv
+    arrs  <- getArrays (arraysRepr b) ans
+    return $ toArr arrs
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -455,16 +462,16 @@ runQ'_ using k f = do
                    phase "compile" (compileAfun acc) >>= dumpStats
   let
       go :: Typeable aenv => CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam l) xs as stmts = do
+      go (Alam lhs l) xs as stmts | HasTypeable <- lhsTypeable lhs = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
         s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
-        go l (TH.bangP (TH.varP x) : xs) (TH.varE a : as) (return s : stmts)
+        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), fromArr $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
         let
-            aenv  = foldr (\a gamma -> [| $gamma `Push` $a |] ) [| Empty |] as
+            aenv  = foldr (\a gamma -> [| $gamma `push` $a |] ) [| Empty |] as
             body  = embedOpenAcc defaultTarget b
         --
         TH.lamE (reverse xs)

@@ -127,7 +127,7 @@ mkScanl'
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Array (sh:.Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (((), Array (sh:.Int) e), Array sh e))
 mkScanl' aenv combine seed arr
   | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'AllP1 L aenv combine seed arr
@@ -208,7 +208,7 @@ mkScanr'
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Array (sh:.Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (((), Array (sh:.Int) e), Array sh e))
 mkScanr' aenv combine seed arr
   | Just Refl <- matchShapeType @sh @Z
   = foldr1 (+++) <$> sequence [ mkScan'AllP1 R aenv combine seed arr
@@ -550,7 +550,7 @@ mkScan'AllP1
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Vector e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Vector e, Scalar e))
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (((), Vector e), Scalar e))
 mkScan'AllP1 dir aenv combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
@@ -660,7 +660,7 @@ mkScan'AllP2
     => Direction
     -> Gamma aenv
     -> IRFun2 PTX aenv (e -> e -> e)
-    -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
+    -> CodeGen PTX (IROpenAcc PTX aenv (((), Vector e), Scalar e))
 mkScan'AllP2 dir aenv combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
@@ -766,7 +766,7 @@ mkScan'AllP3
     => Direction
     -> Gamma aenv                                   -- ^ array environment
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
+    -> CodeGen PTX (IROpenAcc PTX aenv (((), Vector e), Scalar e))
 mkScan'AllP3 dir aenv combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
@@ -1047,7 +1047,7 @@ mkScan'Dim
     -> IRFun2     PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRExp      PTX aenv e                        -- ^ seed element
     -> MIRDelayed PTX aenv (Array (sh:.Int) e)      -- ^ input data
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (((), Array (sh:.Int) e), Array sh e))
 mkScan'Dim dir aenv combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
@@ -1242,7 +1242,7 @@ mkScan'Fill
     :: forall aenv sh e. (Shape sh, Elt e)
     => Gamma aenv
     -> IRExp PTX aenv e
-    -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh:.Int) e, Array sh e))
+    -> CodeGen PTX (IROpenAcc PTX aenv (((), Array (sh:.Int) e), Array sh e))
 mkScan'Fill aenv seed =
   Safe.coerce <$> mkGenerate @_ @sh aenv (IRFun1 (const seed))
 

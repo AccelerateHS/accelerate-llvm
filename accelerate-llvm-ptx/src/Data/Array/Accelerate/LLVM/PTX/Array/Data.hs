@@ -101,143 +101,144 @@ instance Remote PTX where
 --
 {-# INLINEABLE copyToHostLazy #-}
 copyToHostLazy
-    :: Arrays arrs
-    => Future arrs
+    :: ArraysR arrs
+    -> FutureArraysR PTX arrs
     -> Par PTX arrs
-copyToHostLazy future@(Future ref) = do
-  ptx   <- gets llvmTarget
-  arrs  <- liftIO $ do
-    ivar  <- readIORef ref
-    arrs  <- case ivar of -- peek at the underlying array
-               Full a         -> return a
-               Pending _ _ a  -> return a
-               Empty          -> $internalError "copyToHostLazy" "blocked on an IVar"
+copyToHostLazy ArraysRunit () = return ()
+copyToHostLazy (ArraysRpair r1 r2) (f1, f2) = do
+  a1 <- copyToHostLazy r1 f1
+  a2 <- copyToHostLazy r2 f2
+  return (a1, a2)
+copyToHostLazy (ArraysRarray) future@(Future ref) = do
+  ptx <- gets llvmTarget
+  liftIO $ do
+    ivar <- readIORef ref
+    (Array sh adata) <- case ivar of
+      Full a        -> return a
+      Pending _ _ a -> return a
+      Empty         -> $internalError "copyToHostLazy" "blocked on an IVar"
+    -- Note: [Lazy device-host transfers]
     --
-    runArrays arrs $ \(Array sh adata) ->
-      let
-          -- Note: [Lazy device-host transfers]
-          --
-          -- This needs must be non-strict at the leaves of the datatype (that
-          -- is, the UniqueArray pointers). This means we can traverse the
-          -- ArrayData constructors (in particular, the spine defined by Unit
-          -- and Pair) until we reach the array we care about, without forcing
-          -- the other fields.
-          --
-          -- https://github.com/AccelerateHS/accelerate/issues/437
-          --
-          -- Furthermore, we only want to transfer the data if the host pointer
-          -- is currently unevaluated. This situation can occur for example if
-          -- the argument to 'use' or 'unit' is returned as part of the result
-          -- of a 'run'. Peek at GHC's underlying closure representation and
-          -- check whether the pointer is a thunk, and only initiate the
-          -- transfer if so.
-          --
-          -- XXX: The current approach of checking the heap representation
-          -- (function 'evaluated' below) is not particularly reliable. We
-          -- should improve this situation somehow.
-          --    -- TLM 2019-06-06
-          --
-          peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-                => ArrayData e
-                -> UniqueArray a
-                -> Int
-                -> IO (UniqueArray a)
-          peekR ad (UniqueArray uid (Lifetime lft weak fp)) n = unsafeInterleaveIO $ do
-            ok  <- evaluated fp
-            fp' <- if ok
-                     then return fp
-                     else unsafeInterleaveIO . evalPTX ptx . evalPar $ do
-                            !_ <- get future -- stream synchronisation
-                            !_ <- block =<< Prim.peekArrayAsync n ad
-                            return fp
-            --
-            return $ UniqueArray uid (Lifetime lft weak fp')
+    -- This needs must be non-strict at the leaves of the datatype (that
+    -- is, the UniqueArray pointers). This means we can traverse the
+    -- ArrayData constructors (in particular, the spine defined by Unit
+    -- and Pair) until we reach the array we care about, without forcing
+    -- the other fields.
+    --
+    -- https://github.com/AccelerateHS/accelerate/issues/437
+    --
+    -- Furthermore, we only want to transfer the data if the host pointer
+    -- is currently unevaluated. This situation can occur for example if
+    -- the argument to 'use' or 'unit' is returned as part of the result
+    -- of a 'run'. Peek at GHC's underlying closure representation and
+    -- check whether the pointer is a thunk, and only initiate the
+    -- transfer if so.
+    --
+    -- XXX: The current approach of checking the heap representation
+    -- (function 'evaluated' below) is not particularly reliable. We
+    -- should improve this situation somehow.
+    --    -- TLM 2019-06-06
+    --
 
-          -- Check that the argument is evaluated to normal form. In particular
-          -- we are only concerned with the array payload (ForeignPtr).
-          --
-          evaluated :: a -> IO Bool
+    let
+      peekR :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
+            => ArrayData e
+            -> UniqueArray a
+            -> Int
+            -> IO (UniqueArray a)
+      peekR ad (UniqueArray uid (Lifetime lft weak fp)) n = unsafeInterleaveIO $ do
+        ok  <- evaluated fp
+        fp' <- if ok
+                  then return fp
+                  else unsafeInterleaveIO . evalPTX ptx . evalPar $ do
+                        !_ <- get future -- stream synchronisation
+                        !_ <- block =<< Prim.peekArrayAsync n ad
+                        return fp
+        --
+        return $ UniqueArray uid (Lifetime lft weak fp')
+
+      -- Check that the argument is evaluated to normal form. In particular
+      -- we are only concerned with the array payload (ForeignPtr).
+      --
+      evaluated :: a -> IO Bool
 #if __GLASGOW_HASKELL__ >= 806
-          evaluated x = do
-            c <- getClosureData x
-            case c of
-              ThunkClosure{}        -> return False
-              ArrWordsClosure{}     -> return True                      -- ByteArray#
-              ConstrClosure{..}     -> and <$> mapM evaluated ptrArgs   -- a data constructor
-              BlackholeClosure{..}  -> evaluated indirectee             -- evaluated by another thread (check if this is just an indirection?)
-              MutVarClosure{..}     -> evaluated var                    -- in case this is not a PlainForeignPtr
-              _                     -> do
-                Debug.when Debug.verbose $
-                  Debug.traceIO Debug.dump_gc $
-                    printf "copyToHostLazy encountered: %s" (show c)
-                return False
+      evaluated x = do
+        c <- getClosureData x
+        case c of
+          ThunkClosure{}        -> return False
+          ArrWordsClosure{}     -> return True                      -- ByteArray#
+          ConstrClosure{..}     -> and <$> mapM evaluated ptrArgs   -- a data constructor
+          BlackholeClosure{..}  -> evaluated indirectee             -- evaluated by another thread (check if this is just an indirection?)
+          MutVarClosure{..}     -> evaluated var                    -- in case this is not a PlainForeignPtr
+          _                     -> do
+            Debug.when Debug.verbose $
+              Debug.traceIO Debug.dump_gc $
+                printf "copyToHostLazy encountered: %s" (show c)
+            return False
 #else
 #if UNBOXED_TUPLES
-          evaluated x =
-            case unpackClosure# x of
-              (# iptr, ptrs, _ #) -> do
-                  let iptr0 = Ptr iptr
-                  let iptr1
-                        | ghciTablesNextToCode = iptr0
-                        | otherwise            = iptr0 `plusPtr` negate wORD_SIZE
-                  itbl <- peekItbl iptr1
-                  case tipe itbl of
-                    ARR_WORDS                                     -> return True
-                    i | i >= THUNK  && i < THUNK_SELECTOR         -> return False
-                    i | i >= CONSTR && i <= CONSTR_NOCAF          -> and <$> mapM evaluated (dumpArray# ptrs)
-                    i | i == MUT_VAR_CLEAN || i == MUT_VAR_DIRTY  -> evaluated (headArray# ptrs)
-                    BLACKHOLE                                     -> evaluated (headArray# ptrs)
-                    _                                             -> return False
+      evaluated x =
+        case unpackClosure# x of
+          (# iptr, ptrs, _ #) -> do
+              let iptr0 = Ptr iptr
+              let iptr1
+                    | ghciTablesNextToCode = iptr0
+                    | otherwise            = iptr0 `plusPtr` negate wORD_SIZE
+              itbl <- peekItbl iptr1
+              case tipe itbl of
+                ARR_WORDS                                     -> return True
+                i | i >= THUNK  && i < THUNK_SELECTOR         -> return False
+                i | i >= CONSTR && i <= CONSTR_NOCAF          -> and <$> mapM evaluated (dumpArray# ptrs)
+                i | i == MUT_VAR_CLEAN || i == MUT_VAR_DIRTY  -> evaluated (headArray# ptrs)
+                BLACKHOLE                                     -> evaluated (headArray# ptrs)
+                _                                             -> return False
 
-          wORD_SIZE = sizeOf (undefined::Word)
+      wORD_SIZE = sizeOf (undefined::Word)
 
-          -- using indexArray# makes sure that the 'Any' is looked up without
-          -- evaluating the value itself. This is not possible with Data.Array.!
-          --
-          dumpArray# :: Array# Any -> [Any]
-          dumpArray# arr# = go 0#
-            where
-              l#    = sizeofArray# arr#
-              go i# = case i# <# l# of
-                        0# -> []
-                        _  -> case indexArray# arr# i# of
-                                (# h #) -> h : go (i# +# 1#)
+      -- using indexArray# makes sure that the 'Any' is looked up without
+      -- evaluating the value itself. This is not possible with Data.Array.!
+      --
+      dumpArray# :: Array# Any -> [Any]
+      dumpArray# arr# = go 0#
+        where
+          l#    = sizeofArray# arr#
+          go i# = case i# <# l# of
+                    0# -> []
+                    _  -> case indexArray# arr# i# of
+                            (# h #) -> h : go (i# +# 1#)
 
-          headArray# :: Array# Any -> Any
-          headArray# arr# =
-            case indexArray# arr# 0# of
-              (# h #) -> h
+      headArray# :: Array# Any -> Any
+      headArray# arr# =
+        case indexArray# arr# 0# of
+          (# h #) -> h
 #else
-          evaluated _ =
-            return False
+      evaluated _ =
+        return False
 #endif
 #endif
 
-          runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
-          runR ArrayEltRunit               AD_Unit             !_ = return AD_Unit
-          runR (ArrayEltRpair !aeR2 !aeR1) (AD_Pair !ad2 !ad1) !n = AD_Pair   <$> runR aeR2 ad2 n <*> runR aeR1 ad1 n
-          runR (ArrayEltRvec  !aeR)        (AD_Vec w# !ad)     !n = AD_Vec w# <$> runR aeR ad (I# w# * n)
-          --
-          runR ArrayEltRint    ad@(AD_Int    ua) !n = AD_Int    <$> peekR ad ua n
-          runR ArrayEltRint8   ad@(AD_Int8   ua) !n = AD_Int8   <$> peekR ad ua n
-          runR ArrayEltRint16  ad@(AD_Int16  ua) !n = AD_Int16  <$> peekR ad ua n
-          runR ArrayEltRint32  ad@(AD_Int32  ua) !n = AD_Int32  <$> peekR ad ua n
-          runR ArrayEltRint64  ad@(AD_Int64  ua) !n = AD_Int64  <$> peekR ad ua n
-          runR ArrayEltRword   ad@(AD_Word   ua) !n = AD_Word   <$> peekR ad ua n
-          runR ArrayEltRword8  ad@(AD_Word8  ua) !n = AD_Word8  <$> peekR ad ua n
-          runR ArrayEltRword16 ad@(AD_Word16 ua) !n = AD_Word16 <$> peekR ad ua n
-          runR ArrayEltRword32 ad@(AD_Word32 ua) !n = AD_Word32 <$> peekR ad ua n
-          runR ArrayEltRword64 ad@(AD_Word64 ua) !n = AD_Word64 <$> peekR ad ua n
-          runR ArrayEltRhalf   ad@(AD_Half   ua) !n = AD_Half   <$> peekR ad ua n
-          runR ArrayEltRfloat  ad@(AD_Float  ua) !n = AD_Float  <$> peekR ad ua n
-          runR ArrayEltRdouble ad@(AD_Double ua) !n = AD_Double <$> peekR ad ua n
-          runR ArrayEltRbool   ad@(AD_Bool   ua) !n = AD_Bool   <$> peekR ad ua n
-          runR ArrayEltRchar   ad@(AD_Char   ua) !n = AD_Char   <$> peekR ad ua n
-      in
-      Array sh <$> runR arrayElt adata (R.size sh)
-  --
-  return arrs
-
+      runR :: ArrayEltR e -> ArrayData e -> Int -> IO (ArrayData e)
+      runR ArrayEltRunit               AD_Unit             !_ = return AD_Unit
+      runR (ArrayEltRpair !aeR2 !aeR1) (AD_Pair !ad2 !ad1) !n = AD_Pair   <$> runR aeR2 ad2 n <*> runR aeR1 ad1 n
+      runR (ArrayEltRvec  !aeR)        (AD_Vec w# !ad)     !n = AD_Vec w# <$> runR aeR ad (I# w# * n)
+      --
+      runR ArrayEltRint    ad@(AD_Int    ua) !n = AD_Int    <$> peekR ad ua n
+      runR ArrayEltRint8   ad@(AD_Int8   ua) !n = AD_Int8   <$> peekR ad ua n
+      runR ArrayEltRint16  ad@(AD_Int16  ua) !n = AD_Int16  <$> peekR ad ua n
+      runR ArrayEltRint32  ad@(AD_Int32  ua) !n = AD_Int32  <$> peekR ad ua n
+      runR ArrayEltRint64  ad@(AD_Int64  ua) !n = AD_Int64  <$> peekR ad ua n
+      runR ArrayEltRword   ad@(AD_Word   ua) !n = AD_Word   <$> peekR ad ua n
+      runR ArrayEltRword8  ad@(AD_Word8  ua) !n = AD_Word8  <$> peekR ad ua n
+      runR ArrayEltRword16 ad@(AD_Word16 ua) !n = AD_Word16 <$> peekR ad ua n
+      runR ArrayEltRword32 ad@(AD_Word32 ua) !n = AD_Word32 <$> peekR ad ua n
+      runR ArrayEltRword64 ad@(AD_Word64 ua) !n = AD_Word64 <$> peekR ad ua n
+      runR ArrayEltRhalf   ad@(AD_Half   ua) !n = AD_Half   <$> peekR ad ua n
+      runR ArrayEltRfloat  ad@(AD_Float  ua) !n = AD_Float  <$> peekR ad ua n
+      runR ArrayEltRdouble ad@(AD_Double ua) !n = AD_Double <$> peekR ad ua n
+      runR ArrayEltRbool   ad@(AD_Bool   ua) !n = AD_Bool   <$> peekR ad ua n
+      runR ArrayEltRchar   ad@(AD_Char   ua) !n = AD_Char   <$> peekR ad ua n
+    
+    Array sh <$> runR arrayElt adata (R.size sh)
 
 -- | Clone an array into a newly allocated array on the device.
 --

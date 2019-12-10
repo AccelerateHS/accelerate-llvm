@@ -184,8 +184,8 @@ class Remote arch => Execute arch where
                 -> Delayed (Array sh b)
                 -> Par arch (FutureR arch (Array sh c))
 
-  aforeign      :: (Arrays as, Arrays bs)
-                => String
+  aforeign      :: String
+                -> ArraysR bs
                 -> (as -> Par arch (FutureR arch bs))
                 -> as
                 -> Par arch (FutureR arch bs)
@@ -214,7 +214,7 @@ data Delayed a where
 executeAcc
     :: Execute arch
     => ExecAcc arch a
-    -> Par arch (FutureR arch a)
+    -> Par arch (FutureArraysR arch a)
 executeAcc !acc =
   executeOpenAcc acc Empty
 
@@ -236,8 +236,8 @@ class ExecuteAfun arch f where
 instance (Remote arch, ExecuteAfun arch b) => ExecuteAfun arch (a -> b) where
   type ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
   {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Abody{}  _ _    = $internalError "executeOpenAfun" "malformed array function"
-  executeOpenAfun (Alam f) k arrs =
+  executeOpenAfun Abody{}      _ _    = $internalError "executeOpenAfun" "malformed array function"
+  executeOpenAfun (Alam lhs f) k arrs =
     let k' = do aenv <- k
                 a    <- useRemoteAsync arrs
                 return (aenv `Apush` a)
@@ -293,27 +293,30 @@ executeOpenAcc
     :: forall arch aenv arrs. Execute arch
     => ExecOpenAcc arch aenv arrs
     -> ValR arch aenv
-    -> Par arch (FutureR arch arrs)
+    -> Par arch (FutureArraysR arch arrs)
 executeOpenAcc !topAcc !aenv = travA topAcc
   where
-    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureR arch a)
+    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureArraysR arch a)
     travA (EvalAcc pacc) =
       case pacc of
-        Use arrs            -> spawn $ useRemoteAsync (toArr arrs)
+        Use arrs            -> spawn $ useRemoteAsync ArraysRarray arrs
         Unit x              -> unit x
-        Avar ix             -> return $ prj ix aenv
-        Alet bnd body       -> alet bnd body
-        Atuple tup          -> atuple tup
+        Avar (ArrayVar ix)  -> return $ prj ix aenv
+        Alet lhs bnd body   -> alet lhs bnd body
+        Apair a1 a2         -> liftM2 (,) (travA a1) (travA a2)
+        Anil                -> return ()
         Alloc sh            -> allocate sh
         Apply f a           -> travAF f =<< spawn (travA a)
-        Aprj ix tup         -> liftF1 (evalPrj ix . fromAtuple) (travA tup)
         Acond p t e         -> acond t e =<< travE p
         Awhile p f a        -> awhile p f =<< spawn (travA a)
-        Reshape sh ix       -> liftF2 reshape (travE sh) (return $ prj ix aenv)
-        Unzip tix ix        -> liftF1 (unzip tix) (return $ prj ix aenv)
-        Aforeign str asm a  -> do
+        Reshape sh (ArrayVar ix)
+                            -> liftF2 reshape (travE sh) (return $ prj ix aenv)
+        Unzip tix (ArrayVar ix)
+                            -> liftF1 (unzip tix) (return $ prj ix aenv)
+        Aforeign str r asm a -> do
           x <- travA a
-          spawn $ aforeign str asm =<< get x
+          y <- spawn $ aforeign str r asm =<< getArrays (arraysRepr a) x
+          split r y
 
     travA (ExecAcc !gamma !kernel pacc) =
       case pacc of
@@ -332,8 +335,10 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Scanr a             -> exec1 scanr    (travD a)
         Scanl1 a            -> exec1 scanl1   (travD a)
         Scanr1 a            -> exec1 scanr1   (travD a)
-        Scanl' a            -> exec1 scanl'   (travD a)
-        Scanr' a            -> exec1 scanr'   (travD a)
+        Scanl' a            -> splitPair
+                             $ exec1 scanl'   (travD a)
+        Scanr' a            -> splitPair
+                             $ exec1 scanr'   (travD a)
         Permute d a         -> exec2 (permute_ d) (travA d) (travD a)
         Stencil1 h a        -> exec1 (stencil1 h) (travD a)
         Stencil2 h a b      -> exec2 (stencil2 h) (travD a) (travD b)
@@ -355,9 +360,21 @@ executeOpenAcc !topAcc !aenv = travA topAcc
           y' <- y
           spawn $ id =<< liftM2 (f kernel gamma aenv) (get x') (get y')
 
-    travAF :: ExecOpenAfun arch aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
-    travAF (Alam (Abody f)) a = executeOpenAcc f (aenv `Push` a)
-    travAF _                _ = error "boop!"
+        splitPair :: forall a b. Par arch (FutureR arch (a, b))
+              -> Par arch (((), FutureR arch a), FutureR arch b)
+        splitPair x = do
+          r1 <- new
+          r2 <- new
+          fork $ do
+            x' <- x
+            (a, b) <- get x'
+            put r1 a
+            put r2 b
+          return (((), r1), r2)
+
+    travAF :: ExecOpenAfun arch aenv (a -> b) -> FutureArraysR arch a -> Par arch (FutureArraysR arch b)
+    travAF (Alam lhs (Abody f)) a = executeOpenAcc f $ aenv `push` (lhs, a)
+    travAF _                    _ = error "boop!"
 
     travE :: ExecExp arch aenv t -> Par arch (FutureR arch t)
     travE exp = executeExp exp aenv
@@ -366,29 +383,16 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     travD (AST.Delayed sh) = liftF1 Delayed  (travE sh)
     travD (AST.Manifest a) = liftF1 Manifest (travA a)
 
-    travT :: Atuple (ExecOpenAcc arch aenv) t -> Par arch (FutureR arch t)
-    travT NilAtup        = newFull ()
-    travT (SnocAtup t a) = liftF2 (,) (travT t) (travA a)
-
     unit :: Elt t => ExecExp arch aenv t -> Par arch (FutureR arch (Scalar t))
     unit x = do
       x'   <- travE x
       spawn $ newRemoteAsync Z . const =<< get x'
 
-    atuple :: (Arrays t, IsAtuple t)
-           => Atuple (ExecOpenAcc arch aenv) (TupleRepr t)
-           -> Par arch (FutureR arch t)
-    atuple tup = do
-      r    <- new
-      tup' <- travT tup
-      fork $ put r . toAtuple =<< get tup'
-      return r
-
     -- Let bindings
-    alet :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch (aenv, a) b -> Par arch (FutureR arch b)
-    alet bnd body = do
+    alet :: LeftHandSide a aenv aenv' -> ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv' b -> Par arch (FutureArraysR arch b)
+    alet lhs bnd body = do
       bnd'  <- spawn $ executeOpenAcc bnd aenv
-      body' <- spawn $ executeOpenAcc body (aenv `Push` bnd')
+      body' <- spawn $ executeOpenAcc body $ aenv `push` (lhs, bnd')
       return body'
 
     -- Allocate an array on the remote device
@@ -402,7 +406,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       return r
 
     -- Array level conditionals
-    acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
+    acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureArraysR arch a)
     acond yes no p =
       spawn $ do
         c <- block p
@@ -412,8 +416,8 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     -- Array loops
     awhile :: ExecOpenAfun arch aenv (a -> Scalar Bool)
            -> ExecOpenAfun arch aenv (a -> a)
-           -> FutureR arch a
-           -> Par arch (FutureR arch a)
+           -> FutureArraysR arch a
+           -> Par arch (FutureArraysR arch a)
     awhile p f a = do
       r  <- get =<< travAF p a
       ok <- indexRemote r 0
@@ -543,7 +547,7 @@ executeOpenExp rootExp env aenv = travE rootExp
       NilTup      -> newFull ()
       SnocTup t e -> liftF2 (,) (travT t) (travE e)
 
-    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureR arch a)
+    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureArraysR arch a)
     travA acc = executeOpenAcc acc aenv
 
     foreignE :: ExecFun arch () (a -> b) -> ExecOpenExp arch env aenv a -> Par arch (FutureR arch b)
@@ -647,3 +651,13 @@ infixr 0 $$
 ($$) :: (b -> a) -> (c -> d -> b) -> c -> d -> a
 (f $$ g) x y = f (g x y)
 
+split :: Execute arch => ArraysR a -> FutureR arch a -> Par arch (FutureArraysR arch a)
+split repr x = do
+  rs <- newArrays repr
+  fork $ get x >>= fill repr rs
+  return rs
+  where
+    fill :: Execute arch => ArraysR a -> FutureArraysR arch a -> a -> Par arch ()
+    fill ArraysRunit _ _ = return ()
+    fill ArraysRarray r a = put r a
+    fill (ArraysRpair repr1 repr2) (r1, r2) (a1, a2) = fill repr1 r1 a1 >> fill repr2 r2 a2

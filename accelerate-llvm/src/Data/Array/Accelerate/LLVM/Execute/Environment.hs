@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.Execute.Environment
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( Idx(..) )
+import Data.Array.Accelerate.AST                                    ( Idx(..), LeftHandSide(..) )
 #if __GLASGOW_HASKELL__ < 800
 import Data.Array.Accelerate.Error
 #endif
@@ -34,6 +34,10 @@ data ValR arch env where
   Empty :: ValR arch ()
   Push  :: ValR arch env -> FutureR arch t -> ValR arch (env, t)
 
+push :: ValR arch env -> (LeftHandSide t env env', FutureArraysR arch t) -> ValR arch env'
+push env (LeftHandSideWildcard _, _       ) = env
+push env (LeftHandSideArray     , a       ) = env `Push` a
+push env (LeftHandSidePair l1 l2, (a1, a2)) = push env (l1, a1) `push` (l2, a2)
 
 -- Projection of a value from a valuation using a de Bruijn index.
 --

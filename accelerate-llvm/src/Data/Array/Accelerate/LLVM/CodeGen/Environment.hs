@@ -20,7 +20,7 @@ import Data.String
 import Text.Printf
 import qualified Data.IntMap                                    as IM
 
-import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt )
+import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt, ArrayVar(..) )
 import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
@@ -88,6 +88,6 @@ makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
 
 -- | A free variable
 --
-freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
-freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
+freevar :: ArrayVar aenv a -> IntMap (Idx' aenv)
+freevar (ArrayVar ix) = IM.singleton (idxToInt ix) (Idx' ix)
 

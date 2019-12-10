@@ -25,9 +25,9 @@ import Data.Typeable
 -- array and scalar expressions.
 --
 class Foreign arch where
-  foreignAcc :: (A.Foreign asm, Typeable a, Typeable b)
+  foreignAcc :: (A.Foreign asm, A.Arrays a, A.Arrays b)
              => asm (a -> b)
-             -> Maybe (a -> Par arch (FutureR arch b))
+             -> Maybe (ArrRepr a -> Par arch (FutureR arch (ArrRepr b)))
   foreignAcc _ = Nothing
 
   foreignExp :: (A.Foreign asm, Typeable x, Typeable y)
