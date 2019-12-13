@@ -5,10 +5,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Foreign
--- Copyright   : [2016..2018] Trevor L. McDonell
+-- Copyright   : [2016..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -44,7 +44,7 @@ import Data.Typeable
 
 instance Foreign Native where
   foreignAcc (ff :: asm (a -> b))
-    | Just (ForeignAcc _ asm :: ForeignAcc (a -> b)) <- cast ff = Just asm
+    | Just (ForeignAcc _ asm :: ForeignAcc (S.ArrRepr a -> S.ArrRepr b)) <- cast ff = Just asm
     | otherwise                                                 = Nothing
 
   foreignExp (ff :: asm (x -> y))

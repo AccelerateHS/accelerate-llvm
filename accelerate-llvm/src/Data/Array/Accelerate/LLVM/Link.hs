@@ -6,10 +6,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Link
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -60,9 +60,12 @@ data ExecOpenAcc arch aenv a where
             -> PreOpenAccSkeleton ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
-  EvalAcc   :: Arrays a
-            => PreOpenAccCommand  ExecOpenAcc arch aenv a
+  EvalAcc   :: PreOpenAccCommand  ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
+
+instance HasArraysRepr (ExecOpenAcc arch) where
+  arraysRepr (ExecAcc _ _ a) = arraysRepr a
+  arraysRepr (EvalAcc a)     = arraysRepr a
 
 -- An AST annotated with compiled and linked functions in the target address
 -- space, suitable for execution.
@@ -101,8 +104,8 @@ linkOpenAfun
     :: Link arch
     => CompiledOpenAfun arch aenv f
     -> LLVM arch (ExecOpenAfun arch aenv f)
-linkOpenAfun (Alam l)  = Alam  <$> linkOpenAfun l
-linkOpenAfun (Abody b) = Abody <$> linkOpenAcc b
+linkOpenAfun (Alam lhs l) = Alam lhs <$> linkOpenAfun l
+linkOpenAfun (Abody b)    = Abody    <$> linkOpenAcc b
 
 {-# INLINEABLE linkOpenAcc #-}
 linkOpenAcc
@@ -116,46 +119,46 @@ linkOpenAcc = travA
       case pacc of
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
-        Use arrs                -> rnfArrs (arrays @arrs) arrs `seq` return (Use arrs)
+        Use arr                 -> rnf arr `seq` return (Use arr)
         Unit e                  -> Unit         <$> travE e
         Alloc sh                -> Alloc        <$> travE sh
-        Alet a b                -> Alet         <$> travA a  <*> travA b
+        Alet lhs a b            -> Alet lhs     <$> travA a  <*> travA b
         Apply f a               -> Apply        <$> travAF f <*> travA a
         Awhile p f a            -> Awhile       <$> travAF p <*> travAF f <*> travA a
         Acond p t e             -> Acond        <$> travE p  <*> travA t  <*> travA e
-        Atuple tup              -> Atuple       <$> travAtup tup
-        Aprj ix tup             -> Aprj ix      <$> travA tup
+        Apair a1 a2             -> Apair        <$> travA a1 <*> travA a2
+        Anil                    -> return Anil
         Reshape s ix            -> Reshape      <$> travE s <*> pure ix
-        Aforeign s f a          -> Aforeign s f <$> travA a
+        Aforeign s r f a        -> Aforeign s r f <$> travA a
 
     travA (BuildAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
       case pacc of
-        Map sh                  -> Map          <$> travE sh
+        Map a                   -> Map          <$> travA a
         Generate sh             -> Generate     <$> travE sh
-        Transform sh            -> Transform    <$> travE sh
-        Backpermute sh          -> Backpermute  <$> travE sh
-        Fold sh                 -> Fold         <$> travE sh
-        Fold1 sh                -> Fold1        <$> travE sh
-        FoldSeg sa ss           -> FoldSeg      <$> travE sa <*> travE ss
-        Fold1Seg sa ss          -> Fold1Seg     <$> travE sa <*> travE ss
-        Scanl sh                -> Scanl        <$> travE sh
-        Scanl1 sh               -> Scanl1       <$> travE sh
-        Scanl' sh               -> Scanl'       <$> travE sh
-        Scanr sh                -> Scanr        <$> travE sh
-        Scanr1 sh               -> Scanr1       <$> travE sh
-        Scanr' sh               -> Scanr'       <$> travE sh
-        Permute sh d            -> Permute      <$> travE sh <*> travA d
-        Stencil1 h sh           -> Stencil1 h   <$> travE sh
-        Stencil2 h sh1 sh2      -> Stencil2 h   <$> travE sh1 <*> travE sh2
+        Transform sh a          -> Transform    <$> travE sh <*> travA a
+        Backpermute sh a        -> Backpermute  <$> travE sh <*> travA a
+        Fold a                  -> Fold         <$> travD a
+        Fold1 a                 -> Fold1        <$> travD a
+        FoldSeg a s             -> FoldSeg      <$> travD a <*> travD s
+        Fold1Seg a s            -> Fold1Seg     <$> travD a <*> travD s
+        Scanl a                 -> Scanl        <$> travD a
+        Scanl1 a                -> Scanl1       <$> travD a
+        Scanl' a                -> Scanl'       <$> travD a
+        Scanr a                 -> Scanr        <$> travD a
+        Scanr1 a                -> Scanr1       <$> travD a
+        Scanr' a                -> Scanr'       <$> travD a
+        Permute d a             -> Permute      <$> travA d <*> travD a
+        Stencil1 h a            -> Stencil1 h   <$> travD a
+        Stencil2 h a b          -> Stencil2 h   <$> travD a <*> travD b
 
     travAF :: CompiledOpenAfun arch aenv f
            -> LLVM arch (ExecOpenAfun arch aenv f)
     travAF = linkOpenAfun
 
-    travAtup :: Atuple (CompiledOpenAcc arch aenv) a
-             -> LLVM arch (Atuple (ExecOpenAcc arch aenv) a)
-    travAtup NilAtup        = return NilAtup
-    travAtup (SnocAtup t a) = SnocAtup <$> travAtup t <*> travA a
+    travD :: DelayedOpenAcc CompiledOpenAcc  arch aenv a
+          -> LLVM arch (DelayedOpenAcc ExecOpenAcc arch aenv a)
+    travD (Manifest a) = Manifest <$> travA a
+    travD (Delayed sh) = Delayed  <$> travE sh
 
     travF :: CompiledOpenFun arch env aenv t
           -> LLVM arch (ExecOpenFun arch env aenv t)
@@ -199,9 +202,4 @@ linkOpenAcc = travA
           -> LLVM arch (Tuple (ExecOpenExp arch env aenv) t)
     travT NilTup        = return NilTup
     travT (SnocTup t e) = SnocTup <$> travT t <*> travE e
-
-    rnfArrs :: ArraysR a -> a -> ()
-    rnfArrs (ArraysRpair ar1 ar2) (a1, a2) = rnfArrs ar1 a1 `seq` rnfArrs ar2 a2
-    rnfArrs ArraysRarray arr               = rnf arr
-    rnfArrs ArraysRunit ()                 = ()
 

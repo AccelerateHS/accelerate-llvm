@@ -1,13 +1,13 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -15,10 +15,8 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
-import Prelude                                                  hiding ( fromIntegral )
-
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -36,23 +34,23 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
-mkMap :: forall aenv sh a b. Elt b
-      => Gamma         aenv
-      -> IRFun1    PTX aenv (a -> b)
-      -> IRDelayed PTX aenv (Array sh a)
-      -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh b))
-mkMap aenv apply IRDelayed{..} =
+mkMap :: forall aenv sh a b. (Shape sh, Elt a, Elt b)
+      => Gamma       aenv
+      -> IRFun1  PTX aenv (a -> b)
+      -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
+mkMap aenv apply =
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh b))
+      (arrOut, paramOut)  = mutableArray @sh "out"
+      (arrIn,  paramIn)   = mutableArray @sh "in"
       paramEnv            = envParam aenv
   in
-  makeOpenAcc "map" (paramOut ++ paramEnv) $ do
+  makeOpenAcc "map" (paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrOut)
+    end   <- shapeSize (irArrayShape arrIn)
 
     imapFromTo start end $ \i -> do
-      xs <- app1 delayedLinearIndex i
+      xs <- readArray arrIn i
       ys <- app1 apply xs
       writeArray arrOut i ys
 

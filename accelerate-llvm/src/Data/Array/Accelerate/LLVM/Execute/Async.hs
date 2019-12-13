@@ -1,14 +1,16 @@
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
--- Copyright   : [2014..2018] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,6 +18,7 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
+import Data.Array.Accelerate.Array.Sugar 
 
 class Monad (Par arch) => Async arch where
 
@@ -59,9 +62,9 @@ class Monad (Par arch) => Async arch where
   -- more efficiently than the default implementation.
   --
   {-# INLINEABLE spawn #-}
-  spawn :: Par arch (FutureR arch a) -> Par arch (FutureR arch a)
+  spawn :: Par arch a -> Par arch a
   spawn m = do
-    r <- new              -- Future (Future a)  |:
+    r <- new
     fork $ put r =<< m
     get r
 
@@ -75,3 +78,44 @@ class Monad (Par arch) => Async arch where
     put r a
     return r
 
+data FutureArraysRepr arch a repr where
+  FutureArraysReprNil       :: FutureArraysRepr arch ()            ()
+  FutureArraysReprArray     :: FutureArraysRepr arch (Array sh e) (FutureR arch (Array sh e))
+  FutureArraysReprPair      :: FutureArraysRepr arch a             a'
+                            -> FutureArraysRepr arch b             b'
+                            -> FutureArraysRepr arch (a, b)        (a', b')
+
+class FutureArrays a where
+  type FutureArraysR arch a
+  futureArraysRepr :: FutureArraysRepr arch a (FutureArraysR arch a)
+
+instance FutureArrays () where
+  type FutureArraysR arch () = ()
+  futureArraysRepr = FutureArraysReprNil
+
+instance FutureArrays (Array sh e) where
+  type FutureArraysR arch (Array sh e) = FutureR arch (Array sh e)
+  futureArraysRepr = FutureArraysReprArray
+
+instance (FutureArrays a, FutureArrays b) => FutureArrays (a, b) where
+  type FutureArraysR arch (a, b) = (FutureArraysR arch a, FutureArraysR arch b)
+  futureArraysRepr = FutureArraysReprPair (futureArraysRepr @a) (futureArraysRepr @b)
+
+getArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
+getArrays ArraysRarray        a        = get a
+getArrays ArraysRunit         _        = return ()
+getArrays (ArraysRpair r1 r2) (a1, a2) = (,) <$> getArrays r1 a1 <*> getArrays r2 a2
+
+blockArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
+blockArrays ArraysRarray        a        = block a
+blockArrays ArraysRunit         _        = return ()
+blockArrays (ArraysRpair r1 r2) (a1, a2) = (,) <$> blockArrays r1 a1 <*> blockArrays r2 a2
+
+-- | Create new (empty) promises for a structure of arrays, to be fulfilled
+-- at some future point. Note that the promises in the structure may all be
+-- fullfilled at different moments.
+--
+newArrays :: Async arch => ArraysR a -> Par arch (FutureArraysR arch a)
+newArrays ArraysRunit               = return ()
+newArrays ArraysRarray              = new
+newArrays (ArraysRpair repr1 repr2) = (,) <$> newArrays repr1 <*> newArrays repr2

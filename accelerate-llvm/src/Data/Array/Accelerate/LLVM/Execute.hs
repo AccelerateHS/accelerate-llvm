@@ -13,18 +13,17 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute
--- Copyright   : [2014..2018] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
 
 module Data.Array.Accelerate.LLVM.Execute (
 
-  Execute(..), Gamma,
+  Execute(..), Delayed(..), Gamma,
   executeAcc,
   executeOpenAcc,
 
@@ -35,28 +34,33 @@ import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation               ( SliceIndex(..) )
 import Data.Array.Accelerate.Array.Sugar                        hiding ( Foreign )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj, evalUndef, evalCoerce )
 import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalPrj, evalUndef, evalCoerce )
+import qualified Data.Array.Accelerate.Debug                    as Debug
 
-import Data.Array.Accelerate.LLVM.AST
+import Data.Array.Accelerate.LLVM.AST                           hiding ( Delayed, Manifest )
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma )
 import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Link
+import qualified Data.Array.Accelerate.LLVM.AST                 as AST
 
 -- library
 import Control.Monad
+import System.IO.Unsafe
+import Unsafe.Coerce
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
 
 
 class Remote arch => Execute arch where
-  map           :: (Shape sh, Elt b)
-                => ExecutableR arch
+  map           :: (Shape sh, Elt a, Elt b)
+                => Maybe (a :~: b)              -- update values in-place?
+                -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
+                -> Array sh a
                 -> Par arch (FutureR arch (Array sh b))
 
   generate      :: (Shape sh, Elt e)
@@ -66,123 +70,129 @@ class Remote arch => Execute arch where
                 -> sh
                 -> Par arch (FutureR arch (Array sh e))
 
-  transform     :: (Shape sh, Elt e)
+  transform     :: (Shape sh, Shape sh', Elt a, Elt b)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
-                -> Par arch (FutureR arch (Array sh e))
+                -> sh'
+                -> Array sh a
+                -> Par arch (FutureR arch (Array sh' b))
 
-  backpermute   :: (Shape sh, Elt e)
+  backpermute   :: (Shape sh, Shape sh', Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
-                -> Par arch (FutureR arch (Array sh e))
+                -> sh'
+                -> Array sh e
+                -> Par arch (FutureR arch (Array sh' e))
 
   fold          :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array sh e))
 
   fold1         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array sh e))
 
-  foldSeg       :: (Shape sh, Elt e)
+  foldSeg       :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
-                -> DIM1
+                -> Delayed (Array (sh :. Int) e)
+                -> Delayed (Segments i)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
-  fold1Seg      :: (Shape sh, Elt e)
+  fold1Seg      :: (Shape sh, Elt e, Elt i, IsIntegral i)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
-                -> DIM1
+                -> Delayed (Array (sh :. Int) e)
+                -> Delayed (Segments i)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
   scanl         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
   scanl1        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
   scanl'        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e, Array sh e))
 
   scanr         :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
   scanr1        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e))
 
   scanr'        :: (Shape sh, Elt e)
                 => ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh :. Int
+                -> Delayed (Array (sh :. Int) e)
                 -> Par arch (FutureR arch (Array (sh:.Int) e, Array sh e))
 
   permute       :: (Shape sh, Shape sh', Elt e)
-                => Bool               -- ^ update defaults array in-place?
+                => Bool                         -- ^ update defaults array in-place?
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
                 -> Array sh' e
+                -> Delayed (Array sh e)
                 -> Par arch (FutureR arch (Array sh' e))
 
-  stencil1      :: (Shape sh, Elt e)
+  stencil1      :: (Shape sh, Elt a, Elt b)
                 => sh
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
-                -> Par arch (FutureR arch (Array sh e))
+                -> Delayed (Array sh a)
+                -> Par arch (FutureR arch (Array sh b))
 
-  stencil2      :: (Shape sh, Elt e)
+  stencil2      :: (Shape sh, Elt a, Elt b, Elt c)
                 => sh
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
-                -> sh
-                -> sh
-                -> Par arch (FutureR arch (Array sh e))
+                -> Delayed (Array sh a)
+                -> Delayed (Array sh b)
+                -> Par arch (FutureR arch (Array sh c))
 
-  aforeign      :: (Arrays as, Arrays bs)
-                => String
+  aforeign      :: String
+                -> ArraysR bs
                 -> (as -> Par arch (FutureR arch bs))
                 -> as
                 -> Par arch (FutureR arch bs)
+
+data Delayed a where
+  Delayed       :: sh -> Delayed (Array sh e)
+  Manifest      :: a  -> Delayed a
 
 
 -- Array expression evaluation
@@ -204,7 +214,7 @@ class Remote arch => Execute arch where
 executeAcc
     :: Execute arch
     => ExecAcc arch a
-    -> Par arch (FutureR arch a)
+    -> Par arch (FutureArraysR arch a)
 executeAcc !acc =
   executeOpenAcc acc Empty
 
@@ -226,8 +236,8 @@ class ExecuteAfun arch f where
 instance (Remote arch, ExecuteAfun arch b) => ExecuteAfun arch (a -> b) where
   type ExecAfunR arch (a -> b) = a -> ExecAfunR arch b
   {-# INLINEABLE executeOpenAfun #-}
-  executeOpenAfun Abody{}  _ _    = $internalError "executeOpenAfun" "malformed array function"
-  executeOpenAfun (Alam f) k arrs =
+  executeOpenAfun Abody{}      _ _    = $internalError "executeOpenAfun" "malformed array function"
+  executeOpenAfun (Alam lhs f) k arrs =
     let k' = do aenv <- k
                 a    <- useRemoteAsync arrs
                 return (aenv `Apush` a)
@@ -283,50 +293,55 @@ executeOpenAcc
     :: forall arch aenv arrs. Execute arch
     => ExecOpenAcc arch aenv arrs
     -> ValR arch aenv
-    -> Par arch (FutureR arch arrs)
+    -> Par arch (FutureArraysR arch arrs)
 executeOpenAcc !topAcc !aenv = travA topAcc
   where
-    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureR arch a)
+    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureArraysR arch a)
     travA (EvalAcc pacc) =
       case pacc of
-        Use arrs            -> spawn $ useRemoteAsync (toArr arrs)
+        Use arrs            -> spawn $ useRemoteAsync ArraysRarray arrs
         Unit x              -> unit x
-        Avar ix             -> return $ prj ix aenv
-        Alet bnd body       -> alet bnd body
-        Atuple tup          -> atuple tup
+        Avar (ArrayVar ix)  -> return $ prj ix aenv
+        Alet lhs bnd body   -> alet lhs bnd body
+        Apair a1 a2         -> liftM2 (,) (travA a1) (travA a2)
+        Anil                -> return ()
         Alloc sh            -> allocate sh
         Apply f a           -> travAF f =<< spawn (travA a)
-        Aprj ix tup         -> liftF1 (evalPrj ix . fromAtuple) (travA tup)
         Acond p t e         -> acond t e =<< travE p
         Awhile p f a        -> awhile p f =<< spawn (travA a)
-        Reshape sh ix       -> liftF2 reshape (travE sh) (return $ prj ix aenv)
-        Unzip tix ix        -> liftF1 (unzip tix) (return $ prj ix aenv)
-        Aforeign str asm a  -> do
+        Reshape sh (ArrayVar ix)
+                            -> liftF2 reshape (travE sh) (return $ prj ix aenv)
+        Unzip tix (ArrayVar ix)
+                            -> liftF1 (unzip tix) (return $ prj ix aenv)
+        Aforeign str r asm a -> do
           x <- travA a
-          spawn $ aforeign str asm =<< get x
+          y <- spawn $ aforeign str r asm =<< getArrays (arraysRepr a) x
+          split r y
 
     travA (ExecAcc !gamma !kernel pacc) =
       case pacc of
         -- Producers
-        Map sh              -> exec1 map         (travE sh)
+        Map a               -> exec1 (map_ a)    (travA a)
         Generate sh         -> exec1 generate    (travE sh)
-        Transform sh        -> exec1 transform   (travE sh)
-        Backpermute sh      -> exec1 backpermute (travE sh)
+        Transform sh a      -> exec2 transform   (travE sh) (travA a)
+        Backpermute sh a    -> exec2 backpermute (travE sh) (travA a)
 
         -- Consumers
-        Fold sh             -> exec1 fold     (travE sh)
-        Fold1 sh            -> exec1 fold1    (travE sh)
-        FoldSeg sa ss       -> exec2 foldSeg  (travE sa) (travE ss)
-        Fold1Seg sa ss      -> exec2 fold1Seg (travE sa) (travE ss)
-        Scanl sh            -> exec1 scanl    (travE sh)
-        Scanr sh            -> exec1 scanr    (travE sh)
-        Scanl1 sh           -> exec1 scanl1   (travE sh)
-        Scanr1 sh           -> exec1 scanr1   (travE sh)
-        Scanl' sh           -> exec1 scanl'   (travE sh)
-        Scanr' sh           -> exec1 scanr'   (travE sh)
-        Permute sh d        -> exec2 (permute (inplace d)) (travE sh) (travA d)
-        Stencil1 h sh       -> exec1 (stencil1 h) (travE sh)
-        Stencil2 h sh1 sh2  -> exec2 (stencil2 h) (travE sh2) (travE sh1)
+        Fold a              -> exec1 fold     (travD a)
+        Fold1 a             -> exec1 fold1    (travD a)
+        FoldSeg a s         -> exec2 foldSeg  (travD a) (travD s)
+        Fold1Seg a s        -> exec2 fold1Seg (travD a) (travD s)
+        Scanl a             -> exec1 scanl    (travD a)
+        Scanr a             -> exec1 scanr    (travD a)
+        Scanl1 a            -> exec1 scanl1   (travD a)
+        Scanr1 a            -> exec1 scanr1   (travD a)
+        Scanl' a            -> splitPair
+                             $ exec1 scanl'   (travD a)
+        Scanr' a            -> splitPair
+                             $ exec1 scanr'   (travD a)
+        Permute d a         -> exec2 (permute_ d) (travA d) (travD a)
+        Stencil1 h a        -> exec1 (stencil1 h) (travD a)
+        Stencil2 h a b      -> exec2 (stencil2 h) (travD a) (travD b)
 
       where
         exec1 :: (ExecutableR arch -> Gamma aenv -> ValR arch aenv -> a -> Par arch (FutureR arch b))
@@ -345,36 +360,39 @@ executeOpenAcc !topAcc !aenv = travA topAcc
           y' <- y
           spawn $ id =<< liftM2 (f kernel gamma aenv) (get x') (get y')
 
-    travAF :: ExecOpenAfun arch aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
-    travAF (Alam (Abody f)) a = executeOpenAcc f (aenv `Push` a)
-    travAF _                _ = error "boop!"
+        splitPair :: forall a b. Par arch (FutureR arch (a, b))
+              -> Par arch (((), FutureR arch a), FutureR arch b)
+        splitPair x = do
+          r1 <- new
+          r2 <- new
+          fork $ do
+            x' <- x
+            (a, b) <- get x'
+            put r1 a
+            put r2 b
+          return (((), r1), r2)
+
+    travAF :: ExecOpenAfun arch aenv (a -> b) -> FutureArraysR arch a -> Par arch (FutureArraysR arch b)
+    travAF (Alam lhs (Abody f)) a = executeOpenAcc f $ aenv `push` (lhs, a)
+    travAF _                    _ = error "boop!"
 
     travE :: ExecExp arch aenv t -> Par arch (FutureR arch t)
     travE exp = executeExp exp aenv
 
-    travT :: Atuple (ExecOpenAcc arch aenv) t -> Par arch (FutureR arch t)
-    travT NilAtup        = newFull ()
-    travT (SnocAtup t a) = liftF2 (,) (travT t) (travA a)
+    travD :: DelayedOpenAcc ExecOpenAcc arch aenv a -> Par arch (FutureR arch (Delayed a))
+    travD (AST.Delayed sh) = liftF1 Delayed  (travE sh)
+    travD (AST.Manifest a) = liftF1 Manifest (travA a)
 
     unit :: Elt t => ExecExp arch aenv t -> Par arch (FutureR arch (Scalar t))
     unit x = do
       x'   <- travE x
       spawn $ newRemoteAsync Z . const =<< get x'
 
-    atuple :: (Arrays t, IsAtuple t)
-           => Atuple (ExecOpenAcc arch aenv) (TupleRepr t)
-           -> Par arch (FutureR arch t)
-    atuple tup = do
-      r    <- new
-      tup' <- travT tup
-      fork $ put r . toAtuple =<< get tup'
-      return r
-
     -- Let bindings
-    alet :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch (aenv, a) b -> Par arch (FutureR arch b)
-    alet bnd body = do
+    alet :: LeftHandSide a aenv aenv' -> ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv' b -> Par arch (FutureArraysR arch b)
+    alet lhs bnd body = do
       bnd'  <- spawn $ executeOpenAcc bnd aenv
-      body' <- spawn $ executeOpenAcc body (aenv `Push` bnd')
+      body' <- spawn $ executeOpenAcc body $ aenv `push` (lhs, bnd')
       return body'
 
     -- Allocate an array on the remote device
@@ -388,7 +406,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       return r
 
     -- Array level conditionals
-    acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
+    acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureArraysR arch a)
     acond yes no p =
       spawn $ do
         c <- block p
@@ -398,8 +416,8 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     -- Array loops
     awhile :: ExecOpenAfun arch aenv (a -> Scalar Bool)
            -> ExecOpenAfun arch aenv (a -> a)
-           -> FutureR arch a
-           -> Par arch (FutureR arch a)
+           -> FutureArraysR arch a
+           -> Par arch (FutureArraysR arch a)
     awhile p f a = do
       r  <- get =<< travAF p a
       ok <- indexRemote r 0
@@ -416,10 +434,48 @@ executeOpenAcc !topAcc !aenv = travA topAcc
           | Just Refl <- matchTupleType t (eltType @e) = x
         go _ _ _                                                   = $internalError "unzip" "inconsistent valuation"
 
-    -- Can the permutation function write directly into the results array?
+    map_ :: forall sh a b. (Shape sh, Elt a, Elt b)
+         => ExecOpenAcc arch aenv (Array sh a)
+         -> ExecutableR arch
+         -> Gamma aenv
+         -> ValR arch aenv
+         -> Array sh a
+         -> Par arch (FutureR arch (Array sh b))
+    map_ a
+      | inplace a
+      , Just Refl <- matchTupleType (eltType @a) (eltType @b)
+      = map (Just (unsafeCoerce Refl))
+        -- XXX: We only require that the representation types are identical
+        -- so that we can reuse the underlying storage; we don't care if
+        -- the surface types differ. -- TLM 2019-06-24
+      | otherwise
+      = map Nothing
+
+    permute_ :: (Shape sh, Shape sh', Elt e)
+             => ExecOpenAcc arch aenv (Array sh' e)
+             -> ExecutableR arch
+             -> Gamma aenv
+             -> ValR arch aenv
+             -> Array sh' e
+             -> Delayed (Array sh e)
+             -> Par arch (FutureR arch (Array sh' e))
+    permute_ d = permute (inplace d)
+
+    -- Can the function store its results in-place to the input array?
     inplace :: ExecOpenAcc arch aenv a -> Bool
-    inplace (EvalAcc Avar{}) = False
-    inplace _                = True
+    inplace a
+      | unsafePerformIO (Debug.getFlag Debug.inplace) -- liftPar :: IO a -> Par arch a
+      = case a of
+          ExecAcc{}    -> True
+          EvalAcc pacc ->
+            case pacc of
+              Avar{} -> False
+              Use{}  -> False
+              Unit{} -> False
+              _      -> True
+      --
+      | otherwise
+      = False
 
 
 -- Scalar expression evaluation
@@ -491,7 +547,7 @@ executeOpenExp rootExp env aenv = travE rootExp
       NilTup      -> newFull ()
       SnocTup t e -> liftF2 (,) (travT t) (travE e)
 
-    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureR arch a)
+    travA :: ExecOpenAcc arch aenv a -> Par arch (FutureArraysR arch a)
     travA acc = executeOpenAcc acc aenv
 
     foreignE :: ExecFun arch () (a -> b) -> ExecOpenExp arch env aenv a -> Par arch (FutureR arch b)
@@ -595,3 +651,13 @@ infixr 0 $$
 ($$) :: (b -> a) -> (c -> d -> b) -> c -> d -> a
 (f $$ g) x y = f (g x y)
 
+split :: Execute arch => ArraysR a -> FutureR arch a -> Par arch (FutureArraysR arch a)
+split repr x = do
+  rs <- newArrays repr
+  fork $ get x >>= fill repr rs
+  return rs
+  where
+    fill :: Execute arch => ArraysR a -> FutureArraysR arch a -> a -> Par arch ()
+    fill ArraysRunit _ _ = return ()
+    fill ArraysRarray r a = put r a
+    fill (ArraysRpair repr1 repr2) (r1, r2) (a1, a2) = fill repr1 r1 a1 >> fill repr2 r2 a2

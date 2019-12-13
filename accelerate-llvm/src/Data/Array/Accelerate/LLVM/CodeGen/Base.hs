@@ -1,15 +1,16 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Base
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -23,6 +24,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
   -- Arrays
   irArray,
   mutableArray,
+  delayedArray,
 
   -- Functions & parameters
   call,
@@ -49,6 +51,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import qualified LLVM.AST.Global                                    as LLVM
 
@@ -90,6 +93,7 @@ rename :: Name t -> Int -> Name t'                      -- for the i-th componen
 rename (Name   n) i = Name (n <> fromString (printf    "%d"   i))
 rename (UnName n) i = Name (     fromString (printf "%d.%d" n i))
 
+
 -- | Names of array data elements
 --
 {-# INLINEABLE irArray #-}
@@ -103,7 +107,6 @@ irArray n
             defaultAddrSpace
             NonVolatile
 
-
 -- | Generate typed local names for array data components as well as function
 -- parameters to bind those names
 --
@@ -116,6 +119,24 @@ mutableArray name =
   ( irArray name
   , arrayParam name )
 
+-- | Generate a delayed array representation for input arrays which come in
+-- either delayed (fused) or manifest representation.
+--
+{-# INLINEABLE delayedArray #-}
+delayedArray
+    :: (Shape sh, Elt e)
+    => Name (Array sh e)
+    -> MIRDelayed arch aenv (Array sh e)
+    -> (IRDelayed arch aenv (Array sh e), [LLVM.Parameter])
+delayedArray name = \case
+  Just a  -> (a, [])
+  Nothing -> let (arr, param) = mutableArray name
+              in ( IRDelayed { delayedExtent      = return (irArrayShape arr)
+                             , delayedIndex       = IRFun1 (indexArray arr)
+                             , delayedLinearIndex = IRFun1 (linearIndexArray arr)
+                             }
+                 , param
+                 )
 
 {-# INLINEABLE travTypeToList #-}
 travTypeToList

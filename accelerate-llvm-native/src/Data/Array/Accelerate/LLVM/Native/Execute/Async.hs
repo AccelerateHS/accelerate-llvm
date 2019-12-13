@@ -7,17 +7,17 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Async
--- Copyright   : [2014..2018] Trevor L. McDonell
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 
-  Async(..), Future(..), IVar(..),
+  Async(..), Future(..), IVar(..), getArrays,
   evalPar, liftPar, putIO,
 
 ) where

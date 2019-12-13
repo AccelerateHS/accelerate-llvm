@@ -11,10 +11,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Instruction
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -248,7 +248,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
   --
-  AtomicRMW       :: IntegralType a
+  AtomicRMW       :: NumType a
                   -> Volatility
                   -> RMWOperation
                   -> Operand (Ptr a)

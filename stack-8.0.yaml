@@ -9,10 +9,9 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- git:    https://github.com/tmcdonell/accelerate.git
-  commit: 4f2916fc8671a16a5b8658cf904d2444a6c72634
+- github: tmcdonell/accelerate
+  commit: cf948d84474c955ad78775cb79701c0f3e400120
 
-- Cabal-2.0.1.1
 - cuda-0.10.0.0
 - half-0.3
 - hashtables-1.2.3.1

@@ -8,10 +8,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Stencil
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -35,6 +35,16 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
 
 import Control.Applicative
 import Prelude
+
+
+-- Stencil boundary conditions
+--
+data IRBoundary arch aenv t where
+  IRClamp     :: IRBoundary arch aenv t
+  IRMirror    :: IRBoundary arch aenv t
+  IRWrap      :: IRBoundary arch aenv t
+  IRConstant  :: Elt e => IR e -> IRBoundary arch aenv (Array sh e)
+  IRFunction  :: (Shape sh, Elt e) => IRFun1 arch aenv (sh -> e) -> IRBoundary arch aenv (Array sh e)
 
 
 -- Generate the stencil pattern including boundary conditions

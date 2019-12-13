@@ -4,10 +4,10 @@
 {-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -44,6 +44,9 @@ import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 plugin :: Plugin
 plugin = defaultPlugin
   { installCoreToDos = install
+#if __GLASGOW_HASKELL__ >= 806
+  , pluginRecompile  = purePlugin
+#endif
   }
 
 install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]

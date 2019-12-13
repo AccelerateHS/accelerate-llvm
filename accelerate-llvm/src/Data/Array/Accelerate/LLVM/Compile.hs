@@ -6,14 +6,14 @@
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -32,6 +32,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 -- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Product
@@ -69,8 +70,7 @@ data CompiledOpenAcc arch aenv a where
             -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
-  PlainAcc  :: Arrays a
-            => AST.PreOpenAccCommand  CompiledOpenAcc arch aenv a
+  PlainAcc  :: AST.PreOpenAccCommand  CompiledOpenAcc arch aenv a
             -> CompiledOpenAcc arch aenv a
 
 
@@ -112,8 +112,8 @@ compileOpenAfun
     :: Compile arch
     => DelayedOpenAfun aenv f
     -> LLVM arch (CompiledOpenAfun arch aenv f)
-compileOpenAfun (Alam l)  = Alam  <$> compileOpenAfun l
-compileOpenAfun (Abody b) = Abody <$> compileOpenAcc b
+compileOpenAfun (Alam lhs l) = Alam lhs <$> compileOpenAfun l
+compileOpenAfun (Abody b)    = Abody    <$> compileOpenAcc b
 
 
 {-# INLINEABLE compileOpenAcc #-}
@@ -138,12 +138,12 @@ compileOpenAcc = traverseAcc
       case pacc of
         -- Environment and control flow
         Avar ix                     -> plain $ pure (AST.Avar ix)
-        Alet a b                    -> plain . pure =<< AST.Alet      <$> traverseAcc a <*> traverseAcc b
+        Alet lhs a b                -> plain . pure =<< AST.Alet lhs  <$> traverseAcc a <*> traverseAcc b
         Apply f a                   -> plain =<< liftA2 AST.Apply     <$> travAF f <*> travA a
         Awhile p f a                -> plain =<< liftA3 AST.Awhile    <$> travAF p <*> travAF f <*> travA a
         Acond p t e                 -> plain =<< liftA3 AST.Acond     <$> travE  p <*> travA  t <*> travA e
-        Atuple tup                  -> plain =<< liftA  AST.Atuple    <$> travAtup tup
-        Aprj ix tup                 -> plain =<< liftA (AST.Aprj ix)  <$> travA    tup
+        Apair a1 a2                 -> plain =<< liftA2 AST.Apair     <$> travA a1 <*> travA a2
+        Anil                        -> plain $ pure AST.Anil
 
         -- Foreign arrays operations
         Aforeign ff afun a          -> foreignA ff afun a
@@ -161,10 +161,10 @@ compileOpenAcc = traverseAcc
 
         -- Skeleton operations resulting in compiled code
         -- Producers
-        Map f a                     -> build =<< liftA2 map           <$> travF f  <*> travD a
+        Map f a                     -> build =<< liftA2 map           <$> travF f  <*> travA a
         Generate sh f               -> build =<< liftA2 generate      <$> travE sh <*> travF f
-        Transform sh p f a          -> build =<< liftA4 transform     <$> travE sh <*> travF p <*> travF f <*> travD a
-        Backpermute sh f a          -> build =<< liftA3 backpermute   <$> travE sh <*> travF f <*> travD a
+        Transform sh p f a          -> build =<< liftA4 transform     <$> travE sh <*> travF p <*> travF f <*> travA a
+        Backpermute sh f a          -> build =<< liftA3 backpermute   <$> travE sh <*> travF f <*> travA a
 
         -- Consumers
         Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travE z <*> travD a
@@ -189,8 +189,8 @@ compileOpenAcc = traverseAcc
       where
         map _ a             = AST.Map a
         generate sh _       = AST.Generate sh
-        transform sh _ _ _  = AST.Transform sh
-        backpermute sh _ _  = AST.Backpermute sh
+        transform sh _ _ a  = AST.Transform sh a
+        backpermute sh _ a  = AST.Backpermute sh a
         fold _ _ a          = AST.Fold a
         fold1 _ a           = AST.Fold1 a
         foldSeg _ _ a s     = AST.FoldSeg a s
@@ -201,22 +201,22 @@ compileOpenAcc = traverseAcc
         scanr _ _ a         = AST.Scanr a
         scanr1 _ a          = AST.Scanr1 a
         scanr' _ _ a        = AST.Scanr' a
-        permute _ d _ a     = AST.Permute a d
+        permute _ d _ a     = AST.Permute d a
 
         stencil1 :: forall sh a b stencil. (Stencil sh a stencil, Elt b)
                  => CompiledFun                  arch  aenv (stencil -> b)
                  -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch aenv (Array sh a)
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
         stencil1 _ _ a = AST.Stencil1 (halo (stencil :: StencilR sh a stencil)) a
 
         stencil2 :: forall sh a b c stencil1 stencil2. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
                  => CompiledFun                  arch  aenv (stencil1 -> stencil2 -> c)
-                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh a)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
-                 -> PreBoundary (CompiledOpenAcc arch) aenv (Array sh b)
-                 -> PreExp      (CompiledOpenAcc arch) aenv sh
-                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh c)
+                 -> PreBoundary           (CompiledOpenAcc arch) aenv (Array sh a)
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh a)
+                 -> PreBoundary           (CompiledOpenAcc arch) aenv (Array sh b)
+                 -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh b)
+                 -> AST.PreOpenAccSkeleton CompiledOpenAcc arch  aenv (Array sh c)
         stencil2 _ _ a _ b = AST.Stencil2 (halo stencilR1 `union` halo stencilR2) a b
           where
             stencilR1 = stencil :: StencilR sh a stencil1
@@ -231,10 +231,22 @@ compileOpenAcc = traverseAcc
             go StencilRunit7 = Z :. 3
             go StencilRunit9 = Z :. 4
             --
-            go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
-            go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
-            go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
-            go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+            go (StencilRtup3 a b c            ) = 1 `cons` foldl1 union [go a, go b, go c]
+            go (StencilRtup5 a b c d e        ) = 2 `cons` foldl1 union [go a, go b, go c, go d, go e]
+            go (StencilRtup7 a b c d e f g    ) = 3 `cons` foldl1 union [go a, go b, go c, go d, go e, go f, go g]
+            go (StencilRtup9 a b c d e f g h i) = 4 `cons` foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i]
+
+        cons :: forall sh. Shape sh => Int -> sh -> (sh :. Int)
+        cons ix extent = toElt $ go (eltType @sh) (fromElt extent)
+          where
+            go :: TupleType t -> t -> (t, Int)
+            go TypeRunit         ()       = ((), ix)
+            go (TypeRpair th tz) (sh, sz)
+              | TypeRscalar t <- tz
+              , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
+              = (go th sh, sz)
+            go _ _
+              = $internalError "cons" "expected shape with Int components"
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
@@ -244,24 +256,22 @@ compileOpenAcc = traverseAcc
 
         travD :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), PreExp (CompiledOpenAcc arch) aenv sh)
-        travD Manifest{}  = $internalError "compileOpenAcc" "expected delayed array"
-        travD Delayed{..} = liftA2 (flip const) <$> travF indexD <*> travE extentD
+              -> LLVM arch ( IntMap (Idx' aenv)
+                           , AST.DelayedOpenAcc CompiledOpenAcc arch aenv (Array sh e))
+        travD acc =
+          case acc of
+            Delayed{..} -> liftA2 (const . AST.Delayed) <$> travE extentD <*> travF indexD
+            _           -> liftA           AST.Manifest <$> travA acc
 
         travM :: (Shape sh, Elt e)
               => DelayedOpenAcc aenv (Array sh e)
-              -> LLVM arch (IntMap (Idx' aenv), Idx aenv (Array sh e))
+              -> LLVM arch (IntMap (Idx' aenv), ArrayVar aenv (Array sh e))
         travM (Manifest (Avar ix)) = return (freevar ix, ix)
         travM _                    = $internalError "compileOpenAcc" "expected array variable"
 
         travAF :: DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
         travAF afun = pure <$> compileOpenAfun afun
-
-        travAtup :: Atuple (DelayedOpenAcc aenv) a
-                 -> LLVM arch (IntMap (Idx' aenv), Atuple (CompiledOpenAcc arch aenv) a)
-        travAtup NilAtup        = return (pure NilAtup)
-        travAtup (SnocAtup t a) = liftA2 SnocAtup <$> travAtup t <*> travA a
 
         travF :: DelayedOpenFun env aenv t
               -> LLVM arch (IntMap (Idx' aenv), CompiledOpenFun arch env aenv t)
@@ -283,8 +293,7 @@ compileOpenAcc = traverseAcc
           kernel <- compileForTarget pacc aval
           return $! BuildAcc aval kernel eacc
 
-        plain :: Arrays arrs'
-              => (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
+        plain :: (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
         plain (_, eacc) = return (PlainAcc eacc)
 
@@ -316,7 +325,7 @@ compileOpenAcc = traverseAcc
         unzip :: forall sh a b. Elt a
               => PreFun DelayedOpenAcc aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
-              -> Maybe (TupleIdx (TupleRepr a) b, Idx aenv (Array sh a))
+              -> Maybe (TupleIdx (TupleRepr a) b, ArrayVar aenv (Array sh a))
         unzip _ _
           | TypeRscalar VectorScalarType{}      <- eltType @a
           = Nothing
@@ -336,14 +345,14 @@ compileOpenAcc = traverseAcc
         -- this term and continue walking down the list of alternate
         -- implementations.
         --
-        foreignA :: (Arrays a, Arrays b, A.Foreign asm)
+        foreignA :: forall a b asm. (Arrays a, Arrays b, A.Foreign asm)
                  => asm         (a -> b)
-                 -> DelayedAfun (a -> b)
-                 -> DelayedOpenAcc aenv a
-                 -> LLVM arch (CompiledOpenAcc arch aenv b)
+                 -> DelayedAfun (ArrRepr a -> ArrRepr b)
+                 -> DelayedOpenAcc aenv (ArrRepr a)
+                 -> LLVM arch (CompiledOpenAcc arch aenv (ArrRepr b))
         foreignA ff f a =
           case foreignAcc ff of
-            Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) asm) <$> travA a
+            Just asm -> plain =<< liftA (AST.Aforeign (strForeign ff) (arrays @b) asm) <$> travA a
             Nothing  -> traverseAcc $ Manifest (Apply (weaken absurd f) a)
             where
               absurd :: Idx () t -> Idx aenv t
@@ -437,3 +446,6 @@ liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 liftA5 :: Applicative f => (a -> b -> c -> d -> e -> g) -> f a -> f b -> f c -> f d -> f e -> f g
 liftA5 f a b c d g = f <$> a <*> b <*> c <*> d <*> g
 
+instance HasArraysRepr (CompiledOpenAcc arch) where
+  arraysRepr (BuildAcc _ _ acc) = arraysRepr acc
+  arraysRepr (PlainAcc     acc) = arraysRepr acc

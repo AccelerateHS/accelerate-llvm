@@ -1,17 +1,18 @@
-{-# LANGUAGE BangPatterns        #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE MagicHash           #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE MagicHash            #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Array.Data
--- Copyright   : [2014..2018] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -108,9 +109,9 @@ class Async arch => Remote arch where
   -- of multiple memcpy engines.
   --
   {-# INLINE useRemoteAsync #-}
-  useRemoteAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
-  useRemoteAsync arrs =
-    runArraysAsync arrs $ \arr ->
+  useRemoteAsync :: ArraysR arrs -> arrs -> Par arch (FutureArraysR arch arrs)
+  useRemoteAsync repr arrs =
+    runArraysAsync repr arrs $ \arr ->
       let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             useRemoteR (n*m) ad
@@ -118,9 +119,9 @@ class Async arch => Remote arch where
   -- | Upload an existing array to the remote device, asynchronously.
   --
   {-# INLINE copyToRemoteAsync #-}
-  copyToRemoteAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
-  copyToRemoteAsync arrs =
-    runArraysAsync arrs $ \arr ->
+  copyToRemoteAsync :: ArraysR arrs -> arrs -> Par arch (FutureArraysR arch arrs)
+  copyToRemoteAsync repr arrs =
+    runArraysAsync repr arrs $ \arr ->
       let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToRemoteR (n*m) ad
@@ -128,9 +129,9 @@ class Async arch => Remote arch where
   -- | Copy an array from the remote device to the host, asynchronously
   --
   {-# INLINE copyToHostAsync #-}
-  copyToHostAsync :: Arrays arrs => arrs -> Par arch (FutureR arch arrs)
-  copyToHostAsync arrs =
-    runArraysAsync arrs $ \arr ->
+  copyToHostAsync :: ArraysR arrs -> arrs -> Par arch (FutureArraysR arch arrs)
+  copyToHostAsync repr arrs =
+    runArraysAsync repr arrs $ \arr ->
       let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToHostR (n*m) ad
@@ -140,9 +141,9 @@ class Async arch => Remote arch where
   -- between the two remote devices).
   --
   {-# INLINE copyToPeerAsync #-}
-  copyToPeerAsync :: Arrays arrs => arch -> arrs -> Par arch (FutureR arch arrs)
-  copyToPeerAsync peer arrs =
-    runArraysAsync arrs $ \arr ->
+  copyToPeerAsync :: arch -> ArraysR arrs -> arrs -> Par arch (FutureArraysR arch arrs)
+  copyToPeerAsync peer repr arrs =
+    runArraysAsync repr arrs $ \arr ->
       let n = size (shape arr)
       in  runArrayAsync arr $ \m ad ->
             copyToPeerR peer (n*m) ad
@@ -181,7 +182,7 @@ newRemoteAsync
     -> (sh -> e)
     -> Par arch (FutureR arch (Array sh e))
 newRemoteAsync sh f =
-  useRemoteAsync $! fromFunction sh f
+  useRemoteAsync ArraysRarray $! fromFunction sh f
 
 
 -- | Upload an immutable array from the host to the remote device. This is
@@ -190,36 +191,36 @@ newRemoteAsync sh f =
 -- possible.
 --
 {-# INLINE useRemote #-}
-useRemote :: (Remote arch, Arrays a) => a -> Par arch a
-useRemote arrs =
-  get =<< useRemoteAsync arrs
+useRemote :: Remote arch => ArraysR a -> a -> Par arch a
+useRemote repr arrs =
+  getArrays repr =<< useRemoteAsync repr arrs
 
 -- | Uploading existing arrays from the host to the remote device. This is
 -- synchronous with respect to the calling thread, but the individual array
 -- payloads may themselves be transferred concurrently.
 --
 {-# INLINE copyToRemote #-}
-copyToRemote :: (Remote arch, Arrays a) => a -> Par arch a
-copyToRemote arrs =
-  get =<< copyToRemoteAsync arrs
+copyToRemote :: Remote arch => ArraysR a -> a -> Par arch a
+copyToRemote repr arrs =
+  getArrays repr =<< copyToRemoteAsync repr arrs
 
 -- | Copy an array from the remote device to the host. This is synchronous with
 -- respect to the calling thread, but the individual array payloads may
 -- themselves be transferred concurrently.
 --
 {-# INLINE copyToHost #-}
-copyToHost :: (Remote arch, Arrays a) => a -> Par arch a
-copyToHost arrs =
-  block =<< copyToHostAsync arrs
+copyToHost :: Remote arch => ArraysR a -> a -> Par arch a
+copyToHost repr arrs =
+  blockArrays repr =<< copyToHostAsync repr arrs
 
 -- | Copy arrays between two remote instances of the same type. This may be more
 -- efficient than copying to the host and then to the second remote instance
 -- (e.g. DMA between CUDA devices).
 --
 {-# INLINE copyToPeer #-}
-copyToPeer :: (Remote arch, Arrays a) => arch -> a -> Par arch a
-copyToPeer peer arrs = do
-  get =<< copyToPeerAsync peer arrs
+copyToPeer :: Remote arch => arch -> ArraysR a -> a -> Par arch a
+copyToPeer peer repr arrs =
+  getArrays repr =<< copyToPeerAsync peer repr arrs
 
 -- | Read a single element from the remote array at the given row-major index.
 -- This is synchronous with respect to both the host and remote device.
@@ -317,11 +318,12 @@ runIndexArrayAsync worker (Array _ adata) i = (toElt . flip unsafeIndexArrayData
 --
 {-# INLINE runArrays #-}
 runArrays
-    :: forall m arrs. (Monad m, Arrays arrs)
-    => arrs
+    :: forall m arrs. Monad m
+    => ArraysR arrs
+    -> arrs
     -> (forall sh e. (Shape sh, Elt e) => Array sh e -> m (Array sh e))
     -> m arrs
-runArrays arrs worker = toArr `liftM` runR (arrays @arrs) (fromArr arrs)
+runArrays repr arrs worker = runR repr arrs
   where
     runR :: ArraysR a -> a -> m a
     runR ArraysRunit             ()             = return ()
@@ -330,16 +332,17 @@ runArrays arrs worker = toArr `liftM` runR (arrays @arrs) (fromArr arrs)
 
 {-# INLINE runArraysAsync #-}
 runArraysAsync
-    :: forall arch arrs. (Async arch, Arrays arrs)
-    => arrs
+    :: forall arch arrs. Async arch
+    => ArraysR arrs
+    -> arrs
     -> (forall sh e. (Shape sh, Elt e) => Array sh e -> Par arch (FutureR arch (Array sh e)))
-    -> Par arch (FutureR arch arrs)
-runArraysAsync arrs worker = toArr `liftF` runR (arrays @arrs) (fromArr arrs)
+    -> Par arch (FutureArraysR arch arrs)
+runArraysAsync repr arrs worker = runR repr arrs
   where
-    runR :: ArraysR a -> a -> Par arch (FutureR arch a)
-    runR ArraysRunit ()                         = newFull ()
+    runR :: ArraysR a -> a -> Par arch (FutureArraysR arch a)
+    runR ArraysRunit ()                         = return ()
     runR ArraysRarray arr                       = worker arr
-    runR (ArraysRpair aeR2 aeR1) (arrs2, arrs1) = liftF2 (,) (runR aeR2 arrs2) (runR aeR1 arrs1)
+    runR (ArraysRpair aeR2 aeR1) (arrs2, arrs1) = (,) <$> runR aeR2 arrs2 <*> runR aeR1 arrs1
 
 
 -- | Generalised function to traverse the ArrayData structure with one

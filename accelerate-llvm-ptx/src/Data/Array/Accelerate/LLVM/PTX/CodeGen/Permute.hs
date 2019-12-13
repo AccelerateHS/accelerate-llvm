@@ -8,10 +8,10 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2019] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -24,7 +24,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute (
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, EltRepr, eltType )
+import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, DIM1, Elt, EltRepr, eltType )
 import Data.Array.Accelerate.Error
 import qualified Data.Array.Accelerate.Array.Sugar                  as S
 import qualified Data.Array.Accelerate.Array.Representation         as R
@@ -81,10 +81,10 @@ import Prelude
 --
 mkPermute
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => Gamma aenv
+    => Gamma            aenv
     -> IRPermuteFun PTX aenv (e -> e -> e)
     -> IRFun1       PTX aenv (sh -> sh')
-    -> IRDelayed    PTX aenv (Array sh e)
+    -> MIRDelayed   PTX aenv (Array sh e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute aenv IRPermuteFun{..} project arr =
   let
@@ -121,15 +121,16 @@ mkPermute_rmw
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
     => Gamma aenv
     -> RMWOperation
-    -> IRFun1    PTX aenv (e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw aenv rmw update project IRDelayed{..} = do
+    -> IRFun1     PTX aenv (e -> e)
+    -> IRFun1     PTX aenv (sh -> sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_rmw aenv rmw update project marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh' e))
+      (arrOut, paramOut)  = mutableArray @sh' "out"
+      (arrIn,  paramIn)   = delayedArray @sh  "in" marr
       paramEnv            = envParam aenv
       start               = lift 0
       --
@@ -138,9 +139,9 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
       compute32           = Compute 3 2
       compute60           = Compute 6 0
   --
-  makeOpenAcc "permute_rmw" (paramOut ++ paramEnv) $ do
+  makeOpenAcc "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
 
-    shIn  <- delayedExtent
+    shIn  <- delayedExtent arrIn
     end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
@@ -150,7 +151,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
 
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+        x <- app1 (delayedLinearIndex arrIn) i
         r <- app1 update x
 
         case rmw of
@@ -166,7 +167,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
                   let
                       rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_integral t ptr val
-                        | primOk    = void . instr' $ AtomicRMW t NonVolatile rmw ptr val (CrossThread, AcquireRelease)
+                        | primOk    = void . instr' $ AtomicRMW (IntegralNumType t) NonVolatile rmw ptr val (CrossThread, AcquireRelease)
                         | otherwise =
                             case rmw of
                               RMW.And -> atomicCAS_rmw s' (A.band t (ir t val)) ptr
@@ -208,7 +209,7 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
                       rmw_nonnum TypeChar{} ptr val = do
                         ptr32 <- instr' $ PtrCast (primType   :: PrimType (Ptr Word32)) ptr
                         val32 <- instr' $ BitCast (scalarType :: ScalarType Word32)     val
-                        void   $ instr' $ AtomicRMW (integralType :: IntegralType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
+                        void   $ instr' $ AtomicRMW (numType :: NumType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
                       rmw_nonnum _ _ _ = -- C character types are 8-bit, and thus not supported
                         $internalError "mkPermute_rmw.nonnum" "unexpected transition"
                   case s of
@@ -226,21 +227,22 @@ mkPermute_rmw aenv rmw update project IRDelayed{..} = do
 --
 mkPermute_mutex
     :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => Gamma aenv
-    -> IRFun2    PTX aenv (e -> e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen   PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex aenv combine project IRDelayed{..} =
+    => Gamma          aenv
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> IRFun1     PTX aenv (sh -> sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_mutex aenv combine project marr =
   let
-      (arrOut, paramOut)    = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)  = mutableArray ("lock" :: Name (Vector Word32))
+      (arrOut,  paramOut)   = mutableArray @sh'  "out"
+      (arrLock, paramLock)  = mutableArray @DIM1 "lock"
+      (arrIn,   paramIn)    = delayedArray @sh   "in" marr
       paramEnv              = envParam aenv
       start                 = lift 0
   in
-  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
-    shIn  <- delayedExtent
+    shIn  <- delayedExtent arrIn
     end   <- shapeSize shIn
 
     imapFromTo start end $ \i -> do
@@ -251,7 +253,7 @@ mkPermute_mutex aenv combine project IRDelayed{..} =
       -- project element onto the destination array and (atomically) update
       unless (ignore ix') $ do
         j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+        x <- app1 (delayedLinearIndex arrIn) i
 
         atomically arrLock j $ do
           y <- readArray arrOut j
@@ -328,14 +330,14 @@ atomically barriers i action = do
   -- unlocked then we just acquired the lock and the thread can perform the
   -- critical section, otherwise skip to the bottom of the critical section.
   setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlock'
   no   <- cbr ok crit skip
 
   -- If we just acquired the lock, execute the critical section
   setBlock crit
   r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, Release)
   yes  <- br skip
 
   -- At the base of the critical section, threads participate in a memory fence
