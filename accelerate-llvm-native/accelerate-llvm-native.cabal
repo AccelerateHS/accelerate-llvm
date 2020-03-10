@@ -109,7 +109,7 @@ Library
     Paths_accelerate_llvm_native
 
   build-depends:
-          base                          >= 4.7 && < 4.13
+          base                          >= 4.10 && < 4.13
         , accelerate                    == 1.4.*
         , accelerate-llvm               == 1.4.*
         , bytestring                    >= 0.10.4
@@ -184,7 +184,7 @@ test-suite nofib-llvm-native
   main-is:              Main.hs
 
   build-depends:
-          base                          >= 4.7
+          base                          >= 4.10
         , accelerate
         , accelerate-llvm-native
 

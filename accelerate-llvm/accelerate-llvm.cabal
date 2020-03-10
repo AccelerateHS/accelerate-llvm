@@ -129,7 +129,7 @@ Library
     Paths_accelerate_llvm
 
   build-depends:
-          base                          >= 4.7 && < 4.13
+          base                          >= 4.10 && < 4.13
         , accelerate                    == 1.4.*
         , bytestring                    >= 0.10.4
         , constraints                   >= 0.9
