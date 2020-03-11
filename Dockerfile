@@ -29,7 +29,7 @@ RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 
 # Install LLVM
 RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
- && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-bionic main" \
+ && add-apt-repository "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic main" \
  && apt-get update \
  && apt-get install -y llvm-8-dev
 
