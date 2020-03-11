@@ -295,7 +295,6 @@ typeRepToType trep = do
   resultArgs <- mapM typeRepToType args
   return (appsT (TH.ConT name) resultArgs)
 
-
 data HasTypeable a where
   HasTypeable :: Typeable a => HasTypeable a
 
@@ -312,3 +311,4 @@ lhsTypeable LeftHandSideArray        = HasTypeable
 lhsTypeable (LeftHandSidePair l1 l2)
   | HasTypeable <- lhsTypeable l1
   , HasTypeable <- lhsTypeable l2    = HasTypeable
+

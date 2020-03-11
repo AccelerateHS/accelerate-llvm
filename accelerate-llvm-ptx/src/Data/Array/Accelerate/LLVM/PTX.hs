@@ -55,7 +55,7 @@ module Data.Array.Accelerate.LLVM.PTX (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), liftLHS, arraysRepr, lhsToArraysR )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS, liftArraysR, lhsToArraysR )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays, ArrRepr, arrays, toArr, fromArr )
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
 import Data.Array.Accelerate.Error                                  ( internalError )
@@ -143,8 +143,7 @@ runWithIO target a = execute
       evalPTX target $ do
         build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (evalPar (executeAcc exec
-                                            >>= copyToHostLazy (arrays @a)))
+        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy (arrays @a)))
         return $ toArr res
 
 
@@ -465,11 +464,12 @@ runQ'_ using k f = do
       go (Alam lhs l) xs as stmts | HasTypeable <- lhsTypeable lhs = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
-        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), fromArr $(TH.varE a)) |] : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToArraysR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
+        s <- TH.newName "s"
         let
             aenv  = foldr (\a gamma -> [| $gamma `push` $a |] ) [| Empty |] as
             body  = embedOpenAcc defaultTarget b
@@ -478,7 +478,8 @@ runQ'_ using k f = do
                 [| $using (phase "execute" $(k (
                      TH.doE ( reverse stmts ++
                             [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                            , TH.noBindS [| copyToHostLazy $(TH.varE r) |]
+                            , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeQ (liftArraysR (arraysRepr b))) $(TH.varE r) |]
+                            , TH.noBindS [| return $ toArr $(TH.varE s) |]
                             ]))))
                  |]
   --

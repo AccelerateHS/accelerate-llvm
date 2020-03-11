@@ -58,7 +58,7 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS, liftArraysR, lhsToArraysR )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays, toArr, fromArr, arrays, ArrRepr )
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
 import Data.Array.Accelerate.Smart                                  ( Acc )
@@ -69,7 +69,7 @@ import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteA
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
-import Data.Array.Accelerate.LLVM.Native.Execute.Async              ( Par, evalPar, get, getArrays )
+import Data.Array.Accelerate.LLVM.Native.Execute.Async              ( Par, evalPar, getArrays )
 import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Val, ValR(..), push )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
@@ -193,7 +193,10 @@ runNWith target f = go (afunctionRepr @f) afun (return Empty)
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
 
-    go :: AfunctionRepr t (AfunctionR t) (AreprFunctionR t) -> ExecOpenAfun Native aenv (AreprFunctionR t) -> Par Native (Val aenv) -> AfunctionR t
+    go :: AfunctionRepr t (AfunctionR t) (AreprFunctionR t)
+       -> ExecOpenAfun Native aenv (AreprFunctionR t)
+       -> Par Native (Val aenv)
+       -> AfunctionR t
     go (AfunctionReprLam repr) (Alam lhs l) k = \(arrs :: a) ->
       let k' = do aenv  <- k
                   a     <- useRemoteAsync (arrays @a) $ fromArr arrs
@@ -366,50 +369,47 @@ runQAsyncWith f = do
   TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
 
 
-runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQ' :: forall f. Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
 runQ' using target f = do
 #if MIN_VERSION_template_haskell(2,13,0)
   -- The plugin ensures that objects are loaded correctly into GHCi
   TH.addCorePlugin "Data.Array.Accelerate.LLVM.Native.Plugin"
 #endif
 
-  -- Reification of the program for segmented folds depends on whether we are
-  -- executing in parallel or sequentially, where the parallel case requires
-  -- some extra work to convert the segments descriptor into a segment offset
-  -- array. Also do this conversion, so that the program can be run both in
-  -- parallel as well as sequentially (albeit with some additional work that
-  -- could have been avoided).
-  --
-  -- TLM: We could also just reify the program twice and select at runtime which
-  --      version to execute.
-  --
   afun  <- let acc = convertAfun f
             in TH.runIO $ do
                  dumpGraph acc
                  evalNative defaultTarget $
                   phase "compile" elapsedS (compileAfun acc) >>= dumpStats
 
-  -- generate a lambda function with the correct number of arguments and apply
-  -- directly to the body expression.
+  -- generate a lambda function with the correct number of arguments and
+  -- apply directly to the body expression.
+  --
+  -- XXX: remove use of 'getArrays', 'toArr', and 'fromArr' in the embedded
+  -- code; we should be able to generate all bindings directly and assemble
+  -- the pieces directly.
+  --
   let
       go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
       go (Alam lhs l) xs as stmts | HasTypeable <- lhsTypeable lhs = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.varE x) |]
-        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), fromArr $(TH.varE a)) |] : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToArraysR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
+        s <- TH.newName "s"
         let
             aenv  = foldr (\a gamma -> [| $gamma `push` $a |]) [| Empty |] as
             body  = embedOpenAcc defaultTarget b
         --
         TH.lamE (reverse xs)
                 [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
-                      $(TH.doE ( reverse stmts ++   -- useRemoteAsync
+                      $(TH.doE ( reverse stmts ++
                                [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                               , TH.noBindS [| toArr <$> get $(TH.varE r) |]
+                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysRepr b))) $(TH.varE r) |]
+                               , TH.noBindS [| return $ toArr $(TH.varE s) |]
                                ]))
                  |]
   --
