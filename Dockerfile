@@ -1,7 +1,7 @@
 # vim: nospell
 
 # https://hub.docker.com/r/nvidia/cuda/
-FROM nvidia/cuda:9.2-devel-ubuntu16.04
+FROM nvidia/cuda:10.2-devel-ubuntu18.04
 LABEL maintainer "Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>"
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -29,34 +29,29 @@ RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 
 # Install LLVM
 RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
- && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-5.0 main" \
- && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-6.0 main" \
+ && add-apt-repository "deb http://apt.llvm.org/xenial/ llvm-toolchain-bionic main" \
  && apt-get update \
- && apt-get install -y llvm-5.0-dev llvm-6.0-dev
+ && apt-get install -y llvm-8-dev
 
 # GHC requires a specific LLVM version on the system PATH for its LLVM backend.
-# This version is tracked here:
+# The version is tracked here:
 # https://ghc.haskell.org/trac/ghc/wiki/Commentary/Compiler/Backends/LLVM/Installing
-#
-# GHC 8.4 requires LLVM 5.0 tools (specifically, llc and opt)
-RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-5.0" 50
-RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-5.0" 50
-
-# GHC 8.4 requires libffi7
-RUN apt-add-repository "deb http://deb.debian.org/debian experimental main" \
- && apt-get install -y debian-archive-keyring \
- && apt-get update \
- && apt-get install -y libffi7
+# RUN update-alternatives --install "/usr/bin/llc" "llc" "/usr/bin/llc-6" 50
+# RUN update-alternatives --install "/usr/bin/opt" "opt" "/usr/bin/opt-6" 50
 
 # Setup stack and build dependencies
 WORKDIR ${PREFIX}
 COPY ./README.md                                            ${PREFIX}/
 COPY ./LICENSE                                              ${PREFIX}/
-COPY ./stack-8.4.yaml                                       ${PREFIX}/stack.yaml
+COPY ./stack-8.6.yaml                                       ${PREFIX}/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal                ${PREFIX}/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal  ${PREFIX}/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal        ${PREFIX}/accelerate-llvm-ptx/
 
+# GHC 8.4 requires libffi7
+ENV LD_LIBRARY_PATH $(stack exec ghc -- --print-lib)/rts:${LD_LIBRARY_PATH}
+
+# Setup build environment
 RUN stack --no-terminal --color never setup
 RUN stack --no-terminal --color never build --only-snapshot
 
