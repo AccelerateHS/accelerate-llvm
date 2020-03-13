@@ -337,7 +337,7 @@ atomically barriers i action = do
   -- If we just acquired the lock, execute the critical section
   setBlock crit
   r    <- action
-  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
   yes  <- br skip
 
   -- At the base of the critical section, threads participate in a memory fence
