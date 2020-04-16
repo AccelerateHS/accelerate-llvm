@@ -13,6 +13,7 @@ cache:
 before_cache:
   # - rm -rf $(stack path --local-install-root)/bin
   - rm -rf $(stack path --local-install-root)/doc
+  - rm -f $HOME/.stack/programs/*/*.tar.bz2
 
 addons:
   apt:
@@ -26,12 +27,22 @@ addons:
       - g++-8
       - gcc-8
       - happy-1.19.5
-      - libffi-dev
       - libgmp-dev
 
 matrix:
   fast_finish: true
   include:
+    - env: GHC=8.8.3 LLVM=9.0.1 CUDA=10.1.105-1
+      compiler: "GHC 8.8"
+      addons:
+        apt:
+          sources:
+            - *apt_sources
+            - llvm-toolchain-xenial-9
+          packages:
+            - *apt_packages
+            - llvm-9-dev
+
     - env: GHC=8.6.5 LLVM=8.0.0 CUDA=10.1.105-1
       compiler: "GHC 8.6"
       addons:
