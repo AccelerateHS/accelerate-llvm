@@ -1,0 +1,44 @@
+# For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
+# vim: nospell
+
+resolver: lts-15.8
+
+packages:
+- accelerate-llvm
+- accelerate-llvm-native
+- accelerate-llvm-ptx
+
+extra-deps:
+- github: tmcdonell/accelerate
+  commit: da18b951f85c969971929199e0b03114ff210b6c
+
+- github: tmcdonell/cuda
+  commit: bf6efc8f9118caac91bde8c9535970f7ab645ead
+
+- github: tmcdonell/nvvm
+  commit: 219637eab3aab7275ce0a0c9b0e1855be912fe8a
+
+# Override default flag values for local packages and extra-deps
+# flags: {}
+
+# Extra global and per-package GHC options
+# ghc-options: {}
+
+# Extra package databases containing global packages
+# extra-package-dbs: []
+
+# Control whether we use the GHC we find on the path
+# system-ghc: true
+
+# Require a specific version of stack, using version ranges
+# require-stack-version: -any # Default
+# require-stack-version: >= 0.1.4.0
+
+# Override the architecture used by stack, especially useful on Windows
+# arch: i386
+# arch: x86_64
+
+# Extra directories used by stack for building
+# extra-include-dirs: [/path/to/dir]
+# extra-lib-dirs: [/path/to/dir]
+

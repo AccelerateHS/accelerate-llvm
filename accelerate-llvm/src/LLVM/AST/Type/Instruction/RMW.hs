@@ -65,7 +65,7 @@ instance Downcast (FloatingType a, RMWOperation) LLVM.RMWOperation where
   downcast (_, rmw) =
     case rmw of
       Exchange        -> LLVM.Xchg
-#if MIN_VERSION_llvm_hs_pure(9,0,0)
+#if MIN_VERSION_llvm_hs_pure(10,0,0)
       Add             -> LLVM.FAdd
       Sub             -> LLVM.FSub
 #endif

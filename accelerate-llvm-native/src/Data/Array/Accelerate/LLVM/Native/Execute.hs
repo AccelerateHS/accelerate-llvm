@@ -59,7 +59,6 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
-import Data.Word                                                    ( Word8 )
 import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Short.Char8                        as S8
