@@ -57,7 +57,6 @@ import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
-import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 

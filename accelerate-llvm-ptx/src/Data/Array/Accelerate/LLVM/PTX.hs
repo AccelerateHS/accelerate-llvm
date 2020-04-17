@@ -63,7 +63,6 @@ import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Debug                                  as Debug
 
-import Data.Array.Accelerate.LLVM.Embed                             ( HasTypeable(..), lhsTypeable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context

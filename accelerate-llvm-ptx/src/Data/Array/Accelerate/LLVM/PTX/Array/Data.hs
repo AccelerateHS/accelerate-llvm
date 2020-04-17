@@ -43,7 +43,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
 -- standard library
 import Control.Applicative
 import Control.Monad.Reader
-import Control.Monad.State                                          ( liftIO, gets )
+import Control.Monad.State                                          ( gets )
 import Data.IORef
 import Data.Typeable
 import Foreign.Ptr

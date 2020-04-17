@@ -15,7 +15,6 @@ module Data.Array.Accelerate.LLVM.State
   where
 
 -- library
-import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
