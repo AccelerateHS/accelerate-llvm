@@ -20,7 +20,8 @@ addons:
     sources: &apt_sources
       - hvr-ghc
       - ubuntu-toolchain-r-test
-      - llvm-toolchain-xenial
+      - sourceline: 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial main'
+        key_url:    'https://apt.llvm.org/llvm-snapshot.gpg.key'
     packages: &apt_packages
       - alex-3.1.7
       - dpkg
@@ -38,7 +39,8 @@ matrix:
         apt:
           sources:
             - *apt_sources
-            - llvm-toolchain-xenial-9
+            - sourceline: 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-9 main'
+              key_url:    'https://apt.llvm.org/llvm-snapshot.gpg.key'
           packages:
             - *apt_packages
             - llvm-9-dev
