@@ -322,7 +322,7 @@ parseObject obj = do
   (p, tph, tsec, strix) <- runGet readHeader obj
 
   -- As this is an object file, we do not expect any program headers
-  unless (tb_entries tph == 0) $ fail "unhandled program header(s)"
+  unless (tb_entries tph == 0) $ Left "unhandled program header(s)"
 
   -- Read the object file headers
   secs    <- runGet (V.replicateM (tb_entries tsec) (readSectionHeader p)) (B.drop (tb_fileoff tsec) obj)
@@ -592,7 +592,7 @@ readStringTable obj SectionHeader{..} =
 
 readRelocations :: Peek -> ByteString -> SectionHeader -> Either String (Vector Relocation)
 readRelocations p@Peek{..} obj SectionHeader{..} = do
-  unless (sh_type == Rel || sh_type == RelA) $ fail "expected relocation section"
+  unless (sh_type == Rel || sh_type == RelA) $ Left "expected relocation section"
   --
   let nrel = sh_size `quot` sh_entsize
   runGet (V.replicateM nrel (readRel p sh_type sh_info)) (B.drop sh_offset obj)
@@ -622,7 +622,7 @@ readRel64 Peek{..} sh_type r_section = do
 
 readSymbolTable :: Peek -> Vector SectionHeader -> ByteString -> SectionHeader -> Either String (Vector Symbol)
 readSymbolTable p@Peek{..} secs obj SectionHeader{..} = do
-  unless (sh_type == SymTab) $ fail "expected symbol table"
+  unless (sh_type == SymTab) $ Left "expected symbol table"
 
   let nsym    = sh_size `quot` sh_entsize
       offset  = sh_offset + sh_entsize  -- First symbol in the table is always null; skip it.
