@@ -114,10 +114,10 @@ install:
   - stack build $FLAGS --test --dry-run
 
   # bootstrap
-  - travis_retry stack build $FLAGS accelerate --only-dependencies --test --no-run-tests
+  # - travis_retry stack build $FLAGS accelerate --only-dependencies --test --no-run-tests
 
   # build dependencies
-  # - travis_retry stack build $FLAGS --only-dependencies --test --no-run-tests
+  - travis_retry stack build $FLAGS --only-dependencies --test --no-run-tests
 
 script:
   - true
