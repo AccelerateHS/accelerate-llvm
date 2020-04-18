@@ -39,6 +39,8 @@ import System.IO.Unsafe
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Syntax                         as TH
 
 
 -- NVVM Reflect
@@ -65,82 +67,64 @@ instance NVVMReflect (ShortByteString, ByteString) where
 class Libdevice a where
   libdevice :: Compute -> a
 
-instance Libdevice AST.Module where
-  libdevice _
-    | CUDA.libraryVersion >= 9000
-    = libdevice_50_mdl
-  --
-  libdevice (Compute n m) =
-    case (n,m) of
-      (2,_)             -> libdevice_20_mdl   -- 2.0, 2.1
-      (3,x) | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
-            | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-      (5,_)             -> libdevice_50_mdl   -- 5.x
-      (6,_)             -> libdevice_50_mdl   -- 6.x
-      _                 -> $internalError "libdevice" "no binary for this architecture"
-
-instance Libdevice (ShortByteString, ByteString) where
-  libdevice _
-    | CUDA.libraryVersion >= 9000
-    = libdevice_50_bc
-  --
-  libdevice (Compute n m) =
-    case (n,m) of
-      (2,_)             -> libdevice_20_bc    -- 2.0, 2.1
-      (3,x) | x < 5     -> libdevice_30_bc    -- 3.0, 3.2
-            | otherwise -> libdevice_35_bc    -- 3.5, 3.7
-      (5,_)             -> libdevice_50_bc    -- 5.x
-      (6,_)             -> libdevice_50_bc    -- 6.x
-      _                 -> $internalError "libdevice" "no binary for this architecture"
-
-
 -- Load the libdevice bitcode files as an LLVM AST module. The top-level
--- unsafePerformIO ensures that the data is only read from disk once per program
--- execution.
+-- unsafePerformIO ensures that the data is only read from disk once per
+-- program execution.
 --
--- TLM: As of CUDA-9.0, libdevice is no longer split into multiple files
--- depending on the target compute architecture. The function 'libdeviceBitcode'
--- knows this and ignores the architecture parameter, and in the above instances
--- we only refer to the 5.0 module below. Although the TH splices will be run
--- 4 times (and read in the same file 4 times) hopefully GHC is smart enough to
--- remove the unused bindings as dead code...
+-- As of CUDA-9.0, libdevice is no longer split into multiple files
+-- depending on the target compute architecture.
 --
-{-# NOINLINE libdevice_20_mdl #-}
-{-# NOINLINE libdevice_30_mdl #-}
-{-# NOINLINE libdevice_35_mdl #-}
-{-# NOINLINE libdevice_50_mdl #-}
-libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
-libdevice_20_mdl = unsafePerformIO $ libdeviceModule (Compute 2 0)
-libdevice_30_mdl = unsafePerformIO $ libdeviceModule (Compute 3 0)
-libdevice_35_mdl = unsafePerformIO $ libdeviceModule (Compute 3 5)
-libdevice_50_mdl = unsafePerformIO $ libdeviceModule (Compute 5 0)
+$( let
+      libdeviceModule :: TH.ExpQ
+      libdeviceModule = [| \(name, bc) ->
+        unsafePerformIO $
+          withContext $ \ctx ->
+            withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST |]
+   in
+   if CUDA.libraryVersion < 9000
+      then
+        [d| {-# NOINLINE libdevice_20_mdl #-}
+            {-# NOINLINE libdevice_30_mdl #-}
+            {-# NOINLINE libdevice_35_mdl #-}
+            {-# NOINLINE libdevice_50_mdl #-}
+            libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
+            libdevice_20_mdl = $libdeviceModule libdevice_20_bc
+            libdevice_30_mdl = $libdeviceModule libdevice_30_bc
+            libdevice_35_mdl = $libdeviceModule libdevice_35_bc
+            libdevice_50_mdl = $libdeviceModule libdevice_50_bc
 
--- Load the libdevice bitcode files as raw binary data.
---
-libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
-libdevice_20_bc = $$( libdeviceBitcode (Compute 2 0) )
-libdevice_30_bc = $$( libdeviceBitcode (Compute 3 0) )
-libdevice_35_bc = $$( libdeviceBitcode (Compute 3 5) )
-libdevice_50_bc = $$( libdeviceBitcode (Compute 5 0) )
+            libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
+            libdevice_20_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 2 0) )
+            libdevice_30_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 3 0) )
+            libdevice_35_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 3 5) )
+            libdevice_50_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 5 0) )
 
+            instance Libdevice AST.Module where
+              libdevice compute =
+                case compute of
+                  Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
+                  Compute 3 x
+                    | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
+                    | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
+                  Compute 5 _   -> libdevice_50_mdl   -- 5.x
+                  _             -> $internalError "libdevice"
+                                       (unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
+                                                , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
+                                                ])
+        |]
+      else
+        [d| {-# NOINLINE libdevice_mdl #-}
+            libdevice_mdl :: AST.Module
+            libdevice_mdl = $libdeviceModule libdevice_bc
 
--- Load the libdevice bitcode file for the given compute architecture, and raise
--- it to a Haskell AST that can be kept for future use. The name of the bitcode
--- files follows:
---
---   libdevice.compute_XX.YY.bc
---
--- Where XX represents the compute capability, and YY represents a version(?) We
--- search the libdevice PATH for all files of the appropriate compute capability
--- and load the most recent.
---
-libdeviceModule :: Compute -> IO AST.Module
-libdeviceModule arch = do
-  let
-      name :: ShortByteString
-      bc   :: ByteString
-      (name, bc) = libdevice arch
-  --
-  withContext $ \ctx ->
-    withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
+            libdevice_bc :: (ShortByteString,ByteString)
+            libdevice_bc = $( TH.unTypeQ $ libdeviceBitcode undefined )
+
+            instance Libdevice AST.Module where
+              libdevice _ = libdevice_mdl
+
+            instance Libdevice (ShortByteString,ByteString) where
+              libdevice _ = libdevice_bc
+        |]
+ )
 
