@@ -22,14 +22,13 @@ module Data.Array.Accelerate.LLVM.Embed (
   embedAfun, embedOpenAfun,
   embedOpenAcc,
 
-  HasTypeable(..), arraysTypeable, lhsTypeable
-
 ) where
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( liftIdx, liftTupleIdx, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun, liftLHS, liftArray )
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.AST                                    ( liftIdx, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun, liftALhs, liftELhs, liftArray, liftArraysR, liftArrayR, liftScalarType, liftShapeR, liftVecR, liftTupleType, liftIntegralType )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Array.Sugar                            ( liftForeign )
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
@@ -37,7 +36,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
 
-import Data.Typeable
 import Data.ByteString.Short                                        ( ShortByteString )
 import GHC.Ptr                                                      ( Ptr(..) )
 import Language.Haskell.TH                                          ( Q, TExp )
@@ -72,7 +70,7 @@ class Embed arch where
 --
 {-# INLINEABLE embedAfun #-}
 embedAfun
-    :: (Embed arch, Typeable arch)
+    :: Embed arch
     => arch
     -> CompiledAfun arch f
     -> Q (TExp (ExecAfun arch f))
@@ -80,27 +78,25 @@ embedAfun = embedOpenAfun
 
 {-# INLINEABLE embedOpenAfun #-}
 embedOpenAfun
-    :: (Embed arch, Typeable arch, Typeable aenv)
+    :: (Embed arch)
     => arch
     -> CompiledOpenAfun arch aenv f
     -> Q (TExp (ExecOpenAfun arch aenv f))
-embedOpenAfun arch (Alam lhs l)
-  | HasTypeable <- lhsTypeable lhs = [|| Alam $$(liftLHS lhs) $$(embedOpenAfun arch l) ||]
-embedOpenAfun arch (Abody b)       = [|| Abody $$(embedOpenAcc arch b) ||]
+embedOpenAfun arch (Alam lhs l) = [|| Alam $$(liftALhs lhs) $$(embedOpenAfun arch l) ||]
+embedOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE embedOpenAcc #-}
 embedOpenAcc
-    :: forall arch aenv arrs. (Embed arch, Typeable arch, Typeable aenv)
+    :: forall arch aenv arrs. Embed arch
     => arch
     -> CompiledOpenAcc arch aenv arrs
     -> Q (TExp (ExecOpenAcc arch aenv arrs))
 embedOpenAcc arch = liftA
   where
-    liftA :: Typeable aenv' => CompiledOpenAcc arch aenv' arrs' -> Q (TExp (ExecOpenAcc arch aenv' arrs'))
-    liftA acc
-      | HasTypeable <- arraysTypeable $ arraysRepr acc = case acc of
-        PlainAcc pacc          -> withSigE [|| EvalAcc $$(liftPreOpenAccCommand arch pacc) ||]
-        BuildAcc aenv obj pacc -> withSigE [|| ExecAcc $$(liftGamma aenv) $$(embedForTarget arch obj) $$(liftPreOpenAccSkeleton arch pacc) ||]
+    liftA :: CompiledOpenAcc arch aenv' arrs' -> Q (TExp (ExecOpenAcc arch aenv' arrs'))
+    liftA acc = case acc of
+        PlainAcc repr pacc          -> [|| EvalAcc $$(liftArraysR repr) $$(liftPreOpenAccCommand arch pacc) ||]
+        BuildAcc repr aenv obj pacc -> [|| ExecAcc $$(liftArraysR repr) $$(liftGamma aenv) $$(embedForTarget arch obj) $$(liftPreOpenAccSkeleton arch pacc) ||]
 
     liftGamma :: Gamma aenv' -> Q (TExp (Gamma aenv'))
 #if MIN_VERSION_containers(0,5,8)
@@ -116,7 +112,7 @@ embedOpenAcc arch = liftA
           TH.TExp . TH.ListE <$> mapM (\(k,v) -> TH.unTypeQ [|| (k, $$(liftV v)) ||]) im
 #endif
     liftV :: (Label, Idx' aenv') -> Q (TExp (Label, Idx' aenv'))
-    liftV (Label n, Idx' ix) = [|| (Label $$(liftSBS n), Idx' $$(liftIdx ix)) ||]
+    liftV (Label n, Idx' repr ix) = [|| (Label $$(liftSBS n), Idx' $$(liftArrayR repr) $$(liftIdx ix)) ||]
 
     -- O(n) at runtime to copy from the Addr# to the ByteArray#. We should
     -- be able to do this without copying, but I don't think the definition of
@@ -131,26 +127,25 @@ embedOpenAcc arch = liftA
 
 {-# INLINEABLE liftPreOpenAfun #-}
 liftPreOpenAfun
-    :: (Embed arch, Typeable arch, Typeable aenv)
+    :: Embed arch
     => arch
     -> PreOpenAfun (CompiledOpenAcc arch) aenv t
     -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv t))
-liftPreOpenAfun arch (Alam lhs f)
-  | HasTypeable <- lhsTypeable lhs = [|| Alam $$(liftLHS lhs) $$(liftPreOpenAfun arch f) ||]
-liftPreOpenAfun arch (Abody b)     = [|| Abody $$(embedOpenAcc arch b) ||]
+liftPreOpenAfun arch (Alam lhs f) = [|| Alam $$(liftALhs lhs) $$(liftPreOpenAfun arch f) ||]
+liftPreOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE liftPreOpenAccCommand #-}
 liftPreOpenAccCommand
-    :: forall arch aenv a. (Embed arch, Typeable arch, Typeable aenv)
+    :: forall arch aenv a. Embed arch
     => arch
     -> PreOpenAccCommand CompiledOpenAcc arch aenv a
     -> Q (TExp (PreOpenAccCommand ExecOpenAcc arch aenv a))
 liftPreOpenAccCommand arch pacc =
   let
-      liftA :: Typeable aenv' => CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
+      liftA :: CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
       liftA = embedOpenAcc arch
 
-      liftE :: PreExp (CompiledOpenAcc arch) aenv t -> Q (TExp (PreExp (ExecOpenAcc arch) aenv t))
+      liftE :: PreExp ArrayVar aenv t -> Q (TExp (PreExp ArrayVar aenv t))
       liftE = liftPreOpenExp arch
 
       liftAF :: PreOpenAfun (CompiledOpenAcc arch) aenv f -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv f))
@@ -158,24 +153,22 @@ liftPreOpenAccCommand arch pacc =
   in
   case pacc of
     Avar v            -> [|| Avar $$(liftArrayVar v) ||]
-    Alet lhs bnd body
-      | HasTypeable <- lhsTypeable lhs
-                      -> [|| Alet $$(liftLHS lhs) $$(liftA bnd) $$(liftA body) ||]
-    Alloc sh          -> [|| Alloc $$(liftE sh) ||]
-    Use a             -> [|| Use $$(liftArray a) ||]
-    Unit e            -> [|| Unit $$(liftE e) ||]
+    Alet lhs bnd body -> [|| Alet $$(liftALhs lhs) $$(liftA bnd) $$(liftA body) ||]
+    Alloc repr sh     -> [|| Alloc $$(liftArrayR repr) $$(liftE sh) ||]
+    Use repr a        -> [|| Use $$(liftArrayR repr) $$(liftArray repr a) ||]
+    Unit tp e         -> [|| Unit $$(liftTupleType tp) $$(liftE e) ||]
     Apair a1 a2       -> [|| Apair $$(liftA a1) $$(liftA a2) ||]
     Anil              -> [|| Anil ||]
-    Apply f a         -> [|| Apply $$(liftAF f) $$(liftA a) ||]
+    Apply repr f a    -> [|| Apply $$(liftArraysR repr) $$(liftAF f) $$(liftA a) ||]
     Acond p t e       -> [|| Acond $$(liftE p) $$(liftA t) $$(liftA e) ||]
     Awhile p f a      -> [|| Awhile $$(liftAF p) $$(liftAF f) $$(liftA a) ||]
-    Reshape sh v      -> [|| Reshape $$(liftE sh) $$(liftArrayVar v) ||]
-    Unzip tix v       -> [|| Unzip $$(liftTupleIdx tix) $$(liftArrayVar v) ||]
+    Reshape shr sh v  -> [|| Reshape $$(liftShapeR shr) $$(liftE sh) $$(liftArrayVar v) ||]
+    Unzip tix v       -> [|| Unzip $$(liftUnzipIdx tix) $$(liftArrayVar v) ||]
     Aforeign{}        -> $internalError "liftPreOpenAcc" "using foreign functions from template-haskell is not supported yet"
 
 {-# INLINEABLE liftPreOpenAccSkeleton #-}
 liftPreOpenAccSkeleton
-    :: forall arch aenv a. (Embed arch, Typeable arch, Typeable aenv)
+    :: forall arch aenv a. Embed arch
     => arch
     -> PreOpenAccSkeleton CompiledOpenAcc arch aenv a
     -> Q (TExp (PreOpenAccSkeleton ExecOpenAcc arch aenv a))
@@ -185,81 +178,74 @@ liftPreOpenAccSkeleton arch pacc =
       liftA = embedOpenAcc arch
 
       liftD :: DelayedOpenAcc CompiledOpenAcc arch aenv arrs -> Q (TExp (DelayedOpenAcc ExecOpenAcc arch aenv arrs))
-      liftD (Delayed sh) = [|| Delayed $$(liftE sh) ||]
-      liftD (Manifest a) = [|| Manifest $$(liftA a) ||]
+      liftD (Delayed repr sh) = [|| Delayed $$(liftArrayR repr) $$(liftE sh) ||]
+      liftD (Manifest repr a) = [|| Manifest $$(liftArraysR repr) $$(liftA a) ||]
 
-      liftE :: PreExp (CompiledOpenAcc arch) aenv t -> Q (TExp (PreExp (ExecOpenAcc arch) aenv t))
+      liftE :: PreExp ArrayVar aenv t -> Q (TExp (PreExp ArrayVar aenv t))
       liftE = liftPreOpenExp arch
 
-      liftS :: forall sh. Shape sh => sh -> Q (TExp sh)
-      liftS sh = [|| toElt $$(liftConst (eltType @sh) (fromElt sh)) ||]
+      liftS :: ShapeR sh -> sh -> Q (TExp sh)
+      liftS shr sh = [|| $$(liftConst (shapeType shr) sh) ||]
   in
   case pacc of
-    Map a             -> [|| Map $$(liftA a) ||]
-    Generate sh       -> [|| Generate $$(liftE sh) ||]
-    Transform sh a    -> [|| Transform $$(liftE sh) $$(liftA a) ||]
-    Backpermute sh a  -> [|| Backpermute $$(liftE sh) $$(liftA a) ||]
-    Fold a            -> [|| Fold $$(liftD a) ||]
-    Fold1 a           -> [|| Fold1 $$(liftD a) ||]
-    FoldSeg a s       -> [|| FoldSeg $$(liftD a) $$(liftD s) ||]
-    Fold1Seg a s      -> [|| Fold1Seg $$(liftD a) $$(liftD s) ||]
-    Scanl a           -> [|| Scanl $$(liftD a) ||]
-    Scanl1 a          -> [|| Scanl1 $$(liftD a) ||]
-    Scanl' a          -> [|| Scanl' $$(liftD a) ||]
-    Scanr a           -> [|| Scanr $$(liftD a) ||]
-    Scanr1 a          -> [|| Scanr1 $$(liftD a) ||]
-    Scanr' a          -> [|| Scanr' $$(liftD a) ||]
-    Permute d a       -> [|| Permute $$(liftA d) $$(liftD a) ||]
-    Stencil1 h a      -> [|| Stencil1 $$(liftS h) $$(liftD a) ||]
-    Stencil2 h a b    -> [|| Stencil2 $$(liftS h) $$(liftD a) $$(liftD b) ||]
+    Map tp a             -> [|| Map $$(liftTupleType tp) $$(liftA a) ||]
+    Generate repr sh     -> [|| Generate $$(liftArrayR repr) $$(liftE sh) ||]
+    Transform repr sh a  -> [|| Transform $$(liftArrayR repr) $$(liftE sh) $$(liftA a) ||]
+    Backpermute shr sh a -> [|| Backpermute $$(liftShapeR shr) $$(liftE sh) $$(liftA a) ||]
+    Fold a               -> [|| Fold $$(liftD a) ||]
+    Fold1 a              -> [|| Fold1 $$(liftD a) ||]
+    FoldSeg i a s        -> [|| FoldSeg $$(liftIntegralType i) $$(liftD a) $$(liftD s) ||]
+    Fold1Seg i a s       -> [|| Fold1Seg $$(liftIntegralType i) $$(liftD a) $$(liftD s) ||]
+    Scanl a              -> [|| Scanl $$(liftD a) ||]
+    Scanl1 a             -> [|| Scanl1 $$(liftD a) ||]
+    Scanl' a             -> [|| Scanl' $$(liftD a) ||]
+    Scanr a              -> [|| Scanr $$(liftD a) ||]
+    Scanr1 a             -> [|| Scanr1 $$(liftD a) ||]
+    Scanr' a             -> [|| Scanr' $$(liftD a) ||]
+    Permute d a          -> [|| Permute $$(liftA d) $$(liftD a) ||]
+    Stencil1 tp h a      -> [|| Stencil1 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) ||]
+    Stencil2 tp h a b    -> [|| Stencil2 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) $$(liftD b) ||]
 
 {-# INLINEABLE liftPreOpenFun #-}
 liftPreOpenFun
-    :: (Embed arch, Typeable arch, Typeable env, Typeable aenv)
+    :: Embed arch
     => arch
-    -> PreOpenFun (CompiledOpenAcc arch) env aenv t
-    -> Q (TExp (PreOpenFun (ExecOpenAcc arch) env aenv t))
-liftPreOpenFun arch (Lam f)  = [|| Lam  $$(liftPreOpenFun arch f) ||]
-liftPreOpenFun arch (Body b) = [|| Body $$(liftPreOpenExp arch b) ||]
+    -> PreOpenFun ArrayVar env aenv t
+    -> Q (TExp (PreOpenFun ArrayVar env aenv t))
+liftPreOpenFun arch (Lam lhs f) = [|| Lam $$(liftELhs lhs) $$(liftPreOpenFun arch f) ||]
+liftPreOpenFun arch (Body b)    = [|| Body $$(liftPreOpenExp arch b) ||]
 
 {-# INLINEABLE liftPreOpenExp #-}
 liftPreOpenExp
-    :: forall arch env aenv t. (Embed arch, Typeable arch, Typeable env, Typeable aenv)
+    :: forall arch env aenv t. Embed arch
     => arch
-    -> PreOpenExp (CompiledOpenAcc arch) env aenv t
-    -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv t))
+    -> PreOpenExp ArrayVar env aenv t
+    -> Q (TExp (PreOpenExp ArrayVar env aenv t))
 liftPreOpenExp arch pexp =
   let
-      liftA :: CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
-      liftA = embedOpenAcc arch
+      liftA :: ArrayVar aenv arr -> Q (TExp (ArrayVar aenv arr))
+      liftA (Var repr ix) = [|| Var $$(liftArrayR repr) $$(liftIdx ix) ||]
 
-      liftE :: PreOpenExp (CompiledOpenAcc arch) env aenv e -> Q (TExp (PreOpenExp (ExecOpenAcc arch) env aenv e))
+      liftE :: PreOpenExp ArrayVar env aenv e -> Q (TExp (PreOpenExp ArrayVar env aenv e))
       liftE = liftPreOpenExp arch
 
-      liftF :: PreOpenFun (CompiledOpenAcc arch) env aenv f -> Q (TExp (PreOpenFun (ExecOpenAcc arch) env aenv f))
+      liftF :: PreOpenFun ArrayVar env aenv f -> Q (TExp (PreOpenFun ArrayVar env aenv f))
       liftF = liftPreOpenFun arch
-
-      liftT :: Tuple (PreOpenExp (CompiledOpenAcc arch) env aenv) e -> Q (TExp (Tuple (PreOpenExp (ExecOpenAcc arch) env aenv) e))
-      liftT NilTup          = [|| NilTup ||]
-      liftT (SnocTup tup e) = [|| SnocTup $$(liftT tup) $$(liftE e) ||]
   in
   case pexp of
-    Let bnd body              -> [|| Let $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
-    Var ix                    -> [|| Var $$(liftIdx ix) ||]
+    Let lhs bnd body          -> [|| Let $$(liftELhs lhs) $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
+    Evar (Var tp ix)          -> [|| Evar (Var $$(liftScalarType tp) $$(liftIdx ix)) ||]
     Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
-    Const c                   -> [|| Const $$(liftConst (eltType @t) c) ||]
-    Undef                     -> [|| Undef ||]
-    Tuple tup                 -> [|| Tuple $$(liftT tup) ||]
-    Prj tix e                 -> withSigE [|| Prj $$(liftTupleIdx tix) $$(liftE e) ||]
-    IndexNil                  -> [|| IndexNil ||]
-    IndexCons sh sz           -> [|| IndexCons $$(liftE sh) $$(liftE sz) ||]
-    IndexHead sh              -> [|| IndexHead $$(liftE sh) ||]
-    IndexTail sh              -> [|| IndexTail $$(liftE sh) ||]
-    IndexAny                  -> [|| IndexAny ||]
-    IndexSlice slice slix sh  -> withSigE [|| IndexSlice $$(liftSliceIndex slice) $$(withSigE (liftE slix)) $$(withSigE (liftE sh)) ||]
-    IndexFull slice slix sl   -> withSigE [|| IndexFull $$(liftSliceIndex slice) $$(withSigE (liftE slix)) $$(withSigE (liftE sl)) ||]
-    ToIndex sh ix             -> [|| ToIndex $$(liftE sh) $$(liftE ix) ||]
-    FromIndex sh ix           -> [|| FromIndex $$(liftE sh) $$(liftE ix) ||]
+    Const t c                 -> [|| Const $$(liftScalarType t) $$(liftConst (TupRsingle t) c) ||]
+    Undef t                   -> [|| Undef $$(liftScalarType t) ||]
+    Nil                       -> [|| Nil ||]
+    Pair e1 e2                -> [|| Pair $$(liftE e1) $$(liftE e2) ||]
+    VecPack   vecr e          -> [|| VecPack   $$(liftVecR vecr) $$(liftE e) ||]
+    VecUnpack vecr e          -> [|| VecUnpack $$(liftVecR vecr) $$(liftE e) ||]
+    IndexSlice slice slix sh  -> [|| IndexSlice $$(liftSliceIndex slice) $$(liftE slix) $$(liftE sh) ||]
+    IndexFull slice slix sl   -> [|| IndexFull $$(liftSliceIndex slice) $$(liftE slix) $$(liftE sl) ||]
+    ToIndex shr sh ix         -> [|| ToIndex $$(liftShapeR shr) $$(liftE sh) $$(liftE ix) ||]
+    FromIndex shr sh ix       -> [|| FromIndex $$(liftShapeR shr) $$(liftE sh) $$(liftE ix) ||]
     Cond p t e                -> [|| Cond $$(liftE p) $$(liftE t) $$(liftE e) ||]
     While p f x               -> [|| While $$(liftF p) $$(liftF f) $$(liftE x) ||]
     PrimConst t               -> [|| PrimConst $$(liftPrimConst t) ||]
@@ -267,48 +253,15 @@ liftPreOpenExp arch pexp =
     Index a ix                -> [|| Index $$(liftA a) $$(liftE ix) ||]
     LinearIndex a ix          -> [|| LinearIndex $$(liftA a) $$(liftE ix) ||]
     Shape a                   -> [|| Shape $$(liftA a) ||]
-    ShapeSize ix              -> [|| ShapeSize $$(liftE ix) ||]
-    Intersect sh1 sh2         -> [|| Intersect $$(liftE sh1) $$(liftE sh2) ||]
-    Union sh1 sh2             -> [|| Union $$(liftE sh1) $$(liftE sh2) ||]
-    Coerce x                  -> [|| Coerce $$(liftE x) ||]
+    ShapeSize shr ix          -> [|| ShapeSize $$(liftShapeR shr) $$(liftE ix) ||]
+    Coerce t1 t2 x            -> [|| Coerce $$(liftScalarType t1) $$(liftScalarType t2) $$(liftE x) ||]
 
 liftArrayVar :: ArrayVar aenv v -> Q (TExp (ArrayVar aenv v))
-liftArrayVar (ArrayVar v) = [|| ArrayVar $$(liftIdx v) ||]
+liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]
 
--- Utilities
--- ---------
-
-withSigE :: forall e. Typeable e => Q (TExp e) -> Q (TExp e)
-withSigE e = e `sigE` typeRepToType (typeOf (undefined::e))
-
-sigE :: Q (TExp t) -> Q TH.Type -> Q (TExp t)
-sigE e t = TH.unsafeTExpCoerce $ TH.sigE (TH.unTypeQ e) t
-
-typeRepToType :: TypeRep -> Q TH.Type
-typeRepToType trep = do
-  let (con, args)     = splitTyConApp trep
-      name            = TH.Name (TH.OccName (tyConName con)) (TH.NameG TH.TcClsName (TH.PkgName (tyConPackage con)) (TH.ModName (tyConModule con)))
-      --
-      appsT x []      = x
-      appsT x (y:xs)  = appsT (TH.AppT x y) xs
-      --
-  resultArgs <- mapM typeRepToType args
-  return (appsT (TH.ConT name) resultArgs)
-
-data HasTypeable a where
-  HasTypeable :: Typeable a => HasTypeable a
-
-arraysTypeable :: ArraysR a -> HasTypeable a
-arraysTypeable ArraysRunit           = HasTypeable
-arraysTypeable ArraysRarray          = HasTypeable
-arraysTypeable (ArraysRpair r1 r2)
-  | HasTypeable <- arraysTypeable r1
-  , HasTypeable <- arraysTypeable r2 = HasTypeable
-
-lhsTypeable :: Typeable aenv => LeftHandSide arrs aenv aenv' -> HasTypeable aenv'
-lhsTypeable (LeftHandSideWildcard _) = HasTypeable
-lhsTypeable LeftHandSideArray        = HasTypeable
-lhsTypeable (LeftHandSidePair l1 l2)
-  | HasTypeable <- lhsTypeable l1
-  , HasTypeable <- lhsTypeable l2    = HasTypeable
-
+liftUnzipIdx :: UnzipIdx tup e -> Q (TExp (UnzipIdx tup e))
+liftUnzipIdx UnzipId = [|| UnzipId ||]
+liftUnzipIdx (UnzipPrj PairIdxLeft  ix) = [|| UnzipPrj PairIdxLeft  $$(liftUnzipIdx ix) ||]
+liftUnzipIdx (UnzipPrj PairIdxRight ix) = [|| UnzipPrj PairIdxRight $$(liftUnzipIdx ix) ||]
+liftUnzipIdx UnzipUnit = [|| UnzipUnit ||]
+liftUnzipIdx (UnzipPair ix1 ix2) = [|| UnzipPair $$(liftUnzipIdx ix1) $$(liftUnzipIdx ix2) ||]

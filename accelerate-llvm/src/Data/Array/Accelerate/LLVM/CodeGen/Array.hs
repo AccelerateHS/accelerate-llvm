@@ -30,7 +30,7 @@ import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Array.Sugar                            hiding ( size )
+import Data.Array.Accelerate.Array.Representation                   hiding ( size )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -43,12 +43,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Constant
 --
 {-# INLINEABLE readArray #-}
 readArray
-    :: forall arch int sh e. (IsIntegral int, Elt e)
-    => IRArray (Array sh e)
+    :: IntegralType int
+    -> IRArray (Array sh e)
     -> IR int
     -> CodeGen arch (IR e)
-readArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) =
-  IR <$> readArrayData addrspace volatility integralType ix (eltType @e) adata
+readArray int (IRArray (ArrayR _ tp) _ (IR adata) addrspace volatility) (op int -> ix) =
+  IR <$> readArrayData addrspace volatility int ix tp adata
 
 readArrayData
     :: AddrSpace
@@ -61,9 +61,9 @@ readArrayData
 readArrayData a v i ix = read
   where
     read :: TupleType e -> Operands e -> CodeGen arch (Operands e)
-    read TypeRunit          OP_Unit                 = return OP_Unit
-    read (TypeRpair t2 t1) (OP_Pair a2 a1)          = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (TypeRscalar e)   (asPtr a . op' e -> arr) = ir' e   <$> readArrayPrim a v e i arr ix
+    read TupRunit          OP_Unit                 = return OP_Unit
+    read (TupRpair t2 t1) (OP_Pair a2 a1)          = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (TupRsingle e)   (asPtr a . op' e -> arr) = ir' e   <$> readArrayPrim a v e i arr ix
 
 readArrayPrim
     :: AddrSpace
@@ -83,13 +83,13 @@ readArrayPrim a v e i arr ix = do
 --
 {-# INLINEABLE writeArray #-}
 writeArray
-    :: forall arch int sh e. (IsIntegral int, Elt e)
-    => IRArray (Array sh e)
+    :: IntegralType int
+    -> IRArray (Array sh e)
     -> IR int
     -> IR e
     -> CodeGen arch ()
-writeArray (IRArray _ (IR adata) addrspace volatility) (op integralType -> ix) (IR val) =
-  writeArrayData addrspace volatility integralType ix (eltType @e) adata val
+writeArray int (IRArray (ArrayR _ tp) _ (IR adata) addrspace volatility) (op int -> ix) (IR val) =
+  writeArrayData addrspace volatility int ix tp adata val
 
 writeArrayData
     :: AddrSpace
@@ -103,9 +103,9 @@ writeArrayData
 writeArrayData a v i ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen arch ()
-    write TypeRunit          OP_Unit                  OP_Unit        = return ()
-    write (TypeRpair t2 t1) (OP_Pair a2 a1)          (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (TypeRscalar e)   (asPtr a . op' e -> arr) (op' e -> val)  = writeArrayPrim a v e i arr ix val
+    write TupRunit          OP_Unit                  OP_Unit        = return ()
+    write (TupRpair t2 t1) (OP_Pair a2 a1)          (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
+    write (TupRsingle e)   (asPtr a . op' e -> arr) (op' e -> val)  = writeArrayPrim a v e i arr ix val
 
 writeArrayPrim
     :: AddrSpace

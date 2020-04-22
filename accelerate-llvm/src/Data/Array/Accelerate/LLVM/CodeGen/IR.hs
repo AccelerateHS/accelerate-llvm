@@ -25,7 +25,6 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.Array.Sugar
 import Data.Array.Accelerate.Error
 
 import qualified Data.ByteString.Short                              as B
@@ -36,7 +35,7 @@ import qualified Data.ByteString.Short                              as B
 -- type.
 --
 data IR t where
-  IR :: Operands (EltRepr t)
+  IR :: Operands t
      -> IR t
 
 -- We use a data family to represent sequences of LLVM (scalar) operands

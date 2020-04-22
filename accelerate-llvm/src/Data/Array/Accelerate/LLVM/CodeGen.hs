@@ -25,8 +25,8 @@ module Data.Array.Accelerate.LLVM.CodeGen (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj, stencil )
-import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
+import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo
 
@@ -63,48 +63,48 @@ llvmOfPreOpenAcc
 llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
   case pacc of
     -- Producers
-    Map f _                 -> map uid aenv (travF1 f)
-    Generate _ f            -> generate uid aenv (travF1 f)
-    Transform _ p f _       -> transform uid aenv (travF1 p) (travF1 f)
-    Backpermute _ p _       -> backpermute uid aenv (travF1 p)
+    Map tp f (arrayRepr -> repr)               -> map uid aenv repr tp (travF1 f)
+    Generate repr _ f                          -> generate uid aenv repr (travF1 f)
+    Transform repr2 _ p f (arrayRepr -> repr1) -> transform uid aenv repr1 repr2 (travF1 p) (travF1 f)
+    Backpermute shr _ p (arrayRepr -> repr)    -> backpermute uid aenv repr shr (travF1 p)
 
     -- Consumers
-    Fold f z a              -> fold uid aenv (travF2 f) (travE z) (travD a)
-    Fold1 f a               -> fold1 uid aenv (travF2 f) (travD a)
-    FoldSeg f z a s         -> foldSeg uid aenv (travF2 f) (travE z) (travD a) (travD s)
-    Fold1Seg f a s          -> fold1Seg uid aenv (travF2 f) (travD a) (travD s)
-    Scanl f z a             -> scanl uid aenv (travF2 f) (travE z) (travD a)
-    Scanl' f z a            -> scanl' uid aenv (travF2 f) (travE z) (travD a)
-    Scanl1 f a              -> scanl1 uid aenv (travF2 f) (travD a)
-    Scanr f z a             -> scanr uid aenv (travF2 f) (travE z) (travD a)
-    Scanr' f z a            -> scanr' uid aenv (travF2 f) (travE z) (travD a)
-    Scanr1 f a              -> scanr1 uid aenv (travF2 f) (travD a)
-    Permute f _ p a         -> permute uid aenv (travPF f) (travF1 p) (travD a)
-    Stencil f b a           -> stencil1 uid aenv (travF1 f) (travB b) (travD a)
-    Stencil2 f b1 a1 b2 a2  -> stencil2 uid aenv (travF2 f) (travB b1) (travD a1) (travB b2) (travD a2)
+    Fold f z a                                 -> fold uid aenv (reduceRank $ arrayRepr a) (travF2 f) (travE z) (travD a)
+    Fold1 f a                                  -> fold1 uid aenv (reduceRank $ arrayRepr a) (travF2 f) (travD a)
+    FoldSeg i f z a s                          -> foldSeg uid aenv (arrayRepr a) i (travF2 f) (travE z) (travD a) (travD s)
+    Fold1Seg i f a s                           -> fold1Seg uid aenv (arrayRepr a) i (travF2 f) (travD a) (travD s)
+    Scanl f z a                                -> scanl uid aenv (arrayRepr a) (travF2 f) (travE z) (travD a)
+    Scanl' f z a                               -> scanl' uid aenv (arrayRepr a) (travF2 f) (travE z) (travD a)
+    Scanl1 f a                                 -> scanl1 uid aenv (arrayRepr a) (travF2 f) (travD a)
+    Scanr f z a                                -> scanr uid aenv (arrayRepr a) (travF2 f) (travE z) (travD a)
+    Scanr' f z a                               -> scanr' uid aenv (arrayRepr a) (travF2 f) (travE z) (travD a)
+    Scanr1 f a                                 -> scanr1 uid aenv (arrayRepr a) (travF2 f) (travD a)
+    Permute f (arrayRepr -> ArrayR shr _) p a  -> permute uid aenv (arrayRepr a) shr (travPF f) (travF1 p) (travD a)
+    Stencil s tp f b a                         -> stencil1 uid aenv s tp (travF1 f) (travB (stencilElt s) b) (travD a)
+    Stencil2 s1 s2 tp f b1 a1 b2 a2            -> stencil2 uid aenv s1 s2 tp (travF2 f) (travB (stencilElt s1) b1) (travD a1) (travB (stencilElt s2) b2) (travD a2)
 
     -- Non-computation forms: sadness
-    Alet{}                  -> unexpectedError
-    Avar{}                  -> unexpectedError
-    Apply{}                 -> unexpectedError
-    Acond{}                 -> unexpectedError
-    Awhile{}                -> unexpectedError
-    Apair{}                 -> unexpectedError
-    Anil                    -> unexpectedError
-    Use{}                   -> unexpectedError
-    Unit{}                  -> unexpectedError
-    Aforeign{}              -> unexpectedError
-    Reshape{}               -> unexpectedError
+    Alet{}      -> unexpectedError
+    Avar{}      -> unexpectedError
+    Apply{}     -> unexpectedError
+    Acond{}     -> unexpectedError
+    Awhile{}    -> unexpectedError
+    Apair{}     -> unexpectedError
+    Anil        -> unexpectedError
+    Use{}       -> unexpectedError
+    Unit{}      -> unexpectedError
+    Aforeign{}  -> unexpectedError
+    Reshape{}   -> unexpectedError
 
-    Replicate{}             -> fusionError
-    Slice{}                 -> fusionError
-    ZipWith{}               -> fusionError
+    Replicate{} -> fusionError
+    Slice{}     -> fusionError
+    ZipWith{}   -> fusionError
 
   where
     -- code generation for delayed arrays
     travD :: DelayedOpenAcc aenv (Array sh e) -> MIRDelayed arch aenv (Array sh e)
-    travD Delayed{..} = Just $ IRDelayed (travE extentD) (travF1 indexD) (travF1 linearIndexD)
-    travD Manifest{}  = Nothing
+    travD Delayed{..} = IRDelayedJust $ IRDelayed reprD (travE extentD) (travF1 indexD) (travF1 linearIndexD)
+    travD (Manifest acc) = IRDelayedNothing $ arrayRepr acc
 
     -- scalar code generation
     travF1 :: DelayedFun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
@@ -119,14 +119,17 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     travE :: DelayedExp aenv t -> IRExp arch aenv t
     travE e = llvmOfOpenExp e Empty aenv
 
-    travB :: forall sh e.
-             PreBoundary DelayedOpenAcc aenv (Array sh e)
+    travB :: TupleType e
+          -> PreBoundary DelayedOpenAcc aenv (Array sh e)
           -> IRBoundary arch aenv (Array sh e)
-    travB Clamp        = IRClamp
-    travB Mirror       = IRMirror
-    travB Wrap         = IRWrap
-    travB (Constant c) = IRConstant $ IR (constant (eltType @e) c)
-    travB (Function f) = IRFunction $ travF1 f
+    travB _  Clamp        = IRClamp
+    travB _  Mirror       = IRMirror
+    travB _  Wrap         = IRWrap
+    travB tp (Constant c) = IRConstant $ IR (constant tp c)
+    travB _  (Function f) = IRFunction $ travF1 f
+
+    reduceRank :: ArrayR (Array (sh, Int) e) -> ArrayR (Array sh e)
+    reduceRank (ArrayR (ShapeRsnoc shr) tp) = ArrayR shr tp
 
     -- sadness
     fusionError, unexpectedError :: error

@@ -50,9 +50,9 @@ primPi t | FloatingDict <- floatingDict t = pi
 -- | A constant value
 --
 constant :: TupleType a -> a -> Operands a
-constant TypeRunit         ()    = OP_Unit
-constant (TypeRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
-constant (TypeRscalar t)   a     = ir' t (scalar t a)
+constant TupRunit         ()    = OP_Unit
+constant (TupRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
+constant (TupRsingle t)   a     = ir' t (scalar t a)
 
 scalar :: ScalarType a -> a -> Operand a
 scalar t = ConstantOperand . ScalarConstant t

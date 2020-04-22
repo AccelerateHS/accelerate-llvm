@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
   IRExp, MIRExp, IRFun1, IRFun2,
   IROpenExp, IROpenFun1(..), IROpenFun2(..),
   IROpenAcc(..),
-  IRDelayed(..), MIRDelayed,
+  IRDelayed(..), MIRDelayed(..),
 
   IRArray(..),
 
@@ -27,7 +27,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Instruction.Volatile
 
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -63,17 +63,21 @@ data IROpenAcc arch aenv arrs where
   IROpenAcc :: [Kernel arch aenv arrs]
             -> IROpenAcc arch aenv arrs
 
-type MIRDelayed arch aenv a = Maybe (IRDelayed arch aenv a)
+data MIRDelayed arch aenv a
+  = IRDelayedJust (IRDelayed arch aenv a)
+  | IRDelayedNothing (ArrayR a)
 
 data IRDelayed arch aenv a where
-  IRDelayed :: { delayedExtent      :: IRExp  arch aenv sh
+  IRDelayed :: { delayedRepr        :: ArrayR (Array sh e)
+               , delayedExtent      :: IRExp  arch aenv sh
                , delayedIndex       :: IRFun1 arch aenv (sh -> e)
                , delayedLinearIndex :: IRFun1 arch aenv (Int -> e)
                }
             -> IRDelayed arch aenv (Array sh e)
 
 data IRArray a where
-  IRArray :: { irArrayShape       :: IR sh        -- Array extent
+  IRArray :: { irArrayRepr        :: ArrayR (Array sh e)
+             , irArrayShape       :: IR sh        -- Array extent
              , irArrayData        :: IR e         -- Array payloads (should really be 'Ptr e')
              , irArrayAddrSpace   :: AddrSpace
              , irArrayVolatility  :: Volatility

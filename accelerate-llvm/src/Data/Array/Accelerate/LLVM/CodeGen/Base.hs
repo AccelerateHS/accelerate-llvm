@@ -45,7 +45,7 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -65,11 +65,11 @@ import Prelude                                                      as P
 -- References
 -- ----------
 
-local :: forall a. Elt a => Name a -> IR a
-local n  = travTypeToIR @a (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
+local :: TupleType a -> Name a -> IR a
+local  tp n = travTypeToIR tp (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
-global :: forall a. Elt a => Name a -> IR a
-global n = travTypeToIR @a (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
+global :: TupleType a -> Name a -> IR a
+global tp n = travTypeToIR tp (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
 
 
 -- Generating names for things
@@ -98,12 +98,13 @@ rename (UnName n) i = Name (     fromString (printf "%d.%d" n i))
 --
 {-# INLINEABLE irArray #-}
 irArray
-    :: forall sh e. (Shape sh, Elt e)
-    => Name    (Array sh e)
+    :: ArrayR  (Array sh e)
+    -> Name    (Array sh e)
     -> IRArray (Array sh e)
-irArray n
-  = IRArray (travTypeToIR @sh (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
-            (travTypeToIR @e  (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
+irArray repr@(ArrayR shr tp) n
+  = IRArray repr
+            (travTypeToIR (shapeType shr) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
+            (travTypeToIR tp              (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
             defaultAddrSpace
             NonVolatile
 
@@ -112,63 +113,65 @@ irArray n
 --
 {-# INLINEABLE mutableArray #-}
 mutableArray
-    :: forall sh e. (Shape sh, Elt e)
-    => Name (Array sh e)
+    :: ArrayR (Array sh e)
+    -> Name (Array sh e)
     -> (IRArray (Array sh e), [LLVM.Parameter])
-mutableArray name =
-  ( irArray name
-  , arrayParam name )
+mutableArray repr name =
+  ( irArray repr name
+  , arrayParam repr name )
 
 -- | Generate a delayed array representation for input arrays which come in
 -- either delayed (fused) or manifest representation.
 --
 {-# INLINEABLE delayedArray #-}
 delayedArray
-    :: (Shape sh, Elt e)
-    => Name (Array sh e)
+    :: Name (Array sh e)
     -> MIRDelayed arch aenv (Array sh e)
     -> (IRDelayed arch aenv (Array sh e), [LLVM.Parameter])
 delayedArray name = \case
-  Just a  -> (a, [])
-  Nothing -> let (arr, param) = mutableArray name
-              in ( IRDelayed { delayedExtent      = return (irArrayShape arr)
-                             , delayedIndex       = IRFun1 (indexArray arr)
-                             , delayedLinearIndex = IRFun1 (linearIndexArray arr)
-                             }
-                 , param
-                 )
+  IRDelayedJust a -> (a, [])
+  IRDelayedNothing repr ->
+    let (arr, param) = mutableArray repr name
+    in ( IRDelayed { delayedRepr        = repr
+                  , delayedExtent      = return (irArrayShape arr)
+                  , delayedIndex       = IRFun1 (indexArray arr)
+                  , delayedLinearIndex = IRFun1 (linearIndexArray arr)
+                  }
+      , param
+      )
 
 {-# INLINEABLE travTypeToList #-}
 travTypeToList
-    :: forall t a. Elt t
-    => (forall s. ScalarType s -> Int -> a)
+    :: forall tp a.
+       TupleType tp
+    -> (forall s. ScalarType s -> Int -> a)
     -> [a]
-travTypeToList f = snd $ go (eltType @t) 0
+travTypeToList tp f = snd $ go tp 0
   where
     -- DANGER: [1] must traverse in the same order as [2]
     go :: TupleType s -> Int -> (Int, [a])
-    go TypeRunit         i = (i,   [])
-    go (TypeRscalar t')  i = (i+1, [f t' i])
-    go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
-                                 (i2, r2) = go t2 i1
-                             in
-                             (i2, r2 ++ r1)
+    go TupRunit         i = (i,   [])
+    go (TupRsingle t')  i = (i+1, [f t' i])
+    go (TupRpair t2 t1) i = let (i1, r1) = go t1 i
+                                (i2, r2) = go t2 i1
+                            in
+                            (i2, r2 ++ r1)
 
 {-# INLINEABLE travTypeToIR #-}
 travTypeToIR
-    :: forall t. Elt t
-    => (forall s. ScalarType s -> Int -> Operand s)
+    :: TupleType t
+    -> (forall s. ScalarType s -> Int -> Operand s)
     -> IR t
-travTypeToIR f = IR . snd $ go (eltType @t) 0
+travTypeToIR tp f = IR . snd $ go tp 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
-    go TypeRunit         i = (i,   OP_Unit)
-    go (TypeRscalar t')  i = (i+1, ir' t' $ f t' i)
-    go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
-                                 (i2, r2) = go t2 i1
-                             in
-                             (i2, OP_Pair r2 r1)
+    go TupRunit         i = (i,   OP_Unit)
+    go (TupRsingle t')  i = (i+1, ir' t' $ f t' i)
+    go (TupRpair t2 t1) i = let (i1, r1) = go t1 i
+                                (i2, r2) = go t2 i1
+                            in
+                            (i2, OP_Pair r2 r1)
 
 -- travTypeToIRPtr
 --     :: forall t. Elt t
@@ -204,8 +207,8 @@ call f attrs = do
   instr (Call f attrs')
 
 
-parameter :: forall t. Elt t => Name t -> [LLVM.Parameter]
-parameter n = travTypeToList @t (\s i -> scalarParameter s (rename n i))
+parameter :: TupleType t -> Name t -> [LLVM.Parameter]
+parameter tp n = travTypeToList tp (\s i -> scalarParameter s (rename n i))
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
@@ -219,21 +222,21 @@ ptrParameter t x = downcast (Parameter (PtrPrimType (ScalarPrimType t) defaultAd
 -- accessed by the function.
 --
 envParam :: forall aenv. Gamma aenv -> [LLVM.Parameter]
-envParam aenv = concatMap (\(Label n, Idx' v) -> toParam v (Name n)) (IM.elems aenv)
+envParam aenv = concatMap (\(Label n, Idx' repr _) -> toParam repr (Name n)) (IM.elems aenv)
   where
-    toParam :: forall sh e. (Shape sh, Elt e) => Idx aenv (Array sh e) -> Name (Array sh e) -> [LLVM.Parameter]
-    toParam _ name = arrayParam name
+    toParam :: ArrayR (Array sh e) -> Name (Array sh e) -> [LLVM.Parameter]
+    toParam repr name = arrayParam repr name
 
 
 -- | Generate function parameters for an Array with given base name.
 --
 {-# INLINEABLE arrayParam #-}
 arrayParam
-    :: forall sh e. (Shape sh, Elt e)
-    => Name (Array sh e)
+    :: ArrayR (Array sh e)
+    -> Name (Array sh e)
     -> [LLVM.Parameter]
-arrayParam name = ad ++ sh
+arrayParam (ArrayR shr tp) name = ad ++ sh
   where
-    ad = travTypeToList @e  (\t i -> ptrParameter    t (arrayName name i))
-    sh = travTypeToList @sh (\t i -> scalarParameter t (shapeName name i))
+    ad = travTypeToList tp              (\t i -> ptrParameter    t (arrayName name i))
+    sh = travTypeToList (shapeType shr) (\t i -> scalarParameter t (shapeName name i))
 

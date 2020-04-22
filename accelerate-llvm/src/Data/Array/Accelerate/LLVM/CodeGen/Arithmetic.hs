@@ -154,14 +154,14 @@ idiv i x y
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
   , s            <- NumSingleType n
-  = if gt s x zero `land` lt s y zero
+  = if (tp, gt s x zero `land'` lt s y zero)
        then do
          a <- sub n x one
          b <- quot i a y
          c <- sub n b one
          return c
        else
-    if lt s x zero `land` gt s y zero
+    if (tp, lt s x zero `land'` gt s y zero)
        then do
          a <- add n x one
          b <- quot i a y
@@ -169,6 +169,8 @@ idiv i x y
          return c
     else
          quot i x y
+  where
+    tp = TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType i
 
 mod :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
 mod i x y
@@ -181,11 +183,13 @@ mod i x y
   , n            <- IntegralNumType i
   , s            <- NumSingleType n
   = do r <- rem i x y
-       if (gt s x zero `land` lt s y zero) `lor` (lt s x zero `land` gt s y zero)
-          then if neq s r zero
+       if (tp, (gt s x zero `land'` lt s y zero) `lor'` (lt s x zero `land'` gt s y zero))
+          then if (tp, neq s r zero)
                   then add n r y
                   else return zero
           else return r
+  where
+    tp = TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType i
 
 divMod :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR (a,a))
 divMod i x y
@@ -198,7 +202,7 @@ divMod i x y
   , one          <- ir i (integral i 1)
   , n            <- IntegralNumType i
   , s            <- NumSingleType n
-  = if gt s x zero `land` lt s y zero
+  = if (TupRpair tp tp, gt s x zero `land'` lt s y zero)
        then do
          a <- sub n x one
          b <- quotRem i a y
@@ -207,7 +211,7 @@ divMod i x y
          e <- add n d one
          return $ pair c e
        else
-    if lt s x zero `land` gt s y zero
+    if (TupRpair tp tp, lt s x zero `land'` gt s y zero)
        then do
          a <- add n x one
          b <- quotRem i a y
@@ -217,6 +221,8 @@ divMod i x y
          return $ pair c e
     else
          quotRem i x y
+  where
+    tp = TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType i
 
 
 band :: IntegralType a -> IR a -> IR a -> CodeGen arch (IR a)
@@ -461,31 +467,32 @@ min ty x y
 
 -- Logical operators
 -- -----------------
-
-land :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
-land x y =
-  if x
-    then y
-    else return $ ir scalarType (scalar scalarType False)
-
-lor :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
-lor x y =
-  if x
-    then return $ ir scalarType (scalar scalarType True)
-    else y
-
--- These implementations are strict in both arguments.
-land' :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
-land' (op scalarType -> x) (op scalarType -> y)
+-- Note that these implementations are strict in both arguments.
+-- The short circuiting (&&) and (||) operators in the language are not evaluated
+-- using these functions, but defined in terms of if-then-else.
+land :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
+land (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor' :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
-lor' (op scalarType -> x) (op scalarType -> y)
+lor :: IR Bool -> IR Bool -> CodeGen arch (IR Bool)
+lor (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
 lnot :: IR Bool -> CodeGen arch (IR Bool)
 lnot (op scalarType -> x) = instr (LNot x)
 
+-- Utilities for implementing bounds checks
+land' :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
+land' x y = do
+  a <- x
+  b <- y
+  land a b
+
+lor' :: CodeGen arch (IR Bool) -> CodeGen arch (IR Bool) -> CodeGen arch (IR Bool)
+lor' x y = do
+  a <- x
+  b <- y
+  lor a b
 
 -- Type conversions
 -- ----------------
@@ -543,7 +550,7 @@ toFloating n1 f2 (op n1 -> x) =
            Ord.GT -> instr (FTrunc f1 f2 x)
            Ord.LT -> instr (FExt   f1 f2 x)
 
-bitcast :: ScalarType (EltRepr a) -> ScalarType (EltRepr b) -> IR a -> CodeGen arch (IR b)
+bitcast :: ScalarType a -> ScalarType b -> IR a -> CodeGen arch (IR b)
 bitcast ta tb (IR x) = IR <$> go ta tb x
   where
     go :: ScalarType a -> ScalarType b -> Operands a -> CodeGen arch (Operands b)
@@ -556,13 +563,13 @@ bitcast ta tb (IR x) = IR <$> go ta tb x
 -- -----------------
 
 fst :: IR (a, b) -> IR a
-fst (IR (OP_Pair (OP_Pair OP_Unit x) _)) = IR x
+fst (IR (OP_Pair x _)) = IR x
 
 snd :: IR (a, b) -> IR b
 snd (IR (OP_Pair _ y)) = IR y
 
 pair :: IR a -> IR b -> IR (a, b)
-pair (IR x) (IR y) = IR $ OP_Pair (OP_Pair OP_Unit x) y
+pair (IR x) (IR y) = IR $ OP_Pair x y
 
 unpair :: IR (a, b) -> (IR a, IR b)
 unpair x = (fst x, snd x)
@@ -575,38 +582,37 @@ binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dic
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
 
 
-fst3 :: IR (a, b, c) -> IR a
+fst3 :: IR (Tup3 a b c) -> IR a
 fst3 (IR (OP_Pair (OP_Pair (OP_Pair OP_Unit x) _) _)) = IR x
 
-snd3 :: IR (a, b, c) -> IR b
+snd3 :: IR (Tup3 a b c) -> IR b
 snd3 (IR (OP_Pair (OP_Pair _ y) _)) = IR y
 
-thd3 :: IR (a, b, c) -> IR c
+thd3 :: IR (Tup3 a b c) -> IR c
 thd3 (IR (OP_Pair _ z)) = IR z
 
-trip :: IR a -> IR b -> IR c -> IR (a, b, c)
+trip :: IR a -> IR b -> IR c -> IR (Tup3 a b c)
 trip (IR x) (IR y) (IR z) = IR $ OP_Pair (OP_Pair (OP_Pair OP_Unit x) y) z
 
-untrip :: IR (a, b, c) -> (IR a, IR b, IR c)
+untrip :: IR (Tup3 a b c) -> (IR a, IR b, IR c)
 untrip t = (fst3 t, snd3 t, thd3 t)
 
 
 -- | Lift a constant value into an constant in the intermediate representation.
 --
 {-# INLINABLE lift #-}
-lift :: forall a. Elt a => a -> IR a
-lift v = IR $ constant (eltType @a) (fromElt v)
+lift :: TupleType a -> a -> IR a
+lift tp v = IR $ constant tp v
 
 
 -- | Standard if-then-else expression
 --
 ifThenElse
-    :: Elt a
-    => CodeGen arch (IR Bool)
+    :: (TupleType a, CodeGen arch (IR Bool))
     -> CodeGen arch (IR a)
     -> CodeGen arch (IR a)
     -> CodeGen arch (IR a)
-ifThenElse test yes no = do
+ifThenElse (tp, test) yes no = do
   ifThen <- newBlock "if.then"
   ifElse <- newBlock "if.else"
   ifExit <- newBlock "if.exit"
@@ -624,7 +630,7 @@ ifThenElse test yes no = do
   fb <- br ifExit
 
   setBlock ifExit
-  phi [(tv, tb), (fv, fb)]
+  phi tp [(tv, tb), (fv, fb)]
 
 
 -- Execute the body only if the first argument evaluates to True

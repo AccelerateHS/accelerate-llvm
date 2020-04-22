@@ -26,9 +26,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Permute (
 ) where
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
-import Data.Array.Accelerate.Product
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Debug
@@ -97,10 +95,9 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       -- could come from different threads, so we only allow the non-atomic
       -- version if the flag @-ffast-permute-const@ is set.
       --
-      | Lam (Lam (Body body)) <- fun
-      , True                  <- fast
-      , Just body'            <- strengthenE latest body
-      , fun'                  <- llvmOfFun1 (Lam (Body body')) aenv
+      | Lam lhs (Lam (LeftHandSideWildcard tp) (Body body)) <- fun
+      , True                  <- fast tp
+      , fun'                  <- llvmOfFun1 (Lam lhs (Body body)) aenv
       = Just (Exchange, fun')
 
       -- LLVM natively supports atomic operations on integral types only.
@@ -112,20 +109,19 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       -- atomic compare-and-swap, which is likely to be more performant than the
       -- generic spin-lock based approach.
       --
-      | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType @e
+      | Lam lhs@(LeftHandSideSingle _) (Lam (LeftHandSideSingle _) (Body body)) <- fun
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
-      , fun'                  <- llvmOfFun1 (Lam (Body x')) aenv
+      , fun'                  <- llvmOfFun1 (Lam lhs (Body x')) aenv
       = Just (rmw, fun')
 
       | otherwise
       = Nothing
 
-    fast :: Elt e => Bool
-    fast
-      | TypeRscalar{} <- eltType @e = True
-      | otherwise                   = unsafePerformIO (getFlag fast_permute_const)
+    fast :: TupleType e -> Bool
+    fast tp
+      | TupRsingle{} <- tp = True
+      | otherwise          = unsafePerformIO (getFlag fast_permute_const)
 
     -- XXX: This doesn't work for newtypes because the coercion gets in the
     -- way. This should be generalised to work for product types (e.g.
@@ -152,9 +148,9 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     -- argument, corresponding to ZeroIdx.
     --
     extract :: DelayedOpenExp (((),e),e) aenv (e,e) -> Maybe (DelayedOpenExp (((),e),e) aenv e)
-    extract (Tuple (SnocTup (SnocTup NilTup x) y))
-      | Just Refl <- match x (Var ZeroIdx) = Just y
-      | Just Refl <- match y (Var ZeroIdx) = Just x
+    extract (Pair x y)
+      | Evar (Var _ ZeroIdx) <- x = Just y
+      | Evar (Var _ ZeroIdx) <- y = Just x
     extract _
       = Nothing
 
@@ -223,7 +219,7 @@ atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
 
   addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   init' <- instr' $ Load si NonVolatile addr'
-  old'  <- fresh
+  old'  <- fresh  $ TupRsingle si
   top   <- br spin
 
   setBlock spin
@@ -231,11 +227,11 @@ atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
   val   <- update $ ir t old
   val'  <- instr' $ BitCast si (op t val)
   r     <- instr' $ CmpXchg i NonVolatile addr' (op i old') val' (CrossThread, AcquireRelease) Monotonic
-  done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
-  next' <- instr' $ ExtractValue si (SuccTupIdx ZeroTupIdx) r
+  done  <- instr' $ ExtractValue scalarType PairIdxRight r
+  next' <- instr' $ ExtractValue si         PairIdxLeft  r
 
   bot   <- cbr (ir scalarType done) exit spin
-  _     <- phi' spin old' [(ir i init',top), (ir i next',bot)]
+  _     <- phi' (TupRsingle si) spin old' [(ir i init',top), (ir i next',bot)]
 
   setBlock exit
 
@@ -307,7 +303,7 @@ atomicCAS_cmp' t i cmp addr val = withDict (singleElt t) $ do
   -- The new value and address to swap cast to integral type
   addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   val'  <- instr' $ BitCast si val
-  old   <- fresh
+  old   <- fresh  $ TupRsingle $ SingleScalarType t
 
   -- Read the current value at the address
   start <- instr' $ Load (SingleScalarType t) NonVolatile addr
@@ -327,12 +323,12 @@ atomicCAS_cmp' t i cmp addr val = withDict (singleElt t) $ do
   setBlock spin
   old'  <- instr' $ BitCast si (op t old)
   r     <- instr' $ CmpXchg i NonVolatile addr' old' val' (CrossThread, AcquireRelease) Monotonic
-  done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
-  next  <- instr' $ ExtractValue si (SuccTupIdx ZeroTupIdx) r
+  done  <- instr' $ ExtractValue scalarType PairIdxRight r
+  next  <- instr' $ ExtractValue si         PairIdxLeft  r
   next' <- instr' $ BitCast (SingleScalarType t) next
 
   bot   <- cbr (ir scalarType done) exit test
-  _     <- phi' test old [(ir t start,top), (ir t next',bot)]
+  _     <- phi' (TupRsingle $ SingleScalarType t) test old [(ir t start,top), (ir t next',bot)]
 
   setBlock exit
 

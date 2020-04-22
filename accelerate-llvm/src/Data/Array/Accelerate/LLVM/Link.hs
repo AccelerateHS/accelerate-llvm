@@ -27,7 +27,7 @@ module Data.Array.Accelerate.LLVM.Link (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
@@ -36,7 +36,6 @@ import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
 
 import Control.Applicative                                          hiding ( Const )
-import Control.DeepSeq
 import Prelude                                                      hiding ( exp )
 
 
@@ -55,24 +54,26 @@ class Link arch where
 -- target address space, suitable for execution.
 --
 data ExecOpenAcc arch aenv a where
-  ExecAcc   :: Gamma aenv
+  ExecAcc   :: ArraysR a
+            -> Gamma aenv
             -> ExecutableR arch
             -> PreOpenAccSkeleton ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
-  EvalAcc   :: PreOpenAccCommand  ExecOpenAcc arch aenv a
+  EvalAcc   :: ArraysR a
+            -> PreOpenAccCommand  ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
 instance HasArraysRepr (ExecOpenAcc arch) where
-  arraysRepr (ExecAcc _ _ a) = arraysRepr a
-  arraysRepr (EvalAcc a)     = arraysRepr a
+  arraysRepr (ExecAcc r _ _ _) = r
+  arraysRepr (EvalAcc r _)     = r
 
 -- An AST annotated with compiled and linked functions in the target address
 -- space, suitable for execution.
 --
 type ExecOpenAfun arch  = PreOpenAfun (ExecOpenAcc arch)
-type ExecOpenExp arch   = PreOpenExp (ExecOpenAcc arch)
-type ExecOpenFun arch   = PreOpenFun (ExecOpenAcc arch)
+type ExecOpenExp arch   = PreOpenExp ArrayVar
+type ExecOpenFun arch   = PreOpenFun ArrayVar
 
 type ExecAcc arch a     = ExecOpenAcc arch () a
 type ExecAfun arch a    = ExecOpenAfun arch () a
@@ -115,41 +116,41 @@ linkOpenAcc
 linkOpenAcc = travA
   where
     travA :: forall aenv arrs. CompiledOpenAcc arch aenv arrs -> LLVM arch (ExecOpenAcc arch aenv arrs)
-    travA (PlainAcc pacc) = EvalAcc <$>
+    travA (PlainAcc repr' pacc) = EvalAcc repr' <$>
       case pacc of
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
-        Use arr                 -> rnf arr `seq` return (Use arr)
-        Unit e                  -> Unit         <$> travE e
-        Alloc sh                -> Alloc        <$> travE sh
-        Alet lhs a b            -> Alet lhs     <$> travA a  <*> travA b
-        Apply f a               -> Apply        <$> travAF f <*> travA a
-        Awhile p f a            -> Awhile       <$> travAF p <*> travAF f <*> travA a
-        Acond p t e             -> Acond        <$> travE p  <*> travA t  <*> travA e
-        Apair a1 a2             -> Apair        <$> travA a1 <*> travA a2
+        Use repr arr            -> rnfArray repr arr `seq` return (Use repr arr)
+        Unit tp e               -> Unit tp         <$> travE e
+        Alloc repr sh           -> Alloc repr      <$> travE sh
+        Alet lhs a b            -> Alet lhs        <$> travA a  <*> travA b
+        Apply repr f a          -> Apply repr      <$> travAF f <*> travA a
+        Awhile p f a            -> Awhile          <$> travAF p <*> travAF f <*> travA a
+        Acond p t e             -> Acond           <$> travE p  <*> travA t  <*> travA e
+        Apair a1 a2             -> Apair           <$> travA a1 <*> travA a2
         Anil                    -> return Anil
-        Reshape s ix            -> Reshape      <$> travE s <*> pure ix
-        Aforeign s r f a        -> Aforeign s r f <$> travA a
+        Reshape shr s ix        -> Reshape shr     <$> travE s <*> pure ix
+        Aforeign s r f a        -> Aforeign s r f  <$> travA a
 
-    travA (BuildAcc aenv obj pacc) = ExecAcc aenv <$> linkForTarget obj <*>
+    travA (BuildAcc repr' aenv obj pacc) = ExecAcc repr' aenv  <$> linkForTarget obj <*>
       case pacc of
-        Map a                   -> Map          <$> travA a
-        Generate sh             -> Generate     <$> travE sh
-        Transform sh a          -> Transform    <$> travE sh <*> travA a
-        Backpermute sh a        -> Backpermute  <$> travE sh <*> travA a
-        Fold a                  -> Fold         <$> travD a
-        Fold1 a                 -> Fold1        <$> travD a
-        FoldSeg a s             -> FoldSeg      <$> travD a <*> travD s
-        Fold1Seg a s            -> Fold1Seg     <$> travD a <*> travD s
-        Scanl a                 -> Scanl        <$> travD a
-        Scanl1 a                -> Scanl1       <$> travD a
-        Scanl' a                -> Scanl'       <$> travD a
-        Scanr a                 -> Scanr        <$> travD a
-        Scanr1 a                -> Scanr1       <$> travD a
-        Scanr' a                -> Scanr'       <$> travD a
-        Permute d a             -> Permute      <$> travA d <*> travD a
-        Stencil1 h a            -> Stencil1 h   <$> travD a
-        Stencil2 h a b          -> Stencil2 h   <$> travD a <*> travD b
+        Map tp a                -> Map tp          <$> travA a
+        Generate repr sh        -> Generate repr   <$> travE sh
+        Transform repr sh a     -> Transform repr  <$> travE sh <*> travA a
+        Backpermute shr sh a    -> Backpermute shr <$> travE sh <*> travA a
+        Fold a                  -> Fold            <$> travD a
+        Fold1 a                 -> Fold1           <$> travD a
+        FoldSeg i a s           -> FoldSeg i       <$> travD a <*> travD s
+        Fold1Seg i a s          -> Fold1Seg i      <$> travD a <*> travD s
+        Scanl a                 -> Scanl           <$> travD a
+        Scanl1 a                -> Scanl1          <$> travD a
+        Scanl' a                -> Scanl'          <$> travD a
+        Scanr a                 -> Scanr           <$> travD a
+        Scanr1 a                -> Scanr1          <$> travD a
+        Scanr' a                -> Scanr'          <$> travD a
+        Permute d a             -> Permute         <$> travA d <*> travD a
+        Stencil1 tp h a         -> Stencil1 tp h   <$> travD a
+        Stencil2 tp h a b       -> Stencil2 tp h   <$> travD a <*> travD b
 
     travAF :: CompiledOpenAfun arch aenv f
            -> LLVM arch (ExecOpenAfun arch aenv f)
@@ -157,49 +158,39 @@ linkOpenAcc = travA
 
     travD :: DelayedOpenAcc CompiledOpenAcc  arch aenv a
           -> LLVM arch (DelayedOpenAcc ExecOpenAcc arch aenv a)
-    travD (Manifest a) = Manifest <$> travA a
-    travD (Delayed sh) = Delayed  <$> travE sh
+    travD (Manifest r a) = Manifest r <$> travA a
+    travD (Delayed r sh) = Delayed  r <$> travE sh
 
     travF :: CompiledOpenFun arch env aenv t
           -> LLVM arch (ExecOpenFun arch env aenv t)
-    travF (Body b) = Body <$> travE b
-    travF (Lam  f) = Lam  <$> travF f
+    travF (Body b)    = Body <$> travE b
+    travF (Lam lhs f) = Lam lhs <$> travF f
 
     travE :: CompiledOpenExp arch env aenv t
           -> LLVM arch (ExecOpenExp arch env aenv t)
     travE exp =
       case exp of
-        Var ix                  -> return (Var ix)
-        Const c                 -> return (Const c)
+        Evar ix                 -> return (Evar ix)
+        Const tp c              -> return (Const tp c)
         PrimConst c             -> return (PrimConst c)
-        Undef                   -> return Undef
-        IndexAny                -> return IndexAny
-        IndexNil                -> return IndexNil
-        Let a b                 -> Let                <$> travE a <*> travE b
-        IndexCons t h           -> IndexCons          <$> travE t <*> travE h
-        IndexHead h             -> IndexHead          <$> travE h
-        IndexTail t             -> IndexTail          <$> travE t
+        Undef tp                -> return (Undef tp)
+        Let lhs a b             -> Let lhs            <$> travE a <*> travE b
         IndexSlice slix x s     -> (IndexSlice slix)  <$> travE x <*> travE s
         IndexFull slix x s      -> (IndexFull slix)   <$> travE x <*> travE s
-        ToIndex s i             -> ToIndex            <$> travE s <*> travE i
-        FromIndex s i           -> FromIndex          <$> travE s <*> travE i
-        Tuple t                 -> Tuple              <$> travT t
-        Prj ix e                -> (Prj ix)           <$> travE e
+        ToIndex shr s i         -> ToIndex shr        <$> travE s <*> travE i
+        FromIndex shr s i       -> FromIndex shr      <$> travE s <*> travE i
+        Nil                     -> return Nil
+        Pair e1 e2              -> Pair               <$> travE e1 <*> travE e2
+        VecPack   vecr e        -> VecPack   vecr     <$> travE e
+        VecUnpack vecr e        -> VecUnpack vecr     <$> travE e
         Cond p t e              -> Cond               <$> travE p <*> travE t <*> travE e
         While p f x             -> While              <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> (PrimApp f)        <$> travE e
-        Index a e               -> Index              <$> travA a <*> travE e
-        LinearIndex a e         -> LinearIndex        <$> travA a <*> travE e
-        Shape a                 -> Shape              <$> travA a
-        ShapeSize e             -> ShapeSize          <$> travE e
-        Intersect x y           -> Intersect          <$> travE x <*> travE y
-        Union x y               -> Union              <$> travE x <*> travE y
-        Coerce x                -> Coerce             <$> travE x
+        PrimApp f e             -> PrimApp f          <$> travE e
+        Index var e             -> Index var          <$> travE e
+        LinearIndex var e       -> LinearIndex var    <$> travE e
+        Shape var               -> return $ Shape var
+        ShapeSize shr e         -> ShapeSize shr      <$> travE e
+        Coerce t1 t2 x          -> Coerce t1 t2       <$> travE x
         Foreign asm _ x         -> Foreign asm err    <$> travE x
           where err = $internalError "link" "attempt to use fallback foreign expression"
-
-    travT :: Tuple (CompiledOpenExp arch env aenv) t
-          -> LLVM arch (Tuple (ExecOpenExp arch env aenv) t)
-    travT NilTup        = return NilTup
-    travT (SnocTup t e) = SnocTup <$> travT t <*> travE e
 
