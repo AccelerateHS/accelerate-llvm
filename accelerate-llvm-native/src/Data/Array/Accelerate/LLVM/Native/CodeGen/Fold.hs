@@ -18,8 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
 -- accelerate
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -48,39 +47,39 @@ import Prelude                                                      as P hiding 
 -- the operator.
 --
 mkFold
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array sh e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh :. Int) e)
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array sh e))
-mkFold uid aenv f z arr
-  | Just Refl <- matchShapeType @sh @Z
-  = (+++) <$> mkFoldAll  uid aenv f (Just z) arr
-          <*> mkFoldFill uid aenv z
+mkFold uid aenv repr f z arr
+  | ArrayR ShapeRz tp <- repr
+  = (+++) <$> mkFoldAll  uid aenv tp f (Just z) arr
+          <*> mkFoldFill uid aenv repr z
 
   | otherwise
-  = (+++) <$> mkFoldDim  uid aenv f (Just z) arr
-          <*> mkFoldFill uid aenv z
+  = (+++) <$> mkFoldDim  uid aenv repr f (Just z) arr
+          <*> mkFoldFill uid aenv repr z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
 -- function must be associative to allow for efficient parallel implementation.
 --
 mkFold1
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array sh e)
     -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh :. Int) e)
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array sh e))
-mkFold1 uid aenv f arr
-  | Just Refl <- matchShapeType @sh @Z
-  = mkFoldAll uid aenv f Nothing arr
+mkFold1 uid aenv repr f arr
+  | ArrayR ShapeRz tp <- repr
+  = mkFoldAll uid aenv tp f Nothing arr
 
   | otherwise
-  = mkFoldDim uid aenv f Nothing arr
+  = mkFoldDim uid aenv repr f Nothing arr
 
 
 -- Reduce a multidimensional (>1) array along the innermost dimension.
@@ -89,18 +88,18 @@ mkFold1 uid aenv f arr
 -- of an innermost-dimension index) is computed by a single thread.
 --
 mkFoldDim
-  :: forall aenv sh e. (Shape sh, Elt e)
-  => UID
+  :: UID
   -> Gamma aenv
+  -> ArrayR (Array sh e)
   -> IRFun2     Native aenv (e -> e -> e)
   -> MIRExp     Native aenv e
-  -> MIRDelayed Native aenv (Array (sh :. Int) e)
+  -> MIRDelayed Native aenv (Array (sh, Int) e)
   -> CodeGen    Native      (IROpenAcc Native aenv (Array sh e))
-mkFoldDim uid aenv combine mseed mdelayed =
+mkFoldDim uid aenv repr@(ArrayR _ tp) combine mseed mdelayed =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @sh "out"
-      (arrIn,  paramIn)       = delayedArray     "in"  mdelayed
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray repr "out"
+      (arrIn,  paramIn)       = delayedArray      "in"  mdelayed
       paramEnv                = envParam aenv
   in
   makeOpenAcc uid "fold" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
@@ -113,9 +112,9 @@ mkFoldDim uid aenv combine mseed mdelayed =
       --
       r    <- case mseed of
                 Just seed -> do z <- seed
-                                reduceFromTo  from to (app2 combine) z (app1 (delayedLinearIndex arrIn))
-                Nothing   ->    reduce1FromTo from to (app2 combine)   (app1 (delayedLinearIndex arrIn))
-      writeArray arrOut seg r
+                                reduceFromTo  tp from to (app2 combine) z (app1 (delayedLinearIndex arrIn))
+                Nothing   ->    reduce1FromTo tp from to (app2 combine)   (app1 (delayedLinearIndex arrIn))
+      writeArray TypeInt arrOut seg r
     return_
 
 
@@ -143,44 +142,44 @@ mkFoldDim uid aenv combine mseed mdelayed =
 -- is an exclusive reduction, the seed element is included at this point.
 --
 mkFoldAll
-    :: forall aenv e. Elt e
-    => UID
+    :: UID
     -> Gamma aenv                                   -- ^ array environment
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRExp     Native aenv e                     -- ^ seed element, if this is an exclusive reduction
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
     -> CodeGen    Native      (IROpenAcc Native aenv (Scalar e))
-mkFoldAll uid aenv combine mseed mdelayed =
-  foldr1 (+++) <$> sequence [ mkFoldAllS  uid aenv combine mseed mdelayed
-                            , mkFoldAllP1 uid aenv combine       mdelayed
-                            , mkFoldAllP2 uid aenv combine mseed
+mkFoldAll uid aenv tp combine mseed mdelayed =
+  foldr1 (+++) <$> sequence [ mkFoldAllS  uid aenv tp combine mseed mdelayed
+                            , mkFoldAllP1 uid aenv tp combine       mdelayed
+                            , mkFoldAllP2 uid aenv tp combine mseed
                             ]
 
 
 -- Sequential reduction of an entire array to a single element
 --
 mkFoldAllS
-    :: forall aenv e. Elt e
-    => UID
+    :: UID
     -> Gamma aenv                                   -- ^ array environment
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRExp     Native aenv e                     -- ^ seed element, if this is an exclusive reduction
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
     -> CodeGen    Native      (IROpenAcc Native aenv (Scalar e))
-mkFoldAllS uid aenv combine mseed mdelayed  =
+mkFoldAllS uid aenv tp combine mseed mdelayed  =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @DIM0 "out"
-      (arrIn,  paramIn)       = delayedArray @DIM1 "in" mdelayed
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray (ArrayR dim0 tp) "out"
+      (arrIn,  paramIn)       = delayedArray                  "in" mdelayed
       paramEnv                = envParam aenv
-      zero                    = lift 0 :: IR Int
+      zero                    = liftInt 0
   in
   makeOpenAcc uid "foldAllS" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
-                           reduceFromTo  (indexHead start) (indexHead end) (app2 combine) z (app1 (delayedLinearIndex arrIn))
-           Nothing   ->    reduce1FromTo (indexHead start) (indexHead end) (app2 combine)   (app1 (delayedLinearIndex arrIn))
-    writeArray arrOut zero r
+                           reduceFromTo  tp (indexHead start) (indexHead end) (app2 combine) z (app1 (delayedLinearIndex arrIn))
+           Nothing   ->    reduce1FromTo tp (indexHead start) (indexHead end) (app2 combine)   (app1 (delayedLinearIndex arrIn))
+    writeArray TypeInt arrOut zero r
     return_
 
 -- Parallel reduction of an entire array to a single element, step 1.
@@ -189,19 +188,19 @@ mkFoldAllS uid aenv combine mseed mdelayed  =
 -- any fused functions on the way.
 --
 mkFoldAllP1
-    :: forall aenv e. Elt e
-    => UID
+    :: UID
     -> Gamma            aenv                        -- ^ array environment
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
     -> CodeGen    Native      (IROpenAcc Native aenv (Scalar e))
-mkFoldAllP1 uid aenv combine mdelayed =
+mkFoldAllP1 uid aenv tp combine mdelayed =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
-      (arrIn,  paramIn)       = delayedArray @DIM1 "in" mdelayed
-      piece                   = local     @Int "ix.piece"
-      paramPiece              = parameter @Int "ix.piece"
+      (start, end, paramGang) = gangParam    dim1
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)       = delayedArray                  "in" mdelayed
+      piece                   = local     (TupRsingle scalarTypeInt) "ix.piece"
+      paramPiece              = parameter (TupRsingle scalarTypeInt) "ix.piece"
       paramEnv                = envParam aenv
   in
   makeOpenAcc uid "foldAllP1" (paramGang ++ paramPiece ++ paramTmp ++ paramIn ++ paramEnv) $ do
@@ -211,8 +210,8 @@ mkFoldAllP1 uid aenv combine mdelayed =
     -- supports non-commutative operators because the order of operations
     -- remains left-to-right.
     --
-    r <- reduce1FromTo (indexHead start) (indexHead end) (app2 combine) (app1 (delayedLinearIndex arrIn))
-    writeArray arrTmp piece r
+    r <- reduce1FromTo tp (indexHead start) (indexHead end) (app2 combine) (app1 (delayedLinearIndex arrIn))
+    writeArray TypeInt arrTmp piece r
 
     return_
 
@@ -226,26 +225,26 @@ mkFoldAllP1 uid aenv combine mdelayed =
 -- large, continuing reducing it in parallel.
 --
 mkFoldAllP2
-    :: forall aenv e. Elt e
-    => UID
+    :: UID
     -> Gamma          aenv                          -- ^ array environment
+    -> TupleType e
     -> IRFun2  Native aenv (e -> e -> e)            -- ^ combination function
     -> MIRExp  Native aenv e                        -- ^ seed element, if this is an exclusive reduction
     -> CodeGen Native      (IROpenAcc Native aenv (Scalar e))
-mkFoldAllP2 uid aenv combine mseed =
+mkFoldAllP2 uid aenv tp combine mseed =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
-      (arrOut, paramOut)      = mutableArray @DIM0 "out"
+      (start, end, paramGang) = gangParam    dim1
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrOut, paramOut)      = mutableArray (ArrayR dim0 tp) "out"
       paramEnv                = envParam aenv
-      zero                    = lift @Int 0
+      zero                    = liftInt 0
   in
   makeOpenAcc uid "foldAllP2" (paramGang ++ paramTmp ++ paramOut ++ paramEnv) $ do
     r <- case mseed of
            Just seed -> do z <- seed
-                           reduceFromTo  (indexHead start) (indexHead end) (app2 combine) z (readArray arrTmp)
-           Nothing   ->    reduce1FromTo (indexHead start) (indexHead end) (app2 combine)   (readArray arrTmp)
-    writeArray arrOut zero r
+                           reduceFromTo  tp (indexHead start) (indexHead end) (app2 combine) z (readArray TypeInt arrTmp)
+           Nothing   ->    reduce1FromTo tp (indexHead start) (indexHead end) (app2 combine)   (readArray TypeInt arrTmp)
+    writeArray TypeInt arrOut zero r
     return_
 
 
@@ -253,13 +252,13 @@ mkFoldAllP2 uid aenv combine mseed =
 -- dimensions with the initial element
 --
 mkFoldFill
-    :: (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRExp   Native aenv e
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkFoldFill uid aenv seed =
-  mkGenerate uid aenv (IRFun1 (const seed))
+mkFoldFill uid aenv repr seed =
+  mkGenerate uid aenv repr (IRFun1 (const seed))
 
 -- Reduction loops
 -- ---------------
@@ -267,15 +266,15 @@ mkFoldFill uid aenv seed =
 -- Reduction of a (possibly empty) index space.
 --
 reduceFromTo
-    :: Elt a
-    => IR Int                                       -- ^ starting index
+    :: TupleType a
+    -> IR Int                                       -- ^ starting index
     -> IR Int                                       -- ^ final index (exclusive)
     -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
     -> IR a                                         -- ^ initial value
     -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
     -> CodeGen Native (IR a)
-reduceFromTo m n f z get =
-  iterFromTo m n z $ \i acc -> do
+reduceFromTo tp m n f z get =
+  iterFromTo tp m n z $ \i acc -> do
     x <- get i
     y <- f acc x
     return y
@@ -284,14 +283,14 @@ reduceFromTo m n f z get =
 -- contain at least one element.
 --
 reduce1FromTo
-    :: Elt a
-    => IR Int                                       -- ^ starting index
+    :: TupleType a
+    -> IR Int                                       -- ^ starting index
     -> IR Int                                       -- ^ final index
     -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
     -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
     -> CodeGen Native (IR a)
-reduce1FromTo m n f get = do
+reduce1FromTo tp m n f get = do
   z  <- get m
   m1 <- add numType m (ir numType (num numType 1))
-  reduceFromTo m1 n f z get
+  reduceFromTo tp m1 n f z get
 

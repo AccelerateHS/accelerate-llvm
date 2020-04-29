@@ -108,7 +108,7 @@ llvmOfOpenExp top env aenv = cvtE top
         Pair e1 e2                  -> join $ pair <$> cvtE e1 <*> cvtE e2
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
-        Foreign asm f x             -> foreignE asm f =<< cvtE x
+        Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
         Cond c t e                  -> A.ifThenElse (expType t, cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
@@ -195,12 +195,13 @@ llvmOfOpenExp top env aenv = cvtE top
     while tp p f x =
       L.while tp (app1 p) (app1 f) =<< x
 
-    foreignE :: (A.Elt a, A.Elt b, Foreign arch, A.Foreign asm)
-             => asm           (a -> b)
-             -> DelayedFun () (A.EltRepr a -> A.EltRepr b)
-             -> IR (A.EltRepr a)
-             -> IRExp arch () (A.EltRepr b)
-    foreignE asm no x =
+    foreignE :: A.Foreign asm
+             => TupleType b
+             -> asm           (a -> b)
+             -> DelayedFun () (a -> b)
+             -> IR a
+             -> IRExp arch () b
+    foreignE _ asm no x =
       case foreignExp asm of
         Just f                           -> app1 f x
         Nothing | Lam lhs (Body b) <- no -> llvmOfOpenExp b (Empty `pushE` (lhs, x)) IM.empty
@@ -306,7 +307,7 @@ shapeSize shr (IR extent) = go shr extent
   where
     go :: ShapeR t -> Operands t -> CodeGen arch (IR Int)
     go ShapeRz OP_Unit
-      = return $ A.lift (TupRsingle scalarTypeInt) 1
+      = return $ A.liftInt 1
 
     go (ShapeRsnoc shr') (OP_Pair sh sz)
       = case shr' of
@@ -323,7 +324,7 @@ intOfIndex shr (IR extent) (IR index) = cvt shr extent index
   where
     cvt :: ShapeR t -> Operands t -> Operands t -> CodeGen arch (IR Int)
     cvt ShapeRz OP_Unit OP_Unit
-      = return $ A.lift (TupRsingle scalarTypeInt) 0
+      = return $ A.liftInt 0
 
     cvt (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ix i)
       -- If we short-circuit the last dimension, we can avoid inserting

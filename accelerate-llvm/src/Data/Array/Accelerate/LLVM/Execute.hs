@@ -97,7 +97,7 @@ class Remote arch => Execute arch where
                 -> Par arch (FutureR arch (Array sh e))
 
   foldSeg       :: IntegralType i
-                -> ArrayR (Array sh e)
+                -> ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -106,7 +106,7 @@ class Remote arch => Execute arch where
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
   fold1Seg      :: IntegralType i
-                -> ArrayR (Array sh e)
+                -> ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -114,42 +114,42 @@ class Remote arch => Execute arch where
                 -> Delayed (Segments i)
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
-  scanl         :: ArrayR (Array sh e)
+  scanl         :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
                 -> Delayed (Array (sh, Int) e)
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
-  scanl1        :: ArrayR (Array sh e)
+  scanl1        :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
                 -> Delayed (Array (sh, Int) e)
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
-  scanl'        :: ArrayR (Array sh e)
+  scanl'        :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
                 -> Delayed (Array (sh, Int) e)
                 -> Par arch (FutureR arch (Array (sh, Int) e, Array sh e))
 
-  scanr         :: ArrayR (Array sh e)
+  scanr         :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
                 -> Delayed (Array (sh, Int) e)
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
-  scanr1        :: ArrayR (Array sh e)
+  scanr1        :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
                 -> Delayed (Array (sh, Int) e)
                 -> Par arch (FutureR arch (Array (sh, Int) e))
 
-  scanr'        :: ArrayR (Array sh e)
+  scanr'        :: ArrayR (Array (sh, Int) e)
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -157,8 +157,8 @@ class Remote arch => Execute arch where
                 -> Par arch (FutureR arch (Array (sh, Int) e, Array sh e))
 
   permute       :: Bool                         -- ^ update defaults array in-place?
-                -> ArrayR (Array sh' e)
-                -> ShapeR sh
+                -> ArrayR (Array sh e)
+                -> ShapeR sh'
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -319,7 +319,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Reshape shr sh (Var (ArrayR shr' _) ix)
                                -> liftF2 (\s -> reshape shr s shr') (travE sh) (return $ prj ix aenv)
         Unzip tix (Var _ ix)   -> liftF1 (unzip tix) (return $ prj ix aenv)
-        Aforeign str r asm a   -> do
+        Aforeign r str asm a   -> do
           x <- travA a
           y <- spawn $ aforeign str (arraysRepr a) r asm =<< getArrays (arraysRepr a) x
           split r y
@@ -335,17 +335,17 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         -- Consumers
         Fold a                 -> exec1 (fold       $ reduceRank $ arrayRepr a) (travD a)
         Fold1 a                -> exec1 (fold1      $ reduceRank $ arrayRepr a) (travD a)
-        FoldSeg i a s          -> exec2 (foldSeg  i $ reduceRank $ arrayRepr a) (travD a) (travD s)
-        Fold1Seg i a s         -> exec2 (fold1Seg i $ reduceRank $ arrayRepr a) (travD a) (travD s)
-        Scanl a                -> exec1 (scanl      $ reduceRank $ arrayRepr a) (travD a)
-        Scanr a                -> exec1 (scanr      $ reduceRank $ arrayRepr a) (travD a)
-        Scanl1 a               -> exec1 (scanl1     $ reduceRank $ arrayRepr a) (travD a)
-        Scanr1 a               -> exec1 (scanr1     $ reduceRank $ arrayRepr a) (travD a)
+        FoldSeg i a s          -> exec2 (foldSeg  i $              arrayRepr a) (travD a) (travD s)
+        Fold1Seg i a s         -> exec2 (fold1Seg i $              arrayRepr a) (travD a) (travD s)
+        Scanl a                -> exec1 (scanl      $              arrayRepr a) (travD a)
+        Scanr a                -> exec1 (scanr      $              arrayRepr a) (travD a)
+        Scanl1 a               -> exec1 (scanl1     $              arrayRepr a) (travD a)
+        Scanr1 a               -> exec1 (scanr1     $              arrayRepr a) (travD a)
         Scanl' a               -> splitPair
-                                $ exec1 (scanl'     $ reduceRank $ arrayRepr a) (travD a)
+                                $ exec1 (scanl'     $              arrayRepr a) (travD a)
         Scanr' a               -> splitPair
-                                $ exec1 (scanr'     $ reduceRank $ arrayRepr a) (travD a)
-        Permute d a            -> exec2 (permute_ d (arrayRepr d) $ arrayRshape $ arrayRepr a) (travA d) (travD a)
+                                $ exec1 (scanr'     $              arrayRepr a) (travD a)
+        Permute d a            -> exec2 (permute_ d (arrayRepr a) $ arrayRshape $ arrayRepr d) (travA d) (travD a)
         Stencil1 tpB h a       -> let ArrayR shr tpA = arrayRepr a
                                   in  exec1 (stencil1 tpA (ArrayR shr tpB) h) (travD a)
         Stencil2 tpC h a b     -> let ArrayR shr tpA = arrayRepr a
@@ -380,9 +380,6 @@ executeOpenAcc !topAcc !aenv = travA topAcc
             put r1 a
             put r2 b
           return (r1, r2)
-
-        reduceRank :: ArrayR (Array (sh, Int) e) -> ArrayR (Array sh e)
-        reduceRank (ArrayR (ShapeRsnoc shr) tp) = ArrayR shr tp
 
     travAF :: ExecOpenAfun arch aenv (a -> b) -> FutureArraysR arch a -> Par arch (FutureArraysR arch b)
     travAF (Alam lhs (Abody f)) a = executeOpenAcc f $ aenv `push` (lhs, a)
@@ -459,8 +456,8 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       = map (if inplace a then matchTupleType tp tp' else Nothing) repr tp'
 
     permute_ :: ExecOpenAcc arch aenv (Array sh' e)
-             -> ArrayR (Array sh' e)
-             -> ShapeR sh
+             -> ArrayR (Array sh e)
+             -> ShapeR sh'
              -> ExecutableR arch
              -> Gamma aenv
              -> ValR arch aenv
@@ -543,7 +540,7 @@ executeOpenExp rootExp env aenv = travE rootExp
       Index (Var repr a) ix     -> lift2 (index repr) (travAIdx a) (travE ix)
       LinearIndex (Var (ArrayR _ tp) a) ix -> lift2 (indexRemoteAsync tp) (travAIdx a) (travE ix)
       Coerce t1 t2 x            -> lift1 (newFull . evalCoerceScalar t1 t2) (travE x)
-      Foreign _ f x             -> foreignE f x
+      Foreign _ _ f x           -> foreignE f x
 
     -- Helpers
     -- -------

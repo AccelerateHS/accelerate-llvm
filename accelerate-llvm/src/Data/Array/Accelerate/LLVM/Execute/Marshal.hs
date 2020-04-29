@@ -1,8 +1,10 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -57,10 +59,10 @@ class Async arch => Marshal arch where
 marshalArrays :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch [ArgR arch]
 marshalArrays repr arrs = DL.toList <$> marshalArrays' @arch repr arrs
 
-marshalArrays' :: Marshal arch => ArraysR arrs -> arrs -> Par arch (DList (ArgR arch))
-marshalArrays' = undefined
+marshalArrays' :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch (DList (ArgR arch))
+marshalArrays' = marshalTupR' @arch (marshalArray' @arch)
 
-marshalArray' :: forall arch sh tp. Marshal arch => ArrayR (Array sh tp) -> Array sh tp -> Par arch (DList (ArgR arch))
+marshalArray' :: forall arch a. Marshal arch => ArrayR a -> a -> Par arch (DList (ArgR arch))
 marshalArray' (ArrayR _ tp) (Array _ a) = marshalArrayData' @arch tp a
 
 marshalArrayData' :: forall arch tp. Marshal arch => TupleType tp -> ArrayData tp -> Par arch (DList (ArgR arch))
@@ -72,11 +74,11 @@ marshalArrayData' (TupRpair t1 t2) (a1, a2) = do
 marshalArrayData' (TupRsingle t) ad
   | (_, ScalarDict) <- scalarDict t = marshalScalarData' @arch @tp ad
 
-marshalEnv :: forall arch aenv. Marshal arch => (Gamma aenv, ValR arch aenv) -> Par arch [ArgR arch]
-marshalEnv ga = DL.toList <$> marshalEnv' ga
+marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch [ArgR arch]
+marshalEnv g a = DL.toList <$> marshalEnv' g a
 
-marshalEnv' :: forall arch aenv. Marshal arch => (Gamma aenv, ValR arch aenv) -> Par arch (DList (ArgR arch))
-marshalEnv' (gamma, aenv)
+marshalEnv' :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch (DList (ArgR arch))
+marshalEnv' gamma aenv
     = fmap DL.concat
     $ mapM (\(_, Idx' repr idx) -> marshalArray' @arch repr =<< get (prj idx aenv)) (IM.elems gamma)
 
@@ -86,3 +88,30 @@ marshalShape shr sh = DL.toList $ marshalShape' @arch shr sh
 marshalShape' :: forall arch sh. Marshal arch => ShapeR sh -> sh -> DList (ArgR arch)
 marshalShape' ShapeRz () = DL.empty
 marshalShape' (ShapeRsnoc shr) (sh, n) = marshalShape' @arch shr sh `DL.snoc` marshalInt @arch n
+
+type ParamsR arch = TupR (ParamR arch)
+data ParamR arch a where
+  ParamRarray :: ArrayR (Array sh e) -> ParamR arch (Array sh e)
+  ParamRmaybe :: ParamR arch a       -> ParamR arch (Maybe a)
+  ParamRenv   :: Gamma aenv          -> ParamR arch (ValR arch aenv)
+  ParamRint   ::                        ParamR arch Int
+  ParamRshape :: ShapeR sh           -> ParamR arch sh
+  ParamRargs  ::                        ParamR arch (DList (ArgR arch))
+
+marshalParam' :: forall arch a. Marshal arch => ParamR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParam' (ParamRarray repr) a        = marshalArray' @arch repr a
+marshalParam' (ParamRmaybe _   ) Nothing  = return $ DL.empty
+marshalParam' (ParamRmaybe repr) (Just a) = marshalParam' @arch repr a
+marshalParam' (ParamRenv gamma)  aenv     = marshalEnv'   @arch gamma aenv
+marshalParam'  ParamRint         x        = return $ DL.singleton $ marshalInt @arch x
+marshalParam' (ParamRshape shr)  sh       = return $ marshalShape' @arch shr sh
+marshalParam'  ParamRargs        args     = return args
+
+marshalParams' :: forall arch a. Marshal arch => ParamsR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParams' = marshalTupR' @arch (marshalParam' @arch)
+
+{-# INLINE marshalTupR' #-}
+marshalTupR' :: forall arch s a. Marshal arch => (forall b. s b -> b -> Par arch (DList (ArgR arch))) -> TupR s a -> a -> Par arch (DList (ArgR arch))
+marshalTupR' _ TupRunit         ()       = return $ DL.empty
+marshalTupR' f (TupRsingle t)   x        = f t x
+marshalTupR' f (TupRpair t1 t2) (x1, x2) = DL.append <$> marshalTupR' @arch f t1 x1 <*> marshalTupR' @arch f t2 x2

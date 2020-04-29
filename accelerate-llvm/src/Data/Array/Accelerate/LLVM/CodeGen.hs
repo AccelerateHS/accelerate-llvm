@@ -128,9 +128,6 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     travB tp (Constant c) = IRConstant $ IR (constant tp c)
     travB _  (Function f) = IRFunction $ travF1 f
 
-    reduceRank :: ArrayR (Array (sh, Int) e) -> ArrayR (Array sh e)
-    reduceRank (ArrayR (ShapeRsnoc shr) tp) = ArrayR shr tp
-
     -- sadness
     fusionError, unexpectedError :: error
     fusionError      = $internalError "llvmOfPreOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc

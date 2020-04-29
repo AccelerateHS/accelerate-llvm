@@ -235,7 +235,7 @@ liftPreOpenExp arch pexp =
   case pexp of
     Let lhs bnd body          -> [|| Let $$(liftELhs lhs) $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
     Evar (Var tp ix)          -> [|| Evar (Var $$(liftScalarType tp) $$(liftIdx ix)) ||]
-    Foreign asm f x           -> [|| Foreign $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
+    Foreign tp asm f x        -> [|| Foreign $$(liftTupleType tp) $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
     Const t c                 -> [|| Const $$(liftScalarType t) $$(liftConst (TupRsingle t) c) ||]
     Undef t                   -> [|| Undef $$(liftScalarType t) ||]
     Nil                       -> [|| Nil ||]

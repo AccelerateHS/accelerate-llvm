@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -44,31 +44,33 @@ import Prelude                                                      as P
 -- reduction per segment of the source array.
 --
 mkFoldSeg
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh :. Int) e)
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> MIRDelayed Native aenv (Segments i)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFoldSeg uid aenv combine seed arr seg =
-  mkFoldSegP uid aenv combine (Just seed) arr seg
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkFoldSeg uid aenv repr int combine seed arr seg =
+  mkFoldSegP uid aenv repr int combine (Just seed) arr seg
 
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
 -- segments are non-empty.
 --
 mkFold1Seg
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh :. Int) e)
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> MIRDelayed Native aenv (Segments i)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFold1Seg uid aenv combine arr seg =
-  mkFoldSegP uid aenv combine Nothing arr seg
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkFold1Seg uid aenv repr int combine arr seg =
+  mkFoldSegP uid aenv repr int combine Nothing arr seg
 
 
 {--
@@ -131,21 +133,23 @@ mkFoldSegS uid aenv combine mseed marr mseg =
 -- segment-offset approach is required for parallel implementations.
 --
 mkFoldSegP
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
-    -> MIRDelayed Native aenv (Array (sh :. Int) e)
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> MIRDelayed Native aenv (Segments i)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh :. Int) e))
-mkFoldSegP uid aenv combine mseed marr mseg =
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkFoldSegP uid aenv repr int combine mseed marr mseg =
   let
-      (start, end, paramGang) = gangParam @DIM1
-      (arrOut, paramOut)      = mutableArray @(sh:.Int) "out"
-      (arrIn,  paramIn)       = delayedArray @(sh:.Int) "in"  marr
-      (arrSeg, paramSeg)      = delayedArray @DIM1      "seg" mseg
+      (start, end, paramGang) = gangParam dim1
+      (arrOut, paramOut)      = mutableArray repr "out"
+      (arrIn,  paramIn)       = delayedArray      "in"  marr
+      (arrSeg, paramSeg)      = delayedArray      "seg" mseg
       paramEnv                = envParam aenv
+      tp                      = arrayRtype repr
   in
   makeOpenAcc uid "foldSegP" (paramGang ++ paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
@@ -156,29 +160,29 @@ mkFoldSegP uid aenv combine mseed marr mseg =
     -- segment length array, so its size has increased by one.
     sz <- indexHead <$> delayedExtent arrIn
     ss <- do n <- indexHead <$> delayedExtent arrSeg
-             A.sub numType n (lift 1)
+             A.sub numType n (liftInt 1)
 
     imapFromTo (indexHead start) (indexHead end) $ \s -> do
 
-      i   <- case rank @sh of
-               0 -> return s
-               _ -> A.rem integralType s ss
-      j   <- A.add numType i (lift 1)
-      u   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex arrSeg) i
-      v   <- A.fromIntegral integralType numType =<< app1 (delayedLinearIndex arrSeg) j
+      i   <- case arrayRshape repr of
+               ShapeRsnoc ShapeRz -> return s
+               _ -> A.rem TypeInt s ss
+      j   <- A.add numType i (liftInt 1)
+      u   <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) i
+      v   <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) j
 
-      (inf,sup) <- A.unpair <$> case rank @sh of
-                     0 -> return (A.pair u v)
-                     _ -> do q <- A.quot integralType s ss
+      (inf,sup) <- A.unpair <$> case arrayRshape repr of
+                     ShapeRsnoc ShapeRz -> return (A.pair u v)
+                     _ -> do q <- A.quot TypeInt s ss
                              a <- A.mul numType q sz
                              A.pair <$> A.add numType u a <*> A.add numType v a
 
       r   <- case mseed of
                Just seed -> do z <- seed
-                               reduceFromTo  inf sup (app2 combine) z (app1 (delayedLinearIndex arrIn))
-               Nothing   ->    reduce1FromTo inf sup (app2 combine)   (app1 (delayedLinearIndex arrIn))
+                               reduceFromTo  tp inf sup (app2 combine) z (app1 (delayedLinearIndex arrIn))
+               Nothing   ->    reduce1FromTo tp inf sup (app2 combine)   (app1 (delayedLinearIndex arrIn))
 
-      writeArray arrOut s r
+      writeArray TypeInt arrOut s r
 
     return_
 

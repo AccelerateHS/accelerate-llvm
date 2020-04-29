@@ -604,6 +604,10 @@ untrip t = (fst3 t, snd3 t, thd3 t)
 lift :: TupleType a -> a -> IR a
 lift tp v = IR $ constant tp v
 
+{-# INLINABLE liftInt #-}
+liftInt :: Int -> IR Int
+liftInt = lift $ TupRsingle scalarTypeInt
+
 
 -- | Standard if-then-else expression
 --

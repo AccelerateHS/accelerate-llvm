@@ -74,8 +74,8 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch  aenv as
               -> PreOpenAccCommand acc arch  aenv bs
 
-  Aforeign    :: String
-              -> ArraysR bs
+  Aforeign    :: ArraysR bs
+              -> String
               -> (as -> Par arch (FutureR arch bs))
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
@@ -208,7 +208,7 @@ instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccCommand acc arch) 
   arraysRepr (Apair a1 a2)                         = arraysRepr a1 `TupRpair` arraysRepr a2
   arraysRepr Anil                                  = TupRunit
   arraysRepr (Apply repr _ _)                      = repr
-  arraysRepr (Aforeign _ repr _ _ )                = repr
+  arraysRepr (Aforeign repr _ _ _)                 = repr
   arraysRepr (Acond _ a1 _)                        = arraysRepr a1
   arraysRepr (Awhile _ _ a)                        = arraysRepr a
   arraysRepr (Reshape shr _ (Var (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp

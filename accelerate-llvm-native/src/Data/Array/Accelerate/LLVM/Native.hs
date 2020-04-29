@@ -58,13 +58,12 @@ module Data.Array.Accelerate.LLVM.Native (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS, liftArraysR, lhsToArraysR )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftALhs, liftArraysR, lhsToTupR )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays, toArr, fromArr, arrays, ArrRepr )
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
 import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 
-import Data.Array.Accelerate.LLVM.Embed                             ( HasTypeable(..), lhsTypeable )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
@@ -78,7 +77,6 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 -- standard library
 import Control.Monad.Trans
-import Data.Typeable
 import System.IO.Unsafe
 import Text.Printf
 import qualified Language.Haskell.TH                                as TH
@@ -390,12 +388,12 @@ runQ' using target f = do
   -- the pieces directly.
   --
   let
-      go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam lhs l) xs as stmts | HasTypeable <- lhsTypeable lhs = do
+      go :: CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lhs l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToArraysR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftALhs lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result

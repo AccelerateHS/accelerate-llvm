@@ -148,7 +148,7 @@ compileOpenAcc = traverseAcc
         Anil                        -> plain $ pure AST.Anil
 
         -- Foreign arrays operations
-        Aforeign ff afun a          -> foreignA ff afun a
+        Aforeign repr ff afun a     -> foreignA repr ff afun a
 
         -- Uninitialised array allocation
         Generate r sh f
@@ -366,15 +366,16 @@ compileOpenAcc = traverseAcc
         -- this term and continue walking down the list of alternate
         -- implementations.
         --
-        foreignA :: forall a b asm. (A.Arrays a, A.Arrays b, A.Foreign asm)
-                 => asm         (a -> b)
-                 -> DelayedAfun (A.ArrRepr a -> A.ArrRepr b)
-                 -> DelayedOpenAcc aenv (A.ArrRepr a)
-                 -> LLVM arch (CompiledOpenAcc arch aenv (A.ArrRepr b))
-        foreignA ff f a =
+        foreignA :: A.Foreign asm
+                 => ArraysR b
+                 -> asm         (a -> b)
+                 -> DelayedAfun (a -> b)
+                 -> DelayedOpenAcc aenv a
+                 -> LLVM arch (CompiledOpenAcc arch aenv b)
+        foreignA repr ff f a =
           case foreignAcc ff of
-            Just asm -> plain =<< liftA (AST.Aforeign (A.strForeign ff) (A.arrays @b) asm) <$> travA a
-            Nothing  -> traverseAcc $ Manifest (Apply (A.arrays @b) (weaken weakenEmpty f) a)
+            Just asm -> plain =<< liftA (AST.Aforeign repr (A.strForeign ff) asm) <$> travA a
+            Nothing  -> traverseAcc $ Manifest (Apply repr (weaken weakenEmpty f) a)
 
     -- Traverse a scalar expression
     --
@@ -386,7 +387,7 @@ compileOpenAcc = traverseAcc
         Const tp c              -> return $ pure $ Const tp c
         PrimConst c             -> return $ pure $ PrimConst c
         Undef tp                -> return $ pure $ Undef tp
-        Foreign ff f x          -> foreignE ff f x
+        Foreign tp ff f x       -> foreignE tp ff f x
         --
         Let lhs a b             -> liftA2 (Let lhs)         <$> travE a <*> travE b
         IndexSlice slix x s     -> liftA2 (IndexSlice slix) <$> travE x <*> travE s
@@ -417,14 +418,15 @@ compileOpenAcc = traverseAcc
         travF (Body b)    = liftA Body      <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
-        foreignE :: (A.Elt a, A.Elt b, A.Foreign asm)
-                 => asm           (a -> b)
-                 -> DelayedFun () (A.EltRepr a -> A.EltRepr b)
-                 -> DelayedOpenExp env aenv (A.EltRepr a)
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp ArrayVar env aenv (A.EltRepr b))
-        foreignE asm f x =
+        foreignE :: A.Foreign asm
+                 => TupleType b
+                 -> asm           (a -> b)
+                 -> DelayedFun () (a -> b)
+                 -> DelayedOpenExp env aenv a
+                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp ArrayVar env aenv b)
+        foreignE tp asm f x =
           case foreignExp @arch asm of
-            Just{}                            -> liftA (Foreign asm err) <$> travE x
+            Just{}                            -> liftA (Foreign tp asm err) <$> travE x
             Nothing
               | Lam lhs (Body b) <- f
               , Exists lhs' <- rebuildLHS lhs -> liftA2 (Let lhs')       <$> travE x <*> travE (weaken weakenEmpty $ weakenE (sinkWithLHS lhs lhs' weakenEmpty) b)
