@@ -24,93 +24,32 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal (
-
-  Marshalable,
-  M.marshal, M.marshal',
-
-) where
+module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal ( module M ) where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
-import qualified Data.Array.Accelerate.LLVM.Execute.Marshal     as M
+import Data.Array.Accelerate.LLVM.Execute.Marshal               as M
 
 import Data.Array.Accelerate.LLVM.PTX.Target
-import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
-import Data.Array.Accelerate.LLVM.PTX.Execute.Environment       ( Val, prj )
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
+
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Data
 
 -- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
 -- libraries
-import Control.Monad
-import Data.DList                                               ( DList )
-import Data.Int
-import Data.Typeable
-import Foreign.Ptr
-import Foreign.Storable                                         ( Storable )
 import qualified Data.DList                                     as DL
-import qualified Data.IntMap                                    as IM
 
 
--- Instances for handling concrete types in the PTX backend
---
-type Marshalable m args   = M.Marshalable PTX m args
-type instance M.ArgR PTX  = CUDA.FunParam
+instance Marshal PTX where
+  type ArgR PTX = CUDA.FunParam
 
-
-instance Monad m => M.Marshalable PTX m (DList CUDA.FunParam) where
-  marshal' = return
-
-instance Monad m => M.Marshalable PTX m Int where
-  marshal' x = return $ DL.singleton (CUDA.VArg x)
-
-instance Monad m => M.Marshalable PTX m Int32 where
-  marshal' x = return $ DL.singleton (CUDA.VArg x)
-
-instance {-# OVERLAPS #-} M.Marshalable PTX (Par PTX) (Gamma aenv, Val aenv) where
-  marshal' (gamma, aenv)
-    = fmap DL.concat
-    $ mapM (\(_, Idx' idx) -> liftPar . M.marshal' @PTX =<< get (prj idx aenv)) (IM.elems gamma)
-
-instance (M.Marshalable PTX (Par PTX) a) => M.Marshalable PTX (Par PTX) (Future a) where
-  marshal' future = M.marshal' @PTX =<< get future
-
-instance ArrayElt e => M.Marshalable PTX (Par PTX) (ArrayData e) where
-  marshal' adata = liftPar (M.marshal' @PTX adata)
-
-instance ArrayElt e => M.Marshalable PTX (LLVM PTX) (ArrayData e) where
-  marshal' adata = go arrayElt adata
-    where
-      wrap :: forall e' a. (ArrayElt e', ArrayPtrs e' ~ Ptr a, Typeable e', Typeable a, Storable a)
-           => ArrayData e'
-           -> LLVM PTX (DList CUDA.FunParam)
-      wrap ad = fmap (DL.singleton . CUDA.VArg) (unsafeGetDevicePtr ad)
-
-      go :: ArrayEltR e' -> ArrayData e' -> LLVM PTX (DList CUDA.FunParam)
-      go ArrayEltRunit    !_  = return DL.empty
-      go ArrayEltRint     !ad = wrap ad
-      go ArrayEltRint8    !ad = wrap ad
-      go ArrayEltRint16   !ad = wrap ad
-      go ArrayEltRint32   !ad = wrap ad
-      go ArrayEltRint64   !ad = wrap ad
-      go ArrayEltRword    !ad = wrap ad
-      go ArrayEltRword8   !ad = wrap ad
-      go ArrayEltRword16  !ad = wrap ad
-      go ArrayEltRword32  !ad = wrap ad
-      go ArrayEltRword64  !ad = wrap ad
-      go ArrayEltRhalf    !ad = wrap ad
-      go ArrayEltRfloat   !ad = wrap ad
-      go ArrayEltRdouble  !ad = wrap ad
-      go ArrayEltRchar    !ad = wrap ad
-      go ArrayEltRbool    !ad = wrap ad
-      --
-      go (ArrayEltRvec  !aeR)        (AD_Vec _ !ad)      = go aeR ad
-      go (ArrayEltRpair !aeR1 !aeR2) (AD_Pair !ad1 !ad2) = return DL.append `ap` go aeR1 ad1 `ap` go aeR2 ad2
-
+  marshalInt = CUDA.VArg
+  marshalScalarData' tp
+    | (ScalarDict, _, _) <- singleDict tp = liftPar . fmap (DL.singleton . CUDA.VArg) . unsafeGetDevicePtr tp
 
 -- TODO FIXME !!!
 --
@@ -119,9 +58,9 @@ instance ArrayElt e => M.Marshalable PTX (LLVM PTX) (ArrayData e) where
 -- a computation.
 --
 unsafeGetDevicePtr
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
-    -> LLVM PTX (CUDA.DevicePtr a)
-unsafeGetDevicePtr !ad =
-  Prim.withDevicePtr ad (\p -> return (Nothing,p))
+    :: SingleType e
+    -> ArrayData e
+    -> LLVM PTX (CUDA.DevicePtr (ScalarDataRepr e))
+unsafeGetDevicePtr !tp !ad =
+  Prim.withDevicePtr tp ad (\p -> return (Nothing, p))
 

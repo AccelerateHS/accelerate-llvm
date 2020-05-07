@@ -21,9 +21,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
   where
 
 -- accelerate
-import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Scalar, Vector, Shape, Z, (:.), Elt(..), DIM0, DIM1 )
+import Data.Array.Accelerate.Array.Representation                   hiding ( size )
 
 -- accelerate-llvm-*
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -63,20 +62,21 @@ import Prelude                                                      as P
 --       a neutral element {(+), 0}
 --
 mkFold
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh e.
+       Gamma          aenv
+    -> ArrayR (Array sh e)
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFold aenv f z acc
-  | Just Refl <- matchShapeType @sh @Z
-  = (+++) <$> mkFoldAll  aenv f (Just z) acc
-          <*> mkFoldFill aenv z
+mkFold aenv repr f z acc
+  | ArrayR ShapeRz tp <- repr
+  = (+++) <$> mkFoldAll  aenv tp f (Just z) acc
+          <*> mkFoldFill aenv repr z
 
   | otherwise
-  = (+++) <$> mkFoldDim  aenv f (Just z) acc
-          <*> mkFoldFill aenv z
+  = (+++) <$> mkFoldDim  aenv repr f (Just z) acc
+          <*> mkFoldFill aenv repr z
 
 
 -- Reduce a non-empty array along the innermost dimension. The reduction
@@ -87,17 +87,18 @@ mkFold aenv f z acc
 --       a neutral element {(+), 0}
 --
 mkFold1
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh e.
+       Gamma          aenv
+    -> ArrayR (Array sh e)
     -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFold1 aenv f acc
-  | Just Refl <- matchShapeType @sh @Z
-  = mkFoldAll aenv f Nothing acc
+mkFold1 aenv repr f acc
+  | ArrayR ShapeRz tp <- repr
+  = mkFoldAll aenv tp  f Nothing acc
 
   | otherwise
-  = mkFoldDim aenv f Nothing acc
+  = mkFoldDim aenv repr f Nothing acc
 
 
 -- Reduce an array to a single element.
@@ -119,17 +120,18 @@ mkFold1 aenv f acc
 -- element per thread) to a single element, which is stored to the output array.
 --
 mkFoldAll
-    :: forall aenv e. Elt e
-    => Gamma          aenv                      -- ^ array environment
+    :: forall aenv e.
+       Gamma          aenv                      -- ^ array environment
+    -> TupleType e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAll aenv combine mseed macc = do
+mkFoldAll aenv tp combine mseed macc = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  foldr1 (+++) <$> sequence [ mkFoldAllS  dev aenv combine mseed macc
-                            , mkFoldAllM1 dev aenv combine       macc
-                            , mkFoldAllM2 dev aenv combine mseed
+  foldr1 (+++) <$> sequence [ mkFoldAllS  dev aenv tp combine mseed macc
+                            , mkFoldAllM1 dev aenv tp combine       macc
+                            , mkFoldAllM2 dev aenv tp combine mseed
                             ]
 
 
@@ -137,17 +139,18 @@ mkFoldAll aenv combine mseed macc = do
 -- processed by a single thread block.
 --
 mkFoldAllS
-    :: forall aenv e. Elt e
-    => DeviceProperties                         -- ^ properties of the target GPU
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
+    -> TupleType e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllS dev aenv combine mseed marr =
+mkFoldAllS dev aenv tp combine mseed marr =
   let
-      (arrOut, paramOut)  = mutableArray @DIM0 "out"
-      (arrIn,  paramIn)   = delayedArray @DIM1 "in" marr
+      (arrOut, paramOut)  = mutableArray (ArrayR dim0 tp) "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
@@ -156,7 +159,7 @@ mkFoldAllS dev aenv combine mseed marr =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType @e)
+          bytes     = sizeOf tp
   in
   makeOpenAccWith config "foldAllS" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -164,10 +167,10 @@ mkFoldAllS dev aenv combine mseed marr =
     bd      <- blockDim
 
     sh      <- delayedExtent arrIn
-    end     <- shapeSize sh
+    end     <- shapeSize dim1 sh
 
     -- We can assume that there is only a single thread block
-    start'  <- return (lift 0)
+    start'  <- return (liftInt32 0)
     end'    <- i32 end
     i0      <- A.add numType start' tid
     sz      <- A.sub numType end' start'
@@ -176,12 +179,12 @@ mkFoldAllS dev aenv combine mseed marr =
       -- Thread reads initial element and then participates in block-wide
       -- reduction.
       x0 <- app1 (delayedLinearIndex arrIn) =<< int i0
-      r0 <- if A.eq singleType sz bd
-              then reduceBlockSMem dev combine Nothing   x0
-              else reduceBlockSMem dev combine (Just sz) x0
+      r0 <- if (tp, A.eq singleType sz bd)
+              then reduceBlockSMem dev tp combine Nothing   x0
+              else reduceBlockSMem dev tp combine (Just sz) x0
 
-      when (A.eq singleType tid (lift 0)) $
-        writeArray arrOut tid =<<
+      when (A.eq singleType tid (liftInt32 0)) $
+        writeArray TypeInt32 arrOut tid =<<
           case mseed of
             Nothing -> return r0
             Just z  -> flip (app2 combine) r0 =<< z   -- Note: initial element on the left
@@ -194,18 +197,19 @@ mkFoldAllS dev aenv combine mseed marr =
 -- blocks.
 --
 mkFoldAllM1
-    :: forall aenv e. Elt e
-    => DeviceProperties                         -- ^ properties of the target GPU
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
+    -> TupleType e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllM1 dev aenv combine marr =
+mkFoldAllM1 dev aenv tp combine marr =
   let
-      (arrTmp, paramTmp)  = mutableArray @DIM1 "tmp"
-      (arrIn,  paramIn)   = delayedArray @DIM1 "in" marr
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
-      start               = lift 0
+      start               = liftInt 0
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n              = warps * (1 + per_warp) * bytes
@@ -213,7 +217,7 @@ mkFoldAllM1 dev aenv combine marr =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType @e)
+          bytes     = sizeOf tp
   in
   makeOpenAccWith config "foldAllM1" (paramTmp ++ paramIn ++ paramEnv) $ do
 
@@ -225,7 +229,7 @@ mkFoldAllM1 dev aenv combine marr =
     tid   <- threadIdx
     bd    <- int =<< blockDim
     sz    <- indexHead <$> delayedExtent arrIn
-    end   <- shapeSize (irArrayShape arrTmp)
+    end   <- shapeSize dim1 (irArrayShape arrTmp)
 
     imapFromTo start end $ \seg -> do
 
@@ -238,9 +242,9 @@ mkFoldAllM1 dev aenv combine marr =
       to    <- A.min singleType sz   step
 
       -- Threads cooperatively reduce this stripe
-      reduceFromTo dev from to combine
+      reduceFromTo dev tp from to combine
         (app1 (delayedLinearIndex arrIn))
-        (when (A.eq singleType tid (lift 0)) . writeArray arrTmp seg)
+        (when (A.eq singleType tid (liftInt32 0)) . writeArray TypeInt arrTmp seg)
 
     return_
 
@@ -249,18 +253,19 @@ mkFoldAllM1 dev aenv combine marr =
 -- reduction algorithm.
 --
 mkFoldAllM2
-    :: forall aenv e. Elt e
-    => DeviceProperties
+    :: forall aenv e.
+       DeviceProperties
     -> Gamma       aenv
+    -> TupleType e
     -> IRFun2  PTX aenv (e -> e -> e)
     -> MIRExp  PTX aenv e
     -> CodeGen PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllM2 dev aenv combine mseed =
+mkFoldAllM2 dev aenv tp combine mseed =
   let
-      (arrTmp, paramTmp)  = mutableArray @DIM1 "tmp"
-      (arrOut, paramOut)  = mutableArray @DIM1 "out"
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
       paramEnv            = envParam aenv
-      start               = lift 0
+      start               = liftInt 0
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n              = warps * (1 + per_warp) * bytes
@@ -268,7 +273,7 @@ mkFoldAllM2 dev aenv combine mseed =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType @e)
+          bytes     = sizeOf tp
   in
   makeOpenAccWith config "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
 
@@ -281,7 +286,7 @@ mkFoldAllM2 dev aenv combine mseed =
     gd    <- gridDim
     bd    <- int =<< blockDim
     sz    <- return $ indexHead (irArrayShape arrTmp)
-    end   <- shapeSize (irArrayShape arrOut)
+    end   <- shapeSize dim1 (irArrayShape arrOut)
 
     imapFromTo start end $ \seg -> do
 
@@ -294,12 +299,12 @@ mkFoldAllM2 dev aenv combine mseed =
       to    <- A.min singleType sz   step
 
       -- Threads cooperatively reduce this stripe
-      reduceFromTo dev from to combine (readArray arrTmp) $ \r ->
-        when (A.eq singleType tid (lift 0)) $
-          writeArray arrOut seg =<<
+      reduceFromTo dev tp from to combine (readArray TypeInt arrTmp) $ \r ->
+        when (A.eq singleType tid (liftInt32 0)) $
+          writeArray TypeInt arrOut seg =<<
             case mseed of
               Nothing -> return r
-              Just z  -> if A.eq singleType gd (lift 1)
+              Just z  -> if (tp, A.eq singleType gd (liftInt32 1))
                            then flip (app2 combine) r =<< z   -- Note: initial element on the left
                            else return r
 
@@ -315,18 +320,19 @@ mkFoldAllM2 dev aenv combine mseed =
 -- is known a priori).
 --
 mkFoldDim
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv                                     -- ^ array environment
+    :: forall aenv sh e.
+       Gamma aenv                                     -- ^ array environment
+    -> ArrayR (Array sh e)
     -> IRFun2     PTX aenv (e -> e -> e)              -- ^ combination function
     -> MIRExp     PTX aenv e                          -- ^ (optional) seed element, if this is an exclusive reduction
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)      -- ^ input data
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFoldDim aenv combine mseed marr = do
+mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray @sh        "out"
-      (arrIn,  paramIn)   = delayedArray @(sh:.Int) "in" marr
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
@@ -335,7 +341,7 @@ mkFoldDim aenv combine mseed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType @e)
+          bytes     = sizeOf tp
   --
   makeOpenAccWith config "fold" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -347,8 +353,8 @@ mkFoldDim aenv combine mseed marr = do
 
     when (A.lt singleType tid sz') $ do
 
-      start <- return (lift 0)
-      end   <- shapeSize (irArrayShape arrOut)
+      start <- return (liftInt 0)
+      end   <- shapeSize shr (irArrayShape arrOut)
 
       -- Thread blocks iterate over the outer dimensions, each thread block
       -- cooperatively reducing along each outermost index to a single value.
@@ -367,14 +373,14 @@ mkFoldDim aenv combine mseed marr = do
         i0    <- A.add numType from =<< int tid
         x0    <- app1 (delayedLinearIndex arrIn) i0
         bd    <- blockDim
-        r0    <- if A.gte singleType sz' bd
-                   then reduceBlockSMem dev combine Nothing    x0
-                   else reduceBlockSMem dev combine (Just sz') x0
+        r0    <- if (tp, A.gte singleType sz' bd)
+                   then reduceBlockSMem dev tp combine Nothing    x0
+                   else reduceBlockSMem dev tp combine (Just sz') x0
 
         -- Step 2: keep walking over the input
         bd'   <- int bd
         next  <- A.add numType from bd'
-        r     <- iterFromStepTo next bd' to r0 $ \offset r -> do
+        r     <- iterFromStepTo numType tp next bd' to r0 $ \offset r -> do
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
@@ -382,12 +388,12 @@ mkFoldDim aenv combine mseed marr = do
           -- Threads cooperatively reduce this stripe of the input
           i   <- A.add numType offset =<< int tid
           v'  <- A.sub numType to offset
-          r'  <- if A.gte singleType v' bd'
+          r'  <- if (tp, A.gte singleType v' bd')
                    -- All threads of the block are valid, so we can avoid
                    -- bounds checks.
                    then do
                      x <- app1 (delayedLinearIndex arrIn) i
-                     y <- reduceBlockSMem dev combine Nothing x
+                     y <- reduceBlockSMem dev tp combine Nothing x
                      return y
 
                    -- Otherwise, we require bounds checks when reading the input
@@ -396,29 +402,29 @@ mkFoldDim aenv combine mseed marr = do
                    -- reduction, we must still have all threads enter the
                    -- reduction procedure to avoid synchronisation divergence.
                    else do
-                     x <- if A.lt singleType i to
+                     x <- if (tp, A.lt singleType i to)
                             then app1 (delayedLinearIndex arrIn) i
                             else let
                                      go :: TupleType a -> Operands a
-                                     go TypeRunit       = OP_Unit
-                                     go (TypeRpair a b) = OP_Pair (go a) (go b)
-                                     go (TypeRscalar t) = ir' t (undef t)
+                                     go TupRunit       = OP_Unit
+                                     go (TupRpair a b) = OP_Pair (go a) (go b)
+                                     go (TupRsingle t) = ir' t (undef t)
                                  in
-                                 return . IR $ go (eltType @e)
+                                 return . IR $ go tp
 
                      v <- i32 v'
-                     y <- reduceBlockSMem dev combine (Just v) x
+                     y <- reduceBlockSMem dev tp combine (Just v) x
                      return y
 
-          if A.eq singleType tid (lift 0)
+          if (tp, A.eq singleType tid (liftInt32 0))
             then app2 combine r r'
             else return r'
 
         -- Step 3: Thread 0 writes the aggregate reduction of this dimension to
         -- memory. If this is an exclusive fold, combine with the initial element.
         --
-        when (A.eq singleType tid (lift 0)) $
-          writeArray arrOut seg =<<
+        when (A.eq singleType tid (liftInt32 0)) $
+          writeArray TypeInt arrOut seg =<<
             case mseed of
               Nothing -> return r
               Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
@@ -430,12 +436,12 @@ mkFoldDim aenv combine mseed marr = do
 -- dimensions with the initial element.
 --
 mkFoldFill
-    :: (Shape sh, Elt e)
-    => Gamma       aenv
+    :: Gamma       aenv
+    -> ArrayR (Array sh e)
     -> IRExp   PTX aenv e
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill aenv seed =
-  mkGenerate aenv (IRFun1 (const seed))
+mkFoldFill aenv repr seed =
+  mkGenerate aenv repr (IRFun1 (const seed))
 
 
 -- Efficient threadblock-wide reduction using the specified operator. The
@@ -447,19 +453,20 @@ mkFoldFill aenv seed =
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_reduce_warp_reductions.cuh
 --
 reduceBlockSMem
-    :: forall aenv e. Elt e
-    => DeviceProperties                         -- ^ properties of the target device
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target device
+    -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> Maybe (IR Int32)                         -- ^ number of valid elements (may be less than block size)
     -> IR e                                     -- ^ calling thread's input element
     -> CodeGen PTX (IR e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
-reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
+reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
   where
     int32 :: Integral a => a -> IR Int32
-    int32 = lift . P.fromIntegral
+    int32 = liftInt32 . P.fromIntegral
 
     -- Temporary storage required for each warp
-    bytes           = sizeOf (eltType @e)
+    bytes           = sizeOf tp
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
 
     -- Step 1: Reduction in every warp
@@ -469,23 +476,23 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
       skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
-      smem  <- dynamicSharedMem (int32 warp_smem_elems) skip
+      smem  <- dynamicSharedMem tp TypeInt32 (int32 warp_smem_elems) skip
 
       -- Are we doing bounds checking for this warp?
       --
       case size of
         -- The entire thread block is valid, so skip bounds checks.
         Nothing ->
-          reduceWarpSMem dev combine smem Nothing input
+          reduceWarpSMem dev tp combine smem Nothing input
 
         -- Otherwise check how many elements are valid for this warp. If it is
         -- full then we can still skip bounds checks for it.
         Just n -> do
           offset <- A.mul numType wid (int32 (CUDA.warpSize dev))
           valid  <- A.sub numType n offset
-          if A.gte singleType valid (int32 (CUDA.warpSize dev))
-            then reduceWarpSMem dev combine smem Nothing      input
-            else reduceWarpSMem dev combine smem (Just valid) input
+          if (tp, A.gte singleType valid (int32 (CUDA.warpSize dev)))
+            then reduceWarpSMem dev tp combine smem Nothing      input
+            else reduceWarpSMem dev tp combine smem (Just valid) input
 
     -- Step 2: Aggregate per-warp reductions
     --
@@ -495,13 +502,13 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       bd    <- blockDim
       warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
       skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
-      smem  <- dynamicSharedMem warps skip
+      smem  <- dynamicSharedMem tp TypeInt32 warps skip
 
       -- Share the per-lane aggregates
       wid   <- warpId
       lane  <- laneId
-      when (A.eq singleType lane (lift 0)) $ do
-        writeArray smem wid input
+      when (A.eq singleType lane (liftInt32 0)) $ do
+        writeArray TypeInt32 smem wid input
 
       -- Wait for each warp to finish its local reduction
       __syncthreads
@@ -510,7 +517,7 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
       -- done in CUB), but we could also do this cooperatively (better for
       -- larger thread blocks?)
       tid   <- threadIdx
-      if A.eq singleType tid (lift 0)
+      if (tp, A.eq singleType tid (liftInt32 0))
         then do
           steps <- case size of
                      Nothing -> return warps
@@ -518,8 +525,8 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
                        a <- A.add numType n (int32 (CUDA.warpSize dev - 1))
                        b <- A.quot integralType a (int32 (CUDA.warpSize dev))
                        return b
-          iterFromStepTo (lift 1) (lift 1) steps input $ \step x ->
-            app2 combine x =<< readArray smem step
+          iterFromStepTo numType tp (liftInt32 1) (liftInt32 1) steps input $ \step x ->
+            app2 combine x =<< readArray TypeInt32 smem step
         else
           return input
 
@@ -534,14 +541,15 @@ reduceBlockSMem dev combine size = warpReduce >=> warpAggregate
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
 --
 reduceWarpSMem
-    :: forall aenv e. Elt e
-    => DeviceProperties                         -- ^ properties of the target device
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target device
+    -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
     -> Maybe (IR Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
     -> IR e                                     -- ^ calling thread's input element
     -> CodeGen PTX (IR e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
-reduceWarpSMem dev combine smem size = reduce 0
+reduceWarpSMem dev tp combine smem size = reduce 0
   where
     log2 :: Double -> Double
     log2  = P.logBase 2
@@ -553,7 +561,7 @@ reduceWarpSMem dev combine smem size = reduce 0
     -- optimised away.
     valid i =
       case size of
-        Nothing -> return (lift True)
+        Nothing -> return (lift (TupRsingle scalarTypeBool) True)
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
@@ -561,18 +569,18 @@ reduceWarpSMem dev combine smem size = reduce 0
     reduce step x
       | step >= steps = return x
       | otherwise     = do
-          let offset = lift (1 `P.shiftL` step)
+          let offset = liftInt32 (1 `P.shiftL` step)
 
           -- share input through buffer
           lane <- laneId
-          writeArray smem lane x
+          writeArray TypeInt32 smem lane x
 
           __syncwarp
 
           -- update input if in range
           i   <- A.add numType lane offset
-          x'  <- if valid i
-                   then app2 combine x =<< readArray smem i
+          x'  <- if (tp, valid i)
+                   then app2 combine x =<< readArray TypeInt32 smem i
                    else return x
 
           __syncwarp
@@ -596,15 +604,15 @@ reduceWarpSMem dev combine smem size = reduce 0
 -- ---------------
 
 reduceFromTo
-    :: Elt a
-    => DeviceProperties
+    :: DeviceProperties
+    -> TupleType a
     -> IR Int                                   -- ^ starting index
     -> IR Int                                   -- ^ final index (exclusive)
     -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
     -> (IR Int -> CodeGen PTX (IR a))           -- ^ function to retrieve element at index
     -> (IR a -> CodeGen PTX ())                 -- ^ what to do with the value
     -> CodeGen PTX ()
-reduceFromTo dev from to combine get set = do
+reduceFromTo dev tp from to combine get set = do
 
   tid   <- int =<< threadIdx
   bd    <- int =<< blockDim
@@ -612,25 +620,25 @@ reduceFromTo dev from to combine get set = do
   valid <- A.sub numType to from
   i     <- A.add numType from tid
 
-  _     <- if A.gte singleType valid bd
+  _     <- if (TupRunit, A.gte singleType valid bd)
              then do
                -- All threads in the block will participate in the reduction, so
                -- we can avoid bounds checks
                x <- get i
-               r <- reduceBlockSMem dev combine Nothing x
+               r <- reduceBlockSMem dev tp combine Nothing x
                set r
 
-               return (lift ())
+               return (lift TupRunit ())
              else do
                -- Only in-bounds threads can read their input and participate in
                -- the reduction
                when (A.lt singleType i to) $ do
                  x <- get i
                  v <- i32 valid
-                 r <- reduceBlockSMem dev combine (Just v) x
+                 r <- reduceBlockSMem dev tp combine (Just v) x
                  set r
 
-               return (lift ())
+               return (lift TupRunit ())
 
   return ()
 
@@ -640,10 +648,10 @@ reduceFromTo dev from to combine get set = do
 -- ---------
 
 i32 :: IR Int -> CodeGen PTX (IR Int32)
-i32 = A.fromIntegral integralType numType
+i32 = A.irFromIntegral integralType numType
 
 int :: IR Int32 -> CodeGen PTX (IR Int)
-int = A.fromIntegral integralType numType
+int = A.irFromIntegral integralType numType
 
 imapFromTo
     :: IR Int
@@ -654,5 +662,5 @@ imapFromTo start end body = do
   bid <- int =<< blockIdx
   gd  <- int =<< gridDim
   i0  <- A.add numType start bid
-  imapFromStepTo i0 gd end body
+  imapFromStepTo numType i0 gd end body
 

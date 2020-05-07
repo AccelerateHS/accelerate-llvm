@@ -65,7 +65,7 @@ import qualified LLVM.AST.Type                                      as LLVM
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Elt, Vector, eltType )
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -133,7 +133,7 @@ warpId :: CodeGen PTX (IR Int32)
 warpId = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   tid <- threadIdx
-  A.quot integralType tid (A.lift (P.fromIntegral (CUDA.warpSize dev)))
+  A.quot integralType tid (A.liftInt32 (P.fromIntegral (CUDA.warpSize dev)))
 
 _warpId :: CodeGen PTX (IR Int32)
 _warpId = specialPTXReg "llvm.ptx.read.warpid"
@@ -223,7 +223,7 @@ __syncthreads_or = barrier_op "llvm.nvvm.barrier0.or"
 -- | Wait until all warp lanes have reached this point.
 --
 __syncwarp :: CodeGen PTX ()
-__syncwarp = __syncwarp_mask (lift 0xffffffff)
+__syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 
 -- | Wait until all warp lanes named in the mask have executed a __syncwarp()
 -- with the same mask. All non-exited threads named in the mask must execute
@@ -315,21 +315,22 @@ sharedMemVolatility = Volatile
 -- space, with enough storage to contain the given number of elements.
 --
 staticSharedMem
-    :: forall e. Elt e
-    => Word64
+    :: TupleType e
+    -> Word64
     -> CodeGen PTX (IRArray (Vector e))
-staticSharedMem n = do
-  ad    <- go (eltType @e)
-  return $ IRArray { irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
+staticSharedMem tp n = do
+  ad    <- go tp
+  return $ IRArray { irArrayRepr       = ArrayR dim1 tp
+                   , irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
                    , irArrayData       = IR ad
                    , irArrayAddrSpace  = sharedMemAddrSpace
                    , irArrayVolatility = sharedMemVolatility
                    }
   where
     go :: TupleType s -> CodeGen PTX (Operands s)
-    go TypeRunit          = return OP_Unit
-    go (TypeRpair t1 t2)  = OP_Pair <$> go t1 <*> go t2
-    go tt@(TypeRscalar t) = do
+    go TupRunit          = return OP_Unit
+    go (TupRpair t1 t2)  = OP_Pair <$> go t1 <*> go t2
+    go tt@(TupRsingle t) = do
       -- Declare a new global reference for the statically allocated array
       -- located in the __shared__ memory space.
       nm <- freshName
@@ -373,33 +374,38 @@ initialiseDynamicSharedMemory = do
 -- with enough space to contain the given number of elements.
 --
 dynamicSharedMem
-    :: forall e int. (Elt e, IsIntegral int)
-    => IR int                                 -- number of array elements
+    :: forall e int.
+       TupleType e
+    -> IntegralType int
+    -> IR int                                 -- number of array elements
     -> IR int                                 -- #bytes of shared memory the have already been allocated
     -> CodeGen PTX (IRArray (Vector e))
-dynamicSharedMem n@(op integralType -> m) (op integralType -> offset) = do
-  smem <- initialiseDynamicSharedMemory
-  let
-      go :: TupleType s -> Operand int -> CodeGen PTX (Operand int, Operands s)
-      go TypeRunit         i  = return (i, OP_Unit)
-      go (TypeRpair t2 t1) i0 = do
-        (i1, p1) <- go t1 i0
-        (i2, p2) <- go t2 i1
-        return $ (i2, OP_Pair p2 p1)
-      go (TypeRscalar t)   i  = do
-        p <- instr' $ GetElementPtr smem [num numType 0, i] -- TLM: note initial zero index!!
-        q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-        a <- instr' $ Mul numType m (integral integralType (P.fromIntegral (sizeOf (TypeRscalar t))))
-        b <- instr' $ Add numType i a
-        return (b, ir' t (unPtr q))
-  --
-  (_, ad) <- go (eltType @e) offset
-  IR sz   <- A.fromIntegral integralType (numType :: NumType Int) n
-  return   $ IRArray { irArrayShape      = IR $ OP_Pair OP_Unit sz
-                     , irArrayData       = IR ad
-                     , irArrayAddrSpace  = sharedMemAddrSpace
-                     , irArrayVolatility = sharedMemVolatility
-                     }
+dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
+  | IntegralDict <- integralDict int = do
+    let numTp = IntegralNumType int
+    smem <- initialiseDynamicSharedMemory
+    let
+        go :: TupleType s -> Operand int -> CodeGen PTX (Operand int, Operands s)
+        go TupRunit         i  = return (i, OP_Unit)
+        go (TupRpair t2 t1) i0 = do
+          (i1, p1) <- go t1 i0
+          (i2, p2) <- go t2 i1
+          return $ (i2, OP_Pair p2 p1)
+        go (TupRsingle t)   i  = do
+          p <- instr' $ GetElementPtr smem [num numTp 0, i] -- TLM: note initial zero index!!
+          q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
+          a <- instr' $ Mul numTp m (integral int (P.fromIntegral (sizeOf (TupRsingle t))))
+          b <- instr' $ Add numTp i a
+          return (b, ir' t (unPtr q))
+    --
+    (_, ad) <- go tp offset
+    IR sz   <- A.irFromIntegral int (numType :: NumType Int) n
+    return   $ IRArray { irArrayRepr       = ArrayR dim1 tp
+                       , irArrayShape      = IR $ OP_Pair OP_Unit sz
+                       , irArrayData       = IR ad
+                       , irArrayAddrSpace  = sharedMemAddrSpace
+                       , irArrayVolatility = sharedMemVolatility
+                       }
 
 
 -- Global kernel definitions

@@ -55,7 +55,7 @@ module Data.Array.Accelerate.LLVM.PTX (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftLHS, liftArraysR, lhsToArraysR )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftALhs, liftArraysR, lhsToTupR )
 import Data.Array.Accelerate.Array.Sugar                            ( Arrays, ArrRepr, arrays, toArr, fromArr )
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
 import Data.Array.Accelerate.Error                                  ( internalError )
@@ -63,7 +63,6 @@ import Data.Array.Accelerate.Smart                                  ( Acc )
 import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Debug                                  as Debug
 
-import Data.Array.Accelerate.LLVM.Embed                             ( HasTypeable(..), lhsTypeable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
@@ -81,7 +80,6 @@ import Foreign.CUDA.Driver                                          as CUDA ( CU
 import Control.Exception
 import Control.Monad.Trans
 import Data.Maybe
-import Data.Typeable
 import System.IO.Unsafe
 import Text.Printf
 import qualified Language.Haskell.TH                                as TH
@@ -246,7 +244,7 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
     go :: forall aenv t tf trepr. AfunctionRepr t tf trepr -> ExecOpenAfun PTX aenv trepr -> Par PTX (Val aenv) -> tf
     go (AfunctionReprLam repr) (Alam lhs l) k = \ !arrs ->
       let k' = do aenv <- k
-                  a    <- useRemoteAsync (lhsToArraysR lhs) $ fromArr arrs
+                  a    <- useRemoteAsync (lhsToTupR lhs) $ fromArr arrs
                   return (aenv `push` (lhs, a))
       in go repr l k'
     go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
@@ -460,12 +458,12 @@ runQ'_ using k f = do
                  evalPTX defaultTarget $
                    phase "compile" (compileAfun acc) >>= dumpStats
   let
-      go :: Typeable aenv => CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam lhs l) xs as stmts | HasTypeable <- lhsTypeable lhs = do
+      go :: CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lhs l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToArraysR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftLHS lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftALhs lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result

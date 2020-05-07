@@ -39,4 +39,4 @@ instance Marshal Native where
   type ArgR Native = FFI.Arg
 
   marshalInt = FFI.argInt
-  marshalScalarData' = return . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr
+  marshalScalarData' _ = return . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr

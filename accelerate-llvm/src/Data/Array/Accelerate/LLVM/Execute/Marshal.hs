@@ -51,7 +51,7 @@ class Async arch => Marshal arch where
   marshalInt :: Int -> ArgR arch
 
   -- | Pass arrays to kernels
-  marshalScalarData' :: ScalarData e' -> Par arch (DList (ArgR arch))
+  marshalScalarData' :: SingleType e' -> ScalarData e' -> Par arch (DList (ArgR arch))
 
 -- | Convert function arguments into stream a form suitable for function calls
 -- The functions ending in a prime return a DList, other functions return lists.
@@ -71,8 +71,10 @@ marshalArrayData' (TupRpair t1 t2) (a1, a2) = do
   l1 <- marshalArrayData' t1 a1
   l2 <- marshalArrayData' t2 a2
   return $ l1 `DL.append` l2
-marshalArrayData' (TupRsingle t) ad
-  | (_, ScalarDict) <- scalarDict t = marshalScalarData' @arch @tp ad
+marshalArrayData' (TupRsingle (SingleScalarType tp)) ad
+  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
+marshalArrayData' (TupRsingle (VectorScalarType (VectorType _ tp))) ad
+  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
 
 marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch [ArgR arch]
 marshalEnv g a = DL.toList <$> marshalEnv' g a
@@ -91,21 +93,23 @@ marshalShape' (ShapeRsnoc shr) (sh, n) = marshalShape' @arch shr sh `DL.snoc` ma
 
 type ParamsR arch = TupR (ParamR arch)
 data ParamR arch a where
-  ParamRarray :: ArrayR (Array sh e) -> ParamR arch (Array sh e)
-  ParamRmaybe :: ParamR arch a       -> ParamR arch (Maybe a)
-  ParamRenv   :: Gamma aenv          -> ParamR arch (ValR arch aenv)
-  ParamRint   ::                        ParamR arch Int
-  ParamRshape :: ShapeR sh           -> ParamR arch sh
-  ParamRargs  ::                        ParamR arch (DList (ArgR arch))
+  ParamRarray  :: ArrayR (Array sh e) -> ParamR arch (Array sh e)
+  ParamRmaybe  :: ParamR arch a       -> ParamR arch (Maybe a)
+  ParamRfuture :: ParamR arch a       -> ParamR arch (FutureR arch a)
+  ParamRenv    :: Gamma aenv          -> ParamR arch (ValR arch aenv)
+  ParamRint    ::                        ParamR arch Int
+  ParamRshape  :: ShapeR sh           -> ParamR arch sh
+  ParamRargs   ::                        ParamR arch (DList (ArgR arch))
 
 marshalParam' :: forall arch a. Marshal arch => ParamR arch a -> a -> Par arch (DList (ArgR arch))
-marshalParam' (ParamRarray repr) a        = marshalArray' @arch repr a
-marshalParam' (ParamRmaybe _   ) Nothing  = return $ DL.empty
-marshalParam' (ParamRmaybe repr) (Just a) = marshalParam' @arch repr a
-marshalParam' (ParamRenv gamma)  aenv     = marshalEnv'   @arch gamma aenv
-marshalParam'  ParamRint         x        = return $ DL.singleton $ marshalInt @arch x
-marshalParam' (ParamRshape shr)  sh       = return $ marshalShape' @arch shr sh
-marshalParam'  ParamRargs        args     = return args
+marshalParam' (ParamRarray repr)  a        = marshalArray' repr a
+marshalParam' (ParamRmaybe _   )  Nothing  = return $ DL.empty
+marshalParam' (ParamRmaybe repr)  (Just a) = marshalParam' repr a
+marshalParam' (ParamRfuture repr) future   = marshalParam' repr =<< get future
+marshalParam' (ParamRenv gamma)   aenv     = marshalEnv'   gamma aenv
+marshalParam'  ParamRint          x        = return $ DL.singleton $ marshalInt @arch x
+marshalParam' (ParamRshape shr)   sh       = return $ marshalShape' @arch shr sh
+marshalParam'  ParamRargs         args     = return args
 
 marshalParams' :: forall arch a. Marshal arch => ParamsR arch a -> a -> Par arch (DList (ArgR arch))
 marshalParams' = marshalTupR' @arch (marshalParam' @arch)

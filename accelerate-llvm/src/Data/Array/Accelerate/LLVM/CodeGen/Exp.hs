@@ -280,7 +280,7 @@ llvmOfOpenExp top env aenv = cvtE top
         PrimOrd                   -> A.ord                   =<< cvtE x
         PrimChr                   -> A.chr                   =<< cvtE x
         PrimBoolToInt             -> A.boolToInt             =<< cvtE x
-        PrimFromIntegral ta tb    -> A.fromIntegral ta tb    =<< cvtE x
+        PrimFromIntegral ta tb    -> A.irFromIntegral ta tb  =<< cvtE x
         PrimToFloating ta tb      -> A.toFloating ta tb      =<< cvtE x
           -- no missing patterns, whoo!
 

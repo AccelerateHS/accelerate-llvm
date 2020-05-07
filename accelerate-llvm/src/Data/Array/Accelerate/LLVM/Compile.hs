@@ -231,10 +231,10 @@ compileOpenAcc = traverseAcc
         halo = go'
           where
             go' :: StencilR sh e stencil -> (ShapeR sh, sh)
-            go' StencilRunit3{} = (ShapeRsnoc ShapeRz, ((), 1))
-            go' StencilRunit5{} = (ShapeRsnoc ShapeRz, ((), 2))
-            go' StencilRunit7{} = (ShapeRsnoc ShapeRz, ((), 3))
-            go' StencilRunit9{} = (ShapeRsnoc ShapeRz, ((), 4))
+            go' StencilRunit3{} = (dim1, ((), 1))
+            go' StencilRunit5{} = (dim1, ((), 2))
+            go' StencilRunit7{} = (dim1, ((), 3))
+            go' StencilRunit9{} = (dim1, ((), 4))
             --
             go' (StencilRtup3 a b c            ) = (ShapeRsnoc shr, cons shr 1 $ foldl1 (union shr) [a', go b, go c])
               where (shr, a') = go' a

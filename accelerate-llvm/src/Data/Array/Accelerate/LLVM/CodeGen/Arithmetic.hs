@@ -35,7 +35,7 @@ import qualified Prelude                                            as P
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 
 -- accelerate-llvm
@@ -239,7 +239,7 @@ complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (P.n
 
 shiftL :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftL t x i = do
-  i' <- fromIntegral integralType (IntegralNumType t) i
+  i' <- irFromIntegral integralType (IntegralNumType t) i
   binop ShiftL t x i'
 
 shiftR :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
@@ -249,13 +249,13 @@ shiftR t
 
 shiftRL :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftRL t x i = do
-  i' <- fromIntegral integralType (IntegralNumType t) i
+  i' <- irFromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRL t x i'
   return r
 
 shiftRA :: IntegralType a -> IR a -> IR Int -> CodeGen arch (IR a)
 shiftRA t x i = do
-  i' <- fromIntegral integralType (IntegralNumType t) i
+  i' <- irFromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRA t x i'
   return r
 
@@ -285,7 +285,7 @@ popCount i x
            t     = PrimType p
        --
        c <- call (Lam p (op i x) (Body t ctpop)) [NoUnwind, ReadNone]
-       r <- fromIntegral i numType c
+       r <- irFromIntegral i numType c
        return r
 
 countLeadingZeros :: forall arch a. IntegralType a -> IR a -> CodeGen arch (IR Int)
@@ -296,7 +296,7 @@ countLeadingZeros i x
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
-       r <- fromIntegral i numType c
+       r <- irFromIntegral i numType c
        return r
 
 countTrailingZeros :: forall arch a. IntegralType a -> IR a -> CodeGen arch (IR Int)
@@ -307,7 +307,7 @@ countTrailingZeros i x
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
-       r <- fromIntegral i numType c
+       r <- irFromIntegral i numType c
        return r
 
 
@@ -514,8 +514,8 @@ chr (op integralType -> x) =
 boolToInt :: IR Bool -> CodeGen arch (IR Int)
 boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
 
-fromIntegral :: forall arch a b. IntegralType a -> NumType b -> IR a -> CodeGen arch (IR b)
-fromIntegral i1 n (op i1 -> x) =
+irFromIntegral :: forall arch a b. IntegralType a -> NumType b -> IR a -> CodeGen arch (IR b)
+irFromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
       -> instr (IntToFP (Left i1) f x)
@@ -604,10 +604,21 @@ untrip t = (fst3 t, snd3 t, thd3 t)
 lift :: TupleType a -> a -> IR a
 lift tp v = IR $ constant tp v
 
-{-# INLINABLE liftInt #-}
+{-# INLINE liftInt #-}
 liftInt :: Int -> IR Int
 liftInt = lift $ TupRsingle scalarTypeInt
 
+{-# INLINE liftInt32 #-}
+liftInt32 :: Int32 -> IR Int32
+liftInt32 = lift $ TupRsingle scalarTypeInt32
+
+{-# INLINE liftWord32 #-}
+liftWord32 :: Word32 -> IR Word32
+liftWord32 = lift $ TupRsingle scalarTypeWord32
+
+{-# INLINE liftBool #-}
+liftBool :: Bool -> IR Bool
+liftBool = lift $ TupRsingle scalarTypeBool
 
 -- | Standard if-then-else expression
 --
@@ -706,3 +717,17 @@ lm t n
       TypeFloat{}   -> n<>"f"
       TypeDouble{}  -> n
 
+-- Test whether the given index is the magic value 'ignore'. This operates
+-- strictly rather than performing short-circuit (&&).
+--
+isIgnore :: ShapeR ix -> IR ix -> CodeGen arch (IR Bool)
+isIgnore shr (IR ix) = go shr ix
+  where
+    go :: ShapeR t -> Operands t -> CodeGen arch (IR Bool)
+    go ShapeRz            OP_Unit        = return (lift (TupRsingle scalarTypeBool) True)
+    go (ShapeRsnoc shr') (OP_Pair sh sz) = do x <- go shr' sh
+                                              y <- eq t (ir t (single t minusOne)) (ir t (op' t sz))
+                                              land x y
+      where t = NumSingleType $ IntegralNumType TypeInt
+            minusOne :: Int
+            minusOne = P.negate 1

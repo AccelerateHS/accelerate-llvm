@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
 
 -- accelerate
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Array.Representation                   hiding ( ignore )
+import Data.Array.Accelerate.Array.Representation
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -105,7 +105,7 @@ mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
 
       ix' <- app1 project ix
 
-      unless (ignore shr ix') $ do
+      unless (isIgnore shr ix') $ do
         j <- intOfIndex shr (irArrayShape arrOut) ix'
 
         -- project element onto the destination array and update
@@ -171,7 +171,7 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
 
       ix' <- app1 project ix
 
-      unless (ignore shr ix') $ do
+      unless (isIgnore shr ix') $ do
         j <- intOfIndex shr (irArrayShape arrOut) ix'
         x <- app1 (delayedIndex arrIn) ix
         r <- app1 update x
@@ -196,9 +196,9 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
 #endif
                     _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r)
                       | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r)
-                    _                           -> $internalError "mkPermute_rmw" "unexpected transition"
+                    _                           -> $internalError "mkPermuteP_rmw" "unexpected transition"
           --
-          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+          _ -> $internalError "mkPermuteP_rmw" "unexpected transition"
 
     return_
 
@@ -232,7 +232,7 @@ mkPermuteP_mutex uid aenv repr shr combine project marr =
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
-      unless (ignore shr ix') $ do
+      unless (isIgnore shr ix') $ do
         j <- intOfIndex shr (irArrayShape arrOut) ix'
         x <- app1 (delayedIndex arrIn) ix
 
@@ -296,19 +296,6 @@ atomically barriers i action = do
 
 -- Helper functions
 -- ----------------
-
--- Test whether the given index is the magic value 'ignore'. This operates
--- strictly rather than performing short-circuit (&&).
---
-ignore :: ShapeR ix -> IR ix -> CodeGen Native (IR Bool)
-ignore shr (IR ix) = go shr ix
-  where
-    go :: ShapeR t -> Operands t -> CodeGen Native (IR Bool)
-    go ShapeRz            OP_Unit        = return (lift (TupRsingle scalarTypeBool) True)
-    go (ShapeRsnoc shr') (OP_Pair sh sz) = do x <- go shr' sh
-                                              y <- A.eq t (ir t (single t (-1))) (ir t (op' t sz))
-                                              land x y
-      where t = NumSingleType $ IntegralNumType TypeInt
 
 reprOut :: ArrayR (Array sh e) -> ShapeR sh' -> ArrayR (Array sh' e)
 reprOut (ArrayR _ tp) shr = ArrayR shr tp
