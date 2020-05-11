@@ -151,26 +151,26 @@ llvmOfOpenExp top env aenv = cvtE top
            in OP_Pair sh' sz
 
     vecPack :: forall n single tuple. KnownNat n => VecR n single tuple -> IR tuple -> CodeGen arch (IR (Vec n single))
-    vecPack vecr (IR tuple) = ir tp <$> go vecr (n - 1) tuple
+    vecPack vecr (IR tuple) = ir tp <$> go vecr n tuple
       where
         go :: VecR n' single tuple' -> Int -> Operands tuple' -> CodeGen arch (Operand (Vec n single))
         go (VecRnil _)      0 OP_Unit        = return $ undef $ VectorScalarType tp
         go (VecRnil _)      _ OP_Unit        = $internalError "vecUnpack" "index mismatch"
         go (VecRsucc vecr') i (OP_Pair xs x) = do
           vec <- go vecr' (i - 1) xs
-          instr' $ InsertElement (fromIntegral i) vec (op' singleTp x)
+          instr' $ InsertElement (fromIntegral i - 1) vec (op' singleTp x)
 
         tp@(VectorType n singleTp) = vecRvector vecr
 
     vecUnpack :: forall n single tuple. KnownNat n => VecR n single tuple -> IR (Vec n single) -> CodeGen arch (IR tuple)
-    vecUnpack vecr (IR (OP_Vec vec)) = IR <$> go vecr (n - 1)
+    vecUnpack vecr (IR (OP_Vec vec)) = IR <$> go vecr n
       where
         go :: VecR n' single tuple' -> Int -> CodeGen arch (Operands tuple')
         go (VecRnil _)      0 = return $ OP_Unit
         go (VecRnil _)      _ = $internalError "vecUnpack" "index mismatch"
         go (VecRsucc vecr') i = do
           xs <- go vecr' (i - 1)
-          x  <- instr' $ ExtractElement (fromIntegral i) vec
+          x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
           return $ OP_Pair xs (ir' singleTp x)
 
         VectorType n singleTp = vecRvector vecr
