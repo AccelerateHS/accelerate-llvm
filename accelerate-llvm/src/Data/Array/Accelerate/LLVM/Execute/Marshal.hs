@@ -63,7 +63,10 @@ marshalArrays' :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par 
 marshalArrays' = marshalTupR' @arch (marshalArray' @arch)
 
 marshalArray' :: forall arch a. Marshal arch => ArrayR a -> a -> Par arch (DList (ArgR arch))
-marshalArray' (ArrayR _ tp) (Array _ a) = marshalArrayData' @arch tp a
+marshalArray' (ArrayR shr tp) (Array sh a) = do
+  arg1 <- marshalArrayData' @arch tp a
+  let arg2 = marshalShape' @arch shr sh
+  return $ arg1 `DL.append` arg2
 
 marshalArrayData' :: forall arch tp. Marshal arch => TupleType tp -> ArrayData tp -> Par arch (DList (ArgR arch))
 marshalArrayData' TupRunit () = return DL.empty
