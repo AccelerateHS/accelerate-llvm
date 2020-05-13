@@ -226,7 +226,7 @@ mkScan'Fill
     -> IRExp   Native aenv e
     -> CodeGen Native     (IROpenAcc Native aenv (Array (sh, Int) e, Array sh e))
 mkScan'Fill uid aenv repr seed =
-  Safe.coerce <$> mkScanFill uid aenv repr seed
+  Safe.coerce <$> mkScanFill uid aenv (reduceRank repr) seed
 
 
 -- A single thread sequentially scans along an entire innermost dimension. For
