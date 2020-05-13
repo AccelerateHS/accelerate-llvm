@@ -42,7 +42,7 @@ data IRBoundary arch aenv t where
   IRClamp     :: IRBoundary arch aenv t
   IRMirror    :: IRBoundary arch aenv t
   IRWrap      :: IRBoundary arch aenv t
-  IRConstant  :: IR e -> IRBoundary arch aenv (Array sh e)
+  IRConstant  :: Operands e -> IRBoundary arch aenv (Array sh e)
   IRFunction  :: IRFun1 arch aenv (sh -> e) -> IRBoundary arch aenv (Array sh e)
 
 
@@ -52,7 +52,7 @@ stencilAccess
     :: StencilR sh e stencil
     -> Maybe (IRBoundary arch aenv (Array sh e))
     ->        IRDelayed  arch aenv (Array sh e)
-    -> IR sh
+    -> Operands sh
     -> IRExp arch aenv stencil
 stencilAccess stencilR mbndy arr =
   case mbndy of
@@ -63,8 +63,8 @@ stencilAccess stencilR mbndy arr =
     -- dimension is Z.
     --
     goR :: StencilR sh e stencil
-        -> (IR sh -> IRExp arch aenv e)
-        -> IR sh
+        -> (Operands sh -> IRExp arch aenv e)
+        -> Operands sh
         -> IRExp arch aenv stencil
     goR (StencilRunit3 _) rf ix
       = let (z, i) = unindex ix
@@ -180,7 +180,7 @@ stencilAccess stencilR mbndy arr =
 --
 inbounds
     :: IRDelayed arch aenv (Array sh e)
-    -> IR sh
+    -> Operands sh
     -> IRExp arch aenv e
 inbounds IRDelayed{..} ix =
   app1 delayedIndex ix
@@ -191,7 +191,7 @@ inbounds IRDelayed{..} ix =
 bounded
     :: IRBoundary arch aenv (Array sh e)
     -> IRDelayed  arch aenv (Array sh e)
-    -> IR sh
+    -> Operands sh
     -> IRExp arch aenv e
 bounded bndy IRDelayed{..} ix = do
   let ArrayR shr tp = delayedRepr
@@ -214,106 +214,93 @@ bounded bndy IRDelayed{..} ix = do
     -- Return the index, updated to obey the given boundary conditions (clamp,
     -- mirror, or wrap only).
     --
-    bound :: ShapeR sh -> IR sh -> IR sh -> CodeGen arch (IR sh)
-    bound shr (IR extent1) (IR extent2) = IR <$> go shr extent1 extent2
-      where
-        go :: ShapeR t -> Operands t -> Operands t -> CodeGen arch (Operands t)
-        go ShapeRz OP_Unit OP_Unit
-          = return OP_Unit
-        go (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
-          = do
-               ix' <- go shr' sh ih
-               IR i' <- if ( TupRsingle scalarTypeInt
-                           , A.lt (singleType :: SingleType Int) (IR iz) (int 0))
+    bound :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen arch (Operands sh)
+    bound ShapeRz OP_Unit OP_Unit
+      = return OP_Unit
+    bound (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
+      = do
+            ix' <- bound shr' sh ih
+            i' <- if ( TupRsingle scalarTypeInt
+                        , A.lt (singleType :: SingleType Int) iz (int 0))
+                      then
+                        case bndy of
+                          IRClamp  -> return (int 0)
+                          IRMirror -> A.negate numType iz
+                          IRWrap   -> A.add    numType sz iz
+                          _        -> $internalError "bound" "unexpected boundary condition"
+                      else
+                        if ( TupRsingle scalarTypeInt
+                            , A.gte (singleType :: SingleType Int) iz sz)
                           then
                             case bndy of
-                              IRClamp  -> return (int 0)
-                              IRMirror -> A.negate numType (IR iz)
-                              IRWrap   -> A.add    numType (IR sz) (IR iz)
+                              IRClamp  -> A.sub numType sz (int 1)
+                              IRWrap   -> A.sub numType iz sz
+                              IRMirror -> do
+                                a <- A.sub numType iz sz
+                                b <- A.add numType a (int 2)
+                                c <- A.sub numType sz b
+                                return c
                               _        -> $internalError "bound" "unexpected boundary condition"
                           else
-                            if ( TupRsingle scalarTypeInt
-                               , A.gte (singleType :: SingleType Int) (IR iz) (IR sz))
-                              then
-                                case bndy of
-                                  IRClamp  -> A.sub numType (IR sz) (int 1)
-                                  IRWrap   -> A.sub numType (IR iz) (IR sz)
-                                  IRMirror -> do
-                                    a <- A.sub numType (IR iz) (IR sz)
-                                    b <- A.add numType a (int 2)
-                                    c <- A.sub numType (IR sz) b
-                                    return c
-                                  _        -> $internalError "bound" "unexpected boundary condition"
-                              else
-                                return (IR iz)
-               return $ OP_Pair ix' i'
+                            return iz
+            return $ OP_Pair ix' i'
 
     -- Return whether the index is inside the bounds of the given shape
     --
-    inside :: forall arch sh. ShapeR sh -> IR sh -> IR sh -> CodeGen arch (IR Bool)
-    inside shr (IR extent1) (IR extent2) = go shr extent1 extent2
-      where
-        go :: ShapeR t -> Operands t -> Operands t -> CodeGen arch (IR Bool)
-        go ShapeRz OP_Unit OP_Unit
-          = return (bool True)
-        go (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
-          = if ( TupRsingle scalarTypeBool
-               , A.lt  (singleType :: SingleType Int) (IR iz) (int 0) `A.lor'`
-                 A.gte (singleType :: SingleType Int) (IR iz) (IR sz))
-              then return (bool False)
-              else go shr' sh ih
+    inside :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen arch (Operands Bool)
+    inside ShapeRz OP_Unit OP_Unit
+      = return (bool True)
+    inside (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
+      = if ( TupRsingle scalarTypeBool
+            , A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
+              A.gte (singleType :: SingleType Int) iz sz)
+          then return (bool False)
+          else inside shr' sh ih
 
 
 -- Utilities
 -- ---------
 
-int :: Int -> IR Int
-int x = IR (constant (TupRsingle scalarTypeInt) x)
+int :: Int -> Operands Int
+int x = constant (TupRsingle scalarTypeInt) x
 
-bool :: Bool -> IR Bool
-bool b = IR (constant (TupRsingle scalarTypeBool) b)
+bool :: Bool -> Operands Bool
+bool b = constant (TupRsingle scalarTypeBool) b
 
-unindex :: IR (sh, Int) -> (IR sh, IR Int)
-unindex (IR (OP_Pair sh i)) = (IR sh, IR i)
+unindex :: Operands (sh, Int) -> (Operands sh, Operands Int)
+unindex (OP_Pair sh i) = (sh, i)
 
-index :: IR sh -> IR Int -> IR (sh, Int)
-index (IR sh) (IR i) = IR (OP_Pair sh i)
+index :: Operands sh -> Operands Int -> Operands (sh, Int)
+index sh i = OP_Pair sh i
 
-tup3 :: IR a -> IR b -> IR c -> IR (Tup3 a b c)
-tup3 (IR a) (IR b) (IR c) = IR $ OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c
+tup3 :: Operands a -> Operands b -> Operands c -> Operands (Tup3 a b c)
+tup3 a b c = OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c
 
-tup5 :: IR a -> IR b -> IR c -> IR d -> IR e -> IR (Tup5 a b c d e)
-tup5 (IR a) (IR b) (IR c) (IR d) (IR e) =
-  IR $ OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e
+tup5 :: Operands a -> Operands b -> Operands c -> Operands d -> Operands e -> Operands (Tup5 a b c d e)
+tup5 a b c d e =
+  OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e
 
-tup7 :: IR a -> IR b -> IR c -> IR d -> IR e -> IR f -> IR g -> IR (Tup7 a b c d e f g)
-tup7 (IR a) (IR b) (IR c) (IR d) (IR e) (IR f) (IR g) =
-  IR $ OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g
+tup7 :: Operands a -> Operands b -> Operands c -> Operands d -> Operands e -> Operands f -> Operands g -> Operands (Tup7 a b c d e f g)
+tup7 a b c d e f g =
+  OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g
 
-tup9 :: IR a -> IR b -> IR c -> IR d -> IR e -> IR f -> IR g -> IR h -> IR i -> IR (Tup9 a b c d e f g h i)
-tup9 (IR a) (IR b) (IR c) (IR d) (IR e) (IR f) (IR g) (IR h) (IR i) =
-  IR $ OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g) h) i
+tup9 :: Operands a -> Operands b -> Operands c -> Operands d -> Operands e -> Operands f -> Operands g -> Operands h -> Operands i -> Operands (Tup9 a b c d e f g h i)
+tup9 a b c d e f g h i =
+  OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c) d) e) f) g) h) i
 
 
 -- Add a _left-most_ dimension to a shape
 --
-cons :: ShapeR sh -> IR Int -> IR sh -> IR (sh, Int)
-cons shr (IR ix) (IR extent) = IR $ go shr extent
-  where
-    go :: ShapeR sh -> Operands sh -> Operands (sh, Int)
-    go ShapeRz          OP_Unit         = OP_Pair OP_Unit ix
-    go (ShapeRsnoc shr') (OP_Pair sh sz) = OP_Pair (go shr' sh) sz
+cons :: ShapeR sh -> Operands Int -> Operands sh -> Operands (sh, Int)
+cons ShapeRz          ix OP_Unit         = OP_Pair OP_Unit ix
+cons (ShapeRsnoc shr) ix (OP_Pair sh sz) = OP_Pair (cons shr ix sh) sz
 
 
 -- Remove the _left-most_ index to a shape, and return the remainder
 --
-uncons :: ShapeR sh -> IR (sh, Int) -> (IR Int, IR sh)
-uncons shr (IR extent) = let (ix, extent') = go shr extent
-                         in  (IR ix, IR extent')
-  where
-    go :: ShapeR sh -> Operands (sh, Int) -> (Operands Int, Operands sh)
-    go ShapeRz          (OP_Pair OP_Unit v2) = (v2, OP_Unit)
-    go (ShapeRsnoc shr') (OP_Pair v1 v3)
-      = let (i, v1') = go shr' v1
-        in  (i, OP_Pair v1' v3)
+uncons :: ShapeR sh -> Operands (sh, Int) -> (Operands Int, Operands sh)
+uncons ShapeRz          (OP_Pair OP_Unit v2) = (v2, OP_Unit)
+uncons (ShapeRsnoc shr) (OP_Pair v1 v3)
+  = let (i, v1') = uncons shr v1
+    in  (i, OP_Pair v1' v3)
 

@@ -100,21 +100,21 @@ import Prelude                                                      as P
 --
 -- <https://github.com/llvm-mirror/llvm/blob/master/include/llvm/IR/IntrinsicsNVVM.td>
 --
-specialPTXReg :: Label -> CodeGen PTX (IR Int32)
+specialPTXReg :: Label -> CodeGen PTX (Operands Int32)
 specialPTXReg f =
   call (Body type' f) [NoUnwind, ReadNone]
 
-blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen PTX (IR Int32)
+blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen PTX (Operands Int32)
 blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
 gridDim     = specialPTXReg "llvm.nvvm.read.ptx.sreg.nctaid.x"
 threadIdx   = specialPTXReg "llvm.nvvm.read.ptx.sreg.tid.x"
 blockIdx    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ctaid.x"
 warpSize    = specialPTXReg "llvm.nvvm.read.ptx.sreg.warpsize"
 
-laneId :: CodeGen PTX (IR Int32)
+laneId :: CodeGen PTX (Operands Int32)
 laneId      = specialPTXReg "llvm.nvvm.read.ptx.sreg.laneid"
 
-laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen PTX (IR Int32)
+laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge :: CodeGen PTX (Operands Int32)
 laneMask_eq = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.eq"
 laneMask_lt = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.lt"
 laneMask_le = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.le"
@@ -129,13 +129,13 @@ laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
 --
 -- http://docs.nvidia.com/cuda/parallel-thread-execution/index.html#special-registers-warpid
 --
-warpId :: CodeGen PTX (IR Int32)
+warpId :: CodeGen PTX (Operands Int32)
 warpId = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   tid <- threadIdx
   A.quot integralType tid (A.liftInt32 (P.fromIntegral (CUDA.warpSize dev)))
 
-_warpId :: CodeGen PTX (IR Int32)
+_warpId :: CodeGen PTX (Operands Int32)
 _warpId = specialPTXReg "llvm.ptx.read.warpid"
 
 
@@ -143,7 +143,7 @@ _warpId = specialPTXReg "llvm.ptx.read.warpid"
 --
 -- > gridDim.x * blockDim.x
 --
-gridSize :: CodeGen PTX (IR Int32)
+gridSize :: CodeGen PTX (Operands Int32)
 gridSize = do
   ncta  <- gridDim
   nt    <- blockDim
@@ -154,7 +154,7 @@ gridSize = do
 --
 -- > blockDim.x * blockIdx.x + threadIdx.x
 --
-globalThreadIdx :: CodeGen PTX (IR Int32)
+globalThreadIdx :: CodeGen PTX (Operands Int32)
 globalThreadIdx = do
   ntid  <- blockDim
   ctaid <- blockIdx
@@ -169,7 +169,7 @@ globalThreadIdx = do
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this kernel should evaluate.
 --
-gangParam :: (IR Int, IR Int, [LLVM.Parameter])
+gangParam :: (Operands Int, Operands Int, [LLVM.Parameter])
 gangParam =
   let start = "ix.start"
       end   = "ix.end"
@@ -186,7 +186,7 @@ gangParam =
 barrier :: Label -> CodeGen PTX ()
 barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate, Convergent]
 
-barrier_op :: Label -> IR Int32 -> CodeGen PTX (IR Int32)
+barrier_op :: Label -> Operands Int32 -> CodeGen PTX (Operands Int32)
 barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwind, NoDuplicate, Convergent]
 
 
@@ -203,20 +203,20 @@ __syncthreads = barrier "llvm.nvvm.barrier0"
 -- the number of threads in the block for which the predicate evaluates to
 -- non-zero.
 --
-__syncthreads_count :: IR Int32 -> CodeGen PTX (IR Int32)
+__syncthreads_count :: Operands Int32 -> CodeGen PTX (Operands Int32)
 __syncthreads_count = barrier_op "llvm.nvvm.barrier0.popc"
 
 -- | Identical to __syncthreads() with the additional feature that it returns
 -- non-zero iff the predicate evaluates to non-zero for all threads in the
 -- block.
 --
-__syncthreads_and :: IR Int32 -> CodeGen PTX (IR Int32)
+__syncthreads_and :: Operands Int32 -> CodeGen PTX (Operands Int32)
 __syncthreads_and = barrier_op "llvm.nvvm.barrier0.and"
 
 -- | Identical to __syncthreads() with the additional feature that it returns
 -- non-zero iff the predicate evaluates to non-zero for any thread in the block.
 --
-__syncthreads_or :: IR Int32 -> CodeGen PTX (IR Int32)
+__syncthreads_or :: Operands Int32 -> CodeGen PTX (Operands Int32)
 __syncthreads_or = barrier_op "llvm.nvvm.barrier0.or"
 
 
@@ -234,7 +234,7 @@ __syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 -- Requires LLVM-6.0 or higher.
 -- Only required for devices of SM7 and later.
 --
-__syncwarp_mask :: IR Word32 -> CodeGen PTX ()
+__syncwarp_mask :: Operands Word32 -> CodeGen PTX ()
 __syncwarp_mask mask = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   if computeCapability dev < Compute 7 0
@@ -321,8 +321,8 @@ staticSharedMem
 staticSharedMem tp n = do
   ad    <- go tp
   return $ IRArray { irArrayRepr       = ArrayR dim1 tp
-                   , irArrayShape      = IR (OP_Pair OP_Unit (OP_Int (integral integralType (P.fromIntegral n))))
-                   , irArrayData       = IR ad
+                   , irArrayShape      = OP_Pair OP_Unit $ OP_Int $ integral integralType $ P.fromIntegral n
+                   , irArrayData       = ad
                    , irArrayAddrSpace  = sharedMemAddrSpace
                    , irArrayVolatility = sharedMemVolatility
                    }
@@ -349,7 +349,7 @@ staticSharedMem tp n = do
       p <- instr' $ GetElementPtr sm [num numType 0, num numType 0 :: Operand Int32]
       q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
 
-      return $ ir' t (unPtr q)
+      return $ ir t (unPtr q)
 
 
 -- External declaration in shared memory address space. This must be declared in
@@ -377,8 +377,8 @@ dynamicSharedMem
     :: forall e int.
        TupleType e
     -> IntegralType int
-    -> IR int                                 -- number of array elements
-    -> IR int                                 -- #bytes of shared memory the have already been allocated
+    -> Operands int                                 -- number of array elements
+    -> Operands int                                 -- #bytes of shared memory the have already been allocated
     -> CodeGen PTX (IRArray (Vector e))
 dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
   | IntegralDict <- integralDict int = do
@@ -396,13 +396,13 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
           a <- instr' $ Mul numTp m (integral int (P.fromIntegral (sizeOf (TupRsingle t))))
           b <- instr' $ Add numTp i a
-          return (b, ir' t (unPtr q))
+          return (b, ir t (unPtr q))
     --
     (_, ad) <- go tp offset
-    IR sz   <- A.irFromIntegral int (numType :: NumType Int) n
+    sz <- A.irFromIntegral int (numType :: NumType Int) n
     return   $ IRArray { irArrayRepr       = ArrayR dim1 tp
-                       , irArrayShape      = IR $ OP_Pair OP_Unit sz
-                       , irArrayData       = IR ad
+                       , irArrayShape      = OP_Pair OP_Unit sz
+                       , irArrayData       = ad
                        , irArrayAddrSpace  = sharedMemAddrSpace
                        , irArrayVolatility = sharedMemVolatility
                        }

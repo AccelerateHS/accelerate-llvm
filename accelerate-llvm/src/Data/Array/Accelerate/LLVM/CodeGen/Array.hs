@@ -45,10 +45,10 @@ import Data.Array.Accelerate.LLVM.CodeGen.Constant
 readArray
     :: IntegralType int
     -> IRArray (Array sh e)
-    -> IR int
-    -> CodeGen arch (IR e)
-readArray int (IRArray (ArrayR _ tp) _ (IR adata) addrspace volatility) (op int -> ix) =
-  IR <$> readArrayData addrspace volatility int ix tp adata
+    -> Operands int
+    -> CodeGen arch (Operands e)
+readArray int (IRArray (ArrayR _ tp) _ adata addrspace volatility) (op int -> ix) =
+  readArrayData addrspace volatility int ix tp adata
 
 readArrayData
     :: AddrSpace
@@ -63,7 +63,7 @@ readArrayData a v i ix = read
     read :: TupleType e -> Operands e -> CodeGen arch (Operands e)
     read TupRunit          OP_Unit                 = return OP_Unit
     read (TupRpair t2 t1) (OP_Pair a2 a1)          = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (TupRsingle e)   (asPtr a . op' e -> arr) = ir' e   <$> readArrayPrim a v e i arr ix
+    read (TupRsingle e)   (asPtr a . op e -> arr) = ir e   <$> readArrayPrim a v e i arr ix
 
 readArrayPrim
     :: AddrSpace
@@ -85,10 +85,10 @@ readArrayPrim a v e i arr ix = do
 writeArray
     :: IntegralType int
     -> IRArray (Array sh e)
-    -> IR int
-    -> IR e
+    -> Operands int
+    -> Operands e
     -> CodeGen arch ()
-writeArray int (IRArray (ArrayR _ tp) _ (IR adata) addrspace volatility) (op int -> ix) (IR val) =
+writeArray int (IRArray (ArrayR _ tp) _ adata addrspace volatility) (op int -> ix) val =
   writeArrayData addrspace volatility int ix tp adata val
 
 writeArrayData
@@ -105,7 +105,7 @@ writeArrayData a v i ix = write
     write :: TupleType e -> Operands e -> Operands e -> CodeGen arch ()
     write TupRunit          OP_Unit                  OP_Unit        = return ()
     write (TupRpair t2 t1) (OP_Pair a2 a1)          (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (TupRsingle e)   (asPtr a . op' e -> arr) (op' e -> val)  = writeArrayPrim a v e i arr ix val
+    write (TupRsingle e)   (asPtr a . op e -> arr) (op e -> val)  = writeArrayPrim a v e i arr ix val
 
 writeArrayPrim
     :: AddrSpace

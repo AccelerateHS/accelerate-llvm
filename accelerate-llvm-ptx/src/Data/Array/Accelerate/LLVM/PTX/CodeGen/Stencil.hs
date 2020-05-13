@@ -173,15 +173,15 @@ mkBorder aenv repr@(ArrayR shr _) apply paramIn =
     return_
 
 
-offset :: ShapeR sh -> IR sh -> IR sh -> CodeGen PTX (IR sh)
-offset shr (IR sh1) (IR sh2) = IR <$> go shr sh1 sh2
+offset :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen PTX (Operands sh)
+offset shr sh1 sh2 = go shr sh1 sh2
   where
     go :: ShapeR t -> Operands t -> Operands t -> CodeGen PTX (Operands t)
     go ShapeRz OP_Unit OP_Unit
       = return OP_Unit
 
     go (ShapeRsnoc t) (OP_Pair sa1 sb1) (OP_Pair sa2 sb2)
-      = do IR x <- add (numType :: NumType Int) (IR sb1) (IR sb2)
+      = do x <- add (numType :: NumType Int) sb1 sb2
            OP_Pair <$> go t sa1 sa2 <*> return x
 
 stencilBorder :: StencilR sh a stencil -> sh

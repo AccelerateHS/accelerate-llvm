@@ -151,13 +151,13 @@ mkBorder uid aenv repr apply paramIn =
 imapNestFromToTile
     :: ShapeR sh
     -> Int                                      -- ^ unroll amount (tile height)
-    -> IR sh                                    -- ^ initial index (inclusive)
-    -> IR sh                                    -- ^ final index (exclusive)
-    -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    -> Operands sh                                    -- ^ initial index (inclusive)
+    -> Operands sh                                    -- ^ final index (exclusive)
+    -> Operands sh                                    -- ^ total array extent
+    -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
-imapNestFromToTile shr unroll (IR start) (IR end) extent body =
-  go shr start end (body' . IR)
+imapNestFromToTile shr unroll start end extent body =
+  go shr start end body'
   where
     body' ix = body ix =<< intOfIndex shr extent ix
 
@@ -177,16 +177,16 @@ imapNestFromToTile shr unroll (IR start) (IR end) extent body =
           -- Tile the stencil operator in the xy-plane by unrolling in the
           -- y-dimension and vectorising in the x-dimension.
           --
-          IR sy'  <- imapFromStepTo (IR sy) (liftInt unroll) (IR ey) $ \iy      ->
-                      imapFromTo    (IR sx)               (IR ex) $ \(IR ix) ->
-                       forM_ [0 .. unroll-1] $ \n -> do
-                        IR iy' <- add numType iy (liftInt n)
-                        k (OP_Pair (OP_Pair OP_Unit iy') ix)
+          sy' <- imapFromStepTo sy (liftInt unroll) ey $ \iy ->
+                  imapFromTo    sx                  ex $ \ix ->
+                    forM_ [0 .. unroll-1] $ \n -> do
+                    iy' <- add numType iy (liftInt n)
+                    k (OP_Pair (OP_Pair OP_Unit iy') ix)
 
           -- Take care of any remaining loop iterations in the y-dimension
           --
-          _       <- imapFromTo  (IR sy') (IR ey) $ \(IR iy) ->
-                      imapFromTo (IR sx)  (IR ex) $ \(IR ix) ->
+          _       <- imapFromTo  sy' ey $ \iy ->
+                      imapFromTo sx  ex $ \ix ->
                         k (OP_Pair (OP_Pair OP_Unit iy) ix)
           return ()
 
@@ -194,15 +194,15 @@ imapNestFromToTile shr unroll (IR start) (IR end) extent body =
     --
     go (ShapeRsnoc shr') (OP_Pair ssh ssz) (OP_Pair esh esz) k
       = go shr' ssh esh
-      $ \sz      -> imapFromTo (IR ssz) (IR esz)
-      $ \(IR i)  -> k (OP_Pair sz i)
+      $ \sz      -> imapFromTo ssz esz
+      $ \i       -> k (OP_Pair sz i)
 
 imapFromStepTo
-    :: IR Int
-    -> IR Int
-    -> IR Int
-    -> (IR Int -> CodeGen Native ())
-    -> CodeGen Native (IR Int)
+    :: Operands Int
+    -> Operands Int
+    -> Operands Int
+    -> (Operands Int -> CodeGen Native ())
+    -> CodeGen Native (Operands Int)
 imapFromStepTo start step end body =
   let
       incr i = add numType i step

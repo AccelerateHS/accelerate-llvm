@@ -267,12 +267,12 @@ mkFoldFill uid aenv repr seed =
 --
 reduceFromTo
     :: TupleType a
-    -> IR Int                                       -- ^ starting index
-    -> IR Int                                       -- ^ final index (exclusive)
-    -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
-    -> IR a                                         -- ^ initial value
-    -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
-    -> CodeGen Native (IR a)
+    -> Operands Int                                              -- ^ starting index
+    -> Operands Int                                              -- ^ final index (exclusive)
+    -> (Operands a -> Operands a -> CodeGen Native (Operands a)) -- ^ combination function
+    -> Operands a                                                -- ^ initial value
+    -> (Operands Int -> CodeGen Native (Operands a))             -- ^ function to retrieve element at index
+    -> CodeGen Native (Operands a)
 reduceFromTo tp m n f z get =
   iterFromTo tp m n z $ \i acc -> do
     x <- get i
@@ -284,11 +284,11 @@ reduceFromTo tp m n f z get =
 --
 reduce1FromTo
     :: TupleType a
-    -> IR Int                                       -- ^ starting index
-    -> IR Int                                       -- ^ final index
-    -> (IR a -> IR a -> CodeGen Native (IR a))      -- ^ combination function
-    -> (IR Int -> CodeGen Native (IR a))            -- ^ function to retrieve element at index
-    -> CodeGen Native (IR a)
+    -> Operands Int                                              -- ^ starting index
+    -> Operands Int                                              -- ^ final index
+    -> (Operands a -> Operands a -> CodeGen Native (Operands a)) -- ^ combination function
+    -> (Operands Int -> CodeGen Native (Operands a))             -- ^ function to retrieve element at index
+    -> CodeGen Native (Operands a)
 reduce1FromTo tp m n f get = do
   z  <- get m
   m1 <- add numType m (ir numType (num numType 1))

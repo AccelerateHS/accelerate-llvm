@@ -240,13 +240,10 @@ createBlocks
 
 -- | Generate a fresh local reference
 --
-fresh :: forall arch a. TupleType a -> CodeGen arch (IR a)
-fresh tp = IR <$> go tp
-  where
-    go :: TupleType t -> CodeGen arch (Operands t)
-    go TupRunit         = return OP_Unit
-    go (TupRpair t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (TupRsingle t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
+fresh :: TupleType a -> CodeGen arch (Operands a)
+fresh TupRunit         = return OP_Unit
+fresh (TupRpair t2 t1) = OP_Pair <$> fresh t2 <*> fresh t1
+fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -258,7 +255,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- computed, and return the operand (LocalReference) that can be used to later
 -- refer to it.
 --
-instr :: Instruction a -> CodeGen arch (IR a)
+instr :: Instruction a -> CodeGen arch (Operands a)
 instr ins = ir (typeOf ins) <$> instr' ins
 
 instr' :: Instruction a -> CodeGen arch (Operand a)
@@ -308,13 +305,13 @@ br target = terminate $ Br (blockLabel target)
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: IR Bool -> Block -> Block -> CodeGen arch Block
+cbr :: Operands Bool -> Block -> Block -> CodeGen arch Block
 cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
 
 -- | Add a phi node to the top of the current block
 --
-phi :: forall arch a. TupleType a -> [(IR a, Block)] -> CodeGen arch (IR a)
+phi :: forall arch a. TupleType a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
 phi tp incoming = do
   crit  <- fresh tp
   block <- state $ \s -> case Seq.viewr (blockChain s) of
@@ -322,8 +319,8 @@ phi tp incoming = do
                            _ Seq.:> b -> ( b, s )
   phi' tp block crit incoming
 
-phi' :: TupleType a -> Block -> IR a -> [(IR a, Block)] -> CodeGen arch (IR a)
-phi' tp target (IR crit) incoming = IR <$> go tp crit [ (o,b) | (IR o, b) <- incoming ]
+phi' :: TupleType a -> Block -> Operands a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
+phi' tp target = go tp
   where
     go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
     go TupRunit OP_Unit _
@@ -332,7 +329,7 @@ phi' tp target (IR crit) incoming = IR <$> go tp crit [ (o,b) | (IR o, b) <- inc
       = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- inc ]
                 <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
     go (TupRsingle t) tup inc
-      | LocalReference _ v <- op' t tup = ir' t <$> phi1 target v [ (op' t x, b) | (x, b) <- inc ]
+      | LocalReference _ v <- op t tup = ir t <$> phi1 target v [ (op t x, b) | (x, b) <- inc ]
       | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
 
 

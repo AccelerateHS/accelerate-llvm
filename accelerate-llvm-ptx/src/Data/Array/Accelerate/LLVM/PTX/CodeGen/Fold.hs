@@ -380,7 +380,7 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
         -- Step 2: keep walking over the input
         bd'   <- int bd
         next  <- A.add numType from bd'
-        r     <- iterFromStepTo numType tp next bd' to r0 $ \offset r -> do
+        r     <- iterFromStepTo tp next bd' to r0 $ \offset r -> do
 
           -- Wait for all threads to catch up before starting the next stripe
           __syncthreads
@@ -408,9 +408,9 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
                                      go :: TupleType a -> Operands a
                                      go TupRunit       = OP_Unit
                                      go (TupRpair a b) = OP_Pair (go a) (go b)
-                                     go (TupRsingle t) = ir' t (undef t)
+                                     go (TupRsingle t) = ir t (undef t)
                                  in
-                                 return . IR $ go tp
+                                 return $ go tp
 
                      v <- i32 v'
                      y <- reduceBlockSMem dev tp combine (Just v) x
@@ -457,12 +457,12 @@ reduceBlockSMem
        DeviceProperties                         -- ^ properties of the target device
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
-    -> Maybe (IR Int32)                         -- ^ number of valid elements (may be less than block size)
-    -> IR e                                     -- ^ calling thread's input element
-    -> CodeGen PTX (IR e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
+    -> Maybe (Operands Int32)                         -- ^ number of valid elements (may be less than block size)
+    -> Operands e                                     -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
 reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
   where
-    int32 :: Integral a => a -> IR Int32
+    int32 :: Integral a => a -> Operands Int32
     int32 = liftInt32 . P.fromIntegral
 
     -- Temporary storage required for each warp
@@ -471,7 +471,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
 
     -- Step 1: Reduction in every warp
     --
-    warpReduce :: IR e -> CodeGen PTX (IR e)
+    warpReduce :: Operands e -> CodeGen PTX (Operands e)
     warpReduce input = do
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
@@ -496,7 +496,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
 
     -- Step 2: Aggregate per-warp reductions
     --
-    warpAggregate :: IR e -> CodeGen PTX (IR e)
+    warpAggregate :: Operands e -> CodeGen PTX (Operands e)
     warpAggregate input = do
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
@@ -525,7 +525,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
                        a <- A.add numType n (int32 (CUDA.warpSize dev - 1))
                        b <- A.quot integralType a (int32 (CUDA.warpSize dev))
                        return b
-          iterFromStepTo numType tp (liftInt32 1) (liftInt32 1) steps input $ \step x ->
+          iterFromStepTo tp (liftInt32 1) (liftInt32 1) steps input $ \step x ->
             app2 combine x =<< readArray TypeInt32 smem step
         else
           return input
@@ -546,9 +546,9 @@ reduceWarpSMem
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
-    -> Maybe (IR Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
-    -> IR e                                     -- ^ calling thread's input element
-    -> CodeGen PTX (IR e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
+    -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
+    -> Operands e                                     -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
 reduceWarpSMem dev tp combine smem size = reduce 0
   where
     log2 :: Double -> Double
@@ -565,7 +565,7 @@ reduceWarpSMem dev tp combine smem size = reduce 0
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
-    reduce :: Int -> IR e -> CodeGen PTX (IR e)
+    reduce :: Int -> Operands e -> CodeGen PTX (Operands e)
     reduce step x
       | step >= steps = return x
       | otherwise     = do
@@ -594,8 +594,8 @@ reduceWarpSMem dev tp combine smem size = reduce 0
 --
 -- reduceWarpShfl
 --     :: IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
---     -> IR e                                                     -- ^ this thread's input value
---     -> CodeGen (IR e)                                           -- ^ final result
+--     -> Operands e                                                     -- ^ this thread's input value
+--     -> CodeGen (Operands e)                                           -- ^ final result
 -- reduceWarpShfl combine input =
 --   error "TODO: PTX.reduceWarpShfl"
 
@@ -606,11 +606,11 @@ reduceWarpSMem dev tp combine smem size = reduce 0
 reduceFromTo
     :: DeviceProperties
     -> TupleType a
-    -> IR Int                                   -- ^ starting index
-    -> IR Int                                   -- ^ final index (exclusive)
+    -> Operands Int                                   -- ^ starting index
+    -> Operands Int                                   -- ^ final index (exclusive)
     -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
-    -> (IR Int -> CodeGen PTX (IR a))           -- ^ function to retrieve element at index
-    -> (IR a -> CodeGen PTX ())                 -- ^ what to do with the value
+    -> (Operands Int -> CodeGen PTX (Operands a))           -- ^ function to retrieve element at index
+    -> (Operands a -> CodeGen PTX ())                 -- ^ what to do with the value
     -> CodeGen PTX ()
 reduceFromTo dev tp from to combine get set = do
 
@@ -647,20 +647,20 @@ reduceFromTo dev tp from to combine get set = do
 -- Utilities
 -- ---------
 
-i32 :: IR Int -> CodeGen PTX (IR Int32)
+i32 :: Operands Int -> CodeGen PTX (Operands Int32)
 i32 = A.irFromIntegral integralType numType
 
-int :: IR Int32 -> CodeGen PTX (IR Int)
+int :: Operands Int32 -> CodeGen PTX (Operands Int)
 int = A.irFromIntegral integralType numType
 
 imapFromTo
-    :: IR Int
-    -> IR Int
-    -> (IR Int -> CodeGen PTX ())
+    :: Operands Int
+    -> Operands Int
+    -> (Operands Int -> CodeGen PTX ())
     -> CodeGen PTX ()
 imapFromTo start end body = do
   bid <- int =<< blockIdx
   gd  <- int =<< gridDim
   i0  <- A.add numType start bid
-  imapFromStepTo numType i0 gd end body
+  imapFromStepTo i0 gd end body
 

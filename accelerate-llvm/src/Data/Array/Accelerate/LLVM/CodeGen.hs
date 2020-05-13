@@ -125,7 +125,7 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     travB _  Clamp        = IRClamp
     travB _  Mirror       = IRMirror
     travB _  Wrap         = IRWrap
-    travB tp (Constant c) = IRConstant $ IR (constant tp c)
+    travB tp (Constant c) = IRConstant $ constant tp c
     travB _  (Function f) = IRFunction $ travF1 f
 
     -- sadness

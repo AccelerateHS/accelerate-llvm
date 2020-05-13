@@ -28,7 +28,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
-import Data.Array.Accelerate.LLVM.CodeGen.IR                        ( IR )
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -758,7 +757,7 @@ mkScan'P2 dir uid aenv tp combine =
                    return $ A.pair i' v')
                 (A.pair i1 v0)
 
-    writeArray TypeInt arrSum (liftInt 0 :: IR Int) (A.snd r)
+    writeArray TypeInt arrSum (liftInt 0) (A.snd r)
 
     return_
 

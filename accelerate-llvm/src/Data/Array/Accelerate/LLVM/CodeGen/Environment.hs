@@ -36,13 +36,13 @@ import LLVM.AST.Type.Name
 -- level as a heterogenous snoc list, and on the type level as nested tuples.
 --
 data Val env where
-  Empty ::                    Val ()
-  Push  :: Val env -> IR t -> Val (env, t)
+  Empty ::                          Val ()
+  Push  :: Val env -> Operands t -> Val (env, t)
 
 -- | Projection of a value from the valuation environment using a de Bruijn
 -- index.
 --
-prj :: Idx env t -> Val env -> IR t
+prj :: Idx env t -> Val env -> Operands t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
 #if __GLASGOW_HASKELL__ < 800

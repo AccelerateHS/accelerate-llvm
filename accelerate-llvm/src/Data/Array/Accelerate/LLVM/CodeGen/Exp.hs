@@ -72,7 +72,7 @@ llvmOfFun2 (Lam lhs1 (Lam lhs2 (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenE
 llvmOfFun2 _ _ = $internalError "llvmOfFun2" "impossible evaluation"
 
 
--- | Convert an open scalar expression into a sequence of LLVM IR instructions.
+-- | Convert an open scalar expression into a sequence of LLVM Operands instructions.
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
 --
@@ -99,12 +99,12 @@ llvmOfOpenExp top env aenv = cvtE top
         Let lhs bnd body            -> do x <- cvtE bnd
                                           llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
         Evar (Var _ ix)             -> return $ prj ix env
-        Const tp c                  -> return $ IR $ ir' tp $ scalar tp c
+        Const tp c                  -> return $ ir tp $ scalar tp c
         PrimConst c                 -> let tp = (SingleScalarType $ primConstType c)
-                                       in  return $ IR $ ir' tp $ scalar tp $ primConst c
+                                       in  return $ ir tp $ scalar tp $ primConst c
         PrimApp f x                 -> primFun f x
-        Undef tp                    -> return $ IR $ ir' tp $ undef tp
-        Nil                         -> return $ IR OP_Unit
+        Undef tp                    -> return $ ir tp $ undef tp
+        Nil                         -> return $ OP_Unit
         Pair e1 e2                  -> join $ pair <$> cvtE e1 <*> cvtE e2
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
@@ -121,49 +121,37 @@ llvmOfOpenExp top env aenv = cvtE top
         While c f x                 -> while (expType x) (cvtF1 c) (cvtF1 f) (cvtE x)
         Coerce t1 t2 x              -> coerce t1 t2 =<< cvtE x
 
-    indexSlice :: SliceIndex slix sl co sh
-               -> IR slix
-               -> IR sh
-               -> IR sl
-    indexSlice slice (IR slix) (IR sh) = IR $ restrict slice slix sh
-      where
-        restrict :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
-        restrict SliceNil              OP_Unit               OP_Unit          = OP_Unit
-        restrict (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
-          let sl' = restrict sliceIdx slx sl
-           in OP_Pair sl' sz
-        restrict (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
-          restrict sliceIdx slx sl
+    indexSlice :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
+    indexSlice SliceNil              OP_Unit               OP_Unit          = OP_Unit
+    indexSlice (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz)  =
+      let sl' = indexSlice sliceIdx slx sl
+        in OP_Pair sl' sz
+    indexSlice (SliceFixed sliceIdx) (OP_Pair slx _i)      (OP_Pair sl _sz) =
+      indexSlice sliceIdx slx sl
 
-    indexFull :: SliceIndex slix sl co sh
-              -> IR slix
-              -> IR sl
-              -> IR sh
-    indexFull slice (IR slix) (IR sh) = IR $ extend slice slix sh
-      where
-        extend :: SliceIndex slix sl co sh -> Operands slix -> Operands sl -> Operands sh
-        extend SliceNil              OP_Unit               OP_Unit         = OP_Unit
-        extend (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
-          let sh' = extend sliceIdx slx sl
-           in OP_Pair sh' sz
-        extend (SliceFixed sliceIdx) (OP_Pair slx sz)      sl              =
-          let sh' = extend sliceIdx slx sl
-           in OP_Pair sh' sz
+    indexFull :: SliceIndex slix sl co sh -> Operands slix -> Operands sl -> Operands sh
+    indexFull SliceNil              OP_Unit               OP_Unit         = OP_Unit
+    indexFull (SliceAll sliceIdx)   (OP_Pair slx OP_Unit) (OP_Pair sl sz) =
+      let sh' = indexFull sliceIdx slx sl
+        in OP_Pair sh' sz
+    indexFull (SliceFixed sliceIdx) (OP_Pair slx sz)      sl              =
+      let sh' = indexFull sliceIdx slx sl
+        in OP_Pair sh' sz
 
-    vecPack :: forall n single tuple. KnownNat n => VecR n single tuple -> IR tuple -> CodeGen arch (IR (Vec n single))
-    vecPack vecr (IR tuple) = ir tp <$> go vecr n tuple
+    vecPack :: forall n single tuple. KnownNat n => VecR n single tuple -> Operands tuple -> CodeGen arch (Operands (Vec n single))
+    vecPack vecr tuple = ir tp <$> go vecr n tuple
       where
         go :: VecR n' single tuple' -> Int -> Operands tuple' -> CodeGen arch (Operand (Vec n single))
         go (VecRnil _)      0 OP_Unit        = return $ undef $ VectorScalarType tp
         go (VecRnil _)      _ OP_Unit        = $internalError "vecUnpack" "index mismatch"
         go (VecRsucc vecr') i (OP_Pair xs x) = do
           vec <- go vecr' (i - 1) xs
-          instr' $ InsertElement (fromIntegral i - 1) vec (op' singleTp x)
+          instr' $ InsertElement (fromIntegral i - 1) vec (op singleTp x)
 
         tp@(VectorType n singleTp) = vecRvector vecr
 
-    vecUnpack :: forall n single tuple. KnownNat n => VecR n single tuple -> IR (Vec n single) -> CodeGen arch (IR tuple)
-    vecUnpack vecr (IR (OP_Vec vec)) = IR <$> go vecr n
+    vecUnpack :: forall n single tuple. KnownNat n => VecR n single tuple -> Operands (Vec n single) -> CodeGen arch (Operands tuple)
+    vecUnpack vecr (OP_Vec vec) = go vecr n
       where
         go :: VecR n' single tuple' -> Int -> CodeGen arch (Operands tuple')
         go (VecRnil _)      0 = return $ OP_Unit
@@ -171,21 +159,21 @@ llvmOfOpenExp top env aenv = cvtE top
         go (VecRsucc vecr') i = do
           xs <- go vecr' (i - 1)
           x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
-          return $ OP_Pair xs (ir' singleTp x)
+          return $ OP_Pair xs (ir singleTp x)
 
         VectorType n singleTp = vecRvector vecr
 
-    linearIndex :: ArrayVar aenv (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+    linearIndex :: ArrayVar aenv (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
     linearIndex (Var repr v) = linearIndexArray (irArray repr (aprj v aenv))
 
-    index :: ArrayVar aenv (Array sh e) -> IR sh -> IROpenExp arch env aenv e
+    index :: ArrayVar aenv (Array sh e) -> Operands sh -> IROpenExp arch env aenv e
     index (Var repr v) = indexArray (irArray repr (aprj v aenv))
 
-    shape :: ArrayVar aenv (Array sh e) -> IR sh
+    shape :: ArrayVar aenv (Array sh e) -> Operands sh
     shape (Var repr v) = irArrayShape (irArray repr (aprj v aenv))
 
-    pair :: IR t1 -> IR t2 -> IROpenExp arch env aenv (t1, t2)
-    pair (IR a) (IR b) = return $ IR $ OP_Pair a b
+    pair :: Operands t1 -> Operands t2 -> IROpenExp arch env aenv (t1, t2)
+    pair a b = return $ OP_Pair a b
 
     while :: TupleType a
           -> IROpenFun1 arch env aenv (a -> Bool)
@@ -199,7 +187,7 @@ llvmOfOpenExp top env aenv = cvtE top
              => TupleType b
              -> asm           (a -> b)
              -> DelayedFun () (a -> b)
-             -> IR a
+             -> Operands a
              -> IRExp arch () b
     foreignE _ asm no x =
       case foreignExp asm of
@@ -207,10 +195,10 @@ llvmOfOpenExp top env aenv = cvtE top
         Nothing | Lam lhs (Body b) <- no -> llvmOfOpenExp b (Empty `pushE` (lhs, x)) IM.empty
         _                                -> error "when a grid's misaligned with another behind / that's a moiré..."
 
-    coerce :: ScalarType a -> ScalarType b -> IR a -> IROpenExp arch env aenv b
-    coerce s t (IR x)
-      | Just Refl <- matchScalarType s t = return $ IR x
-      | otherwise                        = IR . ir' t <$> instr' (BitCast t (op' s x))
+    coerce :: ScalarType a -> ScalarType b -> Operands a -> IROpenExp arch env aenv b
+    coerce s t x
+      | Just Refl <- matchScalarType s t = return $ x
+      | otherwise                        = ir t <$> instr' (BitCast t (op s x))
 
     primFun :: PrimFun (a -> r)
             -> DelayedOpenExp env aenv a
@@ -287,88 +275,76 @@ llvmOfOpenExp top env aenv = cvtE top
 
 -- | Extract the head of an index
 --
-indexHead :: IR (sh, sz) -> IR sz
-indexHead (IR (OP_Pair _ sz)) = IR sz
+indexHead :: Operands (sh, sz) -> Operands sz
+indexHead (OP_Pair _ sz) = sz
 
 -- | Extract the tail of an index
 --
-indexTail :: IR (sh, sz) -> IR sh
-indexTail (IR (OP_Pair sh _)) = IR sh
+indexTail :: Operands (sh, sz) -> Operands sh
+indexTail (OP_Pair sh _) = sh
 
 -- | Construct an index from the head and tail
 --
-indexCons :: IR sh -> IR sz -> IR (sh, sz)
-indexCons (IR sh) (IR sz) = IR (OP_Pair sh sz)
+indexCons :: Operands sh -> Operands sz -> Operands (sh, sz)
+indexCons sh sz = OP_Pair sh sz
 
 -- | Number of elements contained within a shape
 --
-shapeSize :: ShapeR sh -> IR sh -> CodeGen arch (IR Int)
-shapeSize shr (IR extent) = go shr extent
-  where
-    go :: ShapeR t -> Operands t -> CodeGen arch (IR Int)
-    go ShapeRz OP_Unit
-      = return $ A.liftInt 1
-
-    go (ShapeRsnoc shr') (OP_Pair sh sz)
-      = case shr' of
-          ShapeRz -> return (IR sz)
-          _       -> do
-            a <- go shr' sh
-            b <- A.mul numType a (IR sz)
-            return b
+shapeSize :: ShapeR sh -> Operands sh -> CodeGen arch (Operands Int)
+shapeSize ShapeRz OP_Unit
+  = return $ A.liftInt 1
+shapeSize (ShapeRsnoc shr) (OP_Pair sh sz)
+  = case shr of
+      ShapeRz -> return sz
+      _       -> do
+        a <- shapeSize shr sh
+        b <- A.mul numType a sz
+        return b
 
 -- | Convert a multidimensional array index into a linear index
 --
-intOfIndex :: ShapeR sh -> IR sh -> IR sh -> CodeGen arch (IR Int)
-intOfIndex shr (IR extent) (IR index) = cvt shr extent index
-  where
-    cvt :: ShapeR t -> Operands t -> Operands t -> CodeGen arch (IR Int)
-    cvt ShapeRz OP_Unit OP_Unit
-      = return $ A.liftInt 0
-
-    cvt (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ix i)
-      -- If we short-circuit the last dimension, we can avoid inserting
-      -- a multiply by zero and add of the result.
-      = case shr' of
-          ShapeRz -> return (IR i)
-          _       -> do
-            a <- cvt shr' sh ix
-            b <- A.mul numType a (IR sz)
-            c <- A.add numType b (IR i)
-            return c
+intOfIndex :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen arch (Operands Int)
+intOfIndex ShapeRz OP_Unit OP_Unit
+  = return $ A.liftInt 0
+intOfIndex (ShapeRsnoc shr) (OP_Pair sh sz) (OP_Pair ix i)
+  -- If we short-circuit the last dimension, we can avoid inserting
+  -- a multiply by zero and add of the result.
+  = case shr of
+      ShapeRz -> return i
+      _       -> do
+        a <- intOfIndex shr sh ix
+        b <- A.mul numType a sz
+        c <- A.add numType b i
+        return c
 
 
 -- | Convert a linear index into into a multidimensional index
 --
-indexOfInt :: ShapeR sh -> IR sh -> IR Int -> CodeGen arch (IR sh)
-indexOfInt shr (IR extent) index = IR <$> cvt shr extent index
-  where
-    cvt :: ShapeR t -> Operands t -> IR Int -> CodeGen arch (Operands t)
-    cvt ShapeRz OP_Unit _
-      = return OP_Unit
-
-    cvt (ShapeRsnoc shr') (OP_Pair sh sz) i
-      = do
-           i'    <- A.quot integralType i (IR sz)
-           -- If we assume the index is in range, there is no point computing
-           -- the remainder of the highest dimension since (i < sz) must hold
-           IR r  <- case shr' of
-                      ShapeRz -> return i     -- TODO: in debug mode assert (i < sz)
-                      _       -> A.rem  integralType i (IR sz)
-           sh'   <- cvt shr' sh i'
-           return $ OP_Pair sh' r
+indexOfInt :: ShapeR sh -> Operands sh -> Operands Int -> CodeGen arch (Operands sh)
+indexOfInt ShapeRz OP_Unit _
+  = return OP_Unit
+indexOfInt (ShapeRsnoc shr) (OP_Pair sh sz) i
+  = do
+        i'    <- A.quot integralType i sz
+        -- If we assume the index is in range, there is no point computing
+        -- the remainder of the highest dimension since (i < sz) must hold
+        r     <- case shr of
+                  ShapeRz -> return i     -- TODO: in debug mode assert (i < sz)
+                  _       -> A.rem  integralType i sz
+        sh'   <- indexOfInt shr sh i'
+        return $ OP_Pair sh' r
 
 -- | Read an element at a multidimensional index
 --
-indexArray :: IRArray (Array sh e) -> IR sh -> IROpenExp arch env aenv e
+indexArray :: IRArray (Array sh e) -> Operands sh -> IROpenExp arch env aenv e
 indexArray arr ix = linearIndexArray arr =<< intOfIndex (arrayRshape $ irArrayRepr arr) (irArrayShape arr) ix
 
 -- | Read an element at a linear index
 --
-linearIndexArray :: IRArray (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+linearIndexArray :: IRArray (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
 linearIndexArray = readArray TypeInt
 
-pushE :: Val env -> (ELeftHandSide t env env', IR t) -> Val env'
-pushE env (LeftHandSideSingle _  , e)                  = env `Push` e
-pushE env (LeftHandSideWildcard _, _)                  = env
-pushE env (LeftHandSidePair l1 l2, IR (OP_Pair e1 e2)) = pushE env (l1, IR e1) `pushE` (l2, IR e2)
+pushE :: Val env -> (ELeftHandSide t env env', Operands t) -> Val env'
+pushE env (LeftHandSideSingle _  , e)               = env `Push` e
+pushE env (LeftHandSideWildcard _, _)               = env
+pushE env (LeftHandSidePair l1 l2, (OP_Pair e1 e2)) = pushE env (l1, e1) `pushE` (l2, e2)

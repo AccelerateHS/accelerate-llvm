@@ -310,7 +310,7 @@ mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
 --
 atomically
     :: IRArray (Vector Word32)
-    -> IR Int
+    -> Operands Int
     -> CodeGen PTX a
     -> CodeGen PTX a
 atomically barriers i action = do

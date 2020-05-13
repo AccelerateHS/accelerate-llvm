@@ -286,7 +286,7 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
     s0  <- int bid
 
     -- iterating over thread-block-wide segments
-    imapFromStepTo numType s0 gd' end $ \chunk -> do
+    imapFromStepTo s0 gd' end $ \chunk -> do
 
       bd    <- blockDim
       bd'   <- int bd
@@ -400,7 +400,7 @@ mkScanAllP2 dir aenv tp combine = do
     bd    <- blockDim
     bd'   <- int bd
 
-    imapFromStepTo numType start bd' end $ \offset -> do
+    imapFromStepTo start bd' end $ \offset -> do
 
       -- Index of the partial sums array that this thread will process.
       tid   <- threadIdx
@@ -491,7 +491,7 @@ mkScanAllP3 dir aenv tp combine mseed = do
       gd  <- int =<< gridDim
       end <- A.sub numType (indexHead (irArrayShape arrTmp)) (liftInt 1)
 
-      imapFromStepTo numType bid gd end $ \chunk -> do
+      imapFromStepTo bid gd end $ \chunk -> do
 
         -- Determine the start and end indicies of this chunk to which we will
         -- carry-in the value. Returned for left-to-right traversal.
@@ -535,7 +535,7 @@ mkScanAllP3 dir aenv tp combine mseed = do
         -- Apply the carry-in value to each element in the chunk
         bd        <- int =<< blockDim
         i0        <- A.add numType inf tid
-        imapFromStepTo numType i0 bd sup $ \i -> do
+        imapFromStepTo i0 bd sup $ \i -> do
           v <- readArray TypeInt arrOut i
           u <- case dir of
                  L -> app2 combine carry v
@@ -589,7 +589,7 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
     gd  <- int =<< gridDim
 
     -- iterate over thread-block wide segments
-    imapFromStepTo numType bid gd end $ \seg -> do
+    imapFromStepTo bid gd end $ \seg -> do
 
       bd  <- int =<< blockDim
       inf <- A.mul numType seg bd
@@ -703,7 +703,7 @@ mkScan'AllP2 dir aenv tp combine = do
     tid'  <- int tid
     bd    <- int =<< blockDim
 
-    imapFromStepTo numType start bd end $ \offset -> do
+    imapFromStepTo start bd end $ \offset -> do
 
       i0  <- case dir of
                L -> A.add numType offset tid'
@@ -725,9 +725,9 @@ mkScan'AllP2 dir aenv tp combine = do
                 let go :: TupleType a -> Operands a
                     go TupRunit       = OP_Unit
                     go (TupRpair a b) = OP_Pair (go a) (go b)
-                    go (TupRsingle t) = ir' t (undef t)
+                    go (TupRsingle t) = ir t (undef t)
                 in
-                return . IR $ go tp
+                return $ go tp
 
       x1 <- if (tp, A.gt singleType offset (liftInt 0) `A.land'` A.eq singleType tid (liftInt32 0))
               then do
@@ -761,7 +761,7 @@ mkScan'AllP2 dir aenv tp combine = do
     __syncthreads
 
     when (A.eq singleType tid (liftInt32 0)) $
-      writeArray TypeInt32 arrSum (liftInt32 0) =<< readArray TypeInt32 carry (liftInt32 0 :: IR Int32)
+      writeArray TypeInt32 arrSum (liftInt32 0) =<< readArray TypeInt32 carry (liftInt32 0)
 
     return_
 
@@ -802,7 +802,7 @@ mkScan'AllP3 dir aenv tp combine = do
       gd  <- int =<< gridDim
       end <- A.sub numType (indexHead (irArrayShape arrTmp)) (liftInt 1)
 
-      imapFromStepTo numType bid gd end $ \chunk -> do
+      imapFromStepTo bid gd end $ \chunk -> do
 
         (inf,sup) <- case dir of
                        L -> do
@@ -831,7 +831,7 @@ mkScan'AllP3 dir aenv tp combine = do
         -- Apply the carry-in value to each element in the chunk
         bd        <- int =<< blockDim
         i0        <- A.add numType inf tid
-        imapFromStepTo numType i0 bd sup $ \i -> do
+        imapFromStepTo i0 bd sup $ \i -> do
           v <- readArray TypeInt arrOut i
           u <- case dir of
                  L -> app2 combine carry v
@@ -902,7 +902,7 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
     gd  <- int =<< gridDim
     end <- shapeSize shr (indexTail (irArrayShape arrOut))
 
-    imapFromStepTo numType bid gd end $ \seg -> do
+    imapFromStepTo bid gd end $ \seg -> do
 
       -- Index this thread reads from
       tid   <- threadIdx
@@ -1001,9 +1001,9 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
                           go :: TupleType a -> Operands a
                           go TupRunit       = OP_Unit
                           go (TupRpair a b) = OP_Pair (go a) (go b)
-                          go (TupRsingle t) = ir' t (undef t)
+                          go (TupRsingle t) = ir t (undef t)
                       in
-                      return . IR $ go tp
+                      return $ go tp
 
           -- Thread zero incorporates the carry-in element
           y <- if (tp, A.eq singleType tid (liftInt32 0))
@@ -1104,7 +1104,7 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
       gd  <- int =<< gridDim
       end <- shapeSize shr (irArrayShape arrSum)
 
-      imapFromStepTo numType bid gd end $ \seg -> do
+      imapFromStepTo bid gd end $ \seg -> do
 
         -- Not necessary to wait for threads to catch up before starting this segment
         -- __syncthreads
@@ -1213,9 +1213,9 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                                     go :: TupleType a -> Operands a
                                     go TupRunit       = OP_Unit
                                     go (TupRpair a b) = OP_Pair (go a) (go b)
-                                    go (TupRsingle t) = ir' t (undef t)
+                                    go (TupRsingle t) = ir t (undef t)
                                 in
-                                return . IR $ go tp
+                                return $ go tp
 
                       l <- i32 n
                       y <- scanBlockSMem dir dev tp combine (Just l) x
@@ -1288,12 +1288,12 @@ scanBlockSMem
     -> DeviceProperties                             -- ^ properties of the target device
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe (IR Int32)                             -- ^ number of valid elements (may be less than block size)
-    -> IR e                                         -- ^ calling thread's input element
-    -> CodeGen PTX (IR e)
+    -> Maybe (Operands Int32)                             -- ^ number of valid elements (may be less than block size)
+    -> Operands e                                         -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)
 scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
   where
-    int32 :: Integral a => a -> IR Int32
+    int32 :: Integral a => a -> Operands Int32
     int32 = liftInt32 . P.fromIntegral
 
     -- Temporary storage required for each warp
@@ -1301,7 +1301,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
     warp_smem_bytes = warp_smem_elems  * sizeOf tp
 
     -- Step 1: Scan in every warp
-    warpScan :: IR e -> CodeGen PTX (IR e)
+    warpScan :: Operands e -> CodeGen PTX (Operands e)
     warpScan input = do
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       -- (individually addressable by each warp)
@@ -1313,7 +1313,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
     -- Step 2: Collect the aggregate results of each warp to compute the prefix
     -- values for each warp and combine with the partial result to compute each
     -- thread's final value.
-    warpPrefix :: IR e -> CodeGen PTX (IR e)
+    warpPrefix :: Operands e -> CodeGen PTX (Operands e)
     warpPrefix input = do
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
@@ -1344,7 +1344,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
                       Just n  -> A.min singleType wid =<< A.quot integralType n (int32 (CUDA.warpSize dev))
 
           p0     <- readArray TypeInt32 smem (liftInt32 0)
-          prefix <- iterFromStepTo (IntegralNumType TypeInt32) tp (liftInt32 1) (liftInt32 1) steps p0 $ \step x -> do
+          prefix <- iterFromStepTo tp (liftInt32 1) (liftInt32 1) steps p0 $ \step x -> do
                       y <- readArray TypeInt32 smem step
                       case dir of
                         L -> app2 combine x y
@@ -1373,8 +1373,8 @@ scanWarpSMem
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
-    -> IR e                                         -- ^ calling thread's input element
-    -> CodeGen PTX (IR e)
+    -> Operands e                                         -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)
 scanWarpSMem dir dev tp combine smem = scan 0
   where
     log2 :: Double -> Double
@@ -1385,7 +1385,7 @@ scanWarpSMem dir dev tp combine smem = scan 0
     halfWarp  = P.fromIntegral (CUDA.warpSize dev `P.quot` 2)
 
     -- Unfold the scan as a recursive code generation function
-    scan :: Int -> IR e -> CodeGen PTX (IR e)
+    scan :: Int -> Operands e -> CodeGen PTX (Operands e)
     scan step x
       | step >= steps = return x
       | otherwise     = do
@@ -1418,9 +1418,9 @@ scanWarpSMem dir dev tp combine smem = scan 0
 -- Utilities
 -- ---------
 
-i32 :: IR Int -> CodeGen PTX (IR Int32)
+i32 :: Operands Int -> CodeGen PTX (Operands Int32)
 i32 = A.irFromIntegral integralType numType
 
-int :: IR Int32 -> CodeGen PTX (IR Int)
+int :: Operands Int32 -> CodeGen PTX (Operands Int)
 int = A.irFromIntegral integralType numType
 

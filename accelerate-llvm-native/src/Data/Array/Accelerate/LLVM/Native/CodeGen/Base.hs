@@ -42,7 +42,7 @@ import Prelude                                                      as P
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
 --
-gangParam :: ShapeR sh -> (IR sh, IR sh, [LLVM.Parameter])
+gangParam :: ShapeR sh -> (Operands sh, Operands sh, [LLVM.Parameter])
 gangParam shr =
   let start = "ix.start"
       end   = "ix.end"
@@ -53,7 +53,7 @@ gangParam shr =
 
 -- | The worker ID of the calling thread
 --
-gangId :: (IR Int, [LLVM.Parameter])
+gangId :: (Operands Int, [LLVM.Parameter])
 gangId =
   let tid = "ix.tid"
   in (local (TupRsingle scalarTypeInt) tid, [ scalarParameter scalarType tid ] )

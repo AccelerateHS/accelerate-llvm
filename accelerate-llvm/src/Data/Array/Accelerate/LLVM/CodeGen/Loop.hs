@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Loop
@@ -32,55 +33,57 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 --
 -- iterate
 --     :: Shape sh
---     => IR sh                                    -- ^ starting index
---     -> IR sh                                    -- ^ final index
---     -> (IR sh -> CodeGen (IR a))                -- ^ body of the loop
---     -> CodeGen (IR a)
+--     => Operands sh                                    -- ^ starting index
+--     -> Operands sh                                    -- ^ final index
+--     -> (Operands sh -> CodeGen (Operands a))                -- ^ body of the loop
+--     -> CodeGen (Operands a)
 -- iterate from to body = error "CodeGen.Loop.iterate"
 
 
 -- | Execute the given function at each index in the range
 --
 imapFromStepTo
-    :: NumType i
-    -> IR i                                     -- ^ starting index (inclusive)
-    -> IR i                                     -- ^ step size
-    -> IR i                                     -- ^ final index (exclusive)
-    -> (IR i -> CodeGen arch ())                -- ^ loop body
+    :: forall i arch. IsNum i
+    => Operands i                                     -- ^ starting index (inclusive)
+    -> Operands i                                     -- ^ step size
+    -> Operands i                                     -- ^ final index (exclusive)
+    -> (Operands i -> CodeGen arch ())                -- ^ loop body
     -> CodeGen arch ()
-imapFromStepTo num start step end body =
+imapFromStepTo start step end body =
   for (TupRsingle $ SingleScalarType $ NumSingleType num) start
       (\i -> lt (NumSingleType num) i end)
       (\i -> add num i step)
       body
+  where num = numType @i
 
 
 -- | Iterate with an accumulator between given start and end indices, executing
 -- the given function at each.
 --
 iterFromStepTo
-    :: NumType i
-    -> TupleType a
-    -> IR i                                     -- ^ starting index (inclusive)
-    -> IR i                                     -- ^ step size
-    -> IR i                                     -- ^ final index (exclusive)
-    -> IR a                                     -- ^ initial value
-    -> (IR i -> IR a -> CodeGen arch (IR a))    -- ^ loop body
-    -> CodeGen arch (IR a)
-iterFromStepTo num tp start step end seed body =
+    :: forall i a arch. IsNum i
+    => TupleType a
+    -> Operands i                                     -- ^ starting index (inclusive)
+    -> Operands i                                     -- ^ step size
+    -> Operands i                                     -- ^ final index (exclusive)
+    -> Operands a                                     -- ^ initial value
+    -> (Operands i -> Operands a -> CodeGen arch (Operands a))    -- ^ loop body
+    -> CodeGen arch (Operands a)
+iterFromStepTo tp start step end seed body =
   iter (TupRsingle $ SingleScalarType $ NumSingleType num) tp start seed
        (\i -> lt (NumSingleType num) i end)
        (\i -> add num i step)
        body
+  where num = numType @i
 
 
 -- | A standard 'for' loop.
 --
 for :: TupleType i
-    -> IR i                                     -- ^ starting index
-    -> (IR i -> CodeGen arch (IR Bool))         -- ^ loop test to keep going
-    -> (IR i -> CodeGen arch (IR i))            -- ^ increment loop counter
-    -> (IR i -> CodeGen arch ())                -- ^ body of the loop
+    -> Operands i                                     -- ^ starting index
+    -> (Operands i -> CodeGen arch (Operands Bool))         -- ^ loop test to keep going
+    -> (Operands i -> CodeGen arch (Operands i))            -- ^ increment loop counter
+    -> (Operands i -> CodeGen arch ())                -- ^ body of the loop
     -> CodeGen arch ()
 for tp start test incr body =
   void $ while tp test (\i -> body i >> incr i) start
@@ -90,12 +93,12 @@ for tp start test incr body =
 --
 iter :: TupleType i
      -> TupleType a
-     -> IR i                                    -- ^ starting index
-     -> IR a                                    -- ^ initial value
-     -> (IR i -> CodeGen arch (IR Bool))        -- ^ index test to keep looping
-     -> (IR i -> CodeGen arch (IR i))           -- ^ increment loop counter
-     -> (IR i -> IR a -> CodeGen arch (IR a))   -- ^ loop body
-     -> CodeGen arch (IR a)
+     -> Operands i                                    -- ^ starting index
+     -> Operands a                                    -- ^ initial value
+     -> (Operands i -> CodeGen arch (Operands Bool))        -- ^ index test to keep looping
+     -> (Operands i -> CodeGen arch (Operands i))           -- ^ increment loop counter
+     -> (Operands i -> Operands a -> CodeGen arch (Operands a))   -- ^ loop body
+     -> CodeGen arch (Operands a)
 iter tpi tpa start seed test incr body = do
   let tp = TupRpair tpi tpa
   r <- while tp (test . fst)
@@ -109,10 +112,10 @@ iter tpi tpa start seed test incr body = do
 -- | A standard 'while' loop
 --
 while :: TupleType a
-      -> (IR a -> CodeGen arch (IR Bool))
-      -> (IR a -> CodeGen arch (IR a))
-      -> IR a
-      -> CodeGen arch (IR a)
+      -> (Operands a -> CodeGen arch (Operands Bool))
+      -> (Operands a -> CodeGen arch (Operands a))
+      -> Operands a
+      -> CodeGen arch (Operands a)
 while tp test body start = do
   loop <- newBlock   "while.top"
   exit <- newBlock   "while.exit"

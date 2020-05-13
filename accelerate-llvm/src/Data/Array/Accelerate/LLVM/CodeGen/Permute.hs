@@ -182,7 +182,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
 atomicCAS_rmw
     :: forall arch e.
        SingleType e
-    -> (IR e -> CodeGen arch (IR e))
+    -> (Operands e -> CodeGen arch (Operands e))
     -> Operand (Ptr e)
     -> CodeGen arch ()
 atomicCAS_rmw t update addr =
@@ -208,7 +208,7 @@ atomicCAS_rmw t update addr =
 atomicCAS_rmw'
     :: SingleType t
     -> IntegralType i
-    -> (IR t -> CodeGen arch (IR t))
+    -> (Operands t -> CodeGen arch (Operands t))
     -> Operand (Ptr t)
     -> CodeGen arch ()
 atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
@@ -262,7 +262,7 @@ atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
 atomicCAS_cmp
     :: forall arch e.
        SingleType e
-    -> (SingleType e -> IR e -> IR e -> CodeGen arch (IR Bool))
+    -> (SingleType e -> Operands e -> Operands e -> CodeGen arch (Operands Bool))
     -> Operand (Ptr e)
     -> Operand e
     -> CodeGen arch ()
@@ -289,7 +289,7 @@ atomicCAS_cmp t cmp addr val =
 atomicCAS_cmp'
     :: SingleType t       -- actual type of elements
     -> IntegralType i     -- unsigned integral type of same bit size as 't'
-    -> (SingleType t -> IR t -> IR t -> CodeGen arch (IR Bool))
+    -> (SingleType t -> Operands t -> Operands t -> CodeGen arch (Operands Bool))
     -> Operand (Ptr t)
     -> Operand t
     -> CodeGen arch ()

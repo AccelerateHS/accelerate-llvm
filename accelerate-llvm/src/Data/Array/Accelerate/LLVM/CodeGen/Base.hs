@@ -65,11 +65,11 @@ import Prelude                                                      as P
 -- References
 -- ----------
 
-local :: TupleType a -> Name a -> IR a
-local  tp n = travTypeToIR tp (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
+local :: TupleType a -> Name a -> Operands a
+local  tp n = travTypeToOperands tp (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
-global :: TupleType a -> Name a -> IR a
-global tp n = travTypeToIR tp (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
+global :: TupleType a -> Name a -> Operands a
+global tp n = travTypeToOperands tp (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
 
 
 -- Generating names for things
@@ -103,8 +103,8 @@ irArray
     -> IRArray (Array sh e)
 irArray repr@(ArrayR shr tp) n
   = IRArray repr
-            (travTypeToIR (shapeType shr) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
-            (travTypeToIR tp              (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
+            (travTypeToOperands (shapeType shr) (\t i -> LocalReference (PrimType (ScalarPrimType t)) (shapeName n i)))
+            (travTypeToOperands tp              (\t i -> LocalReference (PrimType (ScalarPrimType t)) (arrayName n i)))
             defaultAddrSpace
             NonVolatile
 
@@ -157,35 +157,35 @@ travTypeToList tp f = snd $ go tp 0
                             in
                             (i2, r2 ++ r1)
 
-{-# INLINEABLE travTypeToIR #-}
-travTypeToIR
+{-# INLINEABLE travTypeToOperands #-}
+travTypeToOperands
     :: TupleType t
     -> (forall s. ScalarType s -> Int -> Operand s)
-    -> IR t
-travTypeToIR tp f = IR . snd $ go tp 0
+    -> Operands t
+travTypeToOperands tp f = snd $ go tp 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
     go :: TupleType s -> Int -> (Int, Operands s)
     go TupRunit         i = (i,   OP_Unit)
-    go (TupRsingle t')  i = (i+1, ir' t' $ f t' i)
+    go (TupRsingle t')  i = (i+1, ir t' $ f t' i)
     go (TupRpair t2 t1) i = let (i1, r1) = go t1 i
                                 (i2, r2) = go t2 i1
                             in
                             (i2, OP_Pair r2 r1)
 
--- travTypeToIRPtr
+-- travTypeToOperandsPtr
 --     :: forall t. Elt t
 --     => AddrSpace
 --     -> t {- dummy -}
 --     -> (forall s. ScalarType s -> Int -> Operand (Ptr s))
---     -> IR (Ptr t)
--- travTypeToIRPtr as t f = IR . snd $ go (eltType @t) 0
+--     -> Operands (Ptr t)
+-- travTypeToOperandsPtr as t f = snd $ go (eltType @t) 0
 --   where
 --     -- DANGER: [2] must traverse in the same order as [1]
 --     -- go :: TypeR s -> Int -> (Int, Operands (Ptr s))
 --     go :: TypeR (EltRepr s) -> Int -> (Int, Operands (EltRepr (Ptr s)))   -- TLM: ugh ):
 --     go TypeRunit         i = (i,   OP_Unit)
---     go (TypeRscalar t')  i = (i+1, ir' (PtrPrimType t' as) $ f t' i)
+--     go (TypeRscalar t')  i = (i+1, ir (PtrPrimType t' as) $ f t' i)
 --     go (TypeRpair t2 t1) i = let (i1, r1) = go t1 i
 --                                  (i2, r2) = go t2 i1
 --                              in
@@ -198,7 +198,7 @@ travTypeToIR tp f = IR . snd $ go tp 0
 -- | Call a global function. The function declaration is inserted into the
 -- symbol table.
 --
-call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (IR t)
+call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (Operands t)
 call f attrs = do
   let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
       attrs'    = map Right attrs

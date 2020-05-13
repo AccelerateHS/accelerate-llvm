@@ -42,17 +42,17 @@ import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Monad
 --
 type IRExp     arch     aenv t = IROpenExp arch () aenv t
 type MIRExp    arch     aenv t = Maybe (IRExp arch aenv t)
-type IROpenExp arch env aenv t = CodeGen arch (IR t)
+type IROpenExp arch env aenv t = CodeGen arch (Operands t)
 
 type IRFun1 arch aenv t = IROpenFun1 arch () aenv t
 type IRFun2 arch aenv t = IROpenFun2 arch () aenv t
 
 data IROpenFun1 arch env aenv t where
-  IRFun1 :: { app1 :: IR a -> IROpenExp arch (env,a) aenv b }
+  IRFun1 :: { app1 :: Operands a -> IROpenExp arch (env,a) aenv b }
          -> IROpenFun1 arch env aenv (a -> b)
 
 data IROpenFun2 arch env aenv t where
-  IRFun2 :: { app2 :: IR a -> IR b -> IROpenExp arch ((env,a),b) aenv c }
+  IRFun2 :: { app2 :: Operands a -> Operands b -> IROpenExp arch ((env,a),b) aenv c }
          -> IROpenFun2 arch env aenv (a -> b -> c)
 
 
@@ -77,8 +77,8 @@ data IRDelayed arch aenv a where
 
 data IRArray a where
   IRArray :: { irArrayRepr        :: ArrayR (Array sh e)
-             , irArrayShape       :: IR sh        -- Array extent
-             , irArrayData        :: IR e         -- Array payloads (should really be 'Ptr e')
+             , irArrayShape       :: Operands sh        -- Array extent
+             , irArrayData        :: Operands e         -- Array payloads (should really be 'Ptr e')
              , irArrayAddrSpace   :: AddrSpace
              , irArrayVolatility  :: Volatility
              }

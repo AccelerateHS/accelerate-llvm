@@ -15,6 +15,6 @@ import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
-indexArray       :: IRArray (Array sh e) -> IR sh  -> IROpenExp arch env aenv e
-linearIndexArray :: IRArray (Array sh e) -> IR Int -> IROpenExp arch env aenv e
+indexArray       :: IRArray (Array sh e) -> Operands sh  -> IROpenExp arch env aenv e
+linearIndexArray :: IRArray (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
 

@@ -217,9 +217,9 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                              go :: TupleType a -> Operands a
                              go TupRunit       = OP_Unit
                              go (TupRpair a b) = OP_Pair (go a) (go b)
-                             go (TupRsingle t) = ir' t (undef t)
+                             go (TupRsingle t) = ir t (undef t)
                          in
-                         return . IR $ go tp
+                         return $ go tp
 
             bd  <- int =<< blockDim
             v0  <- A.sub numType sup inf
@@ -230,7 +230,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
 
             -- Step 2: keep walking over the input
             nxt <- A.add numType inf bd
-            r   <- iterFromStepTo numType tp nxt bd sup r0 $ \offset r -> do
+            r   <- iterFromStepTo tp nxt bd sup r0 $ \offset r -> do
 
                      -- Wait for threads to catch up before starting the next stripe
                      __syncthreads
@@ -256,9 +256,9 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                                go :: TupleType a -> Operands a
                                                go TupRunit       = OP_Unit
                                                go (TupRpair a b) = OP_Pair (go a) (go b)
-                                               go (TupRsingle t) = ir' t (undef t)
+                                               go (TupRsingle t) = ir t (undef t)
                                            in
-                                           return . IR $ go tp
+                                           return $ go tp
 
                                z <- i32 v'
                                y <- reduceBlockSMem dev tp combine (Just z) x
@@ -322,7 +322,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
-      int32 :: Integral a => a -> IR Int32
+      int32 :: Integral a => a -> Operands Int32
       int32 = liftInt32 . P.fromIntegral
   --
   makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
@@ -386,7 +386,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     wpb'  <- int wpb
     step  <- A.mul numType wpb' gd
     end   <- shapeSize shr (irArrayShape arrOut)
-    imapFromStepTo numType s0 step end $ \s -> do
+    imapFromStepTo s0 step end $ \s -> do
 
       __syncwarp
 
@@ -442,9 +442,9 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                               go :: TupleType a -> Operands a
                               go TupRunit       = OP_Unit
                               go (TupRpair a b) = OP_Pair (go a) (go b)
-                              go (TupRsingle t) = ir' t (undef t)
+                              go (TupRsingle t) = ir t (undef t)
                           in
-                          return . IR $ go tp
+                          return $ go tp
 
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
@@ -454,7 +454,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
 
             -- Step 2: Keep walking over the rest of the segment
             nx  <- A.add numType inf (liftInt ws)
-            r   <- iterFromStepTo numType tp nx (liftInt ws) sup r0 $ \offset r -> do
+            r   <- iterFromStepTo tp nx (liftInt ws) sup r0 $ \offset r -> do
 
                     -- __syncwarp
                     __syncthreads -- TLM: why is this necessary?
@@ -475,9 +475,9 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                               go :: TupleType a -> Operands a
                                               go TupRunit       = OP_Unit
                                               go (TupRpair a b) = OP_Pair (go a) (go b)
-                                              go (TupRsingle t) = ir' t (undef t)
+                                              go (TupRsingle t) = ir t (undef t)
                                           in
-                                          return . IR $ go tp
+                                          return $ go tp
 
                               z <- i32 v'
                               y <- reduceWarpSMem dev tp combine smem (Just z) x
@@ -503,9 +503,9 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     return_
 
 
-i32 :: IsIntegral i => IR i -> CodeGen PTX (IR Int32)
+i32 :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int32)
 i32 = A.irFromIntegral integralType numType
 
-int :: IsIntegral i => IR i -> CodeGen PTX (IR Int)
+int :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int)
 int = A.irFromIntegral integralType numType
 

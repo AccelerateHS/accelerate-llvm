@@ -257,7 +257,7 @@ mkPermuteP_mutex uid aenv repr shr combine project marr =
 --
 atomically
     :: IRArray (Vector Word8)
-    -> IR Int
+    -> Operands Int
     -> CodeGen Native a
     -> CodeGen Native a
 atomically barriers i action = do

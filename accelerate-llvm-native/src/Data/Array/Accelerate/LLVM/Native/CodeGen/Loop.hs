@@ -32,12 +32,12 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 -- given function at each index.
 --
 imapFromTo
-    :: IR Int                                   -- ^ starting index (inclusive)
-    -> IR Int                                   -- ^ final index (exclusive)
-    -> (IR Int -> CodeGen Native ())            -- ^ apply at each index
+    :: Operands Int                                   -- ^ starting index (inclusive)
+    -> Operands Int                                   -- ^ final index (exclusive)
+    -> (Operands Int -> CodeGen Native ())            -- ^ apply at each index
     -> CodeGen Native ()
 imapFromTo start end body =
-  Loop.imapFromStepTo numInt start (lift typeInt 1) end body
+  Loop.imapFromStepTo start (lift typeInt 1) end body
 
 
 -- | Generate a series of nested 'for' loops which iterate between the start and
@@ -47,13 +47,13 @@ imapFromTo start end body =
 --
 imapNestFromTo
     :: ShapeR sh
-    -> IR sh                                    -- ^ initial index (inclusive)
-    -> IR sh                                    -- ^ final index (exclusive)
-    -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    -> Operands sh                                    -- ^ initial index (inclusive)
+    -> Operands sh                                    -- ^ final index (exclusive)
+    -> Operands sh                                    -- ^ total array extent
+    -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
-imapNestFromTo shr (IR start) (IR end) extent body =
-  go shr start end (body' . IR)
+imapNestFromTo shr start end extent body =
+  go shr start end body'
   where
     body' ix = body ix =<< intOfIndex shr extent ix
 
@@ -63,8 +63,8 @@ imapNestFromTo shr (IR start) (IR end) extent body =
 
     go (ShapeRsnoc shr') (OP_Pair ssh ssz) (OP_Pair esh esz) k
       = go shr' ssh esh
-      $ \sz      -> imapFromTo (IR ssz) (IR esz)
-      $ \(IR i)  -> k (OP_Pair sz i)
+      $ \sz      -> imapFromTo ssz esz
+      $ \i       -> k (OP_Pair sz i)
 
 
 {--
@@ -74,26 +74,26 @@ imapNestFromTo shr (IR start) (IR end) extent body =
 --
 imapNestFromTo'
     :: forall sh. Shape sh
-    => IR sh
-    -> IR sh
-    -> IR sh
-    -> (IR sh -> IR Int -> CodeGen Native ())
+    => Operands sh
+    -> Operands sh
+    -> Operands sh
+    -> (Operands sh -> Operands Int -> CodeGen Native ())
     -> CodeGen Native ()
-imapNestFromTo' (IR start) (IR end) (IR extent) body = do
-  startl <- intOfIndex (IR extent :: IR sh) (IR start)
+imapNestFromTo' start end extent body = do
+  startl <- intOfIndex extent start
   void $ go (eltType @sh) start end extent (int 1) startl body'
   where
-    body' :: Operands (EltRepr sh) -> IR Int -> CodeGen Native (IR Int)
-    body' ix l = body (IR ix) l >> add numType (int 1) l
+    body' :: Operands (EltRepr sh) -> Operands Int -> CodeGen Native (Operands Int)
+    body' ix l = body ix l >> add numType (int 1) l
 
     go :: TupleType t
        -> Operands t
        -> Operands t
        -> Operands t
-       -> IR Int
-       -> IR Int
-       -> (Operands t -> IR Int -> CodeGen Native (IR Int))
-       -> CodeGen Native (IR Int)
+       -> Operands Int
+       -> Operands Int
+       -> (Operands t -> Operands Int -> CodeGen Native (Operands Int))
+       -> CodeGen Native (Operands Int)
     go TypeRunit OP_Unit OP_Unit OP_Unit _delta l k
       = k OP_Unit l
 
@@ -101,9 +101,9 @@ imapNestFromTo' (IR start) (IR end) (IR extent) body = do
       | TypeRscalar t <- tsz
       , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = do
-          delta' <- mul numType delta (IR exz)
+          delta' <- mul numType delta exz
           go tsh ssh esh exh delta' l $ \sz ll -> do
-            Loop.iterFromStepTo (IR ssz) (int 1) (IR esz) ll $ \(IR i) l' ->
+            Loop.iterFromStepTo ssz (int 1) esz ll $ \i l' ->
               k (OP_Pair sz i) l'
             add numType ll delta'
 
@@ -119,13 +119,13 @@ imapNestFromTo' (IR start) (IR end) (IR extent) body = do
 --
 imapNestFromStepTo
     :: forall sh. Shape sh
-    => IR sh                                    -- ^ initial index (inclusive)
-    -> IR sh                                    -- ^ steps
-    -> IR sh                                    -- ^ final index (exclusive)
-    -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    => Operands sh                                    -- ^ initial index (inclusive)
+    -> Operands sh                                    -- ^ steps
+    -> Operands sh                                    -- ^ final index (exclusive)
+    -> Operands sh                                    -- ^ total array extent
+    -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
-imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
+imapNestFromStepTo start steps end extent body =
   go (eltType @sh) start steps end (body' . IR)
   where
     body' ix = body ix =<< intOfIndex extent ix
@@ -138,8 +138,8 @@ imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
       | TypeRscalar t <- tsz
       , Just Refl     <- matchScalarType t (scalarType :: ScalarType Int)
       = go tsh ssh sts esh
-      $ \sz      -> Loop.imapFromStepTo (IR ssz :: IR Int) (IR stz) (IR esz)
-      $ \(IR i)  -> k (OP_Pair sz i)
+      $ \sz      -> Loop.imapFromStepTo ssz stz esz
+      $ \i       -> k (OP_Pair sz i)
 
     go _ _ _ _ _
       = $internalError "imapNestFromTo" "expected shape with Int components"
@@ -150,16 +150,13 @@ imapNestFromStepTo (IR start) (IR steps) (IR end) extent body =
 --
 iterFromTo
     :: TupleType a
-    -> IR Int                                       -- ^ starting index (inclusive)
-    -> IR Int                                       -- ^ final index (exclusive)
-    -> IR a                                         -- ^ initial value
-    -> (IR Int -> IR a -> CodeGen Native (IR a))    -- ^ apply at each index
-    -> CodeGen Native (IR a)
+    -> Operands Int                                       -- ^ starting index (inclusive)
+    -> Operands Int                                       -- ^ final index (exclusive)
+    -> Operands a                                         -- ^ initial value
+    -> (Operands Int -> Operands a -> CodeGen Native (Operands a))    -- ^ apply at each index
+    -> CodeGen Native (Operands a)
 iterFromTo tp start end seed body =
-  Loop.iterFromStepTo numInt tp start (lift typeInt 1) end seed body
-
-numInt :: NumType Int
-numInt = IntegralNumType TypeInt
+  Loop.iterFromStepTo tp start (lift typeInt 1) end seed body
 
 typeInt :: TupleType Int
 typeInt = TupRsingle scalarTypeInt
