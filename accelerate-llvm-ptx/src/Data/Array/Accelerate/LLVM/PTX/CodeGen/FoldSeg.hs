@@ -40,13 +40,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, reduceWarpSMem, imapFromTo )
--- import Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
-import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
 import Data.String                                                  ( fromString )

@@ -46,7 +46,6 @@ import LLVM.AST.Type.Representation
 -- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
-import Control.Applicative                                          ( (<$>), (<*>) )
 import Control.Monad                                                ( (>=>) )
 import Control.Monad.State                                          ( gets )
 import Data.String                                                  ( fromString )

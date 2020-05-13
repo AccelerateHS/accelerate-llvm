@@ -58,7 +58,6 @@ import Data.ByteString.Short.Char8                              ( ShortByteStrin
 import qualified Data.DList                                     as DL
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
-import Data.Word                                                ( Word32 )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeApplications  #-}
@@ -31,9 +32,13 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.Target
 
-import Foreign.CUDA.Path
 import Foreign.CUDA.Analysis
 import qualified Foreign.CUDA.Driver                                as CUDA
+#if MIN_VERSION_nvvm(0,10,0)
+import Foreign.NVVM.Path
+#else
+import Foreign.CUDA.Path
+#endif
 
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -111,15 +116,19 @@ nvvmReflectBitcode mdl = do
 -- and load the "most recent" (by sort order).
 --
 libdeviceBitcode :: Compute -> Q (TExp (ShortByteString, ByteString))
-libdeviceBitcode (Compute m n) = do
+libdeviceBitcode compute = do
   let basename
-        | CUDA.libraryVersion < 9000 = printf "libdevice.compute_%d%d" m n
+        | CUDA.libraryVersion < 9000
+        , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
         | otherwise                  = "libdevice"
       --
       err     = $internalError "libdevice" (printf "not found: %s.YY.bc" basename)
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
-      base    = "/usr/lib/nvidia-cuda-toolkit/libdevice"
-        -- cudaInstallPath </> "nvvm" </> "libdevice"
+#if MIN_VERSION_nvvm(0,10,0)
+      base    = nvvmDeviceLibraryPath
+#else
+      base    = cudaInstallPath </> "nvvm" </> "libdevice"
+#endif
   --
   files <- TH.runIO $ getDirectoryContents base
   --
@@ -128,68 +137,4 @@ libdeviceBitcode (Compute m n) = do
   --
   TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS (S8.pack name))
                                 , embedFile path ]
-
-
--- Determine the location of the libdevice bitcode libraries. We search for the
--- location of the 'nvcc' executable in the PATH. From that, we assume the
--- location of the libdevice bitcode files.
---
--- libdevicePath :: IO FilePath
--- libdevicepath = do
---   nvcc  <- fromMaybe (error "could not find 'nvcc' in PATH") `fmap` findExecutable "nvcc"
---   --
---   let ccvn = reverse (splitPath nvcc)
---       dir  = "libdevice" : "nvvm" : drop 2 ccvn
---   --
---   return (joinPath (reverse dir))
-
-
--- With these instances it is possible to also write TH function to raise the
--- libNVVM modules to an AST. However, generating those large ASTs results in
--- awful compile times.
---
--- $( deriveLift ''AST.AddrSpace )
--- $( deriveLift ''AST.AlignType )
--- $( deriveLift ''AST.AlignmentInfo )
--- $( deriveLift ''AST.BasicBlock )
--- $( deriveLift ''AST.CallingConvention )
--- $( deriveLift ''AST.Constant )
--- $( deriveLift ''AST.DataLayout )
--- $( deriveLift ''AST.Definition )
--- $( deriveLift ''AST.Dialect )
--- $( deriveLift ''AST.Endianness )
--- $( deriveLift ''AST.FastMathFlags )
--- $( deriveLift ''AST.FloatingPointFormat )
--- $( deriveLift ''AST.FloatingPointPredicate )
--- $( deriveLift ''AST.FunctionAttribute )
--- $( deriveLift ''AST.Global )
--- $( deriveLift ''AST.GroupID )
--- $( deriveLift ''AST.InlineAssembly )
--- $( deriveLift ''AST.Instruction )
--- $( deriveLift ''AST.IntegerPredicate )
--- $( deriveLift ''AST.LandingPadClause )
--- $( deriveLift ''AST.Linkage )
--- $( deriveLift ''AST.Mangling )
--- $( deriveLift ''AST.MemoryOrdering )
--- $( deriveLift ''AST.Metadata )
--- $( deriveLift ''AST.MetadataNode )
--- $( deriveLift ''AST.MetadataNodeID )
--- $( deriveLift ''AST.Model )
--- $( deriveLift ''AST.Module )
--- $( deriveLift ''AST.Name )
--- $( deriveLift ''AST.Named )
--- $( deriveLift ''AST.Operand )
--- $( deriveLift ''AST.Parameter )
--- $( deriveLift ''AST.ParameterAttribute )
--- $( deriveLift ''AST.RMWOperation )
--- $( deriveLift ''AST.SelectionKind )
--- $( deriveLift ''AST.SomeFloat )
--- $( deriveLift ''AST.StorageClass )
--- $( deriveLift ''AST.SynchronizationScope )
--- $( deriveLift ''AST.TailCallKind )
--- $( deriveLift ''AST.Terminator )
--- $( deriveLift ''AST.Type )
--- $( deriveLift ''AST.UnnamedAddr )
--- $( deriveLift ''AST.Visibility )
--- $( deriveLift ''NonEmpty )
 
