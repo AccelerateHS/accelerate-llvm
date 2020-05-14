@@ -148,6 +148,7 @@ llvmOfOpenExp top env aenv = cvtE top
           vec <- go vecr' (i - 1) xs
           instr' $ InsertElement (fromIntegral i - 1) vec (op singleTp x)
 
+        singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         tp@(VectorType n singleTp) = vecRvector vecr
 
     vecUnpack :: forall n single tuple. KnownNat n => VecR n single tuple -> Operands (Vec n single) -> CodeGen arch (Operands tuple)
@@ -161,6 +162,7 @@ llvmOfOpenExp top env aenv = cvtE top
           x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
           return $ OP_Pair xs (ir singleTp x)
 
+        singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         VectorType n singleTp = vecRvector vecr
 
     linearIndex :: ArrayVar aenv (Array sh e) -> Operands Int -> IROpenExp arch env aenv e

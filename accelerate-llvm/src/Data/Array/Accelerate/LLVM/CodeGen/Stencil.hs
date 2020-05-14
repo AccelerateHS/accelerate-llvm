@@ -189,12 +189,15 @@ inbounds IRDelayed{..} ix =
 -- Apply boundary conditions to the given index
 --
 bounded
-    :: IRBoundary arch aenv (Array sh e)
+    :: forall sh e arch aenv.
+       IRBoundary arch aenv (Array sh e)
     -> IRDelayed  arch aenv (Array sh e)
     -> Operands sh
     -> IRExp arch aenv e
 bounded bndy IRDelayed{..} ix = do
-  let ArrayR shr tp = delayedRepr
+  let
+    tp :: TupleType e -- GHC 8.4 needs this type annotation
+    ArrayR shr tp = delayedRepr
   sh <- delayedExtent
   case bndy of
     IRConstant v ->
@@ -214,7 +217,7 @@ bounded bndy IRDelayed{..} ix = do
     -- Return the index, updated to obey the given boundary conditions (clamp,
     -- mirror, or wrap only).
     --
-    bound :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen arch (Operands sh)
+    bound :: ShapeR sh' -> Operands sh' -> Operands sh' -> CodeGen arch (Operands sh')
     bound ShapeRz OP_Unit OP_Unit
       = return OP_Unit
     bound (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
@@ -247,7 +250,7 @@ bounded bndy IRDelayed{..} ix = do
 
     -- Return whether the index is inside the bounds of the given shape
     --
-    inside :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen arch (Operands Bool)
+    inside :: ShapeR sh' -> Operands sh' -> Operands sh' -> CodeGen arch (Operands Bool)
     inside ShapeRz OP_Unit OP_Unit
       = return (bool True)
     inside (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
