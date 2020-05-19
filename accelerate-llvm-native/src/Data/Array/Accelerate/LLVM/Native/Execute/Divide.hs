@@ -44,10 +44,7 @@ import qualified Data.Vector.Unboxed.Mutable                        as M
 -- parameter to the apply action can be used to access the chunks linearly (for
 -- example, this is useful when evaluating non-commutative operations).
 --
--- {-# SPECIALISE divideWork :: ShapeR DIM0 -> Int -> Int -> DIM0 -> DIM0 -> (Int -> DIM0 -> DIM0 -> a) -> Seq a #-}
--- {-# SPECIALISE divideWork :: ShapeR DIM1 -> Int -> Int -> DIM1 -> DIM1 -> (Int -> DIM1 -> DIM1 -> a) -> Seq a #-}
--- {-# SPECIALISE divideWork :: ShapeR DIM2 -> Int -> Int -> DIM2 -> DIM2 -> (Int -> DIM2 -> DIM2 -> a) -> Seq a #-}
--- {-# SPECIALISE divideWork :: ShapeR DIM3 -> Int -> Int -> DIM3 -> DIM3 -> (Int -> DIM3 -> DIM3 -> a) -> Seq a #-}
+-- {-# INLINABLE divideWork #-}
 divideWork
     :: ShapeR sh
     -> Int                        -- #subdivisions (hint)

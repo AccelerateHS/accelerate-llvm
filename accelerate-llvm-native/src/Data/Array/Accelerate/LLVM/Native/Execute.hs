@@ -795,8 +795,7 @@ manifest (Manifest a) = Just a
 manifest Delayed{}    = Nothing
 
 
-{-# SPECIALISE scheduleOp :: Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
-{-# SPECIALISE scheduleOp :: Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
+{-# INLINABLE scheduleOp #-}
 scheduleOp
     :: Function
     -> Gamma aenv
@@ -821,8 +820,7 @@ scheduleOp fun gamma aenv shr sz paramsR params done = do
 -- Schedule an operation over the entire iteration space, specifying the number
 -- of partitions and minimum dimension size.
 --
-{-# SPECIALISE scheduleOpWith :: Int -> Int -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
-{-# SPECIALISE scheduleOpWith :: Int -> Int -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
+{-# INLINABLE scheduleOpWith #-}
 scheduleOpWith
     :: Int            -- # subdivisions (hint)
     -> Int            -- minimum size of a dimension (must be a power of two)
@@ -840,8 +838,7 @@ scheduleOpWith splits minsize fun gamma aenv shr sz paramsR params done = do
   job        <- mkJob splits minsize fun gamma aenv shr (empty shr) sz paramsR params done
   liftIO $ schedule workers job
 
-{-# SPECIALISE scheduleOpUsing :: Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
-{-# SPECIALISE scheduleOpUsing :: Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native () #-}
+{-# INLINABLE scheduleOpUsing #-}
 scheduleOpUsing
     :: Seq (Int, sh, sh)
     -> Function
@@ -857,8 +854,7 @@ scheduleOpUsing ranges fun gamma aenv shr paramsR params jobDone = do
   job        <- mkJobUsing ranges fun gamma aenv shr paramsR params jobDone
   liftIO $ schedule workers job
 
-{-# SPECIALISE mkJob :: Int -> Int -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> DIM0 -> DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
-{-# SPECIALISE mkJob :: Int -> Int -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> DIM1 -> DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
+{-# INLINABLE mkJob #-}
 mkJob :: Int
       -> Int
       -> Function
@@ -874,8 +870,7 @@ mkJob :: Int
 mkJob splits minsize fun gamma aenv shr from to paramsR params jobDone =
   mkJobUsing (divideWork shr splits minsize from to (,,)) fun gamma aenv shr paramsR params jobDone
 
-{-# SPECIALISE mkJobUsing :: Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
-{-# SPECIALISE mkJobUsing :: Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
+{-# INLINABLE mkJobUsing #-}
 mkJobUsing
       :: Seq (Int, sh, sh)
       -> Function
@@ -890,8 +885,7 @@ mkJobUsing ranges fun@(name,_) gamma aenv shr paramsR params jobDone = do
   jobTasks <- mkTasksUsing ranges fun gamma aenv shr paramsR params
   liftIO    $ timed name Job {..}
 
-{-# SPECIALISE mkJobUsingIndex :: Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
-{-# SPECIALISE mkJobUsingIndex :: Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> ParamsR Native params -> params -> Maybe Action -> Par Native Job #-}
+{-# INLINABLE mkJobUsingIndex #-}
 mkJobUsingIndex
       :: Seq (Int, sh, sh)
       -> Function
@@ -906,8 +900,7 @@ mkJobUsingIndex ranges fun@(name,_) gamma aenv shr paramsR params jobDone = do
   jobTasks <- mkTasksUsingIndex ranges fun gamma aenv shr paramsR params
   liftIO    $ timed name Job {..}
 
-{-# SPECIALISE mkTasksUsing :: Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> ParamsR Native params -> params -> Par Native (Seq Action) #-}
-{-# SPECIALISE mkTasksUsing :: Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> ParamsR Native params -> params -> Par Native (Seq Action) #-}
+{-# INLINABLE mkTasksUsing #-}
 mkTasksUsing
       :: Seq (Int, sh, sh)
       -> Function
@@ -925,8 +918,7 @@ mkTasksUsing ranges (name, f) gamma aenv shr paramsR params = do
     let argV = marshalShape' @Native shr v
     callFFI f retVoid $ DL.toList $ argU `DL.append` argV `DL.append` arg
 
-{-# SPECIALISE mkTasksUsingIndex :: Seq (Int, DIM0, DIM0) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM0 -> ParamsR Native params -> params -> Par Native (Seq Action) #-}
-{-# SPECIALISE mkTasksUsingIndex :: Seq (Int, DIM1, DIM1) -> Function -> Gamma aenv -> Val aenv -> ShapeR DIM1 -> ParamsR Native params -> params -> Par Native (Seq Action) #-}
+{-# INLINABLE mkTasksUsingIndex #-}
 mkTasksUsingIndex
       :: Seq (Int, sh, sh)
       -> Function
