@@ -310,6 +310,11 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Anil                   -> return ()
         Alloc repr sh          -> allocate repr sh
         Apply _ f a            -> travAF f =<< spawn (travA a)
+        -- We need quite some type applications in the rules for acond and awhile, and cannot use do notation.
+        -- For some unknown reason, GHC will "simplify" 'FutureArraysR arch a' to 'FutureR arch a', which is not sound.
+        -- It then complains that 'FutureR arch a' isn't assignable to 'FutureArraysR arch a'. By adding explicit
+        -- type applications, type checking works fine. This appears to be fixed in GHC 8.8; we don't have problems
+        -- with type inference there after removing the explicit type applications.
         Acond p (t :: ExecOpenAcc arch aenv a) e
                                -> (>>=) @(Par arch) @(FutureR arch Bool) @(FutureArraysR arch a) (travE p) (acond t e)
         Awhile p f (a :: ExecOpenAcc arch aenv a)
