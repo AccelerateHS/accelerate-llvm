@@ -211,7 +211,7 @@ compileOpenAcc = traverseAcc
                  -> PreBoundary ArrayVar         aenv (Array sh a)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch aenv (Array sh a)
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
-        stencil1 s tp _ _ a = AST.Stencil1 tp (snd $ halo s) a
+        stencil1 s tp _ _ a = AST.Stencil1 tp (snd $ stencilHalo s) a
 
         stencil2 :: StencilR sh a stencil1
                  -> StencilR sh b stencil2
@@ -224,33 +224,8 @@ compileOpenAcc = traverseAcc
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch  aenv (Array sh c)
         stencil2 s1 s2 tp _ _ a _ b = AST.Stencil2 tp (union shr h1 h2) a b
           where
-            (shr, h1) = halo s1
-            (_,   h2) = halo s2
-
-        halo :: StencilR sh e stencil -> (ShapeR sh, sh)
-        halo = go'
-          where
-            go' :: StencilR sh e stencil -> (ShapeR sh, sh)
-            go' StencilRunit3{} = (dim1, ((), 1))
-            go' StencilRunit5{} = (dim1, ((), 2))
-            go' StencilRunit7{} = (dim1, ((), 3))
-            go' StencilRunit9{} = (dim1, ((), 4))
-            --
-            go' (StencilRtup3 a b c            ) = (ShapeRsnoc shr, cons shr 1 $ foldl1 (union shr) [a', go b, go c])
-              where (shr, a') = go' a
-            go' (StencilRtup5 a b c d e        ) = (ShapeRsnoc shr, cons shr 2 $ foldl1 (union shr) [a', go b, go c, go d, go e])
-              where (shr, a') = go' a
-            go' (StencilRtup7 a b c d e f g    ) = (ShapeRsnoc shr, cons shr 3 $ foldl1 (union shr) [a', go b, go c, go d, go e, go f, go g])
-              where (shr, a') = go' a
-            go' (StencilRtup9 a b c d e f g h i) = (ShapeRsnoc shr, cons shr 4 $ foldl1 (union shr) [a', go b, go c, go d, go e, go f, go g, go h, go i])
-              where (shr, a') = go' a
-
-            go :: StencilR sh e stencil -> sh
-            go = snd . go'
-
-        cons :: ShapeR sh -> Int -> sh -> (sh, Int)
-        cons ShapeRz          ix ()       = ((), ix)
-        cons (ShapeRsnoc shr) ix (sh, sz) = (cons shr ix sh, sz)
+            (shr, h1) = stencilHalo s1
+            (_,   h2) = stencilHalo s2
 
         fusionError :: error
         fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc

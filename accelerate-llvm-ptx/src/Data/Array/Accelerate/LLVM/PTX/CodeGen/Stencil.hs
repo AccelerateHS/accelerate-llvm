@@ -62,8 +62,8 @@ mkStencil1
     -> MIRDelayed  PTX aenv (Array sh a)
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh b))
 mkStencil1 aenv stencil tp fun bnd marr =
-  let repr             = ArrayR (stencilShape stencil) tp
-      halo             = stencilBorder stencil
+  let repr             = ArrayR shr tp
+      (shr, halo)      = stencilHalo stencil
       (arrIn, paramIn) = delayedArray "in" marr
   in
   (+++) <$> mkInside aenv repr halo (IRFun1 $ app1 fun <=< stencilAccess stencil Nothing    arrIn) paramIn
@@ -83,7 +83,6 @@ mkStencil2
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh c))
 mkStencil2 aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
   let
-      shr = stencilShape stencil1
       repr = ArrayR shr tp
       (arrIn1, paramIn1)  = delayedArray "in1" marr1
       (arrIn2, paramIn2)  = delayedArray "in2" marr2
@@ -98,9 +97,9 @@ mkStencil2 aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
         s2 <- stencilAccess stencil2 (Just bnd2) arrIn2 ix
         app2 f s1 s2
 
-      halo1   = stencilBorder stencil1
-      halo2   = stencilBorder stencil2
-      halo    = union shr halo1 halo2
+      (shr, halo1) = stencilHalo stencil1
+      (_,   halo2) = stencilHalo stencil2
+      halo         = union shr halo1 halo2
   in
   (+++) <$> mkInside aenv repr halo inside (paramIn1 ++ paramIn2)
         <*> mkBorder aenv repr      border (paramIn1 ++ paramIn2)
@@ -183,25 +182,4 @@ offset shr sh1 sh2 = go shr sh1 sh2
     go (ShapeRsnoc t) (OP_Pair sa1 sb1) (OP_Pair sa2 sb2)
       = do x <- add (numType :: NumType Int) sb1 sb2
            OP_Pair <$> go t sa1 sa2 <*> return x
-
-stencilBorder :: StencilR sh a stencil -> sh
-stencilBorder = go
-  where
-    go :: StencilR sh' e stencil' -> sh'
-    go = Prelude.snd . go'
-
-    go' :: StencilR sh' e stencil' -> (ShapeR sh', sh')
-    go' (StencilRunit3 _) = (dim1, ((), 1))
-    go' (StencilRunit5 _) = (dim1, ((), 2))
-    go' (StencilRunit7 _) = (dim1, ((), 3))
-    go' (StencilRunit9 _) = (dim1, ((), 4))
-    --
-    go' (StencilRtup3 a b c            ) = (ShapeRsnoc shr, (foldl1 (union shr) [a', go b, go c]                                    , 1))
-      where (shr, a') = go' a
-    go' (StencilRtup5 a b c d e        ) = (ShapeRsnoc shr, (foldl1 (union shr) [a', go b, go c, go d, go e]                        , 2))
-      where (shr, a') = go' a
-    go' (StencilRtup7 a b c d e f g    ) = (ShapeRsnoc shr, (foldl1 (union shr) [a', go b, go c, go d, go e, go f, go g]            , 3))
-      where (shr, a') = go' a
-    go' (StencilRtup9 a b c d e f g h i) = (ShapeRsnoc shr, (foldl1 (union shr) [a', go b, go c, go d, go e, go f, go g, go h, go i], 4))
-      where (shr, a') = go' a
 
