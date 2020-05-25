@@ -47,9 +47,6 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Control.Monad                                                ( liftM, liftM2 )
 import Prelude
 
-import GHC.Int                                                      ( Int(..) )
-
-
 class Async arch => Remote arch where
 
   -- | Allocate a new uninitialised array on the remote device.

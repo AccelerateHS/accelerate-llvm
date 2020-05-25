@@ -26,9 +26,8 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( liftIdx, liftConst, liftSliceIndex, liftPrimConst, liftPrimFun, liftALhs, liftELhs, liftArray, liftArraysR, liftArrayR, liftScalarType, liftShapeR, liftVecR, liftTupleType, liftIntegralType )
+import Data.Array.Accelerate.AST                                    ( liftIdx, liftConst, liftALhs, liftOpenExp, liftArray, liftArraysR, liftArrayR, liftShapeR, liftTupleType, liftIntegralType )
 import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Array.Sugar                            ( liftForeign )
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
@@ -145,8 +144,8 @@ liftPreOpenAccCommand arch pacc =
       liftA :: CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
       liftA = embedOpenAcc arch
 
-      liftE :: PreExp ArrayVar aenv t -> Q (TExp (PreExp ArrayVar aenv t))
-      liftE = liftPreOpenExp arch
+      liftE :: Exp aenv t -> Q (TExp (Exp aenv t))
+      liftE = liftOpenExp
 
       liftAF :: PreOpenAfun (CompiledOpenAcc arch) aenv f -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv f))
       liftAF = liftPreOpenAfun arch
@@ -181,8 +180,8 @@ liftPreOpenAccSkeleton arch pacc =
       liftD (Delayed repr sh) = [|| Delayed $$(liftArrayR repr) $$(liftE sh) ||]
       liftD (Manifest repr a) = [|| Manifest $$(liftArraysR repr) $$(liftA a) ||]
 
-      liftE :: PreExp ArrayVar aenv t -> Q (TExp (PreExp ArrayVar aenv t))
-      liftE = liftPreOpenExp arch
+      liftE :: Exp aenv t -> Q (TExp (Exp aenv t))
+      liftE = liftOpenExp
 
       liftS :: ShapeR sh -> sh -> Q (TExp sh)
       liftS shr sh = [|| $$(liftConst (shapeType shr) sh) ||]
@@ -205,56 +204,6 @@ liftPreOpenAccSkeleton arch pacc =
     Permute d a          -> [|| Permute $$(liftA d) $$(liftD a) ||]
     Stencil1 tp h a      -> [|| Stencil1 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) ||]
     Stencil2 tp h a b    -> [|| Stencil2 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) $$(liftD b) ||]
-
-{-# INLINEABLE liftPreOpenFun #-}
-liftPreOpenFun
-    :: Embed arch
-    => arch
-    -> PreOpenFun ArrayVar env aenv t
-    -> Q (TExp (PreOpenFun ArrayVar env aenv t))
-liftPreOpenFun arch (Lam lhs f) = [|| Lam $$(liftELhs lhs) $$(liftPreOpenFun arch f) ||]
-liftPreOpenFun arch (Body b)    = [|| Body $$(liftPreOpenExp arch b) ||]
-
-{-# INLINEABLE liftPreOpenExp #-}
-liftPreOpenExp
-    :: forall arch env aenv t. Embed arch
-    => arch
-    -> PreOpenExp ArrayVar env aenv t
-    -> Q (TExp (PreOpenExp ArrayVar env aenv t))
-liftPreOpenExp arch pexp =
-  let
-      liftA :: ArrayVar aenv arr -> Q (TExp (ArrayVar aenv arr))
-      liftA (Var repr ix) = [|| Var $$(liftArrayR repr) $$(liftIdx ix) ||]
-
-      liftE :: PreOpenExp ArrayVar env aenv e -> Q (TExp (PreOpenExp ArrayVar env aenv e))
-      liftE = liftPreOpenExp arch
-
-      liftF :: PreOpenFun ArrayVar env aenv f -> Q (TExp (PreOpenFun ArrayVar env aenv f))
-      liftF = liftPreOpenFun arch
-  in
-  case pexp of
-    Let lhs bnd body          -> [|| Let $$(liftELhs lhs) $$(liftPreOpenExp arch bnd) $$(liftPreOpenExp arch body) ||]
-    Evar (Var tp ix)          -> [|| Evar (Var $$(liftScalarType tp) $$(liftIdx ix)) ||]
-    Foreign tp asm f x        -> [|| Foreign $$(liftTupleType tp) $$(liftForeign asm) $$(liftPreOpenFun arch f) $$(liftE x) ||]
-    Const t c                 -> [|| Const $$(liftScalarType t) $$(liftConst (TupRsingle t) c) ||]
-    Undef t                   -> [|| Undef $$(liftScalarType t) ||]
-    Nil                       -> [|| Nil ||]
-    Pair e1 e2                -> [|| Pair $$(liftE e1) $$(liftE e2) ||]
-    VecPack   vecr e          -> [|| VecPack   $$(liftVecR vecr) $$(liftE e) ||]
-    VecUnpack vecr e          -> [|| VecUnpack $$(liftVecR vecr) $$(liftE e) ||]
-    IndexSlice slice slix sh  -> [|| IndexSlice $$(liftSliceIndex slice) $$(liftE slix) $$(liftE sh) ||]
-    IndexFull slice slix sl   -> [|| IndexFull $$(liftSliceIndex slice) $$(liftE slix) $$(liftE sl) ||]
-    ToIndex shr sh ix         -> [|| ToIndex $$(liftShapeR shr) $$(liftE sh) $$(liftE ix) ||]
-    FromIndex shr sh ix       -> [|| FromIndex $$(liftShapeR shr) $$(liftE sh) $$(liftE ix) ||]
-    Cond p t e                -> [|| Cond $$(liftE p) $$(liftE t) $$(liftE e) ||]
-    While p f x               -> [|| While $$(liftF p) $$(liftF f) $$(liftE x) ||]
-    PrimConst t               -> [|| PrimConst $$(liftPrimConst t) ||]
-    PrimApp f x               -> [|| PrimApp $$(liftPrimFun f) $$(liftE x) ||]
-    Index a ix                -> [|| Index $$(liftA a) $$(liftE ix) ||]
-    LinearIndex a ix          -> [|| LinearIndex $$(liftA a) $$(liftE ix) ||]
-    Shape a                   -> [|| Shape $$(liftA a) ||]
-    ShapeSize shr ix          -> [|| ShapeSize $$(liftShapeR shr) $$(liftE ix) ||]
-    Coerce t1 t2 x            -> [|| Coerce $$(liftScalarType t1) $$(liftScalarType t2) $$(liftE x) ||]
 
 liftArrayVar :: ArrayVar aenv v -> Q (TExp (ArrayVar aenv v))
 liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]

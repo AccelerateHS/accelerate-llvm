@@ -26,8 +26,6 @@ module Data.Array.Accelerate.LLVM.Compile (
 
   CompiledOpenAcc(..), CompiledOpenAfun,
   CompiledAcc, CompiledAfun,
-  CompiledExp, CompiledOpenExp,
-  CompiledFun, CompiledOpenFun
 
 ) where
 
@@ -79,14 +77,9 @@ data CompiledOpenAcc arch aenv a where
 -- An annotated AST with embedded build products
 --
 type CompiledOpenAfun arch  = PreOpenAfun (CompiledOpenAcc arch)
-type CompiledOpenExp arch   = PreOpenExp ArrayVar
-type CompiledOpenFun arch   = PreOpenFun ArrayVar
 
 type CompiledAcc arch a     = CompiledOpenAcc arch () a
 type CompiledAfun arch a    = CompiledOpenAfun arch () a
-
-type CompiledExp arch       = CompiledOpenExp arch ()
-type CompiledFun arch       = CompiledOpenFun arch ()
 
 
 -- | Generate and compile code for an array expression. The returned expression
@@ -207,8 +200,8 @@ compileOpenAcc = traverseAcc
 
         stencil1 :: StencilR sh a stencil
                  -> TupleType b
-                 -> CompiledFun                  arch  aenv (stencil -> b)
-                 -> PreBoundary ArrayVar         aenv (Array sh a)
+                 -> Fun      aenv (stencil -> b)
+                 -> Boundary aenv (Array sh a)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch aenv (Array sh a)
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv (Array sh b)
         stencil1 s tp _ _ a = AST.Stencil1 tp (snd $ stencilHalo s) a
@@ -216,10 +209,10 @@ compileOpenAcc = traverseAcc
         stencil2 :: StencilR sh a stencil1
                  -> StencilR sh b stencil2
                  -> TupleType c
-                 -> CompiledFun                            arch  aenv (stencil1 -> stencil2 -> c)
-                 -> PreBoundary            ArrayVar              aenv (Array sh a)
+                 -> Fun                                          aenv (stencil1 -> stencil2 -> c)
+                 -> Boundary                                     aenv (Array sh a)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh a)
-                 -> PreBoundary            ArrayVar              aenv (Array sh b)
+                 -> Boundary                                     aenv (Array sh b)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh b)
                  -> AST.PreOpenAccSkeleton CompiledOpenAcc arch  aenv (Array sh c)
         stencil2 s1 s2 tp _ _ a _ b = AST.Stencil2 tp (union shr h1 h2) a b
@@ -250,13 +243,13 @@ compileOpenAcc = traverseAcc
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
         travAF afun = pure <$> compileOpenAfun afun
 
-        travF :: DelayedOpenFun env aenv t
-              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenFun arch env aenv t)
+        travF :: OpenFun env aenv t
+              -> LLVM arch (IntMap (Idx' aenv), OpenFun env aenv t)
         travF (Body b)    = liftA Body <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
-        travB :: PreBoundary DelayedOpenAcc aenv t
-              -> LLVM arch (IntMap (Idx' aenv), PreBoundary ArrayVar aenv t)
+        travB :: Boundary aenv t
+              -> LLVM arch (IntMap (Idx' aenv), Boundary aenv t)
         travB Clamp        = return $ pure Clamp
         travB Mirror       = return $ pure Mirror
         travB Wrap         = return $ pure Wrap
@@ -287,7 +280,7 @@ compileOpenAcc = traverseAcc
         -- execute, even though they do nothing (except incur scheduler
         -- overhead).
         --
-        alloc :: PreFun DelayedOpenAcc aenv (sh -> e)
+        alloc :: Fun aenv (sh -> e)
               -> Bool
         alloc f
           | Lam _ (Body (Undef _)) <- f = True
@@ -299,7 +292,7 @@ compileOpenAcc = traverseAcc
         -- the below check.
         --
         unzip :: forall sh a b.
-                 PreFun DelayedOpenAcc aenv (a -> b)
+                 Fun aenv (a -> b)
               -> DelayedOpenAcc aenv (Array sh a)
               -> Maybe (AST.UnzipIdx a b, ArrayVar aenv (Array sh a))
         unzip f a
@@ -307,10 +300,9 @@ compileOpenAcc = traverseAcc
           , Just vars <- extractExpVars b
           , Delayed _ sh index _                <- a
           , Shape u                             <- sh
-          , Manifest (Avar ix)                  <- u
           , Just v                              <- isIdentityIndexing index
           , Just Refl                           <- match u v
-          = Just (unzipIdx lhs vars, ix)
+          = Just (unzipIdx lhs vars, u)
         unzip _ _
           = Nothing
 
@@ -354,8 +346,8 @@ compileOpenAcc = traverseAcc
 
     -- Traverse a scalar expression
     --
-    travE :: DelayedOpenExp env aenv e
-          -> LLVM arch (IntMap (Idx' aenv), PreOpenExp ArrayVar env aenv e)
+    travE :: OpenExp env aenv e
+          -> LLVM arch (IntMap (Idx' aenv), OpenExp env aenv e)
     travE exp =
       case exp of
         Evar v                  -> return $ pure $ Evar v
@@ -383,22 +375,21 @@ compileOpenAcc = traverseAcc
         Coerce t1 t2 x          -> liftA  (Coerce t1 t2)    <$> travE x
 
       where
-        travA :: DelayedOpenAcc aenv (Array sh e)
+        travA :: ArrayVar aenv (Array sh e)
               -> LLVM arch (IntMap (Idx' aenv), ArrayVar aenv (Array sh e))
-        travA (Manifest (Avar var)) = return (freevar var, var)
-        travA _                     = $internalError "compileOpenAcc" "Expression contains array computation, other than an array var."
+        travA var = return (freevar var, var)
 
-        travF :: DelayedOpenFun env aenv t
-              -> LLVM arch (IntMap (Idx' aenv), PreOpenFun ArrayVar env aenv t)
+        travF :: OpenFun env aenv t
+              -> LLVM arch (IntMap (Idx' aenv), OpenFun env aenv t)
         travF (Body b)    = liftA Body      <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
         foreignE :: A.Foreign asm
                  => TupleType b
                  -> asm           (a -> b)
-                 -> DelayedFun () (a -> b)
-                 -> DelayedOpenExp env aenv a
-                 -> LLVM arch (IntMap (Idx' aenv), PreOpenExp ArrayVar env aenv b)
+                 -> Fun () (a -> b)
+                 -> OpenExp env aenv a
+                 -> LLVM arch (IntMap (Idx' aenv), OpenExp env aenv b)
         foreignE tp asm f x =
           case foreignExp @arch asm of
             Just{}                            -> liftA (Foreign tp asm err) <$> travE x
@@ -407,7 +398,7 @@ compileOpenAcc = traverseAcc
               , Exists lhs' <- rebuildLHS lhs -> liftA2 (Let lhs')       <$> travE x <*> travE (weaken weakenEmpty $ weakenE (sinkWithLHS lhs lhs' weakenEmpty) b)
             _                                 -> error "the slow regard of silent things"
           where
-            err :: CompiledFun arch () (a -> b)
+            err :: Fun () (a -> b)
             err = $internalError "foreignE" "attempt to use fallback in foreign expression"
 
 

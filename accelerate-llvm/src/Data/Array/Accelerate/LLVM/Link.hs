@@ -21,14 +21,11 @@ module Data.Array.Accelerate.LLVM.Link (
 
   ExecOpenAcc(..), ExecOpenAfun,
   ExecAcc, ExecAfun,
-  ExecExp, ExecOpenExp,
-  ExecFun, ExecOpenFun
 
 ) where
 
 -- accelerate
 import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -72,14 +69,9 @@ instance HasArraysRepr (ExecOpenAcc arch) where
 -- space, suitable for execution.
 --
 type ExecOpenAfun arch  = PreOpenAfun (ExecOpenAcc arch)
-type ExecOpenExp arch   = PreOpenExp ArrayVar
-type ExecOpenFun arch   = PreOpenFun ArrayVar
 
 type ExecAcc arch a     = ExecOpenAcc arch () a
 type ExecAfun arch a    = ExecOpenAfun arch () a
-
-type ExecExp arch       = ExecOpenExp arch ()
-type ExecFun arch       = ExecOpenFun arch ()
 
 
 -- | Link the compiled code for an array expression into the target address
@@ -121,23 +113,23 @@ linkOpenAcc = travA
         Unzip tix ix            -> return (Unzip tix ix)
         Avar ix                 -> return (Avar ix)
         Use repr arr            -> rnfArray repr arr `seq` return (Use repr arr)
-        Unit tp e               -> Unit tp         <$> travE e
-        Alloc repr sh           -> Alloc repr      <$> travE sh
+        Unit tp e               -> return $ Unit tp e
+        Alloc repr sh           -> return $ Alloc repr sh
         Alet lhs a b            -> Alet lhs        <$> travA a  <*> travA b
         Apply repr f a          -> Apply repr      <$> travAF f <*> travA a
         Awhile p f a            -> Awhile          <$> travAF p <*> travAF f <*> travA a
-        Acond p t e             -> Acond           <$> travE p  <*> travA t  <*> travA e
+        Acond p t e             -> Acond p         <$> travA t  <*> travA e
         Apair a1 a2             -> Apair           <$> travA a1 <*> travA a2
         Anil                    -> return Anil
-        Reshape shr s ix        -> Reshape shr     <$> travE s <*> pure ix
+        Reshape shr s ix        -> Reshape shr s   <$> pure ix
         Aforeign s r f a        -> Aforeign s r f  <$> travA a
 
     travA (BuildAcc repr' aenv obj pacc) = ExecAcc repr' aenv  <$> linkForTarget obj <*>
       case pacc of
         Map tp a                -> Map tp          <$> travA a
-        Generate repr sh        -> Generate repr   <$> travE sh
-        Transform repr sh a     -> Transform repr  <$> travE sh <*> travA a
-        Backpermute shr sh a    -> Backpermute shr <$> travE sh <*> travA a
+        Generate repr sh        -> return $ Generate repr sh
+        Transform repr sh a     -> Transform repr sh <$> travA a
+        Backpermute shr sh a    -> Backpermute shr sh <$> travA a
         Fold a                  -> Fold            <$> travD a
         Fold1 a                 -> Fold1           <$> travD a
         FoldSeg i a s           -> FoldSeg i       <$> travD a <*> travD s
@@ -159,38 +151,5 @@ linkOpenAcc = travA
     travD :: DelayedOpenAcc CompiledOpenAcc  arch aenv a
           -> LLVM arch (DelayedOpenAcc ExecOpenAcc arch aenv a)
     travD (Manifest r a) = Manifest r <$> travA a
-    travD (Delayed r sh) = Delayed  r <$> travE sh
-
-    travF :: CompiledOpenFun arch env aenv t
-          -> LLVM arch (ExecOpenFun arch env aenv t)
-    travF (Body b)    = Body <$> travE b
-    travF (Lam lhs f) = Lam lhs <$> travF f
-
-    travE :: CompiledOpenExp arch env aenv t
-          -> LLVM arch (ExecOpenExp arch env aenv t)
-    travE exp =
-      case exp of
-        Evar ix                 -> return (Evar ix)
-        Const tp c              -> return (Const tp c)
-        PrimConst c             -> return (PrimConst c)
-        Undef tp                -> return (Undef tp)
-        Let lhs a b             -> Let lhs            <$> travE a <*> travE b
-        IndexSlice slix x s     -> (IndexSlice slix)  <$> travE x <*> travE s
-        IndexFull slix x s      -> (IndexFull slix)   <$> travE x <*> travE s
-        ToIndex shr s i         -> ToIndex shr        <$> travE s <*> travE i
-        FromIndex shr s i       -> FromIndex shr      <$> travE s <*> travE i
-        Nil                     -> return Nil
-        Pair e1 e2              -> Pair               <$> travE e1 <*> travE e2
-        VecPack   vecr e        -> VecPack   vecr     <$> travE e
-        VecUnpack vecr e        -> VecUnpack vecr     <$> travE e
-        Cond p t e              -> Cond               <$> travE p <*> travE t <*> travE e
-        While p f x             -> While              <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> PrimApp f          <$> travE e
-        Index var e             -> Index var          <$> travE e
-        LinearIndex var e       -> LinearIndex var    <$> travE e
-        Shape var               -> return $ Shape var
-        ShapeSize shr e         -> ShapeSize shr      <$> travE e
-        Coerce t1 t2 x          -> Coerce t1 t2       <$> travE x
-        Foreign tp asm _ x      -> Foreign tp asm err <$> travE x
-          where err = $internalError "link" "attempt to use fallback foreign expression"
+    travD (Delayed r sh) = return $ Delayed r sh
 

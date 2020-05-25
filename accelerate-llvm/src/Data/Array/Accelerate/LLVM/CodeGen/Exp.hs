@@ -31,7 +31,6 @@ import Data.Array.Accelerate.AST                                    hiding ( Val
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Representation                   hiding ( shape, vecPack, vecUnpack )
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Trafo
 import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Sugar                  as A
 
@@ -56,7 +55,7 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 {-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
     :: Foreign arch
-    => DelayedFun aenv (a -> b)
+    => Fun aenv (a -> b)
     -> Gamma aenv
     -> IRFun1 arch aenv (a -> b)
 llvmOfFun1 (Lam lhs (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp body (Empty `pushE` (lhs, x)) aenv
@@ -65,7 +64,7 @@ llvmOfFun1  _ _ = $internalError "llvmOfFun1" "impossible evaluation"
 {-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
     :: Foreign arch
-    => DelayedFun aenv (a -> b -> c)
+    => Fun aenv (a -> b -> c)
     -> Gamma aenv
     -> IRFun2 arch aenv (a -> b -> c)
 llvmOfFun2 (Lam lhs1 (Lam lhs2 (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp body (Empty `pushE` (lhs1, x) `pushE` (lhs2, y)) aenv
@@ -79,21 +78,18 @@ llvmOfFun2 _ _ = $internalError "llvmOfFun2" "impossible evaluation"
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
     :: forall arch env aenv _t. Foreign arch
-    => DelayedOpenExp env aenv _t
+    => OpenExp env aenv _t
     -> Val env
     -> Gamma aenv
     -> IROpenExp arch env aenv _t
 llvmOfOpenExp top env aenv = cvtE top
   where
-    cvtM :: DelayedOpenAcc aenv (Array sh e) -> ArrayVar aenv (Array sh e)
-    cvtM (Manifest (Avar ix)) = ix
-    cvtM _                    = $internalError "llvmOfOpenExp" "expected manifest array variable"
 
-    cvtF1 :: DelayedOpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
+    cvtF1 :: OpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
     cvtF1 (Lam lhs (Body body)) = IRFun1 $ \x -> llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
     cvtF1 _                     = $internalError "cvtF1" "impossible evaluation"
 
-    cvtE :: forall t. DelayedOpenExp env aenv t -> IROpenExp arch env aenv t
+    cvtE :: forall t. OpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
         Let lhs bnd body            -> do x <- cvtE bnd
@@ -114,10 +110,10 @@ llvmOfOpenExp top env aenv = cvtE top
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
         ToIndex shr sh ix           -> join $ intOfIndex shr <$> cvtE sh <*> cvtE ix
         FromIndex shr sh ix         -> join $ indexOfInt shr <$> cvtE sh <*> cvtE ix
-        Index acc ix                -> index (cvtM acc)       =<< cvtE ix
-        LinearIndex acc ix          -> linearIndex (cvtM acc) =<< cvtE ix
-        ShapeSize shr sh            -> shapeSize shr          =<< cvtE sh
-        Shape acc                   -> return $ shape (cvtM acc)
+        Index acc ix                -> index acc =<< cvtE ix
+        LinearIndex acc ix          -> linearIndex acc =<< cvtE ix
+        ShapeSize shr sh            -> shapeSize shr =<< cvtE sh
+        Shape acc                   -> return $ shape acc
         While c f x                 -> while (expType x) (cvtF1 c) (cvtF1 f) (cvtE x)
         Coerce t1 t2 x              -> coerce t1 t2 =<< cvtE x
 
@@ -188,7 +184,7 @@ llvmOfOpenExp top env aenv = cvtE top
     foreignE :: A.Foreign asm
              => TupleType b
              -> asm           (a -> b)
-             -> DelayedFun () (a -> b)
+             -> Fun () (a -> b)
              -> Operands a
              -> IRExp arch () b
     foreignE _ asm no x =
@@ -203,7 +199,7 @@ llvmOfOpenExp top env aenv = cvtE top
       | otherwise                        = ir t <$> instr' (BitCast t (op s x))
 
     primFun :: PrimFun (a -> r)
-            -> DelayedOpenExp env aenv a
+            -> OpenExp env aenv a
             -> IROpenExp arch env aenv r
     primFun f x =
       case f of

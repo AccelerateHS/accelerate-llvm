@@ -390,14 +390,14 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     travAF (Alam lhs (Abody f)) a = executeOpenAcc f $ aenv `push` (lhs, a)
     travAF _                    _ = error "boop!"
 
-    travE :: ExecExp arch aenv t -> Par arch (FutureR arch t)
+    travE :: Exp aenv t -> Par arch (FutureR arch t)
     travE exp = executeExp exp aenv
 
     travD :: DelayedOpenAcc ExecOpenAcc arch aenv a -> Par arch (FutureR arch (Delayed a))
     travD (AST.Delayed _ sh) = liftF1 Delayed  (travE sh)
     travD (AST.Manifest _ a) = liftF1 Manifest (travA a)
 
-    unit :: TupleType t -> ExecExp arch aenv t -> Par arch (FutureR arch (Scalar t))
+    unit :: TupleType t -> Exp aenv t -> Par arch (FutureR arch (Scalar t))
     unit tp x = do
       x'   <- travE x
       spawn $ newRemoteAsync (ArrayR ShapeRz tp) () . const =<< get x'
@@ -410,7 +410,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       return body'
 
     -- Allocate an array on the remote device
-    allocate :: ArrayR (Array sh e) -> ExecExp arch aenv sh -> Par arch (FutureR arch (Array sh e))
+    allocate :: ArrayR (Array sh e) -> Exp aenv sh -> Par arch (FutureR arch (Array sh e))
     allocate repr sh = do
       r    <- new
       sh'  <- travE sh
@@ -505,7 +505,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
 {-# INLINEABLE executeExp #-}
 executeExp
     :: Execute arch
-    => ExecExp arch aenv t
+    => Exp aenv t
     -> ValR arch aenv
     -> Par arch (FutureR arch t)
 executeExp exp aenv = executeOpenExp exp Empty aenv
@@ -513,13 +513,13 @@ executeExp exp aenv = executeOpenExp exp Empty aenv
 {-# INLINEABLE executeOpenExp #-}
 executeOpenExp
     :: forall arch env aenv exp. Execute arch
-    => ExecOpenExp arch env aenv exp
+    => OpenExp env aenv exp
     -> ValR arch env
     -> ValR arch aenv
     -> Par arch (FutureR arch exp)
 executeOpenExp rootExp env aenv = travE rootExp
   where
-    travE :: ExecOpenExp arch env aenv t -> Par arch (FutureR arch t)
+    travE :: OpenExp env aenv t -> Par arch (FutureR arch t)
     travE = \case
       Evar (Var _ ix)           -> return $ prj ix env
       Let lhs bnd body          -> do
@@ -556,26 +556,26 @@ executeOpenExp rootExp env aenv = travE rootExp
     travAIdx :: Idx aenv a -> Par arch (FutureR arch a)
     travAIdx a = return $ prj a aenv
 
-    foreignE :: ExecFun arch () (a -> b) -> ExecOpenExp arch env aenv a -> Par arch (FutureR arch b)
+    foreignE :: Fun () (a -> b) -> OpenExp env aenv a -> Par arch (FutureR arch b)
     foreignE (Lam lhs (Body f)) x = do
                                       e <- travE x
                                       env' <- Empty `pushE` (lhs, e)
                                       executeOpenExp f env' Empty
     foreignE _                  _ = error "I bless the rains down in Africa"
 
-    travF1 :: ExecOpenFun arch env aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
+    travF1 :: OpenFun env aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
     travF1 (Lam lhs (Body f)) x = do
                                     env' <- env `pushE` (lhs, x)
                                     executeOpenExp f env' aenv
     travF1 _                  _ = error "LANAAAAAAAA!"
 
-    while :: ExecOpenFun arch env aenv (a -> Bool) -> ExecOpenFun arch env aenv (a -> a) -> FutureR arch a -> Par arch (FutureR arch a)
+    while :: OpenFun env aenv (a -> Bool) -> OpenFun env aenv (a -> a) -> FutureR arch a -> Par arch (FutureR arch a)
     while p f x = do
       ok <- block =<< travF1 p x
       if ok then while p f =<< travF1 f x
             else return x
 
-    cond :: ExecOpenExp arch env aenv a -> ExecOpenExp arch env aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
+    cond :: OpenExp env aenv a -> OpenExp env aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
     cond yes no p =
       spawn $ do
         c <- block p
