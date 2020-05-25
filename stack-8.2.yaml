@@ -10,7 +10,7 @@ packages:
 
 extra-deps:
 - github: ivogabe/accelerate
-  commit: 3879e2be3dab37f903ba623771b6f670932d5506
+  commit: 0e2e37f7d9c456bb352eaada9e4025ef9d886e90
 
 - cuda-0.10.0.0
 - half-0.3
