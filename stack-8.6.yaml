@@ -9,14 +9,11 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: ivogabe/accelerate
-  commit: 9e2dadb9f98c432436bae8604223f8e692421033
+- github: AccelerateHS/accelerate
+  commit: de95f21285a0a39df8b391e27bdf4a47890debb9
 
 # Override default flag values for local packages and extra-deps
-# flags:
-#   accelerate:
-#     debug: true
-#     nofib: true
+# flags: {}
 
 # Extra global and per-package GHC options
 # ghc-options: {}

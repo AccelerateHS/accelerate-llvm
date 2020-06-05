@@ -1,7 +1,7 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 # vim: nospell
 
-resolver: lts-15.8
+resolver: lts-15.15
 
 packages:
 - accelerate-llvm
@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: ivogabe/accelerate
-  commit: 9e2dadb9f98c432436bae8604223f8e692421033
+- github: AccelerateHS/accelerate
+  commit: de95f21285a0a39df8b391e27bdf4a47890debb9
 
 - github: tmcdonell/cuda
   commit: bf6efc8f9118caac91bde8c9535970f7ab645ead
@@ -19,7 +19,10 @@ extra-deps:
   commit: 219637eab3aab7275ce0a0c9b0e1855be912fe8a
 
 # Override default flag values for local packages and extra-deps
-# flags: {}
+# flags:
+#   accelerate:
+#     debug: true
+#     nofib: true
 
 # Extra global and per-package GHC options
 # ghc-options: {}
