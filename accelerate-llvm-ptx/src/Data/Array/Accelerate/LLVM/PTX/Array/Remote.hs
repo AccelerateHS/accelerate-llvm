@@ -68,25 +68,23 @@ instance Remote.RemoteMemory (LLVM PTX) where
           Left e                      -> do message ("malloc failed with error: " ++ show e)
                                             throwIO e
 
-  peekRemote tp n src ad
-    | (ScalarDict, _, _) <- singleDict tp =
-      let bytes = n * sizeOfSingleType tp
-          dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-      in
-      blocking            $ \stream ->
-      withLifetime stream $ \st     -> do
-        Debug.didCopyBytesFromRemote (i64 bytes)
-        transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+  peekRemote tp n src ad | (ScalarDict, _, _) <- singleDict tp =
+    let bytes = n * sizeOfSingleType tp
+        dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+    in
+    blocking            $ \stream ->
+    withLifetime stream $ \st     -> do
+      Debug.didCopyBytesFromRemote (i64 bytes)
+      transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
-  pokeRemote tp n dst ad
-    | (ScalarDict, _, _) <- singleDict tp =
-      let bytes = n * sizeOfSingleType tp
-          src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-      in
-      blocking            $ \stream ->
-      withLifetime stream $ \st     -> do
-        Debug.didCopyBytesToRemote (i64 bytes)
-        transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+  pokeRemote tp n dst ad | (ScalarDict, _, _) <- singleDict tp =
+    let bytes = n * sizeOfSingleType tp
+        src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+    in
+    blocking            $ \stream ->
+    withLifetime stream $ \st     -> do
+      Debug.didCopyBytesToRemote (i64 bytes)
+      transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr        = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo

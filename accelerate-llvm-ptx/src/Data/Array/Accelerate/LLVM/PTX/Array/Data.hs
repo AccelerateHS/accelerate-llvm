@@ -48,7 +48,6 @@ import Data.IORef
 import System.IO.Unsafe
 import Prelude
 
-import GHC.Int                                                      ( Int(..) )
 #if __GLASGOW_HASKELL__ >= 806
 import Text.Printf
 import GHC.Exts.Heap                                                hiding ( size )
@@ -114,6 +113,7 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
       Full a        -> return a
       Pending _ _ a -> return a
       Empty         -> $internalError "copyToHostLazy" "blocked on an IVar"
+
     -- Note: [Lazy device-host transfers]
     --
     -- This needs must be non-strict at the leaves of the datatype (that
@@ -136,7 +136,6 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
     -- should improve this situation somehow.
     --    -- TLM 2019-06-06
     --
-
     let
       peekR :: SingleType e
             -> ArrayData e

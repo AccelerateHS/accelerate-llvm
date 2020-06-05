@@ -20,7 +20,6 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.AST                                    ( StencilR(..) )
 import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 

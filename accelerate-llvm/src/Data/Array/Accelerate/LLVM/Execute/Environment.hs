@@ -43,7 +43,7 @@ pushE :: Async arch => ValR arch env -> (ELeftHandSide t env env', FutureR arch 
 pushE env (LeftHandSideSingle _  , e) = return $ env `Push` e
 pushE env (LeftHandSideWildcard _, _) = return env
 pushE env (LeftHandSidePair l1 l2, e) = do
-  -- This code creates many intermediate Futures, in case of deeply nested pairs.
+  -- TODO: This code creates many intermediate Futures, in case of deeply nested pairs.
   -- We could improve this to only construct Futures for the values actually stored
   -- in the environment and not have any intermediate ones. We can do that in a similar
   -- way as done in Data.Array.Accelerate.LLVM.Execute.split

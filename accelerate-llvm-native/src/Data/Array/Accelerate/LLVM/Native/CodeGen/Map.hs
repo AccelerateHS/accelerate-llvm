@@ -78,11 +78,11 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- underlying representation, which simplifies code generation.
 --
 mkMap :: UID
-      -> Gamma            aenv
+      -> Gamma aenv
       -> ArrayR (Array sh a)
       -> TupleType b
-      -> IRFun1    Native aenv (a -> b)
-      -> CodeGen   Native      (IROpenAcc Native aenv (Array sh b))
+      -> IRFun1  Native aenv (a -> b)
+      -> CodeGen Native      (IROpenAcc Native aenv (Array sh b))
 mkMap uid aenv repr tp apply =
   let
       (start, end, paramGang)   = gangParam (ShapeRsnoc ShapeRz)
@@ -101,3 +101,4 @@ mkMap uid aenv repr tp apply =
 
 reprOut :: ArrayR (Array sh a) -> TupleType b -> ArrayR (Array sh b)
 reprOut (ArrayR shr _) tp = ArrayR shr tp
+

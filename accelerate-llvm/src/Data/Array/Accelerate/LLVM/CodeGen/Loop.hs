@@ -35,7 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 --     :: Shape sh
 --     => Operands sh                                    -- ^ starting index
 --     -> Operands sh                                    -- ^ final index
---     -> (Operands sh -> CodeGen (Operands a))                -- ^ body of the loop
+--     -> (Operands sh -> CodeGen (Operands a))          -- ^ body of the loop
 --     -> CodeGen (Operands a)
 -- iterate from to body = error "CodeGen.Loop.iterate"
 
@@ -81,8 +81,8 @@ iterFromStepTo tp start step end seed body =
 --
 for :: TupleType i
     -> Operands i                                     -- ^ starting index
-    -> (Operands i -> CodeGen arch (Operands Bool))         -- ^ loop test to keep going
-    -> (Operands i -> CodeGen arch (Operands i))            -- ^ increment loop counter
+    -> (Operands i -> CodeGen arch (Operands Bool))   -- ^ loop test to keep going
+    -> (Operands i -> CodeGen arch (Operands i))      -- ^ increment loop counter
     -> (Operands i -> CodeGen arch ())                -- ^ body of the loop
     -> CodeGen arch ()
 for tp start test incr body =
@@ -95,8 +95,8 @@ iter :: TupleType i
      -> TupleType a
      -> Operands i                                    -- ^ starting index
      -> Operands a                                    -- ^ initial value
-     -> (Operands i -> CodeGen arch (Operands Bool))        -- ^ index test to keep looping
-     -> (Operands i -> CodeGen arch (Operands i))           -- ^ increment loop counter
+     -> (Operands i -> CodeGen arch (Operands Bool))  -- ^ index test to keep looping
+     -> (Operands i -> CodeGen arch (Operands i))     -- ^ increment loop counter
      -> (Operands i -> Operands a -> CodeGen arch (Operands a))   -- ^ loop body
      -> CodeGen arch (Operands a)
 iter tpi tpa start seed test incr body = do

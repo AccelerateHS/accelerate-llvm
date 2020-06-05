@@ -423,3 +423,4 @@ liftA5 f a b c d g = f <$> a <*> b <*> c <*> d <*> g
 instance HasArraysRepr (CompiledOpenAcc arch) where
   arraysRepr (BuildAcc r _ _ _) = r
   arraysRepr (PlainAcc r     _) = r
+

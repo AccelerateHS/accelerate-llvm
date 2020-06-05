@@ -166,7 +166,7 @@ mkFoldSegP uid aenv repr int combine mseed marr mseg =
 
       i   <- case arrayRshape repr of
                ShapeRsnoc ShapeRz -> return s
-               _ -> A.rem TypeInt s ss
+               _                  -> A.rem TypeInt s ss
       j   <- A.add numType i (liftInt 1)
       u   <- A.irFromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) i
       v   <- A.irFromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) j

@@ -41,7 +41,7 @@ mkGenerate
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkGenerate uid aenv repr apply =
   let
-      (start, end, paramGang)   = gangParam    (arrayRshape repr)
+      (start, end, paramGang)   = gangParam (arrayRshape repr)
       (arrOut, paramOut)        = mutableArray repr "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
@@ -50,7 +50,7 @@ mkGenerate uid aenv repr apply =
 
     imapNestFromTo (arrayRshape repr) start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
-      writeArray TypeInt arrOut i r                     -- store result
+      writeArray TypeInt arrOut i r             -- store result
 
     return_
 

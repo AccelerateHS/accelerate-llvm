@@ -45,15 +45,14 @@ import Data.Typeable
 
 instance Foreign Native where
   foreignAcc (ff :: asm (a -> b))
-    | Just Refl <- eqT @asm @ForeignAcc 
-    , ForeignAcc _ asm <- ff            = Just asm
-    | otherwise                         = Nothing
+    | Just Refl        <- eqT @asm @ForeignAcc
+    , ForeignAcc _ asm <- ff = Just asm
+    | otherwise              = Nothing
 
   foreignExp (ff :: asm (x -> y))
-    | Just Refl <- eqT @asm @ForeignExp
-    , ForeignExp _ asm <- ff            = Just asm
-    | otherwise                         = Nothing
-
+    | Just Refl        <- eqT @asm @ForeignExp
+    , ForeignExp _ asm <- ff = Just asm
+    | otherwise              = Nothing
 
 instance S.Foreign ForeignAcc where
   strForeign (ForeignAcc s _) = s

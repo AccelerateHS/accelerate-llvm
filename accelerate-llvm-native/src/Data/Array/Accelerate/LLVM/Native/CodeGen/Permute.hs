@@ -302,3 +302,4 @@ reprOut (ArrayR _ tp) shr = ArrayR shr tp
 
 reprLock :: ArrayR (Array ((), Int) Word8)
 reprLock = ArrayR (ShapeRsnoc ShapeRz) $ TupRsingle scalarTypeWord8
+

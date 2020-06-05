@@ -512,7 +512,7 @@ scan'Core
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e, Array sh e))
 scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
-  let 
+  let
       shr  :: ShapeR (sh, Int)
       shr' :: ShapeR sh
       ArrayR shr@(ShapeRsnoc shr') tp = repr

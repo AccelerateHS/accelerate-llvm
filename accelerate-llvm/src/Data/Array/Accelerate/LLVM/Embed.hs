@@ -260,8 +260,9 @@ liftArrayVar :: ArrayVar aenv v -> Q (TExp (ArrayVar aenv v))
 liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]
 
 liftUnzipIdx :: UnzipIdx tup e -> Q (TExp (UnzipIdx tup e))
-liftUnzipIdx UnzipId = [|| UnzipId ||]
+liftUnzipIdx UnzipId                    = [|| UnzipId ||]
 liftUnzipIdx (UnzipPrj PairIdxLeft  ix) = [|| UnzipPrj PairIdxLeft  $$(liftUnzipIdx ix) ||]
 liftUnzipIdx (UnzipPrj PairIdxRight ix) = [|| UnzipPrj PairIdxRight $$(liftUnzipIdx ix) ||]
-liftUnzipIdx UnzipUnit = [|| UnzipUnit ||]
-liftUnzipIdx (UnzipPair ix1 ix2) = [|| UnzipPair $$(liftUnzipIdx ix1) $$(liftUnzipIdx ix2) ||]
+liftUnzipIdx UnzipUnit                  = [|| UnzipUnit ||]
+liftUnzipIdx (UnzipPair ix1 ix2)        = [|| UnzipPair $$(liftUnzipIdx ix1) $$(liftUnzipIdx ix2) ||]
+

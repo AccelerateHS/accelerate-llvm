@@ -54,7 +54,7 @@ mkGenerate aenv repr@(ArrayR shr _) apply =
     imapFromTo start end $ \i -> do
       ix <- indexOfInt shr (irArrayShape arrOut) i      -- convert to multidimensional index
       r  <- app1 apply ix                               -- apply generator function
-      writeArray TypeInt arrOut i r                             -- store result
+      writeArray TypeInt arrOut i r                     -- store result
 
     return_
 

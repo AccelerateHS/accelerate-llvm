@@ -271,7 +271,7 @@ rotateL t x i
        c  <- bor t a b
        return c
 
-rotateR :: forall arch a. IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
+rotateR :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
 rotateR t x i = do
   i' <- negate numType i
   r  <- rotateL t x i'
@@ -725,3 +725,4 @@ isIgnore (ShapeRsnoc shr') (OP_Pair sh sz) = do x <- isIgnore shr' sh
   where t = NumSingleType $ IntegralNumType TypeInt
         minusOne :: Int
         minusOne = P.negate 1
+

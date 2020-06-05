@@ -47,8 +47,6 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Control.Monad                                                ( liftM, liftM2 )
 import Prelude
 
-import GHC.Int                                                      ( Int(..) )
-
 
 class Async arch => Remote arch where
 
@@ -375,4 +373,8 @@ scalarDict' (VectorScalarType (VectorType m tp))
   | (ScalarDict, _, _) <- singleDict tp = ScalarDict' m tp
 
 data ScalarDict' tp where
-  ScalarDict' :: (ScalarData tp ~ ScalarData tp', IsScalarData tp, IsScalarData tp') => Int -> SingleType tp' -> ScalarDict' tp
+  ScalarDict' :: (ScalarData tp ~ ScalarData tp', IsScalarData tp, IsScalarData tp')
+              => Int
+              -> SingleType tp'
+              -> ScalarDict' tp
+

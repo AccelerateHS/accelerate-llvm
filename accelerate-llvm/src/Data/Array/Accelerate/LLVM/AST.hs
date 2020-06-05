@@ -35,7 +35,7 @@ import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
     ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp, Var(..), ArrayVar,
-      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, ShapeR(..), PairIdx(..) )
+      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..) )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -251,3 +251,4 @@ instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccSkeleton acc arch)
 instance HasArraysRepr (acc arch) => HasArraysRepr (DelayedOpenAcc acc arch) where
   arraysRepr (Delayed  repr _) = TupRsingle repr
   arraysRepr (Manifest repr _) = repr
+

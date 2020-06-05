@@ -350,3 +350,4 @@ pushE :: Val env -> (ELeftHandSide t env env', Operands t) -> Val env'
 pushE env (LeftHandSideSingle _  , e)               = env `Push` e
 pushE env (LeftHandSideWildcard _, _)               = env
 pushE env (LeftHandSidePair l1 l2, (OP_Pair e1 e2)) = pushE env (l1, e1) `pushE` (l2, e2)
+

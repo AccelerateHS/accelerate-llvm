@@ -40,3 +40,4 @@ instance Marshal Native where
 
   marshalInt = FFI.argInt
   marshalScalarData' _ = return . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr
+

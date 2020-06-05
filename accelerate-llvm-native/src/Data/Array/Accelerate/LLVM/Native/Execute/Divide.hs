@@ -85,7 +85,7 @@ divideWork1 !pieces !minsize ((), (!from)) ((), (!to)) action =
       (_, fs, ss) = split pieces from to 0 Seq.empty Seq.empty
   in
   fs Seq.>< ss
- 
+
 {-# INLINE findSplitPoint1 #-}
 findSplitPoint1
     :: Int

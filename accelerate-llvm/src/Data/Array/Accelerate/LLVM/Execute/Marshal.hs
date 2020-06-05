@@ -122,3 +122,4 @@ marshalTupR' :: forall arch s a. Marshal arch => (forall b. s b -> b -> Par arch
 marshalTupR' _ TupRunit         ()       = return $ DL.empty
 marshalTupR' f (TupRsingle t)   x        = f t x
 marshalTupR' f (TupRpair t1 t2) (x1, x2) = DL.append <$> marshalTupR' @arch f t1 x1 <*> marshalTupR' @arch f t2 x2
+

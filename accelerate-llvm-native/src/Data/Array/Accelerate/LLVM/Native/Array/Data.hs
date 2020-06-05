@@ -35,8 +35,6 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Control.Monad.Trans
 import Foreign.Ptr
 
-import GHC.Int                                                      ( Int(..) )
-
 
 -- | Data instance for arrays in the native backend. We assume a shared-memory
 -- machine, and just manipulate the underlying Haskell array directly.

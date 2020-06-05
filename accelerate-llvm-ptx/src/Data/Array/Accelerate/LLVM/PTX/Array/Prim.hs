@@ -104,22 +104,21 @@ pokeArrayAsync
     -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-pokeArrayAsync !tp !n !ad 
-  | (ScalarDict, _, _) <- singleDict tp = do
-    let !src      = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-        !bytes    = n * sizeOfSingleType tp
-    --
-    stream <- asks ptxStream
-    result <- liftPar $
-      withLifetime stream $ \st  ->
-        withDevicePtr tp ad $ \dst ->
-          nonblocking stream $ do
-            transfer "pokeArray" bytes (Just st) $ do
-              CUDA.pokeArrayAsync n src dst (Just st)
-              Debug.didCopyBytesToRemote (fromIntegral bytes)
-            return ad
-    --
-    return result
+pokeArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      !bytes = n * sizeOfSingleType tp
+  --
+  stream <- asks ptxStream
+  result <- liftPar $
+    withLifetime stream $ \st  ->
+      withDevicePtr tp ad $ \dst ->
+        nonblocking stream $ do
+          transfer "pokeArray" bytes (Just st) $ do
+            CUDA.pokeArrayAsync n src dst (Just st)
+            Debug.didCopyBytesToRemote (fromIntegral bytes)
+          return ad
+  --
+  return result
 
 
 -- | Read an element from an array at the given row-major index.
@@ -134,23 +133,22 @@ indexArrayAsync
     -> ArrayData e
     -> Int              -- element index
     -> Par PTX (Future (ArrayData e))
-indexArrayAsync !n !tp !ad_src !i
-  | (ScalarDict, _, _) <- singleDict tp = do
-    ad_dst <- liftIO $ newArrayData (TupRsingle $ SingleScalarType tp) n
-    let !bytes  = n * sizeOfSingleType tp
-        !dst    = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
-    --
-    stream <- asks ptxStream
-    result <- liftPar $
-      withLifetime stream  $ \st  ->
-      withDevicePtr tp ad_src $ \src ->
-        nonblocking stream $ do
-          transfer "indexArray" bytes (Just st) $ do
-            CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
-            Debug.didCopyBytesFromRemote (fromIntegral bytes)
-          return ad_dst
-    --
-    return result
+indexArrayAsync !n !tp !ad_src !i | (ScalarDict, _, _) <- singleDict tp = do
+  ad_dst <- liftIO $ newArrayData (TupRsingle $ SingleScalarType tp) n
+  let !bytes = n * sizeOfSingleType tp
+      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
+  --
+  stream <- asks ptxStream
+  result <- liftPar $
+    withLifetime stream  $ \st  ->
+    withDevicePtr tp ad_src $ \src ->
+      nonblocking stream $ do
+        transfer "indexArray" bytes (Just st) $ do
+          CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
+          Debug.didCopyBytesFromRemote (fromIntegral bytes)
+        return ad_dst
+  --
+  return result
 
 
 -- | Copy data from the device into the associated host-side Accelerate array
@@ -161,22 +159,21 @@ peekArrayAsync
     -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-peekArrayAsync !tp !n !ad
-  | (ScalarDict, _, _) <- singleDict tp = do
-    let !bytes    = n * sizeOfSingleType tp
-        !dst      = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-    --
-    stream <- asks ptxStream
-    result <- liftPar $
-      withLifetime stream $ \st  ->
-        withDevicePtr tp ad  $ \src ->
-          nonblocking stream $ do
-            transfer "peekArray" bytes (Just st) $ do
-              CUDA.peekArrayAsync n src dst (Just st)
-              Debug.didCopyBytesFromRemote (fromIntegral bytes)
-            return ad
-    --
-    return result
+peekArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
+      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+  --
+  stream <- asks ptxStream
+  result <- liftPar $
+    withLifetime stream $ \st  ->
+      withDevicePtr tp ad  $ \src ->
+        nonblocking stream $ do
+          transfer "peekArray" bytes (Just st) $ do
+            CUDA.peekArrayAsync n src dst (Just st)
+            Debug.didCopyBytesFromRemote (fromIntegral bytes)
+          return ad
+  --
+  return result
 
 
 -- | Copy data between arrays in the same context
@@ -188,21 +185,20 @@ copyArrayAsync
     -> ArrayData e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-copyArrayAsync !tp !n !ad_src !ad_dst
-  | (ScalarDict, _, _) <- singleDict tp = do
-    let !bytes    = n * sizeOfSingleType tp
-    --
-    stream <- asks ptxStream
-    result <- liftPar $
-      withLifetime stream      $ \st ->
-        withDevicePtr tp ad_src   $ \src ->
-          withDevicePtr tp ad_dst $ \dst -> do
-            (e,r) <- nonblocking stream $ do
-                      transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
-                      return ad_dst
-            return (e, (e,r))
-    --
-    return result
+copyArrayAsync !tp !n !ad_src !ad_dst | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
+  --
+  stream <- asks ptxStream
+  result <- liftPar $
+    withLifetime stream      $ \st ->
+      withDevicePtr tp ad_src   $ \src ->
+        withDevicePtr tp ad_dst $ \dst -> do
+          (e,r) <- nonblocking stream $ do
+                    transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
+                    return ad_dst
+          return (e, (e,r))
+  --
+  return result
 
 
 {--
@@ -264,19 +260,18 @@ memsetArrayAsync
     -> ScalarDataRepr e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-memsetArrayAsync !tp !n !v !ad
-  | (ScalarDict, _, _) <- singleDict tp = do
-    let !bytes = n * sizeOfSingleType tp
-    --
-    stream <- asks ptxStream
-    result <- liftPar $
-      withLifetime stream $ \st  ->
-        withDevicePtr tp ad  $ \ptr ->
-          nonblocking stream $ do
-            transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
-            return ad
-    --
-    return result
+memsetArrayAsync !tp !n !v !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
+  --
+  stream <- asks ptxStream
+  result <- liftPar $
+    withLifetime stream $ \st  ->
+      withDevicePtr tp ad  $ \ptr ->
+        nonblocking stream $ do
+          transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
+          return ad
+  --
+  return result
 
 
 -- Auxiliary

@@ -107,3 +107,4 @@ newArrays :: Async arch => ArraysR a -> Par arch (FutureArraysR arch a)
 newArrays TupRunit               = return ()
 newArrays (TupRsingle ArrayR{})  = new
 newArrays (TupRpair repr1 repr2) = (,) <$> newArrays repr1 <*> newArrays repr2
+

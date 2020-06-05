@@ -356,3 +356,4 @@ atomically barriers i action = do
 
 reprLock :: ArrayR (Array ((), Int) Word32)
 reprLock = ArrayR (ShapeRsnoc ShapeRz) $ TupRsingle scalarTypeWord32
+
