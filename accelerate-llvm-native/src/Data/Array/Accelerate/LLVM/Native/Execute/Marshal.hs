@@ -22,7 +22,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.Native.Execute.Marshal ( module M ) where
+module Data.Array.Accelerate.LLVM.Native.Execute.Marshal ( module M )
+  where
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Execute.Marshal               as M

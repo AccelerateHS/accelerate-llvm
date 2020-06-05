@@ -35,7 +35,7 @@ import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
     ( PreOpenAfun(..), OpenExp(..), OpenFun(..), Idx(..), PreAfun, Fun, Exp, Var(..), ArrayVar,
-      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, ShapeR(..), PairIdx(..) )
+      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..) )
 
 
 -- | Non-computational array program operations, parameterised over array

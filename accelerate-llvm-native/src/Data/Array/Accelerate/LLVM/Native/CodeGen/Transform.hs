@@ -43,7 +43,7 @@ mkTransform
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh' b))
 mkTransform uid aenv reprIn reprOut p f =
   let
-      (start, end, paramGang)   = gangParam    (arrayRshape reprOut)
+      (start, end, paramGang)   = gangParam (arrayRshape reprOut)
       (arrIn,  paramIn)         = mutableArray reprIn  "in"
       (arrOut, paramOut)        = mutableArray reprOut "out"
       paramEnv                  = envParam aenv

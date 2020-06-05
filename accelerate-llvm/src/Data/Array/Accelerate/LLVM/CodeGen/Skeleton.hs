@@ -46,28 +46,28 @@ class Skeleton arch where
 
   generate      :: UID
                 -> Gamma        aenv
-                -> ArrayR (Array sh e)
+                -> ArrayR            (Array sh e)
                 -> IRFun1  arch aenv (sh -> e)
                 -> CodeGen arch      (IROpenAcc arch aenv (Array sh e))
 
   transform     :: UID
                 -> Gamma        aenv
-                -> ArrayR (Array sh  a)
-                -> ArrayR (Array sh' b)
+                -> ArrayR            (Array sh  a)
+                -> ArrayR            (Array sh' b)
                 -> IRFun1  arch aenv (sh' -> sh)
                 -> IRFun1  arch aenv (a -> b)
                 -> CodeGen arch      (IROpenAcc arch aenv (Array sh' b))
 
   map           :: UID
                 -> Gamma        aenv
-                -> ArrayR (Array sh a)
-                -> TupleType b
+                -> ArrayR            (Array sh a)
+                -> TupleType         b
                 -> IRFun1  arch aenv (a -> b)
                 -> CodeGen arch      (IROpenAcc arch aenv (Array sh b))
 
   fold          :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array sh e)
+                -> ArrayR               (Array sh e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -75,14 +75,14 @@ class Skeleton arch where
 
   fold1         :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array sh e)
+                -> ArrayR               (Array sh e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array sh e))
 
   foldSeg       :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IntegralType i
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
@@ -92,7 +92,7 @@ class Skeleton arch where
 
   fold1Seg      :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IntegralType i
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -101,7 +101,7 @@ class Skeleton arch where
 
   scanl         :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -109,7 +109,7 @@ class Skeleton arch where
 
   scanl'        :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -117,14 +117,14 @@ class Skeleton arch where
 
   scanl1        :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
 
   scanr         :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -132,7 +132,7 @@ class Skeleton arch where
 
   scanr'        :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
@@ -140,15 +140,15 @@ class Skeleton arch where
 
   scanr1        :: UID
                 -> Gamma           aenv
-                -> ArrayR (Array (sh, Int) e)
+                -> ArrayR               (Array (sh, Int) e)
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
 
   permute       :: UID
                 -> Gamma             aenv
-                -> ArrayR (Array sh e)
-                -> ShapeR sh'
+                -> ArrayR                 (Array sh e)
+                -> ShapeR                 sh'
                 -> IRPermuteFun arch aenv (e -> e -> e)
                 -> IRFun1       arch aenv (sh -> sh')
                 -> MIRDelayed   arch aenv (Array sh e)
@@ -156,8 +156,8 @@ class Skeleton arch where
 
   backpermute   :: UID
                 -> Gamma          aenv
-                -> ArrayR (Array sh e)
-                -> ShapeR sh'
+                -> ArrayR              (Array sh e)
+                -> ShapeR              sh'
                 -> IRFun1    arch aenv (sh' -> sh)
                 -> CodeGen   arch      (IROpenAcc arch aenv (Array sh' e))
 

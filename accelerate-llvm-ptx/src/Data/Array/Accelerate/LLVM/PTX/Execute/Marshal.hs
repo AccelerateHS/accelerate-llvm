@@ -49,7 +49,8 @@ instance Marshal PTX where
 
   marshalInt = CUDA.VArg
   marshalScalarData' tp
-    | (ScalarDict, _, _) <- singleDict tp = liftPar . fmap (DL.singleton . CUDA.VArg) . unsafeGetDevicePtr tp
+    | (ScalarDict, _, _) <- singleDict tp
+    = liftPar . fmap (DL.singleton . CUDA.VArg) . unsafeGetDevicePtr tp
 
 -- TODO FIXME !!!
 --

@@ -324,7 +324,7 @@ mkFoldDim
     -> ArrayR (Array sh e)
     -> IRFun2     PTX aenv (e -> e -> e)              -- ^ combination function
     -> MIRExp     PTX aenv e                          -- ^ (optional) seed element, if this is an exclusive reduction
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)        -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
 mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
