@@ -22,18 +22,20 @@ module Data.Array.Accelerate.LLVM.AST (
   PreAfun, PreOpenAfun(..),
   PreFun,  PreOpenFun(..),
   PreExp,  PreOpenExp(..),
-  Idx(..), ArrayVar(..), LeftHandSide(..),
-  HasArraysRepr(..),
+  PairIdx(..),
+  UnzipIdx(..),
+  Idx(..), Var(..), ArrayVar, LeftHandSide(..), ALeftHandSide, ELeftHandSide, ShapeR(..),
+  TupR(..), ArrayR(..), HasArraysRepr(..), arrayRepr,
 
 ) where
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
-import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp, ArrayVar(..), LeftHandSide(..), HasArraysRepr(..) )
+    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp, Var(..), ArrayVar,
+      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..) )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -44,22 +46,22 @@ data PreOpenAccCommand acc arch aenv a where
   Avar        :: ArrayVar                   aenv arrs
               -> PreOpenAccCommand acc arch aenv arrs
 
-  Alet        :: LeftHandSide bnd aenv aenv'
+  Alet        :: ALeftHandSide bnd aenv aenv'
               -> acc                   arch aenv  bnd
               -> acc                   arch aenv' body
               -> PreOpenAccCommand acc arch aenv  body
 
-  Alloc       :: (Shape sh, Elt e)
-              => PreExp           (acc arch) aenv sh
-              -> PreOpenAccCommand acc arch  aenv (Array sh e)
-
-  Use         :: (Shape sh, Elt e)
-              => Array sh e
+  Alloc       :: ArrayR (Array sh e)
+              -> PreExp            ArrayVar aenv sh
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
-  Unit        :: Elt e
-              => PreExp           (acc arch) aenv e
-              -> PreOpenAccCommand acc arch  aenv (Scalar e)
+  Use         :: ArrayR (Array sh e)
+              -> Array sh e
+              -> PreOpenAccCommand acc arch aenv (Array sh e)
+
+  Unit        :: TupleType e
+              -> PreExp            ArrayVar aenv e
+              -> PreOpenAccCommand acc arch aenv (Scalar e)
 
   Apair       :: acc                   arch aenv arrs1
               -> acc                   arch aenv arrs2
@@ -67,17 +69,18 @@ data PreOpenAccCommand acc arch aenv a where
 
   Anil        :: PreOpenAccCommand acc arch aenv ()
 
-  Apply       :: PreOpenAfun      (acc arch) aenv (as -> bs)
+  Apply       :: ArraysR bs
+              -> PreOpenAfun      (acc arch) aenv (as -> bs)
               -> acc                   arch  aenv as
               -> PreOpenAccCommand acc arch  aenv bs
 
-  Aforeign    :: String
-              -> ArraysR bs
+  Aforeign    :: ArraysR bs
+              -> String
               -> (as -> Par arch (FutureR arch bs))
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 
-  Acond       :: PreExp           (acc arch) aenv Bool
+  Acond       :: PreExp            ArrayVar aenv Bool
               -> acc                   arch  aenv arrs
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
@@ -87,13 +90,12 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
 
-  Reshape     :: (Shape sh, Shape sh', Elt e)
-              => PreExp           (acc arch) aenv sh
+  Reshape     :: ShapeR  sh
+              -> PreExp             ArrayVar aenv sh
               -> ArrayVar                    aenv (Array sh' e)
               -> PreOpenAccCommand acc arch  aenv (Array sh  e)
 
-  Unzip       :: (Elt tup, Elt e)
-              => TupleIdx (TupleRepr tup) e
+  Unzip       :: UnzipIdx tup e
               -> ArrayVar                   aenv (Array sh tup)
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
@@ -106,84 +108,81 @@ data PreOpenAccSkeleton acc arch aenv a where
   -- Producers. The only way these terms can appear in the AST is if they
   -- are applied to a manifest array.
   --
-  Map         :: (Shape sh, Elt a, Elt b)
-              => acc                    arch aenv (Array sh a)
+  Map         :: TupleType b
+              -> acc                    arch aenv (Array sh a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
-  Generate    :: (Shape sh, Elt e)
-              => PreExp            (acc arch) aenv sh
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh e)
+  Generate    :: ArrayR (Array sh e)
+              -> PreExp             ArrayVar aenv sh
+              -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
-  Transform   :: (Shape sh, Shape sh', Elt a, Elt  b)
-              => PreExp            (acc arch) aenv sh'
-              -> acc                    arch  aenv (Array sh  a)
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh' b)
+  Transform   :: ArrayR (Array sh' b)
+              -> PreExp             ArrayVar aenv sh'
+              -> acc                    arch aenv (Array sh  a)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh' b)
 
-  Backpermute :: (Shape sh, Shape sh', Elt e)
-              => PreExp            (acc arch) aenv sh'
-              -> acc                    arch  aenv (Array sh  e)
-              -> PreOpenAccSkeleton acc arch  aenv (Array sh' e)
+  Backpermute :: ShapeR sh'
+              -> PreExp             ArrayVar aenv sh'
+              -> acc                    arch aenv (Array sh  e)
+              -> PreOpenAccSkeleton acc arch aenv (Array sh' e)
 
   -- Consumers. These may have been applied to either manifest or delayed
   -- array data.
   --
-  Fold        :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+  Fold        :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
-  Fold1       :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+  Fold1       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
-  FoldSeg     :: (Shape sh, Elt e, Elt i, IsIntegral i)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+  FoldSeg     :: IntegralType i
+              -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> DelayedOpenAcc     acc arch aenv (Segments i)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Fold1Seg    :: (Shape sh, Elt e, Elt i, IsIntegral i)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
+  Fold1Seg    :: IntegralType i
+              -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> DelayedOpenAcc     acc arch aenv (Segments i)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanl       :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+  Scanl       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanl1      :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+  Scanl1      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanl'      :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (ArrRepr (Array (sh :. Int) e, Array sh e))
+  Scanl'      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e, Array sh e)
 
-  Scanr       :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+  Scanr       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanr1      :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh :. Int) e)
+  Scanr1      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanr'      :: (Shape sh, Elt e)
-              => DelayedOpenAcc     acc arch aenv (Array (sh :. Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (ArrRepr (Array (sh :. Int) e, Array sh e))
+  Scanr'      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e, Array sh e)
 
-  Permute     :: (Shape sh, Shape sh', Elt e)
-              => acc                    arch aenv (Array sh' e)     -- target array (default values)
+  Permute     :: acc                    arch aenv (Array sh' e)     -- target array (default values)
               -> DelayedOpenAcc     acc arch aenv (Array sh  e)     -- source values
               -> PreOpenAccSkeleton acc arch aenv (Array sh' e)
 
-  Stencil1    :: (Shape sh, Elt a, Elt b)
-              => sh                                                 -- stencil offset/halo size
+  Stencil1    :: TupleType b
+              -> sh                                                 -- stencil offset/halo size
               -> DelayedOpenAcc     acc arch aenv (Array sh a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
-  Stencil2    :: (Shape sh, Elt a, Elt b, Elt c)
-              => sh                                                 -- stencil offset/halo size
+  Stencil2    :: TupleType c
+              -> sh                                                 -- stencil offset/halo size
               -> DelayedOpenAcc     acc arch aenv (Array sh a)
               -> DelayedOpenAcc     acc arch aenv (Array sh b)
               -> PreOpenAccSkeleton acc arch aenv (Array sh c)
+
+data UnzipIdx a b where
+  UnzipId   ::                                   UnzipIdx a a
+  UnzipPrj  :: PairIdx a b   -> UnzipIdx b c ->  UnzipIdx a c
+  UnzipUnit ::                                   UnzipIdx a ()
+  UnzipPair :: UnzipIdx a b1 -> UnzipIdx a b2 -> UnzipIdx a (b1, b2)
 
 -- | Representation for array arguments.
 --
@@ -192,44 +191,64 @@ data PreOpenAccSkeleton acc arch aenv a where
 -- the argument is a manifest array, we recurse into the subterm.
 --
 data DelayedOpenAcc acc arch aenv a where
-  Delayed     :: PreExp (acc arch) aenv sh
+  Delayed     :: ArrayR (Array sh e)
+              -> PreExp ArrayVar aenv sh
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
-  Manifest    :: acc arch aenv (Array sh e)
+  Manifest    :: ArraysR (Array sh e)
+              -> acc arch aenv (Array sh e)
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
 instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccCommand acc arch) where
-  arraysRepr (Avar (ArrayVar _))    = ArraysRarray
-  arraysRepr (Alet _ _ a)           = arraysRepr a
-  arraysRepr Alloc{}                = ArraysRarray
-  arraysRepr (Use _)                = ArraysRarray
-  arraysRepr Unit{}                 = ArraysRarray
-  arraysRepr (Apair a1 a2)          = arraysRepr a1 `ArraysRpair` arraysRepr a2
-  arraysRepr Anil                   = ArraysRunit
-  arraysRepr (Apply fn _)           = case fn of
-    Alam _ (Abody a) -> arraysRepr a
-    _                -> error "Where do you think you're going?" 
-  arraysRepr (Aforeign _ repr _ _ ) = repr
-  arraysRepr (Acond _ a1 _)         = arraysRepr a1
-  arraysRepr (Awhile _ _ a)         = arraysRepr a
-  arraysRepr Reshape{}              = ArraysRarray
-  arraysRepr (Unzip _ (ArrayVar _)) = ArraysRarray
+  arraysRepr (Avar (Var repr _))                   = TupRsingle repr
+  arraysRepr (Alet _ _ a)                          = arraysRepr a
+  arraysRepr (Alloc repr _)                        = TupRsingle repr
+  arraysRepr (Use repr _)                          = TupRsingle repr
+  arraysRepr (Unit tp _)                           = TupRsingle $ ArrayR ShapeRz tp
+  arraysRepr (Apair a1 a2)                         = arraysRepr a1 `TupRpair` arraysRepr a2
+  arraysRepr Anil                                  = TupRunit
+  arraysRepr (Apply repr _ _)                      = repr
+  arraysRepr (Aforeign repr _ _ _)                 = repr
+  arraysRepr (Acond _ a1 _)                        = arraysRepr a1
+  arraysRepr (Awhile _ _ a)                        = arraysRepr a
+  arraysRepr (Reshape shr _ (Var (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp
+  arraysRepr (Unzip idx (Var (ArrayR shr tp) _))   = TupRsingle $ ArrayR shr $ go idx tp
+    where
+      go :: UnzipIdx a b -> TupleType a -> TupleType b
+      go UnzipId                    t              = t
+      go (UnzipPrj PairIdxLeft ix)  (TupRpair t _) = go ix t
+      go (UnzipPrj PairIdxRight ix) (TupRpair _ t) = go ix t
+      go UnzipUnit                  _              = TupRunit
+      go (UnzipPair ix1 ix2)        t              = go ix1 t `TupRpair` go ix2 t
+      go _                          _              = error "Time enough for life to unfold all the precious things life has in store."
 
 instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccSkeleton acc arch) where
-  arraysRepr Map{}                  = ArraysRarray
-  arraysRepr Generate{}             = ArraysRarray
-  arraysRepr Transform{}            = ArraysRarray
-  arraysRepr Backpermute{}          = ArraysRarray
-  arraysRepr Fold{}                 = ArraysRarray
-  arraysRepr Fold1{}                = ArraysRarray
-  arraysRepr FoldSeg{}              = ArraysRarray
-  arraysRepr Fold1Seg{}             = ArraysRarray
-  arraysRepr Scanl{}                = ArraysRarray
-  arraysRepr Scanl1{}               = ArraysRarray
-  arraysRepr Scanl'{}               = arraysRtuple2
-  arraysRepr Scanr{}                = ArraysRarray
-  arraysRepr Scanr1{}               = ArraysRarray
-  arraysRepr Scanr'{}               = arraysRtuple2
-  arraysRepr Permute{}              = ArraysRarray
-  arraysRepr Stencil1{}             = ArraysRarray
-  arraysRepr Stencil2{}             = ArraysRarray
+  arraysRepr (Map tp a)               = let ArrayR shr _ = arrayRepr a
+                                        in  TupRsingle $ ArrayR shr tp
+  arraysRepr (Generate repr _)        = TupRsingle repr
+  arraysRepr (Transform repr _ _)     = TupRsingle repr
+  arraysRepr (Backpermute shr _ a)    = TupRsingle $ ArrayR shr $ arrayRtype $ arrayRepr a
+  arraysRepr (Fold a)                 = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+                                        in  TupRsingle $ ArrayR shr tp
+  arraysRepr (Fold1 a)                = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+                                        in  TupRsingle $ ArrayR shr tp
+  arraysRepr (FoldSeg _ a _)          = arraysRepr a
+  arraysRepr (Fold1Seg _ a _)         = arraysRepr a
+  arraysRepr (Scanl a)                = arraysRepr a
+  arraysRepr (Scanl1 a)               = arraysRepr a
+  arraysRepr (Scanl' a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+                                        in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
+  arraysRepr (Scanr a)                = arraysRepr a
+  arraysRepr (Scanr1 a)               = arraysRepr a
+  arraysRepr (Scanr' a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+                                        in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
+  arraysRepr (Permute a _)            = arraysRepr a
+  arraysRepr (Stencil1 tp _ a)        = let ArrayR shr _ = arrayRepr a
+                                        in  TupRsingle $ ArrayR shr tp
+  arraysRepr (Stencil2 tp _ a _)      = let ArrayR shr _ = arrayRepr a
+                                        in  TupRsingle $ ArrayR shr tp
+
+instance HasArraysRepr (acc arch) => HasArraysRepr (DelayedOpenAcc acc arch) where
+  arraysRepr (Delayed  repr _) = TupRsingle repr
+  arraysRepr (Manifest repr _) = repr
+

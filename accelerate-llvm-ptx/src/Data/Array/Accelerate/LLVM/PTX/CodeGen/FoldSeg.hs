@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Segments, Shape(rank), (:.), Elt(..), DIM1 )
+import Data.Array.Accelerate.Array.Representation
 
 -- accelerate-llvm-*
 import LLVM.AST.Type.Representation
@@ -55,31 +55,35 @@ import Prelude                                                      as P
 -- reduction per segment of the source array.
 --
 mkFoldSeg
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh i e.
+       Gamma          aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSeg aenv combine seed arr seg =
-  (+++) <$> mkFoldSegP_block aenv combine (Just seed) arr seg
-        <*> mkFoldSegP_warp  aenv combine (Just seed) arr seg
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+mkFoldSeg aenv repr intTp combine seed arr seg =
+  (+++) <$> mkFoldSegP_block aenv repr intTp combine (Just seed) arr seg
+        <*> mkFoldSegP_warp  aenv repr intTp combine (Just seed) arr seg
 
 
 -- Segmented reduction along the innermost dimension of an array, where /all/
 -- segments are non-empty.
 --
 mkFold1Seg
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh i e.
+       Gamma          aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFold1Seg aenv combine arr seg =
-  (+++) <$> mkFoldSegP_block aenv combine Nothing arr seg
-        <*> mkFoldSegP_warp  aenv combine Nothing arr seg
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+mkFold1Seg aenv repr intTp combine arr seg =
+  (+++) <$> mkFoldSegP_block aenv repr intTp combine Nothing arr seg
+        <*> mkFoldSegP_warp  aenv repr intTp combine Nothing arr seg
 
 
 -- This implementation assumes that the segments array represents the offset
@@ -90,20 +94,22 @@ mkFold1Seg aenv combine arr seg =
 -- worry about inter-block synchronisation.
 --
 mkFoldSegP_block
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh i e.
+       Gamma          aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
     -> MIRExp     PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_block aenv combine mseed marr mseg = do
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray @(sh:.Int) "out"
-      (arrIn,  paramIn)   = delayedArray @(sh:.Int) "in"  marr
-      (arrSeg, paramSeg)  = delayedArray @DIM1      "seg" mseg
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in"  marr
+      (arrSeg, paramSeg)  = delayedArray "seg" mseg
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
@@ -112,7 +118,7 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf (eltType @e)
+          bytes     = sizeOf tp
   --
   makeOpenAccWith config "foldSeg_block" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
@@ -129,7 +135,7 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
     -- a single coalesced read, since they will be sequential in the
     -- segment-offset array.
     --
-    smem  <- staticSharedMem 2
+    smem  <- staticSharedMem (TupRsingle scalarTypeInt) 2
 
     -- Compute the number of segments and size of the innermost dimension. These
     -- are required if we are reducing a rank-2 or higher array, to properly
@@ -140,14 +146,14 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
     --
     sz    <- indexHead <$> delayedExtent arrIn
     ss    <- do n <- indexHead <$> delayedExtent arrSeg
-                A.sub numType n (lift 1)
+                A.sub numType n (liftInt 1)
 
     -- Each thread block cooperatively reduces a segment.
     -- s0    <- dequeue queue (lift 1)
     -- for s0 (\s -> A.lt singleType s end) (\_ -> dequeue queue (lift 1)) $ \s -> do
 
-    start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrOut)
+    start <- return (liftInt 0)
+    end   <- shapeSize shr (irArrayShape arrOut)
 
     imapFromTo start end $ \s -> do
 
@@ -155,39 +161,39 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
       -- segments array that we will reduce between and distribute those values
       -- to the other threads in the block.
       tid <- threadIdx
-      when (A.lt singleType tid (lift 2)) $ do
-        i <- case rank @sh of
-               0 -> return s
+      when (A.lt singleType tid (liftInt32 2)) $ do
+        i <- case shr of
+               ShapeRsnoc ShapeRz -> return s
                _ -> A.rem integralType s ss
         j <- A.add numType i =<< int tid
         v <- app1 (delayedLinearIndex arrSeg) j
-        writeArray smem tid =<< int v
+        writeArray TypeInt32 smem tid =<< A.irFromIntegral intTp numType v
 
       -- Once all threads have caught up, begin work on the new segment.
       __syncthreads
 
-      u <- readArray smem (lift 0 :: IR Int32)
-      v <- readArray smem (lift 1 :: IR Int32)
+      u <- readArray TypeInt32 smem (liftInt32 0)
+      v <- readArray TypeInt32 smem (liftInt32 1)
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
-      (inf,sup) <- A.unpair <$> case rank @sh of
-                                  0 -> return (A.pair u v)
+      (inf,sup) <- A.unpair <$> case shr of
+                                  ShapeRsnoc ShapeRz -> return (A.pair u v)
                                   _ -> do q <- A.quot integralType s ss
                                           a <- A.mul numType q sz
                                           A.pair <$> A.add numType u a
                                                  <*> A.add numType v a
 
       void $
-        if A.eq singleType inf sup
+        if (TupRunit, A.eq singleType inf sup)
           -- This segment is empty. If this is an exclusive reduction the
           -- first thread writes out the initial element for this segment.
           then do
             case mseed of
-              Nothing -> return (lift ())
+              Nothing -> return (lift TupRunit ())
               Just z  -> do
-                when (A.eq singleType tid (lift 0)) $ writeArray arrOut s =<< z
-                return (lift ())
+                when (A.eq singleType tid (liftInt32 0)) $ writeArray TypeInt arrOut s =<< z
+                return (lift TupRunit ())
 
           -- This is a non-empty segment.
           else do
@@ -203,38 +209,38 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
             -- a bug in NVPTX / ptxas.
             --
             i0 <- A.add numType inf =<< int tid
-            x0 <- if A.lt singleType i0 sup
+            x0 <- if (tp, A.lt singleType i0 sup)
                     then app1 (delayedLinearIndex arrIn) i0
                     else let
                              go :: TupleType a -> Operands a
-                             go TypeRunit       = OP_Unit
-                             go (TypeRpair a b) = OP_Pair (go a) (go b)
-                             go (TypeRscalar t) = ir' t (undef t)
+                             go TupRunit       = OP_Unit
+                             go (TupRpair a b) = OP_Pair (go a) (go b)
+                             go (TupRsingle t) = ir t (undef t)
                          in
-                         return . IR $ go (eltType @e)
+                         return $ go tp
 
             bd  <- int =<< blockDim
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
-            r0  <- if A.gte singleType v0 bd
-                     then reduceBlockSMem dev combine Nothing    x0
-                     else reduceBlockSMem dev combine (Just v0') x0
+            r0  <- if (tp, A.gte singleType v0 bd)
+                     then reduceBlockSMem dev tp combine Nothing    x0
+                     else reduceBlockSMem dev tp combine (Just v0') x0
 
             -- Step 2: keep walking over the input
             nxt <- A.add numType inf bd
-            r   <- iterFromStepTo nxt bd sup r0 $ \offset r -> do
+            r   <- iterFromStepTo tp nxt bd sup r0 $ \offset r -> do
 
                      -- Wait for threads to catch up before starting the next stripe
                      __syncthreads
 
                      i' <- A.add numType offset =<< int tid
                      v' <- A.sub numType sup offset
-                     r' <- if A.gte singleType v' bd
+                     r' <- if (tp, A.gte singleType v' bd)
                              -- All threads in the block are in bounds, so we
                              -- can avoid bounds checks.
                              then do
                                x <- app1 (delayedLinearIndex arrIn) i'
-                               y <- reduceBlockSMem dev combine Nothing x
+                               y <- reduceBlockSMem dev tp combine Nothing x
                                return y
 
                              -- Not all threads are valid. Note that we still
@@ -242,36 +248,36 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
                              -- to avoid thread divergence on synchronisation
                              -- points, similar to the above NOTE.
                              else do
-                               x <- if A.lt singleType i' sup
+                               x <- if (tp, A.lt singleType i' sup)
                                       then app1 (delayedLinearIndex arrIn) i'
                                       else let
                                                go :: TupleType a -> Operands a
-                                               go TypeRunit       = OP_Unit
-                                               go (TypeRpair a b) = OP_Pair (go a) (go b)
-                                               go (TypeRscalar t) = ir' t (undef t)
+                                               go TupRunit       = OP_Unit
+                                               go (TupRpair a b) = OP_Pair (go a) (go b)
+                                               go (TupRsingle t) = ir t (undef t)
                                            in
-                                           return . IR $ go (eltType @e)
+                                           return $ go tp
 
                                z <- i32 v'
-                               y <- reduceBlockSMem dev combine (Just z) x
+                               y <- reduceBlockSMem dev tp combine (Just z) x
                                return y
 
                      -- first thread incorporates the result from the previous
                      -- iteration
-                     if A.eq singleType tid (lift 0)
+                     if (tp, A.eq singleType tid (liftInt32 0))
                        then app2 combine r r'
                        else return r'
 
             -- Step 3: Thread zero writes the aggregate reduction for this
             -- segment to memory. If this is an exclusive fold combine with the
             -- initial element as well.
-            when (A.eq singleType tid (lift 0)) $
-             writeArray arrOut s =<<
+            when (A.eq singleType tid (liftInt32 0)) $
+             writeArray TypeInt arrOut s =<<
                case mseed of
                  Nothing -> return r
                  Just z  -> flip (app2 combine) r =<< z  -- Note: initial element on the left
 
-            return (lift ())
+            return (lift TupRunit ())
 
     return_
 
@@ -284,20 +290,22 @@ mkFoldSegP_block aenv combine mseed marr mseg = do
 -- about inter- or intra-block synchronisation.
 --
 mkFoldSegP_warp
-    :: forall aenv sh i e. (Shape sh, IsIntegral i, Elt i, Elt e)
-    => Gamma          aenv
+    :: forall aenv sh i e.
+       Gamma          aenv
+    -> ArrayR (Array (sh, Int) e)
+    -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
     -> MIRExp     PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh :. Int) e)
+    -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh :. Int) e))
-mkFoldSegP_warp aenv combine mseed marr mseg = do
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)  = mutableArray @(sh:.Int) "out"
-      (arrIn,  paramIn)   = delayedArray @(sh:.Int) "in"  marr
-      (arrSeg, paramSeg)  = delayedArray @DIM1      "seg" mseg
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in"  marr
+      (arrSeg, paramSeg)  = delayedArray "seg" mseg
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem grid gridQ
@@ -308,12 +316,12 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
       grid n m            = multipleOf n (m `P.quot` ws)
       gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes      = (per_warp_elems * sizeOf (eltType @e)) `P.max` (2 * sizeOf (eltType @Int))
+      per_warp_bytes      = (per_warp_elems * sizeOf tp) `P.max` (2 * sizeOf tp)
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
-      int32 :: Integral a => a -> IR Int32
-      int32 = lift . P.fromIntegral
+      int32 :: Integral a => a -> Operands Int32
+      int32 = liftInt32 . P.fromIntegral
   --
   makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
@@ -345,7 +353,7 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
     --
     lim   <- do
       a <- A.mul numType wid (int32 per_warp_bytes)
-      b <- dynamicSharedMem  (lift 2) a
+      b <- dynamicSharedMem (TupRsingle scalarTypeInt) TypeInt32 (liftInt32 2) a
       return b
 
     -- Allocate (1.5 * warpSize) elements of shared memory for each warp to
@@ -356,7 +364,7 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
     --
     smem  <- do
       a <- A.mul numType wid (int32 per_warp_bytes)
-      b <- dynamicSharedMem  (int32 per_warp_elems) a
+      b <- dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
       return b
 
     -- Compute the number of segments and size of the innermost dimension. These
@@ -367,7 +375,7 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
     --
     sz    <- indexHead <$> delayedExtent arrIn
     ss    <- do a <- indexHead <$> delayedExtent arrSeg
-                b <- A.sub numType a (lift 1)
+                b <- A.sub numType a (liftInt 1)
                 return b
 
     -- Each thread reduces a segment independently
@@ -375,7 +383,7 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
     gd    <- int =<< gridDim
     wpb'  <- int wpb
     step  <- A.mul numType wpb' gd
-    end   <- shapeSize (irArrayShape arrOut)
+    end   <- shapeSize shr (irArrayShape arrOut)
     imapFromStepTo s0 step end $ \s -> do
 
       __syncwarp
@@ -384,23 +392,23 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
       -- array that we will reduce between and distribute those values to the
       -- other threads in the warp
       lane <- laneId
-      when (A.lt singleType lane (lift 2)) $ do
-        a <- case rank @sh of
-               0 -> return s
+      when (A.lt singleType lane (liftInt32 2)) $ do
+        a <- case shr of
+               ShapeRsnoc ShapeRz -> return s
                _ -> A.rem integralType s ss
         b <- A.add numType a =<< int lane
         c <- app1 (delayedLinearIndex arrSeg) b
-        writeArray lim lane =<< int c
+        writeArray TypeInt32 lim lane =<< A.irFromIntegral intTp numType c
 
       __syncwarp
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
       (inf,sup) <- do
-        u <- readArray lim (lift 0 :: IR Int32)
-        v <- readArray lim (lift 1 :: IR Int32)
-        A.unpair <$> case rank @sh of
-                       0 -> return (A.pair u v)
+        u <- readArray TypeInt32 lim (liftInt32 0)
+        v <- readArray TypeInt32 lim (liftInt32 1)
+        A.unpair <$> case shr of
+                       ShapeRsnoc ShapeRz -> return (A.pair u v)
                        _ -> do q <- A.quot integralType s ss
                                a <- A.mul numType q sz
                                A.pair <$> A.add numType u a
@@ -409,15 +417,15 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
       __syncwarp
 
       void $
-        if A.eq singleType inf sup
+        if (TupRunit, A.eq singleType inf sup)
           -- This segment is empty. If this is an exclusive reduction the first
           -- lane writes out the initial element for this segment.
           then do
             case mseed of
-              Nothing -> return (lift ())
+              Nothing -> return (lift TupRunit ())
               Just z  -> do
-                when (A.eq singleType lane (lift 0)) $ writeArray arrOut s =<< z
-                return (lift ())
+                when (A.eq singleType lane (liftInt32 0)) $ writeArray TypeInt arrOut s =<< z
+                return (lift TupRunit ())
 
           -- This is a non-empty segment.
           else do
@@ -426,76 +434,76 @@ mkFoldSegP_warp aenv combine mseed marr mseg = do
             -- See comment above why we initialise the loop in this way
             --
             i0  <- A.add numType inf =<< int lane
-            x0  <- if A.lt singleType i0 sup
+            x0  <- if (tp, A.lt singleType i0 sup)
                      then app1 (delayedLinearIndex arrIn) i0
                      else let
                               go :: TupleType a -> Operands a
-                              go TypeRunit       = OP_Unit
-                              go (TypeRpair a b) = OP_Pair (go a) (go b)
-                              go (TypeRscalar t) = ir' t (undef t)
+                              go TupRunit       = OP_Unit
+                              go (TupRpair a b) = OP_Pair (go a) (go b)
+                              go (TupRsingle t) = ir t (undef t)
                           in
-                          return . IR $ go (eltType @e)
+                          return $ go tp
 
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
-            r0  <- if A.gte singleType v0 (lift ws)
-                     then reduceWarpSMem dev combine smem Nothing    x0
-                     else reduceWarpSMem dev combine smem (Just v0') x0
+            r0  <- if (tp, A.gte singleType v0 (liftInt ws))
+                     then reduceWarpSMem dev tp combine smem Nothing    x0
+                     else reduceWarpSMem dev tp combine smem (Just v0') x0
 
             -- Step 2: Keep walking over the rest of the segment
-            nx  <- A.add numType inf (lift ws)
-            r   <- iterFromStepTo nx (lift ws) sup r0 $ \offset r -> do
+            nx  <- A.add numType inf (liftInt ws)
+            r   <- iterFromStepTo tp nx (liftInt ws) sup r0 $ \offset r -> do
 
                     -- __syncwarp
                     __syncthreads -- TLM: why is this necessary?
 
                     i' <- A.add numType offset =<< int lane
                     v' <- A.sub numType sup offset
-                    r' <- if A.gte singleType v' (lift ws)
+                    r' <- if (tp, A.gte singleType v' (liftInt ws))
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
                               x <- app1 (delayedLinearIndex arrIn) i'
-                              y <- reduceWarpSMem dev combine smem Nothing x
+                              y <- reduceWarpSMem dev tp combine smem Nothing x
                               return y
 
                             else do
-                              x <- if A.lt singleType i' sup
+                              x <- if (tp, A.lt singleType i' sup)
                                      then app1 (delayedLinearIndex arrIn) i'
                                      else let
                                               go :: TupleType a -> Operands a
-                                              go TypeRunit       = OP_Unit
-                                              go (TypeRpair a b) = OP_Pair (go a) (go b)
-                                              go (TypeRscalar t) = ir' t (undef t)
+                                              go TupRunit       = OP_Unit
+                                              go (TupRpair a b) = OP_Pair (go a) (go b)
+                                              go (TupRsingle t) = ir t (undef t)
                                           in
-                                          return . IR $ go (eltType @e)
+                                          return $ go tp
 
                               z <- i32 v'
-                              y <- reduceWarpSMem dev combine smem (Just z) x
+                              y <- reduceWarpSMem dev tp combine smem (Just z) x
                               return y
 
                     -- The first lane incorporates the result from the previous
                     -- iteration
-                    if A.eq singleType lane (lift 0)
+                    if (tp, A.eq singleType lane (liftInt32 0))
                       then app2 combine r r'
                       else return r'
 
             -- Step 3: Lane zero writes the aggregate reduction for this
             -- segment to memory. If this is an exclusive reduction, also
             -- combine with the initial element
-            when (A.eq singleType lane (lift 0)) $
-              writeArray arrOut s =<<
+            when (A.eq singleType lane (liftInt32 0)) $
+              writeArray TypeInt arrOut s =<<
                 case mseed of
                   Nothing -> return r
                   Just z  -> flip (app2 combine) r =<< z    -- Note: initial element on the left
 
-            return (lift ())
+            return (lift TupRunit ())
 
     return_
 
 
-i32 :: IsIntegral i => IR i -> CodeGen PTX (IR Int32)
-i32 = A.fromIntegral integralType numType
+i32 :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int32)
+i32 = A.irFromIntegral integralType numType
 
-int :: IsIntegral i => IR i -> CodeGen PTX (IR Int)
-int = A.fromIntegral integralType numType
+int :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int)
+int = A.irFromIntegral integralType numType
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
@@ -16,7 +17,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Prelude                                                  hiding ( fromIntegral )
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -35,24 +37,24 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- processes multiple adjacent elements.
 --
 mkGenerate
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
+    :: Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRFun1  PTX aenv (sh -> e)
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkGenerate aenv apply =
+mkGenerate aenv repr@(ArrayR shr _) apply =
   let
-      (arrOut, paramOut)  = mutableArray ("out" :: Name (Array sh e))
+      (arrOut, paramOut)  = mutableArray repr "out"
       paramEnv            = envParam aenv
   in
   makeOpenAcc "generate" (paramOut ++ paramEnv) $ do
 
-    start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrOut)
+    start <- return (liftInt 0)
+    end   <- shapeSize shr (irArrayShape arrOut)
 
     imapFromTo start end $ \i -> do
-      ix <- indexOfInt (irArrayShape arrOut) i          -- convert to multidimensional index
+      ix <- indexOfInt shr (irArrayShape arrOut) i      -- convert to multidimensional index
       r  <- app1 apply ix                               -- apply generator function
-      writeArray arrOut i r                             -- store result
+      writeArray TypeInt arrOut i r                     -- store result
 
     return_
 

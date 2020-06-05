@@ -45,9 +45,8 @@ import qualified LLVM.AST.Operand                         as LLVM ( Operand(..) 
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
 
-import Data.Array.Accelerate.AST                          ( tupleIdxToInt )
-import Data.Array.Accelerate.Product                      ( ProdRepr, TupleIdx )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.AST                          ( PairIdx(..) )
 
 import Prelude                                            hiding ( Ordering(..), quot, rem, div, isNaN )
 
@@ -195,9 +194,13 @@ data Instruction a where
   -- --------------------
 
   -- <http://llvm.org/docs/LangRef.html#extractvalue-instruction>
+  -- ExtractValue is currently restricted to pairs, we might want
+  -- to allow larger structures. It is currently however only used
+  -- for CmpXchg, which returns a pair so we don't need this for
+  -- other structures.
   --
   ExtractValue    :: ScalarType t
-                  -> TupleIdx (ProdRepr tup) t
+                  -> PairIdx tup t
                   -> Operand tup
                   -> Instruction t
 
@@ -387,7 +390,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
     LNot x                -> LLVM.Xor (downcast x) (constant True) md
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
     ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
-    ExtractValue _ i s    -> extractStruct (typeOf s) i (downcast s)
+    ExtractValue _ i s    -> extractStruct i (downcast s)
     Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
     Store v p x           -> LLVM.Store (downcast v) (downcast p) (downcast x) atomicity alignment md
     GetElementPtr n i     -> LLVM.GetElementPtr inbounds (downcast n) (downcast i) md
@@ -470,15 +473,12 @@ instance Downcast (Instruction a) LLVM.Instruction where
         | signed t  = LLVM.SRem x y md
         | otherwise = LLVM.URem x y md
 
-      extractStruct :: Type s -> TupleIdx (ProdRepr s) t -> LLVM.Operand -> LLVM.Instruction
-      extractStruct t i s = LLVM.ExtractValue s [fromIntegral (size t - tupleIdxToInt i - 1)] md
+      extractStruct :: PairIdx s t -> LLVM.Operand -> LLVM.Instruction
+      extractStruct i s = LLVM.ExtractValue s ix md
         where
-          size (PrimType (StructPrimType u)) = go u
-          size _                             = $internalError "downcast" "unexpected operand type to ExtractValue"
-
-          go :: TupleType t -> Int
-          go (TypeRpair u _) = 1 + go u
-          go _               = 0
+          ix = case i of
+            PairIdxLeft  -> [0]
+            PairIdxRight -> [1]
 
       ext :: BoundedType a -> BoundedType b -> LLVM.Operand -> LLVM.Instruction
       ext a (downcast -> b) x
@@ -618,8 +618,8 @@ instance TypeOf Instruction where
       nonnum :: NonNumType a -> Type a
       nonnum = single . NonNumSingleType
 
-      pair :: ScalarType a -> ScalarType b -> TupleType (((), a), b)
-      pair a b = TypeRunit `TypeRpair` TypeRscalar a `TypeRpair` TypeRscalar b
+      pair :: ScalarType a -> ScalarType b -> TupleType (a, b)
+      pair a b = TupRsingle a `TupRpair` TupRsingle b
 
       bounded :: BoundedType a -> Type a
       bounded (IntegralBoundedType t) = integral t

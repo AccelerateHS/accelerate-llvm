@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving  #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Foreign
@@ -44,13 +45,14 @@ import Data.Typeable
 
 instance Foreign Native where
   foreignAcc (ff :: asm (a -> b))
-    | Just (ForeignAcc _ asm :: ForeignAcc (S.ArrRepr a -> S.ArrRepr b)) <- cast ff = Just asm
-    | otherwise                                                 = Nothing
+    | Just Refl        <- eqT @asm @ForeignAcc
+    , ForeignAcc _ asm <- ff = Just asm
+    | otherwise              = Nothing
 
   foreignExp (ff :: asm (x -> y))
-    | Just (ForeignExp _ asm :: ForeignExp (x -> y)) <- cast ff = Just asm
-    | otherwise                                                 = Nothing
-
+    | Just Refl        <- eqT @asm @ForeignExp
+    , ForeignExp _ asm <- ff = Just asm
+    | otherwise              = Nothing
 
 instance S.Foreign ForeignAcc where
   strForeign (ForeignAcc s _) = s

@@ -17,7 +17,8 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt, DIM1 )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -76,24 +77,28 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- The map operation can always treat an array of any dimension in its flat
 -- underlying representation, which simplifies code generation.
 --
-mkMap :: forall aenv sh a b. (Shape sh, Elt a, Elt b)
-      => UID
-      -> Gamma            aenv
-      -> IRFun1    Native aenv (a -> b)
-      -> CodeGen   Native      (IROpenAcc Native aenv (Array sh b))
-mkMap uid aenv apply =
+mkMap :: UID
+      -> Gamma aenv
+      -> ArrayR (Array sh a)
+      -> TupleType b
+      -> IRFun1  Native aenv (a -> b)
+      -> CodeGen Native      (IROpenAcc Native aenv (Array sh b))
+mkMap uid aenv repr tp apply =
   let
-      (start, end, paramGang)   = gangParam @DIM1
-      (arrIn,  paramIn)         = mutableArray @sh "in"
-      (arrOut, paramOut)        = mutableArray @sh "out"
+      (start, end, paramGang)   = gangParam (ShapeRsnoc ShapeRz)
+      (arrIn,  paramIn)         = mutableArray repr "in"
+      (arrOut, paramOut)        = mutableArray (reprOut repr tp) "out"
       paramEnv                  = envParam aenv
   in
   makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     imapFromTo (indexHead start) (indexHead end) $ \i -> do
-      xs <- readArray arrIn i
+      xs <- readArray TypeInt arrIn i
       ys <- app1 apply xs
-      writeArray arrOut i ys
+      writeArray TypeInt arrOut i ys
 
     return_
+
+reprOut :: ArrayR (Array sh a) -> TupleType b -> ArrayR (Array sh b)
+reprOut (ArrayR shr _) tp = ArrayR shr tp
 

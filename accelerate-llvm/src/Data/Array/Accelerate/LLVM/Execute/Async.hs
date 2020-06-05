@@ -18,7 +18,9 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
-import Data.Array.Accelerate.Array.Sugar 
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.LLVM.State           ( LLVM )
 
 class Monad (Par arch) => Async arch where
 
@@ -51,6 +53,10 @@ class Monad (Par arch) => Async arch where
   --
   fork :: Par arch () -> Par arch ()
 
+  -- | Lift an operation from the base LLVM monad into the Par monad
+  --
+  liftPar :: LLVM arch a -> Par arch a
+
   -- | Read a value stored in a future, once it is available. This is blocking
   -- with respect to both the host and remote device.
   --
@@ -78,44 +84,27 @@ class Monad (Par arch) => Async arch where
     put r a
     return r
 
-data FutureArraysRepr arch a repr where
-  FutureArraysReprNil       :: FutureArraysRepr arch ()            ()
-  FutureArraysReprArray     :: FutureArraysRepr arch (Array sh e) (FutureR arch (Array sh e))
-  FutureArraysReprPair      :: FutureArraysRepr arch a             a'
-                            -> FutureArraysRepr arch b             b'
-                            -> FutureArraysRepr arch (a, b)        (a', b')
-
-class FutureArrays a where
-  type FutureArraysR arch a
-  futureArraysRepr :: FutureArraysRepr arch a (FutureArraysR arch a)
-
-instance FutureArrays () where
-  type FutureArraysR arch () = ()
-  futureArraysRepr = FutureArraysReprNil
-
-instance FutureArrays (Array sh e) where
-  type FutureArraysR arch (Array sh e) = FutureR arch (Array sh e)
-  futureArraysRepr = FutureArraysReprArray
-
-instance (FutureArrays a, FutureArrays b) => FutureArrays (a, b) where
-  type FutureArraysR arch (a, b) = (FutureArraysR arch a, FutureArraysR arch b)
-  futureArraysRepr = FutureArraysReprPair (futureArraysRepr @a) (futureArraysRepr @b)
+type family FutureArraysR arch arrs where
+  FutureArraysR arch ()           = ()
+  FutureArraysR arch (a, b)       = (FutureArraysR arch a, FutureArraysR arch b)
+  FutureArraysR arch (Array sh e) = FutureR arch (Array sh e)
 
 getArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
-getArrays ArraysRarray        a        = get a
-getArrays ArraysRunit         _        = return ()
-getArrays (ArraysRpair r1 r2) (a1, a2) = (,) <$> getArrays r1 a1 <*> getArrays r2 a2
+getArrays (TupRsingle ArrayR{}) a        = get a
+getArrays TupRunit              _        = return ()
+getArrays (TupRpair r1 r2)      (a1, a2) = (,) <$> getArrays r1 a1 <*> getArrays r2 a2
 
 blockArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
-blockArrays ArraysRarray        a        = block a
-blockArrays ArraysRunit         _        = return ()
-blockArrays (ArraysRpair r1 r2) (a1, a2) = (,) <$> blockArrays r1 a1 <*> blockArrays r2 a2
+blockArrays (TupRsingle ArrayR{}) a        = block a
+blockArrays TupRunit              _        = return ()
+blockArrays (TupRpair r1 r2)      (a1, a2) = (,) <$> blockArrays r1 a1 <*> blockArrays r2 a2
 
 -- | Create new (empty) promises for a structure of arrays, to be fulfilled
 -- at some future point. Note that the promises in the structure may all be
 -- fullfilled at different moments.
 --
 newArrays :: Async arch => ArraysR a -> Par arch (FutureArraysR arch a)
-newArrays ArraysRunit               = return ()
-newArrays ArraysRarray              = new
-newArrays (ArraysRpair repr1 repr2) = (,) <$> newArrays repr1 <*> newArrays repr2
+newArrays TupRunit               = return ()
+newArrays (TupRsingle ArrayR{})  = new
+newArrays (TupRpair repr1 repr2) = (,) <$> newArrays repr1 <*> newArrays repr2
+

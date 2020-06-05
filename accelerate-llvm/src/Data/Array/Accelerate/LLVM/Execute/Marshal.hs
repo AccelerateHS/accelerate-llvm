@@ -1,8 +1,10 @@
 {-# LANGUAGE AllowAmbiguousTypes   #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -25,124 +27,99 @@ module Data.Array.Accelerate.LLVM.Execute.Marshal
 
 -- accelerate
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
+import Data.Array.Accelerate.LLVM.Execute.Environment
+import Data.Array.Accelerate.LLVM.Execute.Async
 
 -- libraries
 import Data.DList                                               ( DList )
 import qualified Data.DList                                     as DL
+import qualified Data.IntMap                                    as IM
 
 
 -- Marshalling arguments
 -- ---------------------
+class Async arch => Marshal arch where
+  -- | A type family that is used to specify a concrete kernel argument and
+  -- stream/context type for a given backend target.
+  --
+  type ArgR arch
+
+  -- | Used to pass shapes as arguments to kernels.
+  marshalInt :: Int -> ArgR arch
+
+  -- | Pass arrays to kernels
+  marshalScalarData' :: SingleType e' -> ScalarData e' -> Par arch (DList (ArgR arch))
 
 -- | Convert function arguments into stream a form suitable for function calls
+-- The functions ending in a prime return a DList, other functions return lists.
 --
-marshal :: forall arch m args. Marshalable arch m args => args -> m [ArgR arch]
-marshal args = DL.toList `fmap` marshal' @arch args
+marshalArrays :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch [ArgR arch]
+marshalArrays repr arrs = DL.toList <$> marshalArrays' @arch repr arrs
 
+marshalArrays' :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch (DList (ArgR arch))
+marshalArrays' = marshalTupR' @arch (marshalArray' @arch)
 
--- | A type family that is used to specify a concrete kernel argument and
--- stream/context type for a given backend target.
---
-type family ArgR arch
+marshalArray' :: forall arch a. Marshal arch => ArrayR a -> a -> Par arch (DList (ArgR arch))
+marshalArray' (ArrayR shr tp) (Array sh a) = do
+  arg1 <- marshalArrayData' @arch tp a
+  let arg2 = marshalShape' @arch shr sh
+  return $ arg1 `DL.append` arg2
 
+marshalArrayData' :: forall arch tp. Marshal arch => TupleType tp -> ArrayData tp -> Par arch (DList (ArgR arch))
+marshalArrayData' TupRunit () = return DL.empty
+marshalArrayData' (TupRpair t1 t2) (a1, a2) = do
+  l1 <- marshalArrayData' t1 a1
+  l2 <- marshalArrayData' t2 a2
+  return $ l1 `DL.append` l2
+marshalArrayData' (TupRsingle (SingleScalarType tp)) ad
+  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
+marshalArrayData' (TupRsingle (VectorScalarType (VectorType _ tp))) ad
+  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
 
--- | Data which can be marshalled as function arguments to kernels.
---
--- These are just the basic definitions that don't require backend specific
--- knowledge. To complete the definition, a backend must provide instances for:
---
---   * Int                      -- for shapes
---   * ArrayData e              -- for array data
---   * (Gamma aenv, Aval aenv)  -- for free array variables
---
-class Monad m => Marshalable arch m a where
-  marshal' :: a -> m (DList (ArgR arch))
+marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch [ArgR arch]
+marshalEnv g a = DL.toList <$> marshalEnv' g a
 
-instance Monad m => Marshalable arch m () where
-  marshal' () = return DL.empty
+marshalEnv' :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch (DList (ArgR arch))
+marshalEnv' gamma aenv
+    = fmap DL.concat
+    $ mapM (\(_, Idx' repr idx) -> marshalArray' @arch repr =<< get (prj idx aenv)) (IM.elems gamma)
 
-instance (Marshalable arch m a, Marshalable arch m b) => Marshalable arch m (a, b) where
-  marshal' (a, b) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b]
+marshalShape :: forall arch sh. Marshal arch => ShapeR sh -> sh -> [ArgR arch]
+marshalShape shr sh = DL.toList $ marshalShape' @arch shr sh
 
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c) => Marshalable arch m (a, b, c) where
-  marshal' (a, b, c) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c]
+marshalShape' :: forall arch sh. Marshal arch => ShapeR sh -> sh -> DList (ArgR arch)
+marshalShape' ShapeRz () = DL.empty
+marshalShape' (ShapeRsnoc shr) (sh, n) = marshalShape' @arch shr sh `DL.snoc` marshalInt @arch n
 
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d) => Marshalable arch m (a, b, c, d) where
-  marshal' (a, b, c, d) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d]
+type ParamsR arch = TupR (ParamR arch)
+data ParamR arch a where
+  ParamRarray  :: ArrayR (Array sh e) -> ParamR arch (Array sh e)
+  ParamRmaybe  :: ParamR arch a       -> ParamR arch (Maybe a)
+  ParamRfuture :: ParamR arch a       -> ParamR arch (FutureR arch a)
+  ParamRenv    :: Gamma aenv          -> ParamR arch (ValR arch aenv)
+  ParamRint    ::                        ParamR arch Int
+  ParamRshape  :: ShapeR sh           -> ParamR arch sh
+  ParamRargs   ::                        ParamR arch (DList (ArgR arch))
 
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e)
-    => Marshalable arch m (a, b, c, d, e) where
-  marshal' (a, b, c, d, e) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e]
+marshalParam' :: forall arch a. Marshal arch => ParamR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParam' (ParamRarray repr)  a        = marshalArray' repr a
+marshalParam' (ParamRmaybe _   )  Nothing  = return $ DL.empty
+marshalParam' (ParamRmaybe repr)  (Just a) = marshalParam' repr a
+marshalParam' (ParamRfuture repr) future   = marshalParam' repr =<< get future
+marshalParam' (ParamRenv gamma)   aenv     = marshalEnv'   gamma aenv
+marshalParam'  ParamRint          x        = return $ DL.singleton $ marshalInt @arch x
+marshalParam' (ParamRshape shr)   sh       = return $ marshalShape' @arch shr sh
+marshalParam'  ParamRargs         args     = return args
 
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f)
-    => Marshalable arch m (a, b, c, d, e, f) where
-  marshal' (a, b, c, d, e, f) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f]
+marshalParams' :: forall arch a. Marshal arch => ParamsR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParams' = marshalTupR' @arch (marshalParam' @arch)
 
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f, Marshalable arch m g)
-    => Marshalable arch m (a, b, c, d, e, f, g) where
-  marshal' (a, b, c, d, e, f, g) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f, marshal' @arch g]
-
-instance (Marshalable arch m a, Marshalable arch m b, Marshalable arch m c, Marshalable arch m d, Marshalable arch m e, Marshalable arch m f, Marshalable arch m g, Marshalable arch m h)
-    => Marshalable arch m (a, b, c, d, e, f, g, h) where
-  marshal' (a, b, c, d, e, f, g, h) =
-    DL.concat `fmap` sequence [marshal' @arch a, marshal' @arch b, marshal' @arch c, marshal' @arch d, marshal' @arch e, marshal' @arch f, marshal' @arch g, marshal' @arch h]
-
-instance Marshalable arch m a => Marshalable arch m [a] where
-  marshal' = fmap DL.concat . mapM (marshal' @arch)
-
-instance Marshalable arch m a => Marshalable arch m (Maybe a) where
-  marshal' = \case
-    Nothing -> return DL.empty
-    Just a  -> marshal' @arch a
-
--- instance Monad m => Marshalable arch m (DList (ArgR arch)) where
---   marshal' = return
-
--- instance (Async arch, Marshalable arch (Par arch) a) => Marshalable arch (Par arch) (FutureR arch a) where
---   marshal' future = marshal' @arch =<< get future
-
-instance (Shape sh, Marshalable arch m Int, Marshalable arch m (ArrayData (EltRepr e)))
-    => Marshalable arch m (Array sh e) where
-  marshal' (Array sh adata) =
-    DL.concat `fmap` sequence [marshal' @arch adata, go (eltType @sh) sh]
-    where
-      go :: TupleType a -> a -> m (DList (ArgR arch))
-      go TypeRunit         ()       = return DL.empty
-      go (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go ta sa, go tb sb]
-      go (TypeRscalar t)   i
-        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' @arch i
-        | otherwise                                                         = $internalError "marshal" "expected Int argument"
-
-instance {-# INCOHERENT #-} (Shape sh, Monad m, Marshalable arch m Int)
-    => Marshalable arch m sh where
-  marshal' sh = go (eltType @sh) (fromElt sh)
-    where
-      go :: TupleType a -> a -> m (DList (ArgR arch))
-      go TypeRunit         ()       = return DL.empty
-      go (TypeRpair ta tb) (sa, sb) = DL.concat `fmap` sequence [go ta sa, go tb sb]
-      go (TypeRscalar t)   i
-        | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = marshal' @arch i
-        | otherwise                                                         = $internalError "marshal" "expected Int argument"
-
--- instance Monad m => Marshalable arch m Z where
---   marshal' Z = return DL.empty
-
--- instance (Shape sh, Marshalable arch m sh, Marshalable arch m Int)
---     => Marshalable arch m (sh :. Int) where
---   marshal' (sh :. sz) =
---     DL.concat `fmap` sequence [marshal' @arch sh, marshal' @arch sz]
-
--- instance Marshalable arch (Gamma aenv, ValR arch aenv) where
---   marshal' (gamma, aenv)
---     = fmap DL.concat
---     $ mapM (\(_, Idx' idx) -> marshal' =<< get (prj idx aenv)) (IM.elems gamma)
+{-# INLINE marshalTupR' #-}
+marshalTupR' :: forall arch s a. Marshal arch => (forall b. s b -> b -> Par arch (DList (ArgR arch))) -> TupR s a -> a -> Par arch (DList (ArgR arch))
+marshalTupR' _ TupRunit         ()       = return $ DL.empty
+marshalTupR' f (TupRsingle t)   x        = f t x
+marshalTupR' f (TupRpair t1 t2) (x1, x2) = DL.append <$> marshalTupR' @arch f t1 x1 <*> marshalTupR' @arch f t2 x2
 

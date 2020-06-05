@@ -16,7 +16,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -34,25 +35,26 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
-mkMap :: forall aenv sh a b. (Shape sh, Elt a, Elt b)
-      => Gamma       aenv
+mkMap :: Gamma       aenv
+      -> ArrayR (Array sh a)
+      -> TupleType b
       -> IRFun1  PTX aenv (a -> b)
       -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
-mkMap aenv apply =
+mkMap aenv repr@(ArrayR shr _) tp' apply =
   let
-      (arrOut, paramOut)  = mutableArray @sh "out"
-      (arrIn,  paramIn)   = mutableArray @sh "in"
+      (arrOut, paramOut)  = mutableArray (ArrayR shr tp') "out"
+      (arrIn,  paramIn)   = mutableArray repr             "in"
       paramEnv            = envParam aenv
   in
   makeOpenAcc "map" (paramOut ++ paramIn ++ paramEnv) $ do
 
-    start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrIn)
+    start <- return (liftInt 0)
+    end   <- shapeSize shr (irArrayShape arrIn)
 
     imapFromTo start end $ \i -> do
-      xs <- readArray arrIn i
+      xs <- readArray TypeInt arrIn i
       ys <- app1 apply xs
-      writeArray arrOut i ys
+      writeArray TypeInt arrOut i ys
 
     return_
 

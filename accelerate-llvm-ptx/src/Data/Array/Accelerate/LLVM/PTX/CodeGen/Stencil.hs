@@ -20,10 +20,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.AST                                    ( Stencil, StencilR(..), stencil )
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -56,149 +53,132 @@ import Control.Monad
 --  * stencil_border: applies boundary condition check to each array access
 --
 mkStencil1
-    :: forall aenv stencil sh a b. (Stencil sh a stencil, Elt b)
-    => Gamma           aenv
+    :: Gamma           aenv
+    -> StencilR sh a stencil
+    -> TupleType b
     -> IRFun1      PTX aenv (stencil -> b)
     -> IRBoundary  PTX aenv (Array sh a)
     -> MIRDelayed  PTX aenv (Array sh a)
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh b))
-mkStencil1 aenv fun bnd marr =
-  let halo             = stencilBorder (stencil :: StencilR sh a stencil)
+mkStencil1 aenv stencil tp fun bnd marr =
+  let repr             = ArrayR shr tp
+      (shr, halo)      = stencilHalo stencil
       (arrIn, paramIn) = delayedArray "in" marr
   in
-  (+++) <$> mkInside aenv halo (IRFun1 $ app1 fun <=< stencilAccess Nothing    arrIn) paramIn
-        <*> mkBorder aenv      (IRFun1 $ app1 fun <=< stencilAccess (Just bnd) arrIn) paramIn
+  (+++) <$> mkInside aenv repr halo (IRFun1 $ app1 fun <=< stencilAccess stencil Nothing    arrIn) paramIn
+        <*> mkBorder aenv repr      (IRFun1 $ app1 fun <=< stencilAccess stencil (Just bnd) arrIn) paramIn
 
 
 mkStencil2
-    :: forall aenv stencil1 stencil2 sh a b c. (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
-    => Gamma           aenv
+    :: Gamma           aenv
+    -> StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> TupleType c
     -> IRFun2      PTX aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary  PTX aenv (Array sh a)
     -> MIRDelayed  PTX aenv (Array sh a)
     -> IRBoundary  PTX aenv (Array sh b)
     -> MIRDelayed  PTX aenv (Array sh b)
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh c))
-mkStencil2 aenv f bnd1 marr1 bnd2 marr2 =
+mkStencil2 aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
   let
+      repr = ArrayR shr tp
       (arrIn1, paramIn1)  = delayedArray "in1" marr1
       (arrIn2, paramIn2)  = delayedArray "in2" marr2
 
       inside  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess Nothing arrIn1 ix
-        stencil2 <- stencilAccess Nothing arrIn2 ix
-        app2 f stencil1 stencil2
+        s1 <- stencilAccess stencil1 Nothing arrIn1 ix
+        s2 <- stencilAccess stencil2 Nothing arrIn2 ix
+        app2 f s1 s2
       --
       border  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess (Just bnd1) arrIn1 ix
-        stencil2 <- stencilAccess (Just bnd2) arrIn2 ix
-        app2 f stencil1 stencil2
+        s1 <- stencilAccess stencil1 (Just bnd1) arrIn1 ix
+        s2 <- stencilAccess stencil2 (Just bnd2) arrIn2 ix
+        app2 f s1 s2
 
-      halo1   = stencilBorder (stencil :: StencilR sh a stencil1)
-      halo2   = stencilBorder (stencil :: StencilR sh b stencil2)
-      halo    = halo1 `union` halo2
+      (shr, halo1) = stencilHalo stencil1
+      (_,   halo2) = stencilHalo stencil2
+      halo         = union shr halo1 halo2
   in
-  (+++) <$> mkInside aenv halo inside (paramIn1 ++ paramIn2)
-        <*> mkBorder aenv      border (paramIn1 ++ paramIn2)
+  (+++) <$> mkInside aenv repr halo inside (paramIn1 ++ paramIn2)
+        <*> mkBorder aenv repr      border (paramIn1 ++ paramIn2)
 
 
 mkInside
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
+    :: Gamma aenv
+    -> ArrayR (Array sh e)
     -> sh
     -> IRFun1  PTX aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkInside aenv halo apply paramIn =
+mkInside aenv repr@(ArrayR shr _) halo apply paramIn =
   let
-      (arrOut, paramOut)  = mutableArray @sh "out"
-      paramInside         = parameter    @sh "shInside"
-      shInside            = local        @sh "shInside"
+      (arrOut, paramOut)  = mutableArray repr "out"
+      paramInside         = parameter    (shapeType shr) "shInside"
+      shInside            = local        (shapeType shr) "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
       --
   in
   makeOpenAcc "stencil_inside" (paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    start <- return (lift 0)
-    end   <- shapeSize shInside
+    start <- return (liftInt 0)
+    end   <- shapeSize shr shInside
 
     -- iterate over the inside region as a linear index space
     --
     imapFromTo start end $ \i -> do
 
-      ixIn  <- indexOfInt shInside i    -- convert to multidimensional index of inside region
-      ixOut <- offset ixIn (lift halo)  -- shift to multidimensional index of outside region
+      ixIn  <- indexOfInt shr shInside i    -- convert to multidimensional index of inside region
+      ixOut <- offset shr ixIn (lift (shapeType shr) halo)  -- shift to multidimensional index of outside region
       r     <- app1 apply ixOut         -- apply generator function
-      j     <- intOfIndex shOut ixOut
-      writeArray arrOut j r
+      j     <- intOfIndex shr shOut ixOut
+      writeArray TypeInt arrOut j r
 
     return_
 
 
 mkBorder
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Gamma aenv
+    :: Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRFun1  PTX aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkBorder aenv apply paramIn =
+mkBorder aenv repr@(ArrayR shr _) apply paramIn =
   let
-      (arrOut, paramOut)  = mutableArray @sh "out"
-      paramFrom           = parameter    @sh "shFrom"
-      shFrom              = local        @sh "shFrom"
-      paramInside         = parameter    @sh "shInside"
-      shInside            = local        @sh "shInside"
+      (arrOut, paramOut)  = mutableArray repr "out"
+      paramFrom           = parameter    (shapeType shr) "shFrom"
+      shFrom              = local        (shapeType shr) "shFrom"
+      paramInside         = parameter    (shapeType shr) "shInside"
+      shInside            = local        (shapeType shr) "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
       --
   in
   makeOpenAcc "stencil_border" (paramFrom ++ paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    start <- return (lift 0)
-    end   <- shapeSize shInside
+    start <- return (liftInt 0)
+    end   <- shapeSize shr shInside
 
     imapFromTo start end $ \i -> do
 
-      ixIn  <- indexOfInt shInside i    -- convert to multidimensional index of inside region
-      ixOut <- offset ixIn shFrom       -- shift to multidimensional index of outside region
+      ixIn  <- indexOfInt shr shInside i    -- convert to multidimensional index of inside region
+      ixOut <- offset shr ixIn shFrom       -- shift to multidimensional index of outside region
       r     <- app1 apply ixOut         -- apply generator function
-      j     <- intOfIndex shOut ixOut
-      writeArray arrOut j r
+      j     <- intOfIndex shr shOut ixOut
+      writeArray TypeInt arrOut j r
 
     return_
 
 
-offset :: forall sh. Shape sh => IR sh -> IR sh -> CodeGen PTX (IR sh)
-offset (IR sh1) (IR sh2) = IR <$> go (eltType @sh) sh1 sh2
+offset :: ShapeR sh -> Operands sh -> Operands sh -> CodeGen PTX (Operands sh)
+offset shr sh1 sh2 = go shr sh1 sh2
   where
-    go :: TupleType t -> Operands t -> Operands t -> CodeGen PTX (Operands t)
-    go TypeRunit OP_Unit OP_Unit
+    go :: ShapeR t -> Operands t -> Operands t -> CodeGen PTX (Operands t)
+    go ShapeRz OP_Unit OP_Unit
       = return OP_Unit
 
-    go (TypeRpair ta tb) (OP_Pair sa1 sb1) (OP_Pair sa2 sb2)
-      = OP_Pair <$> go ta sa1 sa2 <*> go tb sb1 sb2
-
-    go (TypeRscalar t) sa sb
-      | Just Refl <- matchScalarType t (scalarType :: ScalarType Int)
-      = do IR x <- add (numType :: NumType Int) (IR sa) (IR sb)
-           return x
-
-    go _ _ _
-      = $internalError "offset" "expected shape with Int components"
-
-
-stencilBorder :: StencilR sh a stencil -> sh
-stencilBorder = go
-  where
-    go :: StencilR sh' e stencil' -> sh'
-    go StencilRunit3 = Z :. 1
-    go StencilRunit5 = Z :. 2
-    go StencilRunit7 = Z :. 3
-    go StencilRunit9 = Z :. 4
-    --
-    go (StencilRtup3 a b c            ) = foldl1 union [go a, go b, go c]                                     :. 1
-    go (StencilRtup5 a b c d e        ) = foldl1 union [go a, go b, go c, go d, go e]                         :. 2
-    go (StencilRtup7 a b c d e f g    ) = foldl1 union [go a, go b, go c, go d, go e, go f, go g]             :. 3
-    go (StencilRtup9 a b c d e f g h i) = foldl1 union [go a, go b, go c, go d, go e, go f, go g, go h, go i] :. 4
+    go (ShapeRsnoc t) (OP_Pair sa1 sb1) (OP_Pair sa2 sb2)
+      = do x <- add (numType :: NumType Int) sb1 sb2
+           OP_Pair <$> go t sa1 sa2 <*> return x
 

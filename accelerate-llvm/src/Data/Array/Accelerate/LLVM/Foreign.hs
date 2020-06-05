@@ -18,19 +18,17 @@ import Data.Array.Accelerate.Array.Sugar                            as A
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Execute.Async
 
-import Data.Typeable
-
 
 -- | Interface for backends to provide foreign function implementations for
 -- array and scalar expressions.
 --
 class Foreign arch where
-  foreignAcc :: (A.Foreign asm, A.Arrays a, A.Arrays b)
+  foreignAcc :: A.Foreign asm
              => asm (a -> b)
-             -> Maybe (ArrRepr a -> Par arch (FutureR arch (ArrRepr b)))
+             -> Maybe (a -> Par arch (FutureR arch b))
   foreignAcc _ = Nothing
 
-  foreignExp :: (A.Foreign asm, Typeable x, Typeable y)
+  foreignExp :: A.Foreign asm
              => asm (x -> y)
              -> Maybe (IRFun1 arch () (x -> y))
   foreignExp _ = Nothing

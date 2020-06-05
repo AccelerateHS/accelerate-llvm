@@ -38,10 +38,10 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 --       boundary. This might not always be the case, so provide a version that
 --       explicitly aligns reads to the warp boundary.
 --
-imapFromTo :: IR Int -> IR Int -> (IR Int -> CodeGen PTX ()) -> CodeGen PTX ()
+imapFromTo :: Operands Int -> Operands Int -> (Operands Int -> CodeGen PTX ()) -> CodeGen PTX ()
 imapFromTo start end body = do
-  step  <- A.fromIntegral integralType numType =<< gridSize
-  tid   <- A.fromIntegral integralType numType =<< globalThreadIdx
+  step  <- A.irFromIntegral integralType numType =<< gridSize
+  tid   <- A.irFromIntegral integralType numType =<< globalThreadIdx
   i0    <- add numType tid start
   --
   Loop.imapFromStepTo i0 step end body

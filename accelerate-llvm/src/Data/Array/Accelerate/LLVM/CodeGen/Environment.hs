@@ -20,9 +20,9 @@ import Data.String
 import Text.Printf
 import qualified Data.IntMap                                    as IM
 
-import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt, ArrayVar(..) )
+import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt, ArrayVar, Var(..) )
 import Data.Array.Accelerate.Error                              ( internalError )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Representation               ( Array, ArrayR(..) )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
@@ -36,13 +36,13 @@ import LLVM.AST.Type.Name
 -- level as a heterogenous snoc list, and on the type level as nested tuples.
 --
 data Val env where
-  Empty ::                    Val ()
-  Push  :: Val env -> IR t -> Val (env, t)
+  Empty ::                          Val ()
+  Push  :: Val env -> Operands t -> Val (env, t)
 
 -- | Projection of a value from the valuation environment using a de Bruijn
 -- index.
 --
-prj :: Idx env t -> Val env -> IR t
+prj :: Idx env t -> Val env -> Operands t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
 #if __GLASGOW_HASKELL__ < 800
@@ -64,7 +64,7 @@ prj _            _            = $internalError "prj" "inconsistent valuation"
 type Gamma aenv = IntMap (Label, Idx' aenv)
 
 data Idx' aenv where
-  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
+  Idx' :: ArrayR (Array sh e) -> Idx aenv (Array sh e) -> Idx' aenv
 
 -- Projection of a value from the array environment using a de Bruijn index.
 -- This returns a pair of operands to access the shape and array data
@@ -89,5 +89,5 @@ makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
 -- | A free variable
 --
 freevar :: ArrayVar aenv a -> IntMap (Idx' aenv)
-freevar (ArrayVar ix) = IM.singleton (idxToInt ix) (Idx' ix)
+freevar (Var repr@ArrayR{} ix) = IM.singleton (idxToInt ix) (Idx' repr ix)
 

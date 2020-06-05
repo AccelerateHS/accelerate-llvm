@@ -15,7 +15,8 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Generate
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -33,23 +34,23 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- processes multiple adjacent elements.
 --
 mkGenerate
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRFun1  Native aenv (sh -> e)
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkGenerate uid aenv apply =
+mkGenerate uid aenv repr apply =
   let
-      (start, end, paramGang)   = gangParam    @sh
-      (arrOut, paramOut)        = mutableArray @sh "out"
+      (start, end, paramGang)   = gangParam (arrayRshape repr)
+      (arrOut, paramOut)        = mutableArray repr "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in
   makeOpenAcc uid "generate" (paramGang ++ paramOut ++ paramEnv) $ do
 
-    imapNestFromTo start end shOut $ \ix i -> do
+    imapNestFromTo (arrayRshape repr) start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
-      writeArray arrOut i r                     -- store result
+      writeArray TypeInt arrOut i r             -- store result
 
     return_
 

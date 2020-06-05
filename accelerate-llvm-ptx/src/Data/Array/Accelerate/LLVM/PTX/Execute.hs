@@ -28,7 +28,7 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 
 -- accelerate
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Type
@@ -55,6 +55,7 @@ import Control.Monad                                            ( when, forM_ )
 import Control.Monad.Reader                                     ( asks, local )
 import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
+import qualified Data.DList                                     as DL
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
 import Text.Printf                                              ( printf )
@@ -102,7 +103,7 @@ instance Execute PTX where
   map           = mapOp
   generate      = generateOp
   transform     = transformOp
-  backpermute   = transformOp
+  backpermute   = backpermuteOp
   fold          = foldOp
   fold1         = fold1Op
   foldSeg       = foldSegOp
@@ -126,19 +127,20 @@ instance Execute PTX where
 --
 {-# INLINE simpleOp #-}
 simpleOp
-    :: (Shape sh, Elt e)
-    => ShortByteString
+    :: ShortByteString
+    -> ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> sh
     -> Par PTX (Future (Array sh e))
-simpleOp name exe gamma aenv sh =
+simpleOp name repr exe gamma aenv sh =
   withExecutable exe $ \ptxExecutable -> do
     future <- new
-    result <- allocateRemote sh
+    result <- allocateRemote repr sh
     --
-    executeOp (ptxExecutable !# name) gamma aenv sh result
+    let paramR = TupRsingle $ ParamRarray repr
+    executeOp (ptxExecutable !# name) gamma aenv (arrayRshape repr) sh paramR result
     put future result
     return future
 
@@ -147,28 +149,31 @@ simpleOp name exe gamma aenv sh =
 --
 {-# INLINE mapOp #-}
 mapOp
-    :: (Shape sh, Elt a, Elt b)
-    => Maybe (a :~: b)
+    :: Maybe (a :~: b)
+    -> ArrayR (Array sh a)
+    -> TupleType b
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Array sh a
     -> Par PTX (Future (Array sh b))
-mapOp inplace exe gamma aenv input@(shape -> sh) =
+mapOp inplace repr tp exe gamma aenv input@(shape -> sh) =
   withExecutable exe $ \ptxExecutable -> do
+    let reprOut = ArrayR (arrayRshape repr) tp
     future <- new
     result <- case inplace of
                 Just Refl -> return input
-                Nothing   -> allocateRemote sh
+                Nothing   -> allocateRemote reprOut sh
     --
-    executeOp (ptxExecutable !# "map") gamma aenv sh (result, input)
+    let paramsR = TupRsingle (ParamRarray reprOut) `TupRpair` TupRsingle (ParamRarray repr)
+    executeOp (ptxExecutable !# "map") gamma aenv (arrayRshape repr) sh paramsR (result, input)
     put future result
     return future
 
 {-# INLINE generateOp #-}
 generateOp
-    :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> sh
@@ -177,20 +182,34 @@ generateOp = simpleOp "generate"
 
 {-# INLINE transformOp #-}
 transformOp
-    :: (Shape sh, Shape sh', Elt a, Elt b)
-    => ExecutableR PTX
+    :: ArrayR (Array sh a)
+    -> ArrayR (Array sh' b)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> sh'
     -> Array sh a
     -> Par PTX (Future (Array sh' b))
-transformOp exe gamma aenv sh' input =
+transformOp repr repr' exe gamma aenv sh' input =
   withExecutable exe $ \ptxExecutable -> do
     future <- new
-    result <- allocateRemote sh'
-    executeOp (ptxExecutable !# "transform") gamma aenv sh' (result, input)
+    result <- allocateRemote repr' sh'
+    let paramsR = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray repr)
+    executeOp (ptxExecutable !# "transform") gamma aenv (arrayRshape repr') sh' paramsR (result, input)
     put future result
     return future
+
+{-# INLINE backpermuteOp #-}
+backpermuteOp
+    :: ArrayR (Array sh e)
+    -> ShapeR sh'
+    -> ExecutableR PTX
+    -> Gamma aenv
+    -> Val aenv
+    -> sh'
+    -> Array sh e
+    -> Par PTX (Future (Array sh' e))
+backpermuteOp (ArrayR shr tp) shr' = transformOp (ArrayR shr tp) (ArrayR shr' tp)
 
 -- There are two flavours of fold operation:
 --
@@ -208,68 +227,73 @@ transformOp exe gamma aenv sh' input =
 --
 {-# INLINE fold1Op #-}
 fold1Op
-    :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array sh e))
-fold1Op exe gamma aenv arr@(delayedShape -> sh@(sx :. sz))
+fold1Op repr exe gamma aenv arr@(delayedShape -> sh@(sx, sz))
   = $boundsCheck "fold1" "empty array" (sz > 0)
-  $ case size sh of
-      0 -> newFull =<< allocateRemote sx  -- empty, but possibly with one or more non-zero dimensions
-      _ -> foldCore exe gamma aenv arr
+  $ case size (ShapeRsnoc $ arrayRshape repr) sh of
+      0 -> newFull =<< allocateRemote repr sx  -- empty, but possibly with one or more non-zero dimensions
+      _ -> foldCore repr exe gamma aenv arr
 
 {-# INLINE foldOp #-}
 foldOp
-    :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array sh e))
-foldOp exe gamma aenv arr@(delayedShape -> sh@(sx :. _))
-  = case size sh of
-      0 -> generateOp exe gamma aenv sx
-      _ -> foldCore exe gamma aenv arr
+foldOp repr exe gamma aenv arr@(delayedShape -> sh@(sx, _))
+  = case size (ShapeRsnoc $ arrayRshape repr) sh of
+      0 -> generateOp repr exe gamma aenv sx
+      _ -> foldCore repr exe gamma aenv arr
 
 {-# INLINE foldCore #-}
 foldCore
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array sh e))
-foldCore exe gamma aenv arr
-  | Just Refl <- matchShapeType @sh @Z
-  = foldAllOp exe gamma aenv arr
+foldCore repr exe gamma aenv arr
+  | ArrayR ShapeRz tp <- repr
+  = foldAllOp tp exe gamma aenv arr
   --
   | otherwise
-  = foldDimOp exe gamma aenv arr
+  = foldDimOp repr exe gamma aenv arr
 
 {-# INLINE foldAllOp #-}
 foldAllOp
-    :: forall aenv e. Elt e
-    => ExecutableR PTX
+    :: forall aenv e.
+       TupleType e
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Vector e)
     -> Par PTX (Future (Scalar e))
-foldAllOp exe gamma aenv input =
+foldAllOp tp exe gamma aenv input =
   withExecutable exe $ \ptxExecutable -> do
     future <- new
     let
         ks        = ptxExecutable !# "foldAllS"
         km1       = ptxExecutable !# "foldAllM1"
         km2       = ptxExecutable !# "foldAllM2"
-        sh@(Z:.n) = delayedShape input
+        sh@((), n) = delayedShape input
+        paramsRinput = TupRsingle $ ParamRmaybe $ ParamRarray $ ArrayR dim1 tp
+        paramsRdim0  = TupRsingle $ ParamRarray $ ArrayR dim0 tp
+        paramsRdim1  = TupRsingle $ ParamRarray $ ArrayR dim1 tp
     --
     if kernelThreadBlocks ks n == 1
       then do
         -- The array is small enough that we can compute it in a single step
-        result <- allocateRemote Z
-        executeOp ks gamma aenv sh (result, manifest input)
+        result <- allocateRemote (ArrayR dim0 tp) ()
+        let paramsR = paramsRdim0 `TupRpair` paramsRinput
+        executeOp ks gamma aenv dim1 sh paramsR (result, manifest input)
         put future result
 
       else do
@@ -281,14 +305,16 @@ foldAllOp exe gamma aenv input =
             rec tmp@(Array ((),m) adata)
               | m <= 1    = put future (Array () adata)
               | otherwise = do
-                  let sh' = Z :. m `multipleOf` kernelThreadBlockSize km2
-                  out <- allocateRemote sh'
-                  executeOp km2 gamma aenv sh' (tmp, out)
+                  let sh' = ((), m `multipleOf` kernelThreadBlockSize km2)
+                  out <- allocateRemote (ArrayR dim1 tp) sh'
+                  let paramsR2 = paramsRdim1 `TupRpair` paramsRdim1
+                  executeOp km2 gamma aenv dim1 sh' paramsR2 (tmp, out)
                   rec out
         --
-        let sh' = Z :. n `multipleOf` kernelThreadBlockSize km1
-        tmp <- allocateRemote sh'
-        executeOp km1 gamma aenv sh' (tmp, manifest input)
+        let sh' = ((), n `multipleOf` kernelThreadBlockSize km1)
+        tmp <- allocateRemote (ArrayR dim1 tp) sh'
+        let paramsR1 = paramsRdim1 `TupRpair` paramsRinput
+        executeOp km1 gamma aenv dim1 sh' paramsR1 (tmp, manifest input)
         rec tmp
     --
     return future
@@ -296,38 +322,42 @@ foldAllOp exe gamma aenv input =
 
 {-# INLINE foldDimOp #-}
 foldDimOp
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array sh e))
-foldDimOp exe gamma aenv input@(delayedShape -> (sh :. sz))
-  | sz == 0   = generateOp exe gamma aenv sh
+foldDimOp repr@(ArrayR shr tp) exe gamma aenv input@(delayedShape -> (sh, sz))
+  | sz == 0   = generateOp repr exe gamma aenv sh
   | otherwise =
     withExecutable exe $ \ptxExecutable -> do
       future <- new
-      result <- allocateRemote sh
+      result <- allocateRemote repr sh
       --
-      executeOp (ptxExecutable !# "fold") gamma aenv sh (result, manifest input)
+      let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray $ ArrayR (ShapeRsnoc shr) tp)
+      executeOp (ptxExecutable !# "fold") gamma aenv shr sh paramsR (result, manifest input)
       put future result
       return future
 
 
 {-# INLINE foldSegOp #-}
 foldSegOp
-    :: (Shape sh, Elt e, Elt i, IsIntegral i)
-    => ExecutableR PTX
+    :: IntegralType i
+    -> ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
+    -> Delayed (Array (sh, Int) e)
     -> Delayed (Segments i)
-    -> Par PTX (Future (Array (sh :. Int) e))
-foldSegOp exe gamma aenv input@(delayedShape -> (sh :. sz)) segments@(delayedShape -> (Z :. ss)) =
+    -> Par PTX (Future (Array (sh, Int) e))
+foldSegOp intTp repr exe gamma aenv input@(delayedShape -> (sh, sz)) segments@(delayedShape -> ((), ss)) =
   withExecutable exe $ \ptxExecutable -> do
     let
+        ArrayR (ShapeRsnoc shr') _ = repr
+        reprSeg = ArrayR dim1 $ TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType intTp
         n       = ss - 1  -- segments array has been 'scanl (+) 0'`ed
-        m       = size sh * n
+        m       = size shr' sh * n
         foldseg = if (sz`quot`ss) < (2 * kernelThreadBlockSize foldseg_cta)
                     then foldseg_warp
                     else foldseg_cta
@@ -337,63 +367,64 @@ foldSegOp exe gamma aenv input@(delayedShape -> (sh :. sz)) segments@(delayedSha
         -- qinit         = ptxExecutable !# "qinit"
     --
     future  <- new
-    result  <- allocateRemote (sh :. n)
-    executeOp foldseg gamma aenv (Z :. m) (result, manifest input, manifest segments)
+    result  <- allocateRemote repr (sh, n)
+    let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray reprSeg)
+    executeOp foldseg gamma aenv dim1 ((), m) paramsR ((result, manifest input), manifest segments)
     put future result
     return future
 
 
 {-# INLINE scanOp #-}
 scanOp
-    :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh:.Int) e))
-scanOp exe gamma aenv input@(delayedShape -> (sz :. n)) =
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e))
+scanOp repr exe gamma aenv input@(delayedShape -> (sz, n)) =
   case n of
-    0 -> generateOp exe gamma aenv (sz :. 1)
-    _ -> scanCore exe gamma aenv (n+1) input
+    0 -> generateOp repr exe gamma aenv (sz, 1)
+    _ -> scanCore repr exe gamma aenv (n+1) input
 
 {-# INLINE scan1Op #-}
 scan1Op
-    :: (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh :. Int) e))
-scan1Op exe gamma aenv input@(delayedShape -> (_ :. n))
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e))
+scan1Op repr exe gamma aenv input@(delayedShape -> (_, n))
   = $boundsCheck "scan1" "empty array" (n > 0)
-  $ scanCore exe gamma aenv n input
+  $ scanCore repr exe gamma aenv n input
 
 {-# INLINE scanCore #-}
 scanCore
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Int                    -- output size of innermost dimension
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh :. Int) e))
-scanCore exe gamma aenv m input
-  | Just Refl <- matchShapeType @sh @Z
-  = scanAllOp exe gamma aenv m input
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e))
+scanCore repr exe gamma aenv m input
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = scanAllOp tp exe gamma aenv m input
   --
   | otherwise
-  = scanDimOp exe gamma aenv m input
+  = scanDimOp repr exe gamma aenv m input
 
 {-# INLINE scanAllOp #-}
 scanAllOp
-    :: forall aenv e. Elt e
-    => ExecutableR PTX
+    :: TupleType e
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Int                    -- output size
     -> Delayed (Vector e)
     -> Par PTX (Future (Vector e))
-scanAllOp exe gamma aenv m input@(delayedShape -> (Z :. n)) =
+scanAllOp tp exe gamma aenv m input@(delayedShape -> ((), n)) =
   withExecutable exe $ \ptxExecutable -> do
     let
         k1  = ptxExecutable !# "scanP1"
@@ -402,89 +433,99 @@ scanAllOp exe gamma aenv m input@(delayedShape -> (Z :. n)) =
         --
         c   = kernelThreadBlockSize k1
         s   = n `multipleOf` c
+        --
+        repr = ArrayR dim1 tp
+        paramR = TupRsingle $ ParamRarray repr
+        paramsR1 = paramR `TupRpair` paramR `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+        paramsR3 = paramR `TupRpair` paramR `TupRpair` TupRsingle ParamRint
     --
     future  <- new
-    result  <- allocateRemote (Z :. m)
+    result  <- allocateRemote repr ((), m)
 
     -- Step 1: Independent thread-block-wide scans of the input. Small arrays
     -- which can be computed by a single thread block will require no
     -- additional work.
-    tmp     <- allocateRemote (Z :. s) :: Par PTX (Vector e)
-    executeOp k1 gamma aenv (Z :. s) (tmp, result, manifest input)
+    tmp     <- allocateRemote repr ((), s)
+    executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
 
     -- Step 2: Multi-block reductions need to compute the per-block prefix,
     -- then apply those values to the partial results.
     when (s > 1) $ do
-      executeOp k2 gamma aenv (Z :. s)   tmp
-      executeOp k3 gamma aenv (Z :. s-1) (tmp, result, c)
+      executeOp k2 gamma aenv dim1 ((), s)   paramR tmp
+      executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
 
     put future result
     return future
 
 {-# INLINE scanDimOp #-}
 scanDimOp
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Int
-    -> Delayed (Array (sh:.Int) e)
-    -> Par PTX (Future (Array (sh:.Int) e))
-scanDimOp exe gamma aenv m input@(delayedShape -> (sz :. _)) =
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e))
+scanDimOp repr exe gamma aenv m input@(delayedShape -> (sz, _)) =
   withExecutable exe $ \ptxExecutable -> do
+    let ArrayR (ShapeRsnoc shr') _ = repr
     future  <- new
-    result  <- allocateRemote (sz :. m)
-    executeOp (ptxExecutable !# "scan") gamma aenv (Z :. size sz) (result, manifest input)
+    result  <- allocateRemote repr (sz, m)
+    let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+    executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR (result, manifest input)
     put future result
     return future
 
 
 {-# INLINE scan'Op #-}
 scan'Op
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh :. Int) e, Array sh e))
-scan'Op exe gamma aenv input@(delayedShape -> (sz :. n)) =
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e, Array sh e))
+scan'Op repr exe gamma aenv input@(delayedShape -> (sz, n)) =
   case n of
     0 -> do
       future  <- new
-      result  <- allocateRemote (sz :. 0)
-      sums    <- generateOp exe gamma aenv sz
+      result  <- allocateRemote repr (sz, 0)
+      sums    <- generateOp (reduceRank repr) exe gamma aenv sz
       fork $ do sums' <- get sums
                 put future (result, sums')
       return future
     --
-    _ -> scan'Core exe gamma aenv input
+    _ -> scan'Core repr exe gamma aenv input
 
 {-# INLINE scan'Core #-}
 scan'Core
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh :. Int) e, Array sh e))
-scan'Core exe gamma aenv input
-  | Just Refl <- matchShapeType @sh @Z
-  = scan'AllOp exe gamma aenv input
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e, Array sh e))
+scan'Core repr exe gamma aenv input
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = scan'AllOp tp exe gamma aenv input
   --
   | otherwise
-  = scan'DimOp exe gamma aenv input
+  = scan'DimOp repr exe gamma aenv input
 
 {-# INLINE scan'AllOp #-}
 scan'AllOp
-    :: forall aenv e. Elt e
-    => ExecutableR PTX
+    :: TupleType e
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Vector e)
     -> Par PTX (Future (Vector e, Scalar e))
-scan'AllOp exe gamma aenv input@(delayedShape -> (Z :. n)) =
+scan'AllOp tp exe gamma aenv input@(delayedShape -> ((), n)) =
   withExecutable exe $ \ptxExecutable -> do
     let
+        repr = ArrayR dim1 tp
+        paramRdim0 = TupRsingle $ ParamRarray $ ArrayR dim0 tp
+        paramRdim1 = TupRsingle $ ParamRarray repr
         k1  = ptxExecutable !# "scanP1"
         k2  = ptxExecutable !# "scanP2"
         k3  = ptxExecutable !# "scanP3"
@@ -493,12 +534,13 @@ scan'AllOp exe gamma aenv input@(delayedShape -> (Z :. n)) =
         s   = n `multipleOf` c
     --
     future  <- new
-    result  <- allocateRemote (Z :. n)
-    tmp     <- allocateRemote (Z :. s)  :: Par PTX (Vector e)
+    result  <- allocateRemote repr ((), n)
+    tmp     <- allocateRemote repr ((), s)
 
     -- Step 1: independent thread-block-wide scans. Each block stores its partial
     -- sum to a temporary array.
-    executeOp k1 gamma aenv (Z :. s) (tmp, result, manifest input)
+    let paramsR1 = paramRdim1 `TupRpair` paramRdim1 `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+    executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
 
     -- If this was a small array that was processed by a single thread block then
     -- we are done, otherwise compute the per-block prefix and apply those values
@@ -509,67 +551,78 @@ scan'AllOp exe gamma aenv input@(delayedShape -> (Z :. n)) =
           Array _ ad -> put future (result, Array () ad)
 
       else do
-        sums <- allocateRemote Z
-        executeOp k2 gamma aenv (Z :. s)   (tmp, sums)
-        executeOp k3 gamma aenv (Z :. s-1) (tmp, result, c)
+        sums <- allocateRemote (ArrayR dim0 tp) ()
+        let paramsR2 = paramRdim1 `TupRpair` paramRdim0
+        let paramsR3 = paramRdim1 `TupRpair` paramRdim1 `TupRpair` TupRsingle ParamRint
+        executeOp k2 gamma aenv dim1 ((), s)   paramsR2 (tmp, sums)
+        executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
         put future (result, sums)
     --
     return future
 
 {-# INLINE scan'DimOp #-}
 scan'DimOp
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => ExecutableR PTX
+    :: ArrayR (Array (sh, Int) e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
-    -> Delayed (Array (sh :. Int) e)
-    -> Par PTX (Future (Array (sh :. Int) e, Array sh e))
-scan'DimOp exe gamma aenv input@(delayedShape -> sh@(sz :. _)) =
+    -> Delayed (Array (sh, Int) e)
+    -> Par PTX (Future (Array (sh, Int) e, Array sh e))
+scan'DimOp repr@(ArrayR (ShapeRsnoc shr') _) exe gamma aenv input@(delayedShape -> sh@(sz, _)) =
   withExecutable exe $ \ptxExecutable -> do
     future  <- new
-    result  <- allocateRemote sh
-    sums    <- allocateRemote sz
-    executeOp (ptxExecutable !# "scan") gamma aenv (Z :. size sz) (result, sums, manifest input)
+    result  <- allocateRemote repr sh
+    sums    <- allocateRemote (reduceRank repr) sz
+    let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRarray $ reduceRank repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+    executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR ((result, sums), manifest input)
     put future (result, sums)
     return future
 
 
 {-# INLINE permuteOp #-}
 permuteOp
-    :: (Shape sh, Shape sh', Elt e)
-    => Bool
+    :: Bool
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Array sh' e
     -> Delayed (Array sh e)
     -> Par PTX (Future (Array sh' e))
-permuteOp inplace exe gamma aenv defaults@(shape -> shOut) input@(delayedShape -> shIn) =
+permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> shOut) input@(delayedShape -> shIn) =
   withExecutable exe $ \ptxExecutable -> do
     let
-        n       = size shIn
-        m       = size shOut
-        kernel  = case functionTable ptxExecutable of
-                    k:_ -> k
-                    _   -> $internalError "permute" "no kernels found"
+        n        = size shr  shIn
+        m        = size shr' shOut
+        repr'    = ArrayR shr' tp
+        reprLock = ArrayR dim1 $ TupRsingle $ scalarTypeWord32
+        paramR   = TupRsingle $ ParamRmaybe $ ParamRarray repr
+        paramR'  = TupRsingle $ ParamRarray repr'
+        kernel   = case functionTable ptxExecutable of
+                      k:_ -> k
+                      _   -> $internalError "permute" "no kernels found"
     --
     future  <- new
     result  <- if inplace
                  then Debug.trace Debug.dump_exec "exec: permute/inplace" $ return defaults
-                 else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync defaults
+                 else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync repr' defaults
     --
     case kernelName kernel of
       -- execute directly using atomic operations
-      "permute_rmw"   -> executeOp kernel gamma aenv (Z :. n) (result, manifest input)
+      "permute_rmw"   ->
+        let paramsR = paramR' `TupRpair` paramR
+        in  executeOp kernel gamma aenv dim1 ((), n) paramsR (result, manifest input)
 
       -- a temporary array is required for spin-locks around the critical section
       "permute_mutex" -> do
-        barrier     <- new                     :: Par PTX (Future (Vector Word32))
-        Array _ ad  <- allocateRemote (Z :. m) :: Par PTX (Vector Word32)
-        fork $ do fill <- memsetArrayAsync m 0 ad
+        barrier     <- new :: Par PTX (Future (Vector Word32))
+        Array _ ad  <- allocateRemote reprLock ((), m)
+        fork $ do fill <- memsetArrayAsync (NumSingleType $ IntegralNumType TypeWord32) m 0 ad
                   put barrier . Array ((), m) =<< get fill
         --
-        executeOp kernel gamma aenv (Z :. n) (result, barrier, manifest input)
+        let paramsR = paramR' `TupRpair` TupRsingle (ParamRfuture $ ParamRarray reprLock) `TupRpair` paramR
+        executeOp kernel gamma aenv dim1 ((), n) paramsR ((result, barrier), manifest input)
 
       _               -> $internalError "permute" "unexpected kernel image"
     --
@@ -579,42 +632,49 @@ permuteOp inplace exe gamma aenv defaults@(shape -> shOut) input@(delayedShape -
 
 {-# INLINE stencil1Op #-}
 stencil1Op
-    :: (Shape sh, Elt a, Elt b)
-    => sh
+    :: TupleType a
+    -> ArrayR (Array sh b)
+    -> sh
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array sh a)
     -> Par PTX (Future (Array sh b))
-stencil1Op halo exe gamma aenv input@(delayedShape -> sh) =
-  stencilCore exe gamma aenv halo sh (manifest input)
+stencil1Op tp repr@(ArrayR shr _) halo exe gamma aenv input@(delayedShape -> sh) =
+  stencilCore repr exe gamma aenv halo sh paramsR (manifest input)
+  where paramsR = TupRsingle $ ParamRmaybe $ ParamRarray $ ArrayR shr tp
 
 -- Using the defaulting instances for stencil operations (for now).
 --
 {-# INLINE stencil2Op #-}
 stencil2Op
-    :: (Shape sh, Elt a, Elt  b, Elt c)
-    => sh
+    :: TupleType a
+    -> TupleType b
+    -> ArrayR (Array sh c)
+    -> sh
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array sh a)
     -> Delayed (Array sh b)
     -> Par PTX (Future (Array sh c))
-stencil2Op halo exe gamma aenv input1@(delayedShape -> sh1) input2@(delayedShape -> sh2) =
-  stencilCore exe gamma aenv halo (sh1 `intersect` sh2) (manifest input1, manifest input2)
+stencil2Op tpA tpB repr@(ArrayR shr _) halo exe gamma aenv input1@(delayedShape -> sh1) input2@(delayedShape -> sh2) =
+  stencilCore repr exe gamma aenv halo (intersect (arrayRshape repr) sh1 sh2) paramsR (manifest input1, manifest input2)
+  where paramsR = TupRsingle (ParamRmaybe $ ParamRarray $ ArrayR shr tpA) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray $ ArrayR shr tpB)
 
 {-# INLINE stencilCore #-}
 stencilCore
-    :: forall aenv sh e args. (Shape sh, Elt e, Marshalable (Par PTX) args)
-    => ExecutableR PTX
+    :: forall aenv sh e params.
+       ArrayR (Array sh e)
+    -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> sh                       -- border dimensions (i.e. index of first interior element)
     -> sh                       -- output array size
-    -> args
+    -> ParamsR PTX params
+    -> params
     -> Par PTX (Future (Array sh e))
-stencilCore exe gamma aenv halo shOut args =
+stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
   withExecutable exe $ \ptxExecutable -> do
     let
         inside  = ptxExecutable !# "stencil_inside"
@@ -624,30 +684,31 @@ stencilCore exe gamma aenv halo shOut args =
         shIn = trav (\x y -> x - 2*y) shOut halo
 
         trav :: (Int -> Int -> Int) -> sh -> sh -> sh
-        trav f a b = toElt $ go (eltType @sh) (fromElt a) (fromElt b)
+        trav f a b = go (arrayRshape repr) a b
           where
-            go :: TupleType t -> t -> t -> t
-            go TypeRunit         ()      ()      = ()
-            go (TypeRpair ta tb) (xa,xb) (ya,yb) = (go ta xa ya, go tb xb yb)
-            go (TypeRscalar t)   x       y
-              | SingleScalarType (NumSingleType (IntegralNumType TypeInt{})) <- t = f x y
-              | otherwise                                                         = $internalError "stencilCore" "expected Int dimensions"
+            go :: ShapeR t -> t -> t -> t
+            go ShapeRz           ()      ()      = ()
+            go (ShapeRsnoc shr') (xa,xb) (ya,yb) = (go shr' xa ya, f xb yb)
     --
     future  <- new
-    result  <- allocateRemote shOut
+    result  <- allocateRemote repr shOut
     parent  <- asks ptxStream
 
     -- interior (no bounds checking)
-    executeOp inside gamma aenv shIn (shIn, result, args)
+    let paramsRinside = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRarray repr) `TupRpair` paramsR
+    executeOp inside gamma aenv shr shIn paramsRinside ((shIn, result), params)
 
     -- halo regions (bounds checking)
     -- executed in separate streams so that they might overlap the main stencil
     -- and each other, as individually they will not saturate the device
-    forM_ (stencilBorders shOut halo) $ \(u, v) ->
+    forM_ (stencilBorders (arrayRshape repr) shOut halo) $ \(u, v) ->
       fork $ do
         -- launch in a separate stream
         let sh = trav (-) v u
-        executeOp border gamma aenv sh (u, sh, result, args)
+        let paramsRborder = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRshape shr)
+                              `TupRpair` TupRsingle (ParamRarray repr)
+                              `TupRpair` paramsR
+        executeOp border gamma aenv shr sh paramsRborder (((u, sh), result), params)
 
         -- synchronisation with main stream
         child <- asks ptxStream
@@ -664,22 +725,21 @@ stencilCore exe gamma aenv halo shOut args =
 --
 {-# INLINE stencilBorders #-}
 stencilBorders
-    :: forall sh. Shape sh
-    => sh
+    :: forall sh.
+       ShapeR sh
+    -> sh
     -> sh
     -> [(sh, sh)]
-stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank @sh - 1)] ]
+stencilBorders shr sh halo = [ face i | i <- [0 .. (2 * rank shr - 1)] ]
   where
     face :: Int -> (sh, sh)
-    face n = let (u,v) = go n (eltType @sh) (fromElt sh) (fromElt halo)
-             in  (toElt u, toElt v)
+    face n = go n shr sh halo
 
-    go :: Int -> TupleType t -> t -> t -> (t, t)
-    go _ TypeRunit           ()         ()         = ((), ())
-    go n (TypeRpair tsh tsz) (sha, sza) (shb, szb)
-      | TypeRscalar (SingleScalarType (NumSingleType (IntegralNumType TypeInt{}))) <- tsz
+    go :: Int -> ShapeR t -> t -> t -> (t, t)
+    go _ ShapeRz           ()         ()         = ((), ())
+    go n (ShapeRsnoc shr') (sha, sza) (shb, szb)
       = let
-            (sha', shb')  = go (n-2) tsh sha shb
+            (sha', shb')  = go (n-2) shr' sha shb
             (sza', szb')
               | n <  0    = (0,       sza)
               | n == 0    = (0,       szb)
@@ -687,8 +747,6 @@ stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank @sh - 1)] ]
               | otherwise = (szb,     sza-szb)
         in
         ((sha', sza'), (shb', szb'))
-    go _ _ _ _
-      = $internalError "stencilBorders" "expected Int dimensions"
 
 
 -- Foreign functions
@@ -696,11 +754,12 @@ stencilBorders sh halo = [ face i | i <- [0 .. (2 * rank @sh - 1)] ]
 {-# INLINE aforeignOp #-}
 aforeignOp
     :: String
+    -> ArraysR as
     -> ArraysR bs
     -> (as -> Par PTX (Future bs))
     -> as
     -> Par PTX (Future bs)
-aforeignOp name _ asm arr = do
+aforeignOp name _ _ asm arr = do
   stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
@@ -728,7 +787,7 @@ lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
   find (\k -> kernelName k == name) (functionTable ptxExecutable)
 
-delayedShape :: Shape sh => Delayed (Array sh e) -> sh
+delayedShape :: Delayed (Array sh e) -> sh
 delayedShape (Delayed sh) = sh
 delayedShape (Manifest a) = shape a
 
@@ -749,19 +808,21 @@ withExecutable PTXR{..} f =
 -- Execute the function implementing this kernel.
 --
 executeOp
-    :: (Shape sh, Marshalable (Par PTX) args)
-    => Kernel
+    :: -- (Shape sh, Marshalable (Par PTX) args)
+       Kernel
     -> Gamma aenv
     -> Val aenv
+    -> ShapeR sh
     -> sh
-    -> args
+    -> ParamsR PTX params
+    -> params
     -> Par PTX ()
-executeOp kernel gamma aenv sh args =
-  let n = size sh
+executeOp kernel gamma aenv shr sh paramsR params =
+  let n = size shr sh
   in  when (n > 0) $ do
         stream <- asks ptxStream
-        argv   <- marshal @PTX (args, (gamma, aenv))
-        liftIO  $ launch kernel stream n argv
+        argv   <- marshalParams' @PTX (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+        liftIO  $ launch kernel stream n $ DL.toList argv
 
 
 -- Execute a device function with the given thread configuration and function

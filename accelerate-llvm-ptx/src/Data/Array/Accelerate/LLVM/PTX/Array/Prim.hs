@@ -34,9 +34,11 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 
 -- accelerate
 import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime                           hiding ( withLifetime )
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Analysis.Type
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -55,11 +57,7 @@ import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 import Control.Monad
 import Control.Monad.Reader
 import Data.IORef
-import Data.Typeable
-import Foreign.Ptr
-import Foreign.Storable
 import GHC.Base
-import GHC.TypeLits
 import Text.Printf
 import Prelude
 
@@ -70,13 +68,13 @@ import Prelude
 --
 {-# INLINEABLE mallocArray #-}
 mallocArray
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-    => Int
+    :: SingleType e
+    -> Int
     -> ArrayData e
     -> LLVM PTX ()
-mallocArray !n !ad = do
-  message ("mallocArray: " ++ showBytes (n * sizeOf (undefined::a)))
-  void $ Remote.malloc ad n False
+mallocArray !tp !n !ad = do
+  message ("mallocArray: " ++ showBytes (n * sizeOfSingleType tp))
+  void $ Remote.malloc tp ad n False
 
 
 -- | A combination of 'mallocArray' and 'pokeArray', that allocates remotes
@@ -86,15 +84,15 @@ mallocArray !n !ad = do
 --
 {-# INLINEABLE useArrayAsync #-}
 useArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a, Typeable e)
-    => Int
+    :: SingleType e
+    -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-useArrayAsync !n !ad = do
-  message ("useArrayAsync: " ++ showBytes (n * sizeOf (undefined::a)))
-  alloc <- liftPar $ Remote.malloc ad n True
+useArrayAsync !tp !n !ad = do
+  message ("useArrayAsync: " ++ showBytes (n * sizeOfSingleType tp))
+  alloc <- liftPar $ Remote.malloc tp ad n True
   if alloc
-    then pokeArrayAsync n ad
+    then pokeArrayAsync tp n ad
     else newFull ad
 
 
@@ -102,18 +100,18 @@ useArrayAsync !n !ad = do
 --
 {-# INLINEABLE pokeArrayAsync #-}
 pokeArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
-    => Int
+    :: SingleType e
+    -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-pokeArrayAsync !n !ad = do
-  let !src      = CUDA.HostPtr (ptrsOfArrayData ad)
-      !bytes    = n * sizeOf (undefined :: a)
+pokeArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      !bytes = n * sizeOfSingleType tp
   --
   stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
-      withDevicePtr ad  $ \dst ->
+      withDevicePtr tp ad $ \dst ->
         nonblocking stream $ do
           transfer "pokeArray" bytes (Just st) $ do
             CUDA.pokeArrayAsync n src dst (Just st)
@@ -130,20 +128,20 @@ pokeArrayAsync !n !ad = do
 --
 {-# INLINEABLE indexArrayAsync #-}
 indexArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
+    :: Int              -- actual number of values per element (i.e. this is >1 for SIMD types)
+    -> SingleType e
+    -> ArrayData e
     -> Int              -- element index
-    -> Int              -- actual number of values per element (i.e. this is >1 for SIMD types)
     -> Par PTX (Future (ArrayData e))
-indexArrayAsync !ad_src !i !n = do
-  ad_dst <- liftIO $ newArrayData n
-  let !bytes  = n * sizeOf (undefined::a)
-      !dst    = CUDA.HostPtr (ptrsOfArrayData ad_dst)
+indexArrayAsync !n !tp !ad_src !i | (ScalarDict, _, _) <- singleDict tp = do
+  ad_dst <- liftIO $ newArrayData (TupRsingle $ SingleScalarType tp) n
+  let !bytes = n * sizeOfSingleType tp
+      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
   --
   stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream  $ \st  ->
-    withDevicePtr ad_src $ \src ->
+    withDevicePtr tp ad_src $ \src ->
       nonblocking stream $ do
         transfer "indexArray" bytes (Just st) $ do
           CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
@@ -157,18 +155,18 @@ indexArrayAsync !ad_src !i !n = do
 --
 {-# INLINEABLE peekArrayAsync #-}
 peekArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => Int
+    :: SingleType e
+    -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-peekArrayAsync !n !ad = do
-  let !bytes    = n * sizeOf (undefined :: a)
-      !dst      = CUDA.HostPtr (ptrsOfArrayData ad)
+peekArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
+      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
   --
   stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
-      withDevicePtr ad  $ \src ->
+      withDevicePtr tp ad  $ \src ->
         nonblocking stream $ do
           transfer "peekArray" bytes (Just st) $ do
             CUDA.peekArrayAsync n src dst (Just st)
@@ -182,22 +180,22 @@ peekArrayAsync !n !ad = do
 --
 {-# INLINEABLE copyArrayAsync #-}
 copyArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Storable a, Typeable a)
-    => Int
+    :: SingleType e
+    -> Int
     -> ArrayData e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-copyArrayAsync !n !ad_src !ad_dst = do
-  let !bytes    = n * sizeOf (undefined :: a)
+copyArrayAsync !tp !n !ad_src !ad_dst | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
   --
   stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream      $ \st ->
-      withDevicePtr ad_src   $ \src ->
-        withDevicePtr ad_dst $ \dst -> do
+      withDevicePtr tp ad_src   $ \src ->
+        withDevicePtr tp ad_dst $ \dst -> do
           (e,r) <- nonblocking stream $ do
-                     transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
-                     return ad_dst
+                    transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
+                    return ad_dst
           return (e, (e,r))
   --
   return result
@@ -209,8 +207,8 @@ copyArrayAsync !n !ad_src !ad_dst = do
 --
 {-# INLINEABLE copyArrayPeerAsync #-}
 copyArrayPeerAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
-    => Context                            -- destination context
+    :: SingleType e
+    -> Context                            -- destination context
     -> MemoryTable                        -- destination memory table
     -> Stream
     -> Int
@@ -218,8 +216,8 @@ copyArrayPeerAsync
     -> LLVM PTX ()
 copyArrayPeerAsync = error "copyArrayPeerAsync"
 {--
-copyArrayPeerAsync !ctx2 !mt2 !st !n !ad = do
-  let !bytes    = n * sizeOf (undefined :: a)
+copyArrayPeerAsync !tp !ctx2 !mt2 !st !n !ad = do
+  let !bytes    = n * sizeOfSingleType tp
   src   <- devicePtr mt1 ad
   dst   <- mallocArray ctx2 mt2 n ad
   transfer "copyArrayPeer" bytes (Just st) $
@@ -231,8 +229,8 @@ copyArrayPeerAsync !ctx2 !mt2 !st !n !ad = do
 --
 {-# INLINEABLE copyArrayPeerAsyncR #-}
 copyArrayPeerAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a, Typeable a)
-    => Context                            -- destination context
+    :: SingleType e
+    -> Context                            -- destination context
     -> MemoryTable                        -- destination memory table
     -> Stream
     -> Int
@@ -241,9 +239,9 @@ copyArrayPeerAsync
     -> LLVM PTX ()
 copyArrayPeerAsync = error "copyArrayPeerAsyncR"
 {--
-copyArrayPeerAsyncR !ctx2 !mt2 !st !from !n !ad = do
-  let !bytes    = n    * sizeOf (undefined :: a)
-      !offset   = from * sizeOf (undefined :: a)
+copyArrayPeerAsyncR !tp !ctx2 !mt2 !st !from !n !ad = do
+  let !bytes    = n    * sizeOfSingleType tp
+      !offset   = from * sizeOfSingleType tp
   src <- devicePtr mt1 ad       :: IO (CUDA.DevicePtr a)
   dst <- devicePtr mt2 ad       :: IO (CUDA.DevicePtr a)
   transfer "copyArrayPeer" bytes (Just st) $
@@ -257,18 +255,18 @@ copyArrayPeerAsyncR !ctx2 !mt2 !st !from !n !ad = do
 --
 {-# INLINEABLE memsetArrayAsync #-}
 memsetArrayAsync
-    :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a, BitSize a <= 32)
-    => Int
-    -> a
+    :: SingleType e
+    -> Int
+    -> ScalarDataRepr e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-memsetArrayAsync !n !v !ad = do
-  let !bytes = n * sizeOf (undefined :: a)
+memsetArrayAsync !tp !n !v !ad | (ScalarDict, _, _) <- singleDict tp = do
+  let !bytes = n * sizeOfSingleType tp
   --
   stream <- asks ptxStream
   result <- liftPar $
     withLifetime stream $ \st  ->
-      withDevicePtr ad  $ \ptr ->
+      withDevicePtr tp ad  $ \ptr ->
         nonblocking stream $ do
           transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
           return ad
@@ -284,12 +282,12 @@ memsetArrayAsync !n !v !ad = do
 --
 {-# INLINEABLE withDevicePtr #-}
 withDevicePtr
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
-    -> (CUDA.DevicePtr a -> LLVM PTX (Maybe Event, r))
+    :: SingleType e
+    -> ArrayData e
+    -> (CUDA.DevicePtr (ScalarDataRepr e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX r
-withDevicePtr !ad !f = do
-  mr <- withRemote ad f
+withDevicePtr !tp !ad !f = do
+  mr <- withRemote tp ad f
   case mr of
     Nothing -> $internalError "withDevicePtr" "array does not exist on the device"
     Just r  -> return r

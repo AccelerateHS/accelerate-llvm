@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
   where
 
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
@@ -42,20 +42,21 @@ import Prelude                                                      as P
 -- | Generate function parameters that will specify the first and last (linear)
 -- index of the array this thread should evaluate.
 --
-gangParam :: forall sh. Shape sh => (IR sh, IR sh, [LLVM.Parameter])
-gangParam =
-  let start = "ix.start" :: Name sh
-      end   = "ix.end"   :: Name sh
+gangParam :: ShapeR sh -> (Operands sh, Operands sh, [LLVM.Parameter])
+gangParam shr =
+  let start = "ix.start"
+      end   = "ix.end"
+      tp    = shapeType shr
   in
-  (local start, local end, parameter start ++ parameter end)
+  (local tp start, local tp end, parameter tp start ++ parameter tp end)
 
 
 -- | The worker ID of the calling thread
 --
-gangId :: (IR Int, [LLVM.Parameter])
+gangId :: (Operands Int, [LLVM.Parameter])
 gangId =
-  let tid = "ix.tid" :: Name Int
-  in (local tid, [ scalarParameter scalarType tid ] )
+  let tid = "ix.tid"
+  in (local (TupRsingle scalarTypeInt) tid, [ scalarParameter scalarType tid ] )
 
 
 -- Global function definitions

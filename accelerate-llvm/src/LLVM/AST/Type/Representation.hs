@@ -23,7 +23,6 @@ module LLVM.AST.Type.Representation (
 ) where
 
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Product
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Downcast
@@ -71,7 +70,7 @@ data Type a where
 data PrimType a where
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
-  StructPrimType  :: TupleType (ProdRepr a)  -> PrimType a          -- opaque structures (required for CmpXchg)
+  StructPrimType  :: TupleType a             -> PrimType a          -- opaque structures (required for CmpXchg)
   ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
 
 -- | All types
@@ -348,7 +347,7 @@ instance Downcast (PrimType a) LLVM.Type where
   downcast (StructPrimType t)   = LLVM.StructureType False (go t)
     where
       go :: TupleType t -> [LLVM.Type]
-      go TypeRunit         = []
-      go (TypeRscalar s)   = [downcast s]
-      go (TypeRpair ta tb) = go ta ++ go tb
+      go TupRunit         = []
+      go (TupRsingle s)   = [downcast s]
+      go (TupRpair ta tb) = go ta ++ go tb
 
