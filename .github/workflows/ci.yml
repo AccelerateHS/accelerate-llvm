@@ -13,28 +13,51 @@ defaults:
 
 jobs:
   stack:
-    name: ${{ matrix.os }} / ghc ${{ matrix.ghc }}
+    name: ${{ matrix.os }} / ghc ${{ matrix.ghc }} / llvm ${{ matrix.llvm }} / cuda ${{ matrix.cuda }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.allow_failure }}
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        allow_failure: [false]
-        ghc:
-          - "8.8"
-          - "8.6"
-          - "8.4"
-          - "8.2"
         include:
+          - os: ubuntu-latest
+            ghc: 8.8
+            llvm: 9
+            cuda: 10.2
+            allow_failure: false
+
+          - os: ubuntu-latest
+            ghc: 8.6
+            llvm: 8
+            cuda: 10.1
+            allow_failure: false
+
+          - os: ubuntu-latest
+            ghc: 8.4
+            llvm: 6.0
+            cuda: 10.0
+            allow_failure: false
+
+          - os: ubuntu-latest
+            ghc: 8.2
+            llvm: 5.0
+            cuda: 8
+            allow_failure: false
+
           - os: macOS-latest
             ghc: 8.8
+            llvm: 9
+            cuda: 10.1
             allow_failure: false
+
           # ghc-8.8 currently doesn't work on the windows test machines due to a
           # 32-bit linker problem, failing with the error:
           # Access violation in generated code when writing 0x0
           - os: windows-latest
             ghc: 8.6
+            llvm: 9
+            cuda: 10.2
             allow_failure: false
+
     env:
       STACK_FLAGS: "--system-ghc --no-install-ghc --fast --flag accelerate:nofib"
 
@@ -51,7 +74,34 @@ jobs:
       name: Cache ~/.stack
       with:
         path: ~/.stack
-        key: ${{ runner.os }}-${{ matrix.ghc }}-stack
+        key: ${{ runner.os }}-${{ matrix.ghc }}-${{ matrix.llvm }}-${{ matrix.cuda }}-stack
+
+    - name: Setup (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get -y install llvm-${{ matrix.llvm }}-dev
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
+        sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+        sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+        sudo add-apt-repository "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
+        sudo apt-get update
+        sudo apt-get -y install cuda-${{ matrix.cuda }}
+
+    - name: Setup (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew tap llvm-hs/homebrew-llvm
+        brew tap caskroom/drivers
+        brew install libffi
+        brew install llvm-${{ matrix.llvm }}
+        brew cask install nvidia-cuda
+        export PKG_CONFIG_PATH="$(brew --prefix)/opt/libffi/lib/pkgconfig":$PKG_CONFIG_PATH
+
+    - name: Setup (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install llvm --version=${{ matrix.llvm }}
+        choco install cuda --version=${{ matrix.cuda }}
 
     - name: Build
       run: |
@@ -60,6 +110,5 @@ jobs:
 
     - name: Test
       run: |
-        stack test accelerate:doctest $STACK_FLAGS
-        stack test accelerate:nofib-interpreter $STACK_FLAGS --test-arguments='--hedgehog-tests 25'
+        stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
