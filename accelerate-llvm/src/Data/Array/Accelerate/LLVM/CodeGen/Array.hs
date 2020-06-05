@@ -61,9 +61,9 @@ readArrayData
 readArrayData a v i ix = read
   where
     read :: TupleType e -> Operands e -> CodeGen arch (Operands e)
-    read TupRunit          OP_Unit                 = return OP_Unit
-    read (TupRpair t2 t1) (OP_Pair a2 a1)          = OP_Pair <$> read t2 a2 <*> read t1 a1
-    read (TupRsingle e)   (asPtr a . op e -> arr) = ir e   <$> readArrayPrim a v e i arr ix
+    read TupRunit          OP_Unit                = return OP_Unit
+    read (TupRpair t2 t1) (OP_Pair a2 a1)         = OP_Pair <$> read t2 a2 <*> read t1 a1
+    read (TupRsingle e)   (asPtr a . op e -> arr) = ir e    <$> readArrayPrim a v e i arr ix
 
 readArrayPrim
     :: AddrSpace
@@ -103,9 +103,9 @@ writeArrayData
 writeArrayData a v i ix = write
   where
     write :: TupleType e -> Operands e -> Operands e -> CodeGen arch ()
-    write TupRunit          OP_Unit                  OP_Unit        = return ()
-    write (TupRpair t2 t1) (OP_Pair a2 a1)          (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
-    write (TupRsingle e)   (asPtr a . op e -> arr) (op e -> val)  = writeArrayPrim a v e i arr ix val
+    write TupRunit          OP_Unit                 OP_Unit        = return ()
+    write (TupRpair t2 t1) (OP_Pair a2 a1)         (OP_Pair v2 v1) = write t1 a1 v1 >> write t2 a2 v2
+    write (TupRsingle e)   (asPtr a . op e -> arr) (op e -> val)   = writeArrayPrim a v e i arr ix val
 
 writeArrayPrim
     :: AddrSpace

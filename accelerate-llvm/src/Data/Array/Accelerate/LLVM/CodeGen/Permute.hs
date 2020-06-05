@@ -80,7 +80,7 @@ data IRPermuteFun arch aenv t where
 --
 llvmOfPermuteFun
     :: forall arch aenv e. Foreign arch
-    => DelayedFun aenv (e -> e -> e)
+    => Fun aenv (e -> e -> e)
     -> Gamma aenv
     -> IRPermuteFun arch aenv (e -> e -> e)
 llvmOfPermuteFun fun aenv = IRPermuteFun{..}
@@ -128,7 +128,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     -- complex numbers) and take this factor into account as well.
     --    TLM-2019-09-27
     --
-    rmwOp :: DelayedOpenExp (((),e),e) aenv e -> Maybe (RMWOperation, DelayedOpenExp (((),e),e) aenv e)
+    rmwOp :: OpenExp (((),e),e) aenv e -> Maybe (RMWOperation, OpenExp (((),e),e) aenv e)
     rmwOp (PrimApp f xs)
       | PrimAdd{}  <- f = (RMW.Add,) <$> extract xs
       | PrimSub{}  <- f = (RMW.Sub,) <$> extract xs
@@ -147,7 +147,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     -- In the permutation function, the old value is given as the second
     -- argument, corresponding to ZeroIdx.
     --
-    extract :: DelayedOpenExp (((),e),e) aenv (e,e) -> Maybe (DelayedOpenExp (((),e),e) aenv e)
+    extract :: OpenExp (((),e),e) aenv (e,e) -> Maybe (OpenExp (((),e),e) aenv e)
     extract (Pair x y)
       | Evar (Var _ ZeroIdx) <- x = Just y
       | Evar (Var _ ZeroIdx) <- y = Just x

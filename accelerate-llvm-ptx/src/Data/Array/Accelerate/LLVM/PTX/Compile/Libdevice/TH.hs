@@ -129,6 +129,7 @@ libdeviceBitcode compute = do
 #else
       base    = cudaInstallPath </> "nvvm" </> "libdevice"
 #endif
+
   --
   files <- TH.runIO $ getDirectoryContents base
   --

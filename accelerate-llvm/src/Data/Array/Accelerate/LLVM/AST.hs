@@ -20,8 +20,8 @@ module Data.Array.Accelerate.LLVM.AST (
   PreOpenAccSkeleton(..),
 
   PreAfun, PreOpenAfun(..),
-  PreFun,  PreOpenFun(..),
-  PreExp,  PreOpenExp(..),
+  Fun, OpenFun(..),
+  Exp, OpenExp(..),
   PairIdx(..),
   UnzipIdx(..),
   Idx(..), Var(..), ArrayVar, LeftHandSide(..), ALeftHandSide, ELeftHandSide, ShapeR(..),
@@ -34,7 +34,7 @@ import Data.Array.Accelerate.LLVM.Execute.Async
 import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), PreOpenExp(..), PreOpenFun(..), Idx(..), PreAfun, PreFun, PreExp, Var(..), ArrayVar,
+    ( PreOpenAfun(..), OpenExp(..), OpenFun(..), Idx(..), PreAfun, Fun, Exp, Var(..), ArrayVar,
       LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..) )
 
 
@@ -52,7 +52,7 @@ data PreOpenAccCommand acc arch aenv a where
               -> PreOpenAccCommand acc arch aenv  body
 
   Alloc       :: ArrayR (Array sh e)
-              -> PreExp            ArrayVar aenv sh
+              -> Exp                        aenv sh
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
   Use         :: ArrayR (Array sh e)
@@ -60,7 +60,7 @@ data PreOpenAccCommand acc arch aenv a where
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
   Unit        :: TupleType e
-              -> PreExp            ArrayVar aenv e
+              -> Exp                        aenv e
               -> PreOpenAccCommand acc arch aenv (Scalar e)
 
   Apair       :: acc                   arch aenv arrs1
@@ -80,7 +80,7 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 
-  Acond       :: PreExp            ArrayVar aenv Bool
+  Acond       :: Exp                         aenv Bool
               -> acc                   arch  aenv arrs
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
@@ -91,7 +91,7 @@ data PreOpenAccCommand acc arch aenv a where
               -> PreOpenAccCommand acc arch  aenv arrs
 
   Reshape     :: ShapeR  sh
-              -> PreExp             ArrayVar aenv sh
+              -> Exp                         aenv sh
               -> ArrayVar                    aenv (Array sh' e)
               -> PreOpenAccCommand acc arch  aenv (Array sh  e)
 
@@ -113,16 +113,16 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
   Generate    :: ArrayR (Array sh e)
-              -> PreExp             ArrayVar aenv sh
+              -> Exp                         aenv sh
               -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
   Transform   :: ArrayR (Array sh' b)
-              -> PreExp             ArrayVar aenv sh'
+              -> Exp                         aenv sh'
               -> acc                    arch aenv (Array sh  a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh' b)
 
   Backpermute :: ShapeR sh'
-              -> PreExp             ArrayVar aenv sh'
+              -> Exp                         aenv sh'
               -> acc                    arch aenv (Array sh  e)
               -> PreOpenAccSkeleton acc arch aenv (Array sh' e)
 
@@ -192,7 +192,7 @@ data UnzipIdx a b where
 --
 data DelayedOpenAcc acc arch aenv a where
   Delayed     :: ArrayR (Array sh e)
-              -> PreExp ArrayVar aenv sh
+              -> Exp aenv sh
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
   Manifest    :: ArraysR (Array sh e)

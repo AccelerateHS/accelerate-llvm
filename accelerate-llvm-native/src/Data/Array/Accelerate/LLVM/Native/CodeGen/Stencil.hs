@@ -149,10 +149,10 @@ mkBorder uid aenv repr apply paramIn =
 
 imapNestFromToTile
     :: ShapeR sh
-    -> Int                                      -- ^ unroll amount (tile height)
-    -> Operands sh                                    -- ^ initial index (inclusive)
-    -> Operands sh                                    -- ^ final index (exclusive)
-    -> Operands sh                                    -- ^ total array extent
+    -> Int                                                  -- ^ unroll amount (tile height)
+    -> Operands sh                                          -- ^ initial index (inclusive)
+    -> Operands sh                                          -- ^ final index (exclusive)
+    -> Operands sh                                          -- ^ total array extent
     -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
 imapNestFromToTile shr unroll start end extent body =

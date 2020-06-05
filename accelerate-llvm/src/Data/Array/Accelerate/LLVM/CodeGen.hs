@@ -106,20 +106,20 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     travD (Manifest acc) = IRDelayedNothing $ arrayRepr acc
 
     -- scalar code generation
-    travF1 :: DelayedFun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
+    travF1 :: Fun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
     travF1 f = llvmOfFun1 f aenv
 
-    travF2 :: DelayedFun aenv (a -> b -> c) -> IRFun2 arch aenv (a -> b -> c)
+    travF2 :: Fun aenv (a -> b -> c) -> IRFun2 arch aenv (a -> b -> c)
     travF2 f = llvmOfFun2 f aenv
 
-    travPF :: DelayedFun aenv (e -> e -> e) -> IRPermuteFun arch aenv (e -> e -> e)
+    travPF :: Fun aenv (e -> e -> e) -> IRPermuteFun arch aenv (e -> e -> e)
     travPF f = llvmOfPermuteFun f aenv
 
-    travE :: DelayedExp aenv t -> IRExp arch aenv t
+    travE :: Exp aenv t -> IRExp arch aenv t
     travE e = llvmOfOpenExp e Empty aenv
 
     travB :: TupleType e
-          -> PreBoundary DelayedOpenAcc aenv (Array sh e)
+          -> Boundary aenv (Array sh e)
           -> IRBoundary arch aenv (Array sh e)
     travB _  Clamp        = IRClamp
     travB _  Mirror       = IRMirror

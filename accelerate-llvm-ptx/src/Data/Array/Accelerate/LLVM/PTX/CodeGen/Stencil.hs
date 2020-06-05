@@ -129,9 +129,9 @@ mkInside aenv repr@(ArrayR shr _) halo apply paramIn =
     --
     imapFromTo start end $ \i -> do
 
-      ixIn  <- indexOfInt shr shInside i    -- convert to multidimensional index of inside region
+      ixIn  <- indexOfInt shr shInside i                    -- convert to multidimensional index of inside region
       ixOut <- offset shr ixIn (lift (shapeType shr) halo)  -- shift to multidimensional index of outside region
-      r     <- app1 apply ixOut         -- apply generator function
+      r     <- app1 apply ixOut                             -- apply generator function
       j     <- intOfIndex shr shOut ixOut
       writeArray TypeInt arrOut j r
 
@@ -164,7 +164,7 @@ mkBorder aenv repr@(ArrayR shr _) apply paramIn =
 
       ixIn  <- indexOfInt shr shInside i    -- convert to multidimensional index of inside region
       ixOut <- offset shr ixIn shFrom       -- shift to multidimensional index of outside region
-      r     <- app1 apply ixOut         -- apply generator function
+      r     <- app1 apply ixOut             -- apply generator function
       j     <- intOfIndex shr shOut ixOut
       writeArray TypeInt arrOut j r
 

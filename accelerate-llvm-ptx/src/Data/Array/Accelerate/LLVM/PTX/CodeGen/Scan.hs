@@ -1288,8 +1288,8 @@ scanBlockSMem
     -> DeviceProperties                             -- ^ properties of the target device
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe (Operands Int32)                             -- ^ number of valid elements (may be less than block size)
-    -> Operands e                                         -- ^ calling thread's input element
+    -> Maybe (Operands Int32)                       -- ^ number of valid elements (may be less than block size)
+    -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
 scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
   where
@@ -1373,7 +1373,7 @@ scanWarpSMem
     -> TupleType e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
-    -> Operands e                                         -- ^ calling thread's input element
+    -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
 scanWarpSMem dir dev tp combine smem = scan 0
   where
