@@ -15,12 +15,11 @@
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Divide (
 
-  divideWork,
+  divideWork, divideWork1
 
 ) where
 
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 
 import Data.Bits
 import Data.Sequence                                                ( Seq )
@@ -45,32 +44,28 @@ import qualified Data.Vector.Unboxed.Mutable                        as M
 -- parameter to the apply action can be used to access the chunks linearly (for
 -- example, this is useful when evaluating non-commutative operations).
 --
-{-# SPECIALISE divideWork :: Int -> Int -> DIM0 -> DIM0 -> (Int -> DIM0 -> DIM0 -> a) -> Seq a #-}
-{-# SPECIALISE divideWork :: Int -> Int -> DIM1 -> DIM1 -> (Int -> DIM1 -> DIM1 -> a) -> Seq a #-}
--- {-# SPECIALISE divideWork :: Int -> Int -> DIM2 -> DIM2 -> (Int -> DIM2 -> DIM2 -> a) -> Seq a #-}
--- {-# SPECIALISE divideWork :: Int -> Int -> DIM3 -> DIM3 -> (Int -> DIM3 -> DIM3 -> a) -> Seq a #-}
+-- {-# INLINABLE divideWork #-}
 divideWork
-    :: forall sh a. Shape sh
-    => Int                        -- #subdivisions (hint)
+    :: ShapeR sh
+    -> Int                        -- #subdivisions (hint)
     -> Int                        -- minimum size of a dimension (must be a power of two)
     -> sh                         -- start index (e.g. top-left)
     -> sh                         -- end index   (e.g. bottom-right)
     -> (Int -> sh -> sh -> a)     -- action given start/end index range, and split number in the range [0..]
     -> Seq a
-divideWork
-  | Just Refl <- matchShapeType @DIM0 @sh = divideWork0
-  | Just Refl <- matchShapeType @DIM1 @sh = divideWork1
-  | otherwise                                                     = divideWorkN
+divideWork ShapeRz              = divideWork0
+divideWork (ShapeRsnoc ShapeRz) = divideWork1
+divideWork shr                  = divideWorkN shr
   --
   -- It is slightly faster to use lists instead of a Sequence here (though the
   -- difference is <1us on 'divideWork empty (Z:.2000) nop 8 32'). However,
   -- later operations will benefit from more efficient append, etc.
 
 divideWork0 :: Int -> Int -> DIM0 -> DIM0 -> (Int -> DIM0 -> DIM0 -> a) -> Seq a
-divideWork0 _ _ Z Z action = Seq.singleton (action 0 Z Z)
+divideWork0 _ _ () () action = Seq.singleton (action 0 () ())
 
 divideWork1 :: Int -> Int -> DIM1 -> DIM1 -> (Int -> DIM1 -> DIM1 -> a) -> Seq a
-divideWork1 !pieces !minsize (Z :. (!from)) (Z :. (!to)) action =
+divideWork1 !pieces !minsize ((), (!from)) ((), (!to)) action =
   let
       split 0 !u !v !i !f !s
         | v - u < minsize = (i+1, f, s Seq.|> apply i u v)
@@ -86,11 +81,11 @@ divideWork1 !pieces !minsize (Z :. (!from)) (Z :. (!to)) action =
             in
             (i2, f2, s2)
 
-      apply i u v = action i (Z:.u) (Z:.v)
+      apply i u v = action i ((), u) ((), v)
       (_, fs, ss) = split pieces from to 0 Seq.empty Seq.empty
   in
   fs Seq.>< ss
-
+ 
 {-# INLINE findSplitPoint1 #-}
 findSplitPoint1
     :: Int
@@ -109,8 +104,8 @@ findSplitPoint1 !u !v !minsize =
       Just (d+u, v-a+d)
 
 
-divideWorkN :: Shape sh => Int -> Int -> sh -> sh -> (Int -> sh -> sh -> a) -> Seq a
-divideWorkN !pieces !minsize !from !to action =
+divideWorkN :: ShapeR sh -> Int -> Int -> sh -> sh -> (Int -> sh -> sh -> a) -> Seq a
+divideWorkN !shr !pieces !minsize !from !to action =
   let
       -- Is it worth checking whether the piece is full? Doing so ensures that
       -- full pieces are assigned to threads first, with the non-full blocks
@@ -130,8 +125,8 @@ divideWorkN !pieces !minsize !from !to action =
             in
             (i2, f2, s2)
 
-      apply i u v = action i (vecToShape u) (vecToShape v)
-      (_, fs, ss) = split pieces (shapeToVec from) (shapeToVec to) 0 Seq.empty Seq.empty
+      apply i u v = action i (vecToShape shr u) (vecToShape shr v)
+      (_, fs, ss) = split pieces (shapeToVec shr from) (shapeToVec shr to) 0 Seq.empty Seq.empty
   in
   fs Seq.>< ss
 
@@ -174,10 +169,10 @@ findSplitPointN !from !to !minsize =
       Just (from', to')
 
 {-# INLINE vecToShape #-}
-vecToShape :: Shape sh => U.Vector Int -> sh
-vecToShape = listToShape . U.toList
+vecToShape :: ShapeR sh -> U.Vector Int -> sh
+vecToShape shr = listToShape shr . U.toList
 
 {-# INLINE shapeToVec #-}
-shapeToVec :: forall sh. Shape sh => sh -> U.Vector Int
-shapeToVec sh = U.fromListN (rank @sh) (shapeToList sh)
+shapeToVec :: ShapeR sh -> sh -> U.Vector Int
+shapeToVec shr sh = U.fromListN (rank shr) (shapeToList shr sh)
 

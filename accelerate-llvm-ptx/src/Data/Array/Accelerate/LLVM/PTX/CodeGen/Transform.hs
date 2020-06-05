@@ -16,7 +16,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -35,29 +36,30 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- multiple elements, striding the array by the grid size.
 --
 mkTransform
-    :: forall aenv sh sh' a b. (Shape sh, Shape sh', Elt a, Elt b)
-    => Gamma       aenv
+    :: Gamma       aenv
+    -> ArrayR (Array sh  a)
+    -> ArrayR (Array sh' b)
     -> IRFun1  PTX aenv (sh' -> sh)
     -> IRFun1  PTX aenv (a -> b)
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh' b))
-mkTransform aenv p f =
+mkTransform aenv repr@(ArrayR shr _) repr'@(ArrayR shr' _) p f =
   let
-      (arrOut, paramOut)  = mutableArray @sh' "out"
-      (arrIn,  paramIn)   = mutableArray @sh  "in"
+      (arrOut, paramOut)  = mutableArray repr' "out"
+      (arrIn,  paramIn)   = mutableArray repr  "in"
       paramEnv            = envParam aenv
   in
   makeOpenAcc "transform" (paramOut ++ paramIn ++ paramEnv) $ do
 
-    start <- return (lift 0)
-    end   <- shapeSize (irArrayShape arrOut)
+    let start = liftInt 0
+    end   <- shapeSize shr' (irArrayShape arrOut)
 
     imapFromTo start end $ \i' -> do
-      ix' <- indexOfInt (irArrayShape arrOut) i'
+      ix' <- indexOfInt shr' (irArrayShape arrOut) i'
       ix  <- app1 p ix'
-      i   <- intOfIndex (irArrayShape arrIn) ix
-      a   <- readArray arrIn i
+      i   <- intOfIndex shr  (irArrayShape arrIn) ix
+      a   <- readArray TypeInt arrIn i
       b   <- app1 f a
-      writeArray arrOut i' b
+      writeArray TypeInt arrOut i' b
 
     return_
 

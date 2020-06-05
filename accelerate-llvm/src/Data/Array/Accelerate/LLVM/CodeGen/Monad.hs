@@ -60,7 +60,6 @@ import qualified Data.ByteString.Short                              as B
 
 -- accelerate
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Array.Sugar                            ( Elt, eltType )
 import qualified Data.Array.Accelerate.Debug                        as Debug
 
 -- accelerate-llvm
@@ -241,13 +240,10 @@ createBlocks
 
 -- | Generate a fresh local reference
 --
-fresh :: forall arch a. Elt a => CodeGen arch (IR a)
-fresh = IR <$> go (eltType @a)
-  where
-    go :: TupleType t -> CodeGen arch (Operands t)
-    go TypeRunit         = return OP_Unit
-    go (TypeRpair t2 t1) = OP_Pair <$> go t2 <*> go t1
-    go (TypeRscalar t)   = ir' t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
+fresh :: TupleType a -> CodeGen arch (Operands a)
+fresh TupRunit         = return OP_Unit
+fresh (TupRpair t2 t1) = OP_Pair <$> fresh t2 <*> fresh t1
+fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
 
 -- | Generate a fresh (un)name.
 --
@@ -259,7 +255,7 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- computed, and return the operand (LocalReference) that can be used to later
 -- refer to it.
 --
-instr :: Instruction a -> CodeGen arch (IR a)
+instr :: Instruction a -> CodeGen arch (Operands a)
 instr ins = ir (typeOf ins) <$> instr' ins
 
 instr' :: Instruction a -> CodeGen arch (Operand a)
@@ -309,31 +305,31 @@ br target = terminate $ Br (blockLabel target)
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: IR Bool -> Block -> Block -> CodeGen arch Block
+cbr :: Operands Bool -> Block -> Block -> CodeGen arch Block
 cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
 
 -- | Add a phi node to the top of the current block
 --
-phi :: forall arch a. Elt a => [(IR a, Block)] -> CodeGen arch (IR a)
-phi incoming = do
-  crit  <- fresh
+phi :: forall arch a. TupleType a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
+phi tp incoming = do
+  crit  <- fresh tp
   block <- state $ \s -> case Seq.viewr (blockChain s) of
                            Seq.EmptyR -> $internalError "phi" "empty block chain"
                            _ Seq.:> b -> ( b, s )
-  phi' block crit incoming
+  phi' tp block crit incoming
 
-phi' :: forall arch a. Elt a => Block -> IR a -> [(IR a, Block)] -> CodeGen arch (IR a)
-phi' target (IR crit) incoming = IR <$> go (eltType @a) crit [ (o,b) | (IR o, b) <- incoming ]
+phi' :: TupleType a -> Block -> Operands a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
+phi' tp target = go tp
   where
     go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
-    go TypeRunit OP_Unit _
+    go TupRunit OP_Unit _
       = return OP_Unit
-    go (TypeRpair t2 t1) (OP_Pair n2 n1) inc
+    go (TupRpair t2 t1) (OP_Pair n2 n1) inc
       = OP_Pair <$> go t2 n2 [ (x, b) | (OP_Pair x _, b) <- inc ]
                 <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
-    go (TypeRscalar t) tup inc
-      | LocalReference _ v <- op' t tup = ir' t <$> phi1 target v [ (op' t x, b) | (x, b) <- inc ]
+    go (TupRsingle t) tup inc
+      | LocalReference _ v <- op t tup = ir t <$> phi1 target v [ (op t x, b) | (x, b) <- inc ]
       | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
 
 

@@ -28,7 +28,10 @@ import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Array.Unique
 import qualified Data.Array.Accelerate.Array.Remote                     as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
 
@@ -39,9 +42,6 @@ import qualified Foreign.CUDA.Driver.Stream                             as CUDA
 
 import Control.Exception
 import Control.Monad.State
-import Data.Typeable
-import Foreign.Ptr
-import Foreign.Storable
 import Text.Printf
 
 import GHC.Base
@@ -68,23 +68,25 @@ instance Remote.RemoteMemory (LLVM PTX) where
           Left e                      -> do message ("malloc failed with error: " ++ show e)
                                             throwIO e
 
-  peekRemote n src ad =
-    let bytes = n * sizeOfPtr src
-        dst   = CUDA.HostPtr (ptrsOfArrayData ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesFromRemote (i64 bytes)
-      transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+  peekRemote tp n src ad
+    | (ScalarDict, _, _) <- singleDict tp =
+      let bytes = n * sizeOfSingleType tp
+          dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesFromRemote (i64 bytes)
+        transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
-  pokeRemote n dst ad =
-    let bytes = n * sizeOfPtr dst
-        src   = CUDA.HostPtr (ptrsOfArrayData ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesToRemote (i64 bytes)
-      transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+  pokeRemote tp n dst ad
+    | (ScalarDict, _, _) <- singleDict tp =
+      let bytes = n * sizeOfSingleType tp
+          src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesToRemote (i64 bytes)
+        transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr        = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo
@@ -99,27 +101,27 @@ instance Remote.RemoteMemory (LLVM PTX) where
 --
 {-# INLINEABLE malloc #-}
 malloc
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
+    :: SingleType e
+    -> ArrayData e
     -> Int
     -> Bool
     -> LLVM PTX Bool
-malloc !ad !n !frozen = do
+malloc !tp !ad !n !frozen = do
   PTX{..} <- gets llvmTarget
-  Remote.malloc ptxMemoryTable ad frozen n
+  Remote.malloc ptxMemoryTable tp ad frozen n
 
 
 -- | Lookup up the remote array pointer for the given host-side array
 --
 {-# INLINEABLE withRemote #-}
 withRemote
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
-    -> (CUDA.DevicePtr a -> LLVM PTX (Maybe Event, r))
+    :: SingleType e
+    -> ArrayData e
+    -> (CUDA.DevicePtr (ScalarDataRepr e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX (Maybe r)
-withRemote !ad !f = do
+withRemote !tp !ad !f = do
   PTX{..} <- gets llvmTarget
-  Remote.withRemote ptxMemoryTable ad f
+  Remote.withRemote ptxMemoryTable tp ad f
 
 
 -- Auxiliary
@@ -134,10 +136,6 @@ blocking !fun =
   streaming (liftIO . fun) $ \e r -> do
     liftIO $ block e
     return r
-
-{-# INLINE sizeOfPtr #-}
-sizeOfPtr :: forall a. Storable a => CUDA.DevicePtr a -> Int
-sizeOfPtr _ = sizeOf (undefined :: a)
 
 {-# INLINE i64 #-}
 i64 :: Int -> Int64

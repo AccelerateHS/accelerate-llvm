@@ -18,7 +18,7 @@
 module Data.Array.Accelerate.LLVM.Native.Execute.Async (
 
   Async(..), Future(..), IVar(..), getArrays,
-  evalPar, liftPar, putIO,
+  evalPar, putIO,
 
 ) where
 
@@ -104,12 +104,8 @@ instance Async Native where
     Native{..} <- gets llvmTarget
     liftIO (putIO workers future ref)
 
-
--- | Lift an operation from the base LLVM monad into the Par monad
---
-{-# INLINE liftPar #-}
-liftPar :: LLVM Native a -> Par Native a
-liftPar = Par . lift
+  {-# INLINE liftPar #-}
+  liftPar = Par . lift
 
 -- | Evaluate a continuation
 --

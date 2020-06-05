@@ -20,10 +20,8 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.AST                                    ( Stencil )
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Shape, Elt, eltType )
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.AST                                    ( StencilR(..) )
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -58,164 +56,160 @@ import Control.Monad
 --  * stencil_border: applies boundary condition check to each array access
 --
 mkStencil1
-    :: (Stencil sh a stencil, Elt b)
-    => UID
+    :: UID
     -> Gamma              aenv
+    -> StencilR sh a stencil
+    -> TupleType b
     -> IRFun1      Native aenv (stencil -> b)
     -> IRBoundary  Native aenv (Array sh a)
     -> MIRDelayed  Native aenv (Array sh a)
     -> CodeGen     Native      (IROpenAcc Native aenv (Array sh b))
-mkStencil1 uid aenv f bnd marr =
+mkStencil1 uid aenv sr tp f bnd marr =
   let (arrIn, paramIn) = delayedArray "in" marr
-   in (+++) <$> mkInside uid aenv (IRFun1 $ app1 f <=< stencilAccess Nothing    arrIn) paramIn
-            <*> mkBorder uid aenv (IRFun1 $ app1 f <=< stencilAccess (Just bnd) arrIn) paramIn
+      repr = ArrayR (stencilShape sr) tp
+   in (+++) <$> mkInside uid aenv repr (IRFun1 $ app1 f <=< stencilAccess sr Nothing    arrIn) paramIn
+            <*> mkBorder uid aenv repr (IRFun1 $ app1 f <=< stencilAccess sr (Just bnd) arrIn) paramIn
 
 mkStencil2
-    :: (Stencil sh a stencil1, Stencil sh b stencil2, Elt c)
-    => UID
+    :: UID
     -> Gamma              aenv
+    -> StencilR sh a stencil1
+    -> StencilR sh b stencil2
+    -> TupleType c
     -> IRFun2      Native aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary  Native aenv (Array sh a)
     -> MIRDelayed  Native aenv (Array sh a)
     -> IRBoundary  Native aenv (Array sh b)
     -> MIRDelayed  Native aenv (Array sh b)
     -> CodeGen     Native      (IROpenAcc Native aenv (Array sh c))
-mkStencil2 uid aenv f bnd1 marr1 bnd2 marr2 =
+mkStencil2 uid aenv sr1 sr2 tp f bnd1 marr1 bnd2 marr2 =
   let
       (arrIn1, paramIn1)  = delayedArray "in1" marr1
       (arrIn2, paramIn2)  = delayedArray "in2" marr2
 
+      repr = ArrayR (stencilShape sr1) tp
+
       inside  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess Nothing arrIn1 ix
-        stencil2 <- stencilAccess Nothing arrIn2 ix
+        stencil1 <- stencilAccess sr1 Nothing arrIn1 ix
+        stencil2 <- stencilAccess sr2 Nothing arrIn2 ix
         app2 f stencil1 stencil2
       --
       border  = IRFun1 $ \ix -> do
-        stencil1 <- stencilAccess (Just bnd1) arrIn1 ix
-        stencil2 <- stencilAccess (Just bnd2) arrIn2 ix
+        stencil1 <- stencilAccess sr1 (Just bnd1) arrIn1 ix
+        stencil2 <- stencilAccess sr2 (Just bnd2) arrIn2 ix
         app2 f stencil1 stencil2
   in
-  (+++) <$> mkInside uid aenv inside (paramIn1 ++ paramIn2)
-        <*> mkBorder uid aenv border (paramIn1 ++ paramIn2)
+  (+++) <$> mkInside uid aenv repr inside (paramIn1 ++ paramIn2)
+        <*> mkBorder uid aenv repr border (paramIn1 ++ paramIn2)
 
 
 mkInside
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRFun1  Native aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkInside uid aenv apply paramIn =
+mkInside uid aenv repr apply paramIn =
   let
-      (start, end, paramGang)   = gangParam    @sh
-      (arrOut, paramOut)        = mutableArray @sh "out"
+      (start, end, paramGang)   = gangParam    (arrayRshape repr)
+      (arrOut, paramOut)        = mutableArray repr "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in
   makeOpenAcc uid "stencil_inside" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    imapNestFromToTile 4 start end shOut $ \ix i -> do
+    imapNestFromToTile (arrayRshape repr) 4 start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
-      writeArray arrOut i r                     -- store result
+      writeArray TypeInt arrOut i r                     -- store result
 
     return_
 
 mkBorder
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma aenv
+    -> ArrayR (Array sh e)
     -> IRFun1  Native aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkBorder uid aenv apply paramIn =
+mkBorder uid aenv repr apply paramIn =
   let
-      (start, end, paramGang)   = gangParam    @sh
-      (arrOut, paramOut)        = mutableArray @sh "out"
+      (start, end, paramGang)   = gangParam    (arrayRshape repr)
+      (arrOut, paramOut)        = mutableArray repr "out"
       paramEnv                  = envParam aenv
       shOut                     = irArrayShape arrOut
   in
   makeOpenAcc uid "stencil_border" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    imapNestFromTo start end shOut $ \ix i -> do
+    imapNestFromTo (arrayRshape repr) start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
-      writeArray arrOut i r                     -- store result
+      writeArray TypeInt arrOut i r             -- store result
 
     return_
 
 
 imapNestFromToTile
-    :: forall sh. Shape sh
-    => Int                                      -- ^ unroll amount (tile height)
-    -> IR sh                                    -- ^ initial index (inclusive)
-    -> IR sh                                    -- ^ final index (exclusive)
-    -> IR sh                                    -- ^ total array extent
-    -> (IR sh -> IR Int -> CodeGen Native ())   -- ^ apply at each index
+    :: ShapeR sh
+    -> Int                                      -- ^ unroll amount (tile height)
+    -> Operands sh                                    -- ^ initial index (inclusive)
+    -> Operands sh                                    -- ^ final index (exclusive)
+    -> Operands sh                                    -- ^ total array extent
+    -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
-imapNestFromToTile unroll (IR start) (IR end) extent body =
-  go (eltType @sh) start end (body' . IR)
+imapNestFromToTile shr unroll start end extent body =
+  go shr start end body'
   where
-    body' ix = body ix =<< intOfIndex extent ix
+    body' ix = body ix =<< intOfIndex shr extent ix
 
-    go :: TupleType t
+    go :: ShapeR t
        -> Operands t
        -> Operands t
        -> (Operands t -> CodeGen Native ())
        -> CodeGen Native ()
-    go TypeRunit OP_Unit OP_Unit k
+    go ShapeRz OP_Unit OP_Unit k
       = k OP_Unit
 
     -- To correctly generate the unrolled loop nest we need to explicitly match
     -- on the last two dimensions.
     --
-    go (TypeRpair (TypeRpair TypeRunit tsy) tsx) (OP_Pair (OP_Pair OP_Unit sy) sx) (OP_Pair (OP_Pair OP_Unit ey) ex) k
-      | TypeRscalar ty  <- tsy
-      , TypeRscalar tx  <- tsx
-      , Just Refl       <- matchScalarType ty (scalarType :: ScalarType Int)
-      , Just Refl       <- matchScalarType tx (scalarType :: ScalarType Int)
+    go (ShapeRsnoc (ShapeRsnoc ShapeRz)) (OP_Pair (OP_Pair OP_Unit sy) sx) (OP_Pair (OP_Pair OP_Unit ey) ex) k
       = do
           -- Tile the stencil operator in the xy-plane by unrolling in the
           -- y-dimension and vectorising in the x-dimension.
           --
-          IR sy'  <- imapFromStepTo (IR sy) (lift unroll) (IR ey) $ \iy      ->
-                      imapFromTo    (IR sx)               (IR ex) $ \(IR ix) ->
-                       forM_ [0 .. unroll-1] $ \n -> do
-                        IR iy' <- add numType iy (lift n)
-                        k (OP_Pair (OP_Pair OP_Unit iy') ix)
+          sy' <- imapFromStepTo sy (liftInt unroll) ey $ \iy ->
+                  imapFromTo    sx                  ex $ \ix ->
+                    forM_ [0 .. unroll-1] $ \n -> do
+                    iy' <- add numType iy (liftInt n)
+                    k (OP_Pair (OP_Pair OP_Unit iy') ix)
 
           -- Take care of any remaining loop iterations in the y-dimension
           --
-          _       <- imapFromTo  (IR sy') (IR ey) $ \(IR iy) ->
-                      imapFromTo (IR sx)  (IR ex) $ \(IR ix) ->
+          _       <- imapFromTo  sy' ey $ \iy ->
+                      imapFromTo sx  ex $ \ix ->
                         k (OP_Pair (OP_Pair OP_Unit iy) ix)
           return ()
 
     -- The 1- and 3+-dimensional cases can recurse normally
     --
-    go (TypeRpair tsh tsz) (OP_Pair ssh ssz) (OP_Pair esh esz) k
-      | TypeRscalar t   <- tsz
-      , Just Refl       <- matchScalarType t (scalarType :: ScalarType Int)
-      = go tsh ssh esh
-      $ \sz      -> imapFromTo (IR ssz) (IR esz)
-      $ \(IR i)  -> k (OP_Pair sz i)
-
-    go _ _ _ _
-      = $internalError "imapNestFromTo" "expected shape with Int components"
-
+    go (ShapeRsnoc shr') (OP_Pair ssh ssz) (OP_Pair esh esz) k
+      = go shr' ssh esh
+      $ \sz      -> imapFromTo ssz esz
+      $ \i       -> k (OP_Pair sz i)
 
 imapFromStepTo
-    :: IR Int
-    -> IR Int
-    -> IR Int
-    -> (IR Int -> CodeGen Native ())
-    -> CodeGen Native (IR Int)
+    :: Operands Int
+    -> Operands Int
+    -> Operands Int
+    -> (Operands Int -> CodeGen Native ())
+    -> CodeGen Native (Operands Int)
 imapFromStepTo start step end body =
   let
       incr i = add numType i step
       test i = do i' <- incr i
                   lt singleType i' end
   in
-  while test
+  while (TupRsingle scalarTypeInt) test
         (\i -> body i >> incr i)
         start
 

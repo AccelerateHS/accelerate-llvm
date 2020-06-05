@@ -140,12 +140,9 @@ instance Async PTX where
   {-# INLINEABLE block #-}
   block = liftIO . wait
 
+  {-# INLINE liftPar #-}
+  liftPar = Par . lift
 
--- | Lift an operation from the base LLVM monad into the Par monad
---
-{-# INLINE liftPar #-}
-liftPar :: LLVM PTX a -> Par PTX a
-liftPar = Par . lift
 
 -- | Block the calling _host_ thread until the value offered by the future is
 -- available.

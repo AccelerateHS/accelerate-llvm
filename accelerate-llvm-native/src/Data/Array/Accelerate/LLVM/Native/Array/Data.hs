@@ -21,7 +21,10 @@ module Data.Array.Accelerate.LLVM.Native.Array.Data (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Array.Unique
+import Data.Array.Accelerate.Analysis.Type
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -30,10 +33,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 
 -- standard library
 import Control.Monad.Trans
-import Data.Word
-import Foreign.C
 import Foreign.Ptr
-import Foreign.Storable
 
 import GHC.Int                                                      ( Int(..) )
 
@@ -43,50 +43,32 @@ import GHC.Int                                                      ( Int(..) )
 --
 instance Remote Native where
   {-# INLINE allocateRemote #-}
-  allocateRemote = liftIO . allocateArray
+  allocateRemote repr = liftIO . allocateArray repr
 
 
 -- | Copy an array into a newly allocated array. This uses 'memcpy'.
 --
-cloneArray :: (Shape sh, Elt e) => Array sh e -> LLVM Native (Array sh e)
-cloneArray arr@(Array _ src) = liftIO $ do
-  out@(Array _ dst) <- allocateArray sh
-  copyR arrayElt src dst 1
+cloneArray :: ArrayR (Array sh e) -> Array sh e -> LLVM Native (Array sh e)
+cloneArray repr (Array sh src) = liftIO $ do
+  out@(Array _ dst) <- allocateArray repr sh
+  copyR (arrayRtype repr) src dst
   return out
   where
-    sh  = shape arr
-    n   = size sh
+    n = size (arrayRshape repr) sh
 
-    copyR :: ArrayEltR e -> ArrayData e -> ArrayData e -> Int -> IO ()
-    copyR ArrayEltRunit    !_   !_   !_ = return ()
-    copyR ArrayEltRint     !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRint8    !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRint16   !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRint32   !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRint64   !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRword    !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRword8   !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRword16  !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRword32  !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRword64  !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRhalf    !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRfloat   !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRdouble  !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRbool    !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    copyR ArrayEltRchar    !ad1 !ad2 !i = copyPrim ad1 ad2 i
-    --
-    copyR (ArrayEltRpair !aeR1 !aeR2) !ad1 !ad2 !i = do
-      copyR aeR1 (fstArrayData ad1) (fstArrayData ad2) i
-      copyR aeR2 (sndArrayData ad1) (sndArrayData ad2) i
-    --
-    copyR (ArrayEltRvec !aeR) (AD_Vec w# !ad1) (AD_Vec _ !ad2) !i =
-      copyR aeR ad1 ad2 (I# w# * i)
+    copyR :: TupleType e -> ArrayData e -> ArrayData e -> IO ()
+    copyR TupRunit          !_          !_          = return ()
+    copyR (TupRsingle t)    !ad1        !ad2        = copyPrim t ad1 ad2
+    copyR (TupRpair !t !t') (ad1, ad1') (ad2, ad2') = do
+      copyR t  ad1  ad2
+      copyR t' ad1' ad2'
 
-    copyPrim :: forall e a. (ArrayElt e, ArrayPtrs e ~ Ptr a, Storable a) => ArrayData e -> ArrayData e -> Int -> IO ()
-    copyPrim !a1 !a2 !i = do
-      let p1 = ptrsOfArrayData a1
-          p2 = ptrsOfArrayData a2
-      memcpy (castPtr p2) (castPtr p1) (i * n * sizeOf (undefined :: a))
+    copyPrim :: ScalarType e -> ArrayData e -> ArrayData e -> IO ()
+    copyPrim !tp !a1 !a2
+      | (_, ScalarDict) <- scalarDict tp = do
+      let p1 = unsafeUniqueArrayPtr a1
+          p2 = unsafeUniqueArrayPtr a2
+      memcpy (castPtr p2) (castPtr p1) (n * sizeOfScalarType tp)
 
 
 -- Standard C functions

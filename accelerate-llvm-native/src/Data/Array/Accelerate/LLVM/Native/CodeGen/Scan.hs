@@ -20,8 +20,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
   where
 
 -- accelerate
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -29,7 +28,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
-import Data.Array.Accelerate.LLVM.CodeGen.IR                        ( IR )
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
@@ -58,23 +56,23 @@ data Direction = L | R
 -- > ==> Array (Z :. 11) [10,10,11,13,16,20,25,31,38,46,55]
 --
 mkScanl
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR                 (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanl uid aenv combine seed arr
-  | Just Refl <- matchShapeType @sh @Z
-  = foldr1 (+++) <$> sequence [ mkScanS L uid aenv combine (Just seed) arr
-                              , mkScanP L uid aenv combine (Just seed) arr
-                              , mkScanFill uid aenv seed
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkScanl uid aenv repr combine seed arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = foldr1 (+++) <$> sequence [ mkScanS L uid aenv repr combine (Just seed) arr
+                              , mkScanP L uid aenv tp combine (Just seed) arr
+                              , mkScanFill uid aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScanS L uid aenv combine (Just seed) arr
-          <*> mkScanFill uid aenv seed
+  = (+++) <$> mkScanS L uid aenv repr combine (Just seed) arr
+          <*> mkScanFill uid aenv repr seed
 
 
 -- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
@@ -86,19 +84,19 @@ mkScanl uid aenv combine seed arr
 -- > ==> Array (Z :. 10) [0,1,3,6,10,15,21,28,36,45]
 --
 mkScanl1
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR                 (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanl1 uid aenv combine arr
-  | Just Refl <- matchShapeType @sh @Z
-  = (+++) <$> mkScanS L uid aenv combine Nothing arr
-          <*> mkScanP L uid aenv combine Nothing arr
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkScanl1 uid aenv repr combine arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = (+++) <$> mkScanS L uid aenv repr combine Nothing arr
+          <*> mkScanP L uid aenv tp combine Nothing arr
   --
   | otherwise
-  = mkScanS L uid aenv combine Nothing arr
+  = mkScanS L uid aenv repr combine Nothing arr
 
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
@@ -110,23 +108,23 @@ mkScanl1 uid aenv combine arr
 --       )
 --
 mkScanl'
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR                 (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (((), Array (sh:.Int) e), Array sh e))
-mkScanl' uid aenv combine seed arr
-  | Just Refl <- matchShapeType @sh @Z
-  = foldr1 (+++) <$> sequence [ mkScan'S L uid aenv combine seed arr
-                              , mkScan'P L uid aenv combine seed arr
-                              , mkScan'Fill uid aenv seed
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e, Array sh e))
+mkScanl' uid aenv repr combine seed arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = foldr1 (+++) <$> sequence [ mkScan'S L uid aenv repr combine seed arr
+                              , mkScan'P L uid aenv tp combine seed arr
+                              , mkScan'Fill uid aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'S L uid aenv combine seed arr
-          <*> mkScan'Fill uid aenv seed
+  = (+++) <$> mkScan'S L uid aenv repr combine seed arr
+          <*> mkScan'Fill uid aenv repr seed
 
 
 -- 'Data.List.scanr' style right-to-left exclusive scan, but with the
@@ -138,23 +136,23 @@ mkScanl' uid aenv combine seed arr
 -- > ==> Array (Z :. 11) [55,55,54,52,49,45,40,34,27,19,10]
 --
 mkScanr
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanr uid aenv combine seed arr
-  | Just Refl <- matchShapeType @sh @Z
-  = foldr1 (+++) <$> sequence [ mkScanS R uid aenv combine (Just seed) arr
-                              , mkScanP R uid aenv combine (Just seed) arr
-                              , mkScanFill uid aenv seed
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkScanr uid aenv repr combine seed arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = foldr1 (+++) <$> sequence [ mkScanS R uid aenv repr combine (Just seed) arr
+                              , mkScanP R uid aenv tp combine (Just seed) arr
+                              , mkScanFill uid aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScanS R uid aenv combine (Just seed) arr
-          <*> mkScanFill uid aenv seed
+  = (+++) <$> mkScanS R uid aenv repr combine (Just seed) arr
+          <*> mkScanFill uid aenv repr seed
 
 
 -- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
@@ -166,19 +164,19 @@ mkScanr uid aenv combine seed arr
 -- > ==> Array (Z :. 10) [45,45,44,42,39,35,30,24,17,9]
 --
 mkScanr1
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanr1 uid aenv combine arr
-  | Just Refl <- matchShapeType @sh @Z
-  = (+++) <$> mkScanS R uid aenv combine Nothing arr
-          <*> mkScanP R uid aenv combine Nothing arr
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkScanr1 uid aenv repr combine arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = (+++) <$> mkScanS R uid aenv repr combine Nothing arr
+          <*> mkScanP R uid aenv tp combine Nothing arr
   --
   | otherwise
-  = mkScanS R uid aenv combine Nothing arr
+  = mkScanS R uid aenv repr combine Nothing arr
 
 
 -- Variant of 'scanr' where the final result is returned in a separate array.
@@ -190,45 +188,45 @@ mkScanr1 uid aenv combine arr
 --       )
 --
 mkScanr'
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (((), Array (sh:.Int) e), Array sh e))
-mkScanr' uid aenv combine seed arr
-  | Just Refl <- matchShapeType @sh @Z
-  = foldr1 (+++) <$> sequence [ mkScan'S R uid aenv combine seed arr
-                              , mkScan'P R uid aenv combine seed arr
-                              , mkScan'Fill uid aenv seed
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e, Array sh e))
+mkScanr' uid aenv repr combine seed arr
+  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
+  = foldr1 (+++) <$> sequence [ mkScan'S R uid aenv repr combine seed arr
+                              , mkScan'P R uid aenv tp combine seed arr
+                              , mkScan'Fill uid aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'S R uid aenv combine seed arr
-          <*> mkScan'Fill uid aenv seed
+  = (+++) <$> mkScan'S R uid aenv repr combine seed arr
+          <*> mkScan'Fill uid aenv repr seed
 
 
 -- If the innermost dimension of an exclusive scan is empty, then we just fill
 -- the result with the seed element.
 --
 mkScanFill
-    :: (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma          aenv
+    -> ArrayR (Array sh e)
     -> IRExp   Native aenv e
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
-mkScanFill uid aenv seed =
-  mkGenerate uid aenv (IRFun1 (const seed))
+mkScanFill uid aenv repr seed =
+  mkGenerate uid aenv repr (IRFun1 (const seed))
 
 mkScan'Fill
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => UID
+    :: UID
     -> Gamma          aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRExp   Native aenv e
-    -> CodeGen Native     (IROpenAcc Native aenv (((), Array (sh:.Int) e), Array sh e))
-mkScan'Fill uid aenv seed =
-  Safe.coerce <$> mkScanFill @sh uid aenv seed
+    -> CodeGen Native     (IROpenAcc Native aenv (Array (sh, Int) e, Array sh e))
+mkScan'Fill uid aenv repr seed =
+  Safe.coerce <$> mkScanFill uid aenv (reduceRank repr) seed
 
 
 -- A single thread sequentially scans along an entire innermost dimension. For
@@ -239,30 +237,30 @@ mkScan'Fill uid aenv seed =
 -- where threads are scheduled over the outer dimensions (segments).
 --
 mkScanS
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh:.Int) e))
-mkScanS dir uid aenv combine mseed marr =
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
+mkScanS dir uid aenv repr combine mseed marr =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @(sh:.Int) "out"
-      (arrIn,  paramIn)       = delayedArray @(sh:.Int) "in"  marr
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray repr "out"
+      (arrIn,  paramIn)       = delayedArray "in"  marr
       paramEnv                = envParam aenv
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
   in
   makeOpenAcc uid "scanS" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     sz    <- indexHead <$> delayedExtent arrIn
-    szp1  <- A.add numType sz (lift 1)
-    szm1  <- A.sub numType sz (lift 1)
+    szp1  <- A.add numType sz (liftInt 1)
+    szm1  <- A.sub numType sz (liftInt 1)
 
     -- loop over each lower-dimensional index (segment)
     imapFromTo (indexHead start) (indexHead end) $ \seg -> do
@@ -292,7 +290,7 @@ mkScanS dir uid aenv combine mseed marr =
                    Nothing   -> (,) <$> app1 (delayedLinearIndex arrIn) i0 <*> next i0
 
       -- Write first element, then continue looping through the rest
-      writeArray arrOut j0 v0
+      writeArray TypeInt arrOut j0 v0
       j1 <- next j0
 
       iz <- case dir of
@@ -303,13 +301,14 @@ mkScanS dir uid aenv combine mseed marr =
                      L -> A.lt singleType i iz
                      R -> A.gt singleType i iz
 
-      void $ while (cont . A.fst3)
+      void $ while (TupRunit `TupRpair` TupRsingle scalarTypeInt `TupRpair` TupRsingle scalarTypeInt `TupRpair` arrayRtype repr)
+                   (cont . A.fst3)
                    (\(A.untrip -> (i,j,v)) -> do
                        u  <- app1 (delayedLinearIndex arrIn) i
                        v' <- case dir of
                                L -> app2 combine v u
                                R -> app2 combine u v
-                       writeArray arrOut j v'
+                       writeArray TypeInt arrOut j v'
                        A.trip <$> next i <*> next j <*> pure v')
                    (A.trip i1 j1 v0)
 
@@ -317,30 +316,30 @@ mkScanS dir uid aenv combine mseed marr =
 
 
 mkScan'S
-    :: forall aenv sh e. (Shape sh, Elt e)
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> ArrayR (Array (sh, Int) e)
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh:.Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (((), Array (sh:.Int) e), Array sh e))
-mkScan'S dir uid aenv combine seed marr =
+    -> MIRDelayed Native aenv (Array (sh, Int) e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e, Array sh e))
+mkScan'S dir uid aenv repr combine seed marr =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @(sh:.Int) "out"
-      (arrSum, paramSum)      = mutableArray @sh        "sum"
-      (arrIn,  paramIn)       = delayedArray @(sh:.Int) "in" marr
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray repr "out"
+      (arrSum, paramSum)      = mutableArray (reduceRank repr) "sum"
+      (arrIn,  paramIn)       = delayedArray "in" marr
       paramEnv                = envParam aenv
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
   in
   makeOpenAcc uid "scanS" (paramGang ++ paramOut ++ paramSum ++ paramIn ++ paramEnv) $ do
 
     sz    <- indexHead <$> delayedExtent arrIn
-    szm1  <- A.sub numType sz (lift 1)
+    szm1  <- A.sub numType sz (liftInt 1)
 
     -- iterate over each lower-dimensional index (segment)
     imapFromTo (indexHead start) (indexHead end) $ \seg -> do
@@ -366,9 +365,10 @@ mkScan'S dir uid aenv combine seed marr =
       -- Loop through the input. Only at the top of the loop to we write the
       -- carry-in value (i.e. value from the last loop iteration) to the output
       -- array. This ensures correct behaviour if the input array was empty.
-      r  <- while (cont . A.fst)
+      r  <- while (TupRsingle scalarTypeInt `TupRpair` arrayRtype repr)
+                  (cont . A.fst)
                   (\(A.unpair -> (i,v)) -> do
-                      writeArray arrOut i v
+                      writeArray TypeInt arrOut i v
 
                       u  <- app1 (delayedLinearIndex arrIn) i
                       v' <- case dir of
@@ -379,24 +379,24 @@ mkScan'S dir uid aenv combine seed marr =
                   (A.pair i0 v0)
 
       -- write final reduction result
-      writeArray arrSum seg (A.snd r)
+      writeArray TypeInt arrSum seg (A.snd r)
 
     return_
 
 
 mkScanP
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
     -> MIRDelayed Native aenv (Vector e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Vector e))
-mkScanP dir uid aenv combine mseed marr =
-  foldr1 (+++) <$> sequence [ mkScanP1 dir uid aenv combine mseed marr
-                            , mkScanP2 dir uid aenv combine
-                            , mkScanP3 dir uid aenv combine mseed
+mkScanP dir uid aenv tp combine mseed marr =
+  foldr1 (+++) <$> sequence [ mkScanP1 dir uid aenv tp combine mseed marr
+                            , mkScanP2 dir uid aenv tp combine
+                            , mkScanP3 dir uid aenv tp combine mseed
                             ]
 
 -- Parallel scan, step 1.
@@ -406,32 +406,32 @@ mkScanP dir uid aenv combine mseed marr =
 -- result of this chunk is written to a separate array.
 --
 mkScanP1
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
     -> MIRDelayed Native aenv (Vector e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Vector e))
-mkScanP1 dir uid aenv combine mseed marr =
+mkScanP1 dir uid aenv tp combine mseed marr =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @DIM1 "out"
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
-      (arrIn,  paramIn)       = delayedArray @DIM1 "in" marr
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)       = delayedArray "in" marr
       paramEnv                = envParam aenv
       --
-      steps                   = local     @Int "ix.steps"
-      paramSteps              = parameter @Int "ix.steps"
-      piece                   = local     @Int "ix.piece"
-      paramPiece              = parameter @Int "ix.piece"
+      steps                   = local     (TupRsingle scalarTypeInt) "ix.steps"
+      paramSteps              = parameter (TupRsingle scalarTypeInt) "ix.steps"
+      piece                   = local     (TupRsingle scalarTypeInt) "ix.piece"
+      paramPiece              = parameter (TupRsingle scalarTypeInt) "ix.piece"
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
       firstPiece              = case dir of
-                                  L -> lift 0
+                                  L -> liftInt 0
                                   R -> steps
   in
   makeOpenAcc uid "scanP1" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramIn ++ paramEnv) $ do
@@ -455,23 +455,23 @@ mkScanP1 dir uid aenv combine mseed marr =
     j0  <- case mseed of
              Nothing -> return i0
              Just _  -> case dir of
-                          L -> if A.eq singleType piece firstPiece
+                          L -> if (TupRsingle scalarTypeInt, A.eq singleType piece firstPiece)
                                  then return i0
                                  else next i0
-                          R -> if A.eq singleType piece firstPiece
+                          R -> if (TupRsingle scalarTypeInt, A.eq singleType piece firstPiece)
                                  then return (indexHead end)
                                  else return i0
 
     -- Evaluate/read the initial element for this piece. Update the read-from
     -- index appropriately
     (v0,i1) <- A.unpair <$> case mseed of
-                 Just seed -> if A.eq singleType piece firstPiece
+                 Just seed -> if (tp `TupRpair` TupRsingle scalarTypeInt, A.eq singleType piece firstPiece)
                                 then A.pair <$> seed                               <*> pure i0
                                 else A.pair <$> app1 (delayedLinearIndex arrIn) i0 <*> next i0
                  Nothing   ->        A.pair <$> app1 (delayedLinearIndex arrIn) i0 <*> next i0
 
     -- Write first element
-    writeArray arrOut j0 v0
+    writeArray TypeInt arrOut j0 v0
     j1  <- next j0
 
     -- Continue looping through the rest of the input
@@ -480,18 +480,19 @@ mkScanP1 dir uid aenv combine mseed marr =
              L -> A.lt  singleType i (indexHead end)
              R -> A.gte singleType i (indexHead start)
 
-    r   <- while (cont . A.fst3)
+    r   <- while (TupRunit `TupRpair` TupRsingle scalarTypeInt `TupRpair` TupRsingle scalarTypeInt `TupRpair` tp)
+                 (cont . A.fst3)
                  (\(A.untrip -> (i,j,v)) -> do
                      u  <- app1 (delayedLinearIndex arrIn) i
                      v' <- case dir of
                              L -> app2 combine v u
                              R -> app2 combine u v
-                     writeArray arrOut j v'
+                     writeArray TypeInt arrOut j v'
                      A.trip <$> next i <*> next j <*> pure v')
                  (A.trip i1 j1 v0)
 
     -- Final reduction result of this piece
-    writeArray arrTmp piece (A.thd3 r)
+    writeArray TypeInt arrTmp piece (A.thd3 r)
 
     return_
 
@@ -503,16 +504,16 @@ mkScanP1 dir uid aenv combine mseed marr =
 -- results in the final step.
 --
 mkScanP2
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma          aenv
+    -> TupleType e
     -> IRFun2  Native aenv (e -> e -> e)
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e))
-mkScanP2 dir uid aenv combine =
+mkScanP2 dir uid aenv tp combine =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
+      (start, end, paramGang) = gangParam    dim1
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
       paramEnv                = envParam aenv
       --
       cont i                  = case dir of
@@ -520,8 +521,8 @@ mkScanP2 dir uid aenv combine =
                                   R -> A.gte singleType i (indexHead start)
 
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
   in
   makeOpenAcc uid "scanP2" (paramGang ++ paramTmp ++ paramEnv) $ do
 
@@ -529,17 +530,18 @@ mkScanP2 dir uid aenv combine =
             L -> return (indexHead start)
             R -> next (indexHead end)
 
-    v0 <- readArray arrTmp i0
+    v0 <- readArray TypeInt arrTmp i0
     i1 <- next i0
 
-    void $ while (cont . A.fst)
+    void $ while (TupRsingle scalarTypeInt `TupRpair` tp)
+                 (cont . A.fst)
                  (\(A.unpair -> (i,v)) -> do
-                    u  <- readArray arrTmp i
+                    u  <- readArray TypeInt arrTmp i
                     i' <- next i
                     v' <- case dir of
                             L -> app2 combine v u
                             R -> app2 combine u v
-                    writeArray arrTmp i v'
+                    writeArray TypeInt arrTmp i v'
                     return $ A.pair i' v')
                  (A.pair i1 v0)
 
@@ -554,33 +556,33 @@ mkScanP2 dir uid aenv combine =
 -- Note that first chunk does not need extra processing (has no carry-in value).
 --
 mkScanP3
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma aenv
+    -> TupleType e
     -> IRFun2  Native aenv (e -> e -> e)
     -> MIRExp  Native aenv e
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e))
-mkScanP3 dir uid aenv combine mseed =
+mkScanP3 dir uid aenv tp combine mseed =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @DIM1 "out"
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
       paramEnv                = envParam aenv
       --
-      steps                   = local     @Int "ix.steps"
-      paramSteps              = parameter @Int "ix.steps"
-      piece                   = local     @Int "ix.piece"
-      paramPiece              = parameter @Int "ix.piece"
+      steps                   = local     (TupRsingle scalarTypeInt) "ix.steps"
+      paramSteps              = parameter (TupRsingle scalarTypeInt) "ix.steps"
+      piece                   = local     (TupRsingle scalarTypeInt) "ix.piece"
+      paramPiece              = parameter (TupRsingle scalarTypeInt) "ix.piece"
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
       prev i                  = case dir of
-                                  L -> A.sub numType i (lift 1)
-                                  R -> A.add numType i (lift 1)
+                                  L -> A.sub numType i (liftInt 1)
+                                  R -> A.add numType i (liftInt 1)
       firstPiece              = case dir of
-                                  L -> lift 0
+                                  L -> liftInt 0
                                   R -> steps
   in
   makeOpenAcc uid "scanP3" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
@@ -597,31 +599,31 @@ mkScanP3 dir uid aenv combine mseed =
                      _          -> (,) <$> pure (indexHead start) <*> pure (indexHead end)
 
       -- Read in the carry in value for this piece
-      c <- readArray arrTmp =<< prev piece
+      c <- readArray TypeInt arrTmp =<< prev piece
 
       imapFromTo inf sup $ \i -> do
-        x <- readArray arrOut i
+        x <- readArray TypeInt arrOut i
         y <- case dir of
                L -> app2 combine c x
                R -> app2 combine x c
-        writeArray arrOut i y
+        writeArray TypeInt arrOut i y
 
     return_
 
 
 mkScan'P
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
     -> MIRDelayed Native aenv (Vector e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (((), Vector e), Scalar e))
-mkScan'P dir uid aenv combine seed arr =
-  foldr1 (+++) <$> sequence [ mkScan'P1 dir uid aenv combine seed arr
-                            , mkScan'P2 dir uid aenv combine
-                            , mkScan'P3 dir uid aenv combine
+    -> CodeGen    Native      (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'P dir uid aenv tp combine seed arr =
+  foldr1 (+++) <$> sequence [ mkScan'P1 dir uid aenv tp combine seed arr
+                            , mkScan'P2 dir uid aenv tp combine
+                            , mkScan'P3 dir uid aenv tp combine
                             ]
 
 -- Parallel scan', step 1
@@ -631,33 +633,33 @@ mkScan'P dir uid aenv combine seed arr =
 -- indices to make space for the initial element.
 --
 mkScan'P1
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma             aenv
+    -> TupleType e
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
     -> MIRDelayed Native aenv (Vector e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (((), Vector e), Scalar e))
-mkScan'P1 dir uid aenv combine seed marr =
+    -> CodeGen    Native      (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'P1 dir uid aenv tp combine seed marr =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @DIM1 "out"
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
-      (arrIn,  paramIn)       = delayedArray @DIM1 "in" marr
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)       = delayedArray "in" marr
       paramEnv                = envParam aenv
       --
-      steps                   = local     @Int "ix.steps"
-      paramSteps              = parameter @Int "ix.steps"
-      piece                   = local     @Int "ix.piece"
-      paramPiece              = parameter @Int "ix.piece"
+      steps                   = local     (TupRsingle scalarTypeInt) "ix.steps"
+      paramSteps              = parameter (TupRsingle scalarTypeInt) "ix.steps"
+      piece                   = local     (TupRsingle scalarTypeInt) "ix.piece"
+      paramPiece              = parameter (TupRsingle scalarTypeInt) "ix.piece"
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
 
       firstPiece              = case dir of
-                                  L -> lift 0
+                                  L -> liftInt 0
                                   R -> steps
   in
   makeOpenAcc uid "scanP1" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramIn ++ paramEnv) $ do
@@ -670,18 +672,18 @@ mkScan'P1 dir uid aenv combine seed marr =
     -- index j* is the index that we write results to. The first piece needs to
     -- include the initial element, and all other chunks shift their results
     -- across by one to make space.
-    j0      <- if A.eq singleType piece firstPiece
+    j0      <- if (TupRsingle scalarTypeInt, A.eq singleType piece firstPiece)
                  then pure i0
                  else next i0
 
     -- Evaluate/read the initial element. Update the read-from index
     -- appropriately.
-    (v0,i1) <- A.unpair <$> if A.eq singleType piece firstPiece
+    (v0,i1) <- A.unpair <$> if (tp `TupRpair` TupRsingle scalarTypeInt, A.eq singleType piece firstPiece)
                               then A.pair <$> seed                               <*> pure i0
                               else A.pair <$> app1 (delayedLinearIndex arrIn) i0 <*> pure j0
 
     -- Write the first element
-    writeArray arrOut j0 v0
+    writeArray TypeInt arrOut j0 v0
     j1 <- next j0
 
     -- Continue looping through the rest of the input
@@ -690,18 +692,19 @@ mkScan'P1 dir uid aenv combine seed marr =
              L -> A.lt  singleType i (indexHead end)
              R -> A.gte singleType i (indexHead start)
 
-    r  <- while (cont . A.fst3)
+    r  <- while (TupRunit `TupRpair` TupRsingle scalarTypeInt `TupRpair` TupRsingle scalarTypeInt `TupRpair` tp)
+                (cont . A.fst3)
                 (\(A.untrip-> (i,j,v)) -> do
                     u  <- app1 (delayedLinearIndex arrIn) i
                     v' <- case dir of
                             L -> app2 combine v u
                             R -> app2 combine u v
-                    writeArray arrOut j v'
+                    writeArray TypeInt arrOut j v'
                     A.trip <$> next i <*> next j <*> pure v')
                 (A.trip i1 j1 v0)
 
     -- Write the final reduction result of this piece
-    writeArray arrTmp piece (A.thd3 r)
+    writeArray TypeInt arrTmp piece (A.thd3 r)
 
     return_
 
@@ -712,17 +715,17 @@ mkScan'P1 dir uid aenv combine seed marr =
 -- array (rather than discard it).
 --
 mkScan'P2
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma          aenv
+    -> TupleType e
     -> IRFun2  Native aenv (e -> e -> e)
-    -> CodeGen Native      (IROpenAcc Native aenv (((), Vector e), Scalar e))
-mkScan'P2 dir uid aenv combine =
+    -> CodeGen Native      (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'P2 dir uid aenv tp combine =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
-      (arrSum, paramSum)      = mutableArray @DIM0 "sum"
+      (start, end, paramGang) = gangParam    dim1
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrSum, paramSum)      = mutableArray (ArrayR dim0 tp) "sum"
       paramEnv                = envParam aenv
       --
       cont i                  = case dir of
@@ -730,8 +733,8 @@ mkScan'P2 dir uid aenv combine =
                                   R -> A.gte singleType i (indexHead start)
 
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
   in
   makeOpenAcc uid "scanP2" (paramGang ++ paramSum ++ paramTmp ++ paramEnv) $ do
 
@@ -739,21 +742,22 @@ mkScan'P2 dir uid aenv combine =
             L -> return (indexHead start)
             R -> next (indexHead end)
 
-    v0 <- readArray arrTmp i0
+    v0 <- readArray TypeInt arrTmp i0
     i1 <- next i0
 
-    r  <- while (cont . A.fst)
+    r  <- while (TupRpair (TupRsingle scalarTypeInt) tp)
+                (cont . A.fst)
                 (\(A.unpair -> (i,v)) -> do
-                   u  <- readArray arrTmp i
+                   u  <- readArray TypeInt arrTmp i
                    i' <- next i
                    v' <- case dir of
                            L -> app2 combine v u
                            R -> app2 combine u v
-                   writeArray arrTmp i v'
+                   writeArray TypeInt arrTmp i v'
                    return $ A.pair i' v')
                 (A.pair i1 v0)
 
-    writeArray arrSum (lift 0 :: IR Int) (A.snd r)
+    writeArray TypeInt arrSum (liftInt 0) (A.snd r)
 
     return_
 
@@ -767,32 +771,32 @@ mkScan'P2 dir uid aenv combine =
 -- carry-in value).
 --
 mkScan'P3
-    :: forall aenv e. Elt e
-    => Direction
+    :: Direction
     -> UID
     -> Gamma          aenv
+    -> TupleType e
     -> IRFun2  Native aenv (e -> e -> e)
-    -> CodeGen Native      (IROpenAcc Native aenv (((), Vector e), Scalar e))
-mkScan'P3 dir uid aenv combine =
+    -> CodeGen Native      (IROpenAcc Native aenv (Vector e, Scalar e))
+mkScan'P3 dir uid aenv tp combine =
   let
-      (start, end, paramGang) = gangParam    @DIM1
-      (arrOut, paramOut)      = mutableArray @DIM1 "out"
-      (arrTmp, paramTmp)      = mutableArray @DIM1 "tmp"
+      (start, end, paramGang) = gangParam    dim1
+      (arrOut, paramOut)      = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)      = mutableArray (ArrayR dim1 tp) "tmp"
       paramEnv                = envParam aenv
       --
-      steps                   = local     @Int "ix.steps"
-      paramSteps              = parameter @Int "ix.steps"
-      piece                   = local     @Int "ix.piece"
-      paramPiece              = parameter @Int "ix.piece"
+      steps                   = local     (TupRsingle scalarTypeInt) "ix.steps"
+      paramSteps              = parameter (TupRsingle scalarTypeInt) "ix.steps"
+      piece                   = local     (TupRsingle scalarTypeInt) "ix.piece"
+      paramPiece              = parameter (TupRsingle scalarTypeInt) "ix.piece"
       --
       next i                  = case dir of
-                                  L -> A.add numType i (lift 1)
-                                  R -> A.sub numType i (lift 1)
+                                  L -> A.add numType i (liftInt 1)
+                                  R -> A.sub numType i (liftInt 1)
       prev i                  = case dir of
-                                  L -> A.sub numType i (lift 1)
-                                  R -> A.add numType i (lift 1)
+                                  L -> A.sub numType i (liftInt 1)
+                                  R -> A.add numType i (liftInt 1)
       firstPiece              = case dir of
-                                  L -> lift 0
+                                  L -> liftInt 0
                                   R -> steps
   in
   makeOpenAcc uid "scanP3" (paramGang ++ paramPiece ++ paramSteps ++ paramOut ++ paramTmp ++ paramEnv) $ do
@@ -806,15 +810,15 @@ mkScan'P3 dir uid aenv combine =
       sup <- next (indexHead end)
 
       -- Read the carry-in value for this piece
-      c   <- readArray arrTmp =<< prev piece
+      c   <- readArray TypeInt arrTmp =<< prev piece
 
       -- Apply the carry-in value to all elements of the output
       imapFromTo inf sup $ \i -> do
-        x <- readArray arrOut i
+        x <- readArray TypeInt arrOut i
         y <- case dir of
                L -> app2 combine c x
                R -> app2 combine x c
-        writeArray arrOut i y
+        writeArray TypeInt arrOut i y
 
     return_
 
