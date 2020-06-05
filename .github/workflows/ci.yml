@@ -20,42 +20,42 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            ghc: 8.8
-            llvm: 9
-            cuda: 10.2
+            ghc: "8.8"
+            llvm: "9"
+            cuda: "10.2"
             allow_failure: false
 
           - os: ubuntu-latest
-            ghc: 8.6
-            llvm: 8
-            cuda: 10.1
+            ghc: "8.6"
+            llvm: "8"
+            cuda: "10.1"
             allow_failure: false
 
           - os: ubuntu-latest
-            ghc: 8.4
-            llvm: 6.0
-            cuda: 10.0
+            ghc: "8.4"
+            llvm: "6.0"
+            cuda: "10.0"
             allow_failure: false
 
           - os: ubuntu-latest
-            ghc: 8.2
-            llvm: 5.0
-            cuda: 8
+            ghc: "8.2"
+            llvm: "5.0"
+            cuda: "8"
             allow_failure: false
 
           - os: macOS-latest
-            ghc: 8.8
-            llvm: 9
-            cuda: 10.1
+            ghc: "8.8"
+            llvm: "9"
+            cuda: "10.1"
             allow_failure: false
 
           # ghc-8.8 currently doesn't work on the windows test machines due to a
           # 32-bit linker problem, failing with the error:
           # Access violation in generated code when writing 0x0
           - os: windows-latest
-            ghc: 8.6
-            llvm: 9
-            cuda: 10.2
+            ghc: "8.6"
+            llvm: "9"
+            cuda: "10.2"
             allow_failure: false
 
     env:
