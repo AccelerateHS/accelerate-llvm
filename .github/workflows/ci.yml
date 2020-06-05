@@ -23,31 +23,31 @@ jobs:
             ghc: "8.8"
             llvm: "9"
             cuda: "10.2"
-            allow_failure: false
+            allow_failure: true
 
           - os: ubuntu-latest
             ghc: "8.6"
             llvm: "8"
             cuda: "10.1"
-            allow_failure: false
+            allow_failure: true
 
           - os: ubuntu-latest
             ghc: "8.4"
             llvm: "6.0"
             cuda: "10.0"
-            allow_failure: false
+            allow_failure: true
 
           - os: ubuntu-latest
             ghc: "8.2"
             llvm: "5.0"
             cuda: "8"
-            allow_failure: false
+            allow_failure: true
 
           - os: macOS-latest
             ghc: "8.8"
             llvm: "9"
             cuda: "10.1"
-            allow_failure: false
+            allow_failure: true
 
           # ghc-8.8 currently doesn't work on the windows test machines due to a
           # 32-bit linker problem, failing with the error:
@@ -56,7 +56,7 @@ jobs:
             ghc: "8.6"
             llvm: "9"
             cuda: "10.2"
-            allow_failure: false
+            allow_failure: true
 
     env:
       STACK_FLAGS: "--system-ghc --no-install-ghc --fast --flag accelerate:nofib"
