@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Stencil
   where
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), PreBoundary(..), prj )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), Boundary(..), prj )
 import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error

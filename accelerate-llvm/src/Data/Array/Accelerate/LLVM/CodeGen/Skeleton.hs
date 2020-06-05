@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Skeleton (
 import Prelude                                                  hiding ( id )
 
 -- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), PreBoundary(..), prj )
+import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
 import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 

@@ -125,10 +125,12 @@ libdeviceBitcode compute = do
       err     = $internalError "libdevice" (printf "not found: %s.YY.bc" basename)
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
 #if MIN_VERSION_nvvm(0,10,0)
-      base    = nvvmDeviceLibraryPath
+      -- base    = nvvmDeviceLibraryPath
 #else
-      base    = cudaInstallPath </> "nvvm" </> "libdevice"
+      -- base    = cudaInstallPath </> "nvvm" </> "libdevice"
 #endif
+      base    = "/usr/lib/nvidia-cuda-toolkit/libdevice"
+
   --
   files <- TH.runIO $ getDirectoryContents base
   --
