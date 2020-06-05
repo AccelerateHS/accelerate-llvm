@@ -91,7 +91,7 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew tap llvm-hs/homebrew-llvm
-        brew tap caskroom/drivers
+        brew tap homebrew/cask-drivers
         brew install libffi
         brew install llvm-${{ matrix.llvm }}
         brew cask install nvidia-cuda
