@@ -56,6 +56,8 @@ import qualified Data.Array.Accelerate.Debug                        as Debug
 import Util                                                         ( ghciTablesNextToCode )
 import GHC.Exts
 import GHCi.InfoTable
+import Foreign.Ptr                                                  ( plusPtr )
+import Foreign.Storable                                             ( sizeOf )
 #include "rts/storage/ClosureTypes.h"
 #endif
 
