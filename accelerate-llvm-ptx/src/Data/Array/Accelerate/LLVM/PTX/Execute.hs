@@ -87,15 +87,9 @@ instance Execute PTX where
   {-# INLINE transform   #-}
   {-# INLINE backpermute #-}
   {-# INLINE fold        #-}
-  {-# INLINE fold1       #-}
   {-# INLINE foldSeg     #-}
-  {-# INLINE fold1Seg    #-}
-  {-# INLINE scanl       #-}
-  {-# INLINE scanl1      #-}
-  {-# INLINE scanl'      #-}
-  {-# INLINE scanr       #-}
-  {-# INLINE scanr1      #-}
-  {-# INLINE scanr'      #-}
+  {-# INLINE scan        #-}
+  {-# INLINE scan'       #-}
   {-# INLINE permute     #-}
   {-# INLINE stencil1    #-}
   {-# INLINE stencil2    #-}
@@ -104,16 +98,12 @@ instance Execute PTX where
   generate      = generateOp
   transform     = transformOp
   backpermute   = backpermuteOp
-  fold          = foldOp
-  fold1         = fold1Op
-  foldSeg       = foldSegOp
-  fold1Seg      = foldSegOp
-  scanl         = scanOp
-  scanl1        = scan1Op
-  scanl'        = scan'Op
-  scanr         = scanOp
-  scanr1        = scan1Op
-  scanr'        = scan'Op
+  fold True     = foldOp
+  fold False    = fold1Op
+  foldSeg i _   = foldSegOp i
+  scan _ True   = scanOp
+  scan _ False  = scan1Op
+  scan' _       = scan'Op
   permute       = permuteOp
   stencil1      = stencil1Op
   stencil2      = stencil2Op

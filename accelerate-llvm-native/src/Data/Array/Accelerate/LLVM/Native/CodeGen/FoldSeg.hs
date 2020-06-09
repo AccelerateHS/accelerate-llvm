@@ -39,40 +39,6 @@ import Control.Applicative
 import Control.Monad
 import Prelude                                                      as P
 
-
--- Segmented reduction along the innermost dimension of an array. Performs one
--- reduction per segment of the source array.
---
-mkFoldSeg
-    :: UID
-    -> Gamma             aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IntegralType i
-    -> IRFun2     Native aenv (e -> e -> e)
-    -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh, Int) e)
-    -> MIRDelayed Native aenv (Segments i)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
-mkFoldSeg uid aenv repr int combine seed arr seg =
-  mkFoldSegP uid aenv repr int combine (Just seed) arr seg
-
-
--- Segmented reduction along the innermost dimension of an array, where /all/
--- segments are non-empty.
---
-mkFold1Seg
-    :: UID
-    -> Gamma             aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IntegralType i
-    -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh, Int) e)
-    -> MIRDelayed Native aenv (Segments i)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
-mkFold1Seg uid aenv repr int combine arr seg =
-  mkFoldSegP uid aenv repr int combine Nothing arr seg
-
-
 {--
 -- Segmented reduction where a single processor reduces the entire array. The
 -- segments array contains the length of each segment.
@@ -128,11 +94,15 @@ mkFoldSegS uid aenv combine mseed marr mseg =
 --}
 
 
+-- Segmented reduction along the innermost dimension of an array. Performs one
+-- reduction per segment of the source array. When no seed is given, assumes
+-- that /all/ segments are non-empty.
+--
 -- This implementation assumes that the segments array represents the offset
 -- indices to the source array, rather than the lengths of each segment. The
 -- segment-offset approach is required for parallel implementations.
 --
-mkFoldSegP
+mkFoldSeg
     :: UID
     -> Gamma             aenv
     -> ArrayR (Array (sh, Int) e)
@@ -142,7 +112,7 @@ mkFoldSegP
     -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> MIRDelayed Native aenv (Segments i)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
-mkFoldSegP uid aenv repr int combine mseed marr mseg =
+mkFoldSeg uid aenv repr int combine mseed marr mseg =
   let
       (start, end, paramGang) = gangParam dim1
       (arrOut, paramOut)      = mutableArray repr "out"

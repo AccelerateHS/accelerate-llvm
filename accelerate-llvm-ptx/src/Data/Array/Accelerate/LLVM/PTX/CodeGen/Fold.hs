@@ -62,42 +62,19 @@ import Prelude                                                      as P
 --
 mkFold
     :: forall aenv sh e.
-       Gamma          aenv
+       Gamma            aenv
     -> ArrayR (Array sh e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFold aenv repr f z acc
-  | ArrayR ShapeRz tp <- repr
-  = (+++) <$> mkFoldAll  aenv tp f (Just z) acc
-          <*> mkFoldFill aenv repr z
-
-  | otherwise
-  = (+++) <$> mkFoldDim  aenv repr f (Just z) acc
-          <*> mkFoldFill aenv repr z
-
-
--- Reduce a non-empty array along the innermost dimension. The reduction
--- function must be associative to allow for an efficient parallel
--- implementation.
---
--- TODO: Specialise for commutative operations (such as (+)) and those with
---       a neutral element {(+), 0}
---
-mkFold1
-    :: forall aenv sh e.
-       Gamma          aenv
-    -> ArrayR (Array sh e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFold1 aenv repr f acc
-  | ArrayR ShapeRz tp <- repr
-  = mkFoldAll aenv tp  f Nothing acc
-
-  | otherwise
-  = mkFoldDim aenv repr f Nothing acc
+    -> IRFun2       PTX aenv (e -> e -> e)
+    -> Maybe (IRExp PTX aenv e)
+    -> MIRDelayed   PTX aenv (Array (sh, Int) e)
+    -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh e))
+mkFold aenv repr f z acc = case z of
+  Just z' -> (+++) <$> codeFold <*> mkFoldFill aenv repr z'
+  Nothing -> codeFold
+  where
+    codeFold = case repr of
+      ArrayR ShapeRz tp -> mkFoldAll aenv tp   f z acc
+      _                 -> mkFoldDim aenv repr f z acc
 
 
 -- Reduce an array to a single element.
