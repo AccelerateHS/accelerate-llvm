@@ -130,16 +130,10 @@ linkOpenAcc = travA
         Generate repr sh        -> return $ Generate repr sh
         Transform repr sh a     -> Transform repr sh <$> travA a
         Backpermute shr sh a    -> Backpermute shr sh <$> travA a
-        Fold a                  -> Fold            <$> travD a
-        Fold1 a                 -> Fold1           <$> travD a
-        FoldSeg i a s           -> FoldSeg i       <$> travD a <*> travD s
-        Fold1Seg i a s          -> Fold1Seg i      <$> travD a <*> travD s
-        Scanl a                 -> Scanl           <$> travD a
-        Scanl1 a                -> Scanl1          <$> travD a
-        Scanl' a                -> Scanl'          <$> travD a
-        Scanr a                 -> Scanr           <$> travD a
-        Scanr1 a                -> Scanr1          <$> travD a
-        Scanr' a                -> Scanr'          <$> travD a
+        Fold z a                -> Fold z          <$> travD a
+        FoldSeg i z a s         -> FoldSeg i z     <$> travD a <*> travD s
+        Scan d z a              -> Scan d z        <$> travD a
+        Scan' d a               -> Scan' d         <$> travD a
         Permute d a             -> Permute         <$> travA d <*> travD a
         Stencil1 tp h a         -> Stencil1 tp h   <$> travD a
         Stencil2 tp h a b       -> Stencil2 tp h   <$> travD a <*> travD b

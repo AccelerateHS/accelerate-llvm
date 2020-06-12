@@ -20,12 +20,12 @@
 
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
-  mkScanl, mkScanl1, mkScanl',
-  mkScanr, mkScanr1, mkScanr',
+  mkScan, mkScan',
 
 ) where
 
 -- accelerate
+import Data.Array.Accelerate.AST                                    ( Direction(..) )
 import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Representation
 
@@ -57,9 +57,8 @@ import Data.Bits                                                    as P
 import Prelude                                                      as P hiding ( last )
 
 
-data Direction = L | R
 
--- 'Data.List.scanl' style left-to-right exclusive scan, but with the
+-- 'Data.List.scanl' or 'Data.List.scanl1' style exclusive scan, but with the
 -- restriction that the combination function must be associative to enable
 -- efficient parallel implementation.
 --
@@ -67,52 +66,29 @@ data Direction = L | R
 -- >
 -- > ==> Array (Z :. 11) [10,10,11,13,16,20,25,31,38,46,55]
 --
-mkScanl
+mkScan
     :: forall aenv sh e.
-       Gamma          aenv
+       Gamma            aenv
     -> ArrayR (Array (sh, Int) e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScanl aenv repr combine seed arr
-  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScanAllP1 L aenv tp combine (Just seed) arr
-                              , mkScanAllP2 L aenv tp combine
-                              , mkScanAllP3 L aenv tp combine (Just seed)
-                              , mkScanFill aenv repr seed
-                              ]
-  --
-  | otherwise
-  = (+++) <$> mkScanDim L aenv repr combine (Just seed) arr
-          <*> mkScanFill  aenv repr seed
+    -> Direction
+    -> IRFun2       PTX aenv (e -> e -> e)
+    -> Maybe (IRExp PTX aenv e)
+    -> MIRDelayed   PTX aenv (Array (sh, Int) e)
+    -> CodeGen      PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+mkScan aenv repr dir combine seed arr
+  = foldr1 (+++) <$> sequence (codeScan ++ codeFill)
 
-
--- 'Data.List.scanl1' style left-to-right inclusive scan, but with the
--- restriction that the combination function must be associative to enable
--- efficient parallel implementation. The array must not be empty.
---
--- > scanl1 (+) (use $ fromList (Z :. 10) [0..])
--- >
--- > ==> Array (Z :. 10) [0,1,3,6,10,15,21,28,36,45]
---
-mkScanl1
-    :: forall aenv sh e.
-       Gamma          aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScanl1 aenv repr combine arr
-  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScanAllP1 L aenv tp combine Nothing arr
-                              , mkScanAllP2 L aenv tp combine
-                              , mkScanAllP3 L aenv tp combine Nothing
-                              ]
-  --
-  | otherwise
-  = mkScanDim L aenv repr combine Nothing arr
-
+  where
+    codeScan = case repr of
+      ArrayR (ShapeRsnoc ShapeRz) tp -> [ mkScanAllP1 dir aenv tp   combine seed arr
+                                        , mkScanAllP2 dir aenv tp   combine
+                                        , mkScanAllP3 dir aenv tp   combine seed
+                                        ]
+      _                              -> [ mkScanDim   dir aenv repr combine seed arr
+                                        ]
+    codeFill = case seed of
+      Just s -> [ mkScanFill aenv repr s ]
+      Nothing -> []
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
 --
@@ -122,108 +98,25 @@ mkScanl1 aenv repr combine arr
 --       , Array Z [55]
 --       )
 --
-mkScanl'
+mkScan'
     :: forall aenv sh e.
        Gamma          aenv
     -> ArrayR (Array (sh, Int) e)
+    -> Direction
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
-mkScanl' aenv repr combine seed arr
+mkScan' aenv repr dir combine seed arr
   | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScan'AllP1 L aenv tp combine seed arr
-                              , mkScan'AllP2 L aenv tp combine
-                              , mkScan'AllP3 L aenv tp combine
+  = foldr1 (+++) <$> sequence [ mkScan'AllP1 dir aenv tp combine seed arr
+                              , mkScan'AllP2 dir aenv tp combine
+                              , mkScan'AllP3 dir aenv tp combine
                               , mkScan'Fill aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'Dim L aenv repr combine seed arr
-          <*> mkScan'Fill  aenv repr seed
-
-
--- 'Data.List.scanr' style right-to-left exclusive scan, but with the
--- restriction that the combination function must be associative to enable
--- efficient parallel implementation.
---
--- > scanr (+) 10 (use $ fromList (Z :. 10) [0..])
--- >
--- > ==> Array (Z :. 11) [55,55,54,52,49,45,40,34,27,19,10]
---
-mkScanr
-    :: forall aenv sh e.
-       Gamma          aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScanr aenv repr combine seed arr
-  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScanAllP1 R aenv tp combine (Just seed) arr
-                              , mkScanAllP2 R aenv tp combine
-                              , mkScanAllP3 R aenv tp combine (Just seed)
-                              , mkScanFill aenv repr seed
-                              ]
-  --
-  | otherwise
-  = (+++) <$> mkScanDim R aenv repr combine (Just seed) arr
-          <*> mkScanFill  aenv repr seed
-
-
--- 'Data.List.scanr1' style right-to-left inclusive scan, but with the
--- restriction that the combination function must be associative to enable
--- efficient parallel implementation. The array must not be empty.
---
--- > scanr (+) 10 (use $ fromList (Z :. 10) [0..])
--- >
--- > ==> Array (Z :. 10) [45,45,44,42,39,35,30,24,17,9]
---
-mkScanr1
-    :: forall aenv sh e.
-       Gamma          aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScanr1 aenv repr combine arr
-  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScanAllP1 R aenv tp combine Nothing arr
-                              , mkScanAllP2 R aenv tp combine
-                              , mkScanAllP3 R aenv tp combine Nothing
-                              ]
-  --
-  | otherwise
-  = mkScanDim R aenv repr combine Nothing arr
-
-
--- Variant of 'scanr' where the final result is returned in a separate array.
---
--- > scanr' (+) 10 (use $ fromList (Z :. 10) [0..])
--- >
--- > ==> ( Array (Z :. 10) [55,54,52,49,45,40,34,27,19,10]
---       , Array Z [55]
---       )
---
-mkScanr'
-    :: forall aenv sh e.
-       Gamma          aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
-mkScanr' aenv repr combine seed arr
-  | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScan'AllP1 R aenv tp combine seed arr
-                              , mkScan'AllP2 R aenv tp combine
-                              , mkScan'AllP3 R aenv tp combine
-                              , mkScan'Fill    aenv repr seed
-                              ]
-  --
-  | otherwise
-  = (+++) <$> mkScan'Dim R aenv repr combine seed arr
+  = (+++) <$> mkScan'Dim dir aenv repr combine seed arr
           <*> mkScan'Fill  aenv repr seed
 
 
@@ -297,11 +190,11 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
       tid   <- threadIdx
       tid'  <- int tid
       i0    <- case dir of
-                 L -> A.add numType inf tid'
-                 R -> do x <- A.sub numType sz inf
-                         y <- A.sub numType x tid'
-                         z <- A.sub numType y (liftInt 1)
-                         return z
+                 LeftToRight -> A.add numType inf tid'
+                 RightToLeft -> do x <- A.sub numType sz inf
+                                   y <- A.sub numType x tid'
+                                   z <- A.sub numType y (liftInt 1)
+                                   return z
 
       -- index j* is the index that we write to. Recall that for exclusive scans
       -- the output array is one larger than the input; the initial element will
@@ -309,13 +202,13 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
       j0    <- case mseed of
                  Nothing -> return i0
                  Just _  -> case dir of
-                              L -> A.add numType i0 (liftInt 1)
-                              R -> return i0
+                              LeftToRight -> A.add numType i0 (liftInt 1)
+                              RightToLeft -> return i0
 
       -- If this thread has input, read data and participate in thread-block scan
       let valid i = case dir of
-                      L -> A.lt  singleType i sz
-                      R -> A.gte singleType i (liftInt 0)
+                      LeftToRight -> A.lt  singleType i sz
+                      RightToLeft -> A.gte singleType i (liftInt 0)
 
       when (valid i0) $ do
         x0 <- app1 (delayedLinearIndex arrIn) i0
@@ -326,8 +219,8 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
                     then do
                       z <- seed
                       case dir of
-                        L -> writeArray TypeInt32 arrOut (liftInt32 0) z >> app2 combine z x0
-                        R -> writeArray TypeInt   arrOut sz            z >> app2 combine x0 z
+                        LeftToRight -> writeArray TypeInt32 arrOut (liftInt32 0) z >> app2 combine z x0
+                        RightToLeft -> writeArray TypeInt   arrOut sz            z >> app2 combine x0 z
                     else
                       return x0
 
@@ -347,10 +240,10 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
         last <- A.sub numType bd (liftInt32 1)
         when (A.gt singleType gd (liftInt32 1) `land'` A.eq singleType tid last) $
           case dir of
-            L -> writeArray TypeInt arrTmp chunk x2
-            R -> do u <- A.sub numType end chunk
-                    v <- A.sub numType u (liftInt 1)
-                    writeArray TypeInt arrTmp v x2
+            LeftToRight -> writeArray TypeInt arrTmp chunk x2
+            RightToLeft -> do u <- A.sub numType end chunk
+                              v <- A.sub numType u (liftInt 1)
+                              writeArray TypeInt arrTmp v x2
 
     return_
 
@@ -406,15 +299,15 @@ mkScanAllP2 dir aenv tp combine = do
       tid   <- threadIdx
       tid'  <- int tid
       i0    <- case dir of
-                 L -> A.add numType offset tid'
-                 R -> do x <- A.sub numType end offset
-                         y <- A.sub numType x tid'
-                         z <- A.sub numType y (liftInt 1)
-                         return z
+                 LeftToRight -> A.add numType offset tid'
+                 RightToLeft -> do x <- A.sub numType end offset
+                                   y <- A.sub numType x tid'
+                                   z <- A.sub numType y (liftInt 1)
+                                   return z
 
       let valid i = case dir of
-                      L -> A.lt  singleType i end
-                      R -> A.gte singleType i start
+                      LeftToRight -> A.lt  singleType i end
+                      RightToLeft -> A.gte singleType i start
 
       when (valid i0) $ do
 
@@ -426,8 +319,8 @@ mkScanAllP2 dir aenv tp combine = do
                 then do
                   c <- readArray TypeInt32 carry (liftInt32 0)
                   case dir of
-                    L -> app2 combine c x0
-                    R -> app2 combine x0 c
+                    LeftToRight -> app2 combine c x0
+                    RightToLeft -> app2 combine x0 c
                 else do
                   return x0
 
@@ -496,7 +389,7 @@ mkScanAllP3 dir aenv tp combine mseed = do
         -- Determine the start and end indicies of this chunk to which we will
         -- carry-in the value. Returned for left-to-right traversal.
         (inf,sup) <- case dir of
-                       L -> do
+                       LeftToRight -> do
                          a <- A.add numType chunk (liftInt 1)
                          b <- A.mul numType stride a
                          case mseed of
@@ -509,7 +402,7 @@ mkScanAllP3 dir aenv tp combine mseed = do
                              c <- A.add numType    b stride
                              d <- A.min singleType c sz
                              return (b,d)
-                       R -> do
+                       RightToLeft -> do
                          a <- A.sub numType end chunk
                          b <- A.mul numType stride a
                          c <- A.sub numType sz b
@@ -526,8 +419,8 @@ mkScanAllP3 dir aenv tp combine mseed = do
 
         -- Read the carry-in value
         carry     <- case dir of
-                       L -> readArray TypeInt arrTmp chunk
-                       R -> do
+                       LeftToRight -> readArray TypeInt arrTmp chunk
+                       RightToLeft -> do
                          a <- A.add numType chunk (liftInt 1)
                          b <- readArray TypeInt arrTmp a
                          return b
@@ -538,8 +431,8 @@ mkScanAllP3 dir aenv tp combine mseed = do
         imapFromStepTo i0 bd sup $ \i -> do
           v <- readArray TypeInt arrOut i
           u <- case dir of
-                 L -> app2 combine carry v
-                 R -> app2 combine v carry
+                 LeftToRight -> app2 combine carry v
+                 RightToLeft -> app2 combine v carry
           writeArray TypeInt arrOut i u
 
     return_
@@ -597,22 +490,22 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
       -- i* is the index that this thread will read data from
       tid <- int =<< threadIdx
       i0  <- case dir of
-               L -> A.add numType inf tid
-               R -> do x <- A.sub numType sz inf
-                       y <- A.sub numType x tid
-                       z <- A.sub numType y (liftInt 1)
-                       return z
+               LeftToRight -> A.add numType inf tid
+               RightToLeft -> do x <- A.sub numType sz inf
+                                 y <- A.sub numType x tid
+                                 z <- A.sub numType y (liftInt 1)
+                                 return z
 
       -- j* is the index this thread will write to. This is just shifted by one
       -- to make room for the initial element
       j0  <- case dir of
-               L -> A.add numType i0 (liftInt 1)
-               R -> A.sub numType i0 (liftInt 1)
+               LeftToRight -> A.add numType i0 (liftInt 1)
+               RightToLeft -> A.sub numType i0 (liftInt 1)
 
       -- If this thread has input it participates in the scan
       let valid i = case dir of
-                      L -> A.lt  singleType i sz
-                      R -> A.gte singleType i (liftInt 0)
+                      LeftToRight -> A.lt  singleType i sz
+                      RightToLeft -> A.gte singleType i (liftInt 0)
 
       when (valid i0) $ do
         x0 <- app1 (delayedLinearIndex arrIn) i0
@@ -625,8 +518,8 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
                   z <- seed
                   writeArray TypeInt arrOut i0 z
                   case dir of
-                    L -> app2 combine z x0
-                    R -> app2 combine x0 z
+                    LeftToRight -> app2 combine z x0
+                    RightToLeft -> app2 combine x0 z
                 else
                   return x0
 
@@ -641,8 +534,8 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
         -- space for the initial element, so the very last thread does not store
         -- its result here.
         case dir of
-          L -> when (A.lt  singleType j0 sz)          $ writeArray TypeInt arrOut j0 x2
-          R -> when (A.gte singleType j0 (liftInt 0)) $ writeArray TypeInt arrOut j0 x2
+          LeftToRight -> when (A.lt  singleType j0 sz)          $ writeArray TypeInt arrOut j0 x2
+          RightToLeft -> when (A.gte singleType j0 (liftInt 0)) $ writeArray TypeInt arrOut j0 x2
 
         -- Last active thread writes its result to the partial sums array. These
         -- will be used to compute the carry-in value in step 2.
@@ -651,10 +544,10 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
                  return y
         when (A.eq singleType tid m) $
           case dir of
-            L -> writeArray TypeInt arrTmp seg x2
-            R -> do x <- A.sub numType end seg
-                    y <- A.sub numType x (liftInt 1)
-                    writeArray TypeInt arrTmp y x2
+            LeftToRight -> writeArray TypeInt arrTmp seg x2
+            RightToLeft -> do x <- A.sub numType end seg
+                              y <- A.sub numType x (liftInt 1)
+                              writeArray TypeInt arrTmp y x2
 
     return_
 
@@ -706,15 +599,15 @@ mkScan'AllP2 dir aenv tp combine = do
     imapFromStepTo start bd end $ \offset -> do
 
       i0  <- case dir of
-               L -> A.add numType offset tid'
-               R -> do x <- A.sub numType end offset
-                       y <- A.sub numType x tid'
-                       z <- A.sub numType y (liftInt 1)
-                       return z
+               LeftToRight -> A.add numType offset tid'
+               RightToLeft -> do x <- A.sub numType end offset
+                                 y <- A.sub numType x tid'
+                                 z <- A.sub numType y (liftInt 1)
+                                 return z
 
       let valid i = case dir of
-                      L -> A.lt  singleType i end
-                      R -> A.gte singleType i start
+                      LeftToRight -> A.lt  singleType i end
+                      RightToLeft -> A.gte singleType i start
 
       -- wait for the carry-in value to be updated
       __syncthreads
@@ -733,8 +626,8 @@ mkScan'AllP2 dir aenv tp combine = do
               then do
                 c <- readArray TypeInt32 carry (liftInt32 0)
                 case dir of
-                  L -> app2 combine c x0
-                  R -> app2 combine x0 c
+                  LeftToRight -> app2 combine c x0
+                  RightToLeft -> app2 combine x0 c
               else
                 return x0
 
@@ -805,14 +698,14 @@ mkScan'AllP3 dir aenv tp combine = do
       imapFromStepTo bid gd end $ \chunk -> do
 
         (inf,sup) <- case dir of
-                       L -> do
+                       LeftToRight -> do
                          a <- A.add numType    chunk  (liftInt 1)
                          b <- A.mul numType    stride a
                          c <- A.add numType    b      (liftInt 1)
                          d <- A.add numType    c      stride
                          e <- A.min singleType d      sz
                          return (c,e)
-                       R -> do
+                       RightToLeft -> do
                          a <- A.sub numType    end    chunk
                          b <- A.mul numType    stride a
                          c <- A.sub numType    sz     b
@@ -822,8 +715,8 @@ mkScan'AllP3 dir aenv tp combine = do
                          return (f,d)
 
         carry     <- case dir of
-                       L -> readArray TypeInt arrTmp chunk
-                       R -> do
+                       LeftToRight -> readArray TypeInt arrTmp chunk
+                       RightToLeft -> do
                          a <- A.add numType chunk (liftInt 1)
                          b <- readArray TypeInt arrTmp a
                          return b
@@ -834,8 +727,8 @@ mkScan'AllP3 dir aenv tp combine = do
         imapFromStepTo i0 bd sup $ \i -> do
           v <- readArray TypeInt arrOut i
           u <- case dir of
-                 L -> app2 combine carry v
-                 R -> app2 combine v carry
+                 LeftToRight -> app2 combine carry v
+                 RightToLeft -> app2 combine v carry
           writeArray TypeInt arrOut i u
 
     return_
@@ -908,37 +801,37 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
       tid   <- threadIdx
       tid'  <- int tid
       i0    <- case dir of
-                 L -> do x <- A.mul numType seg sz
-                         y <- A.add numType x tid'
-                         return y
+                 LeftToRight -> do x <- A.mul numType seg sz
+                                   y <- A.add numType x tid'
+                                   return y
 
-                 R -> do x <- A.add numType seg (liftInt 1)
-                         y <- A.mul numType x sz
-                         z <- A.sub numType y tid'
-                         w <- A.sub numType z (liftInt 1)
-                         return w
+                 RightToLeft -> do x <- A.add numType seg (liftInt 1)
+                                   y <- A.mul numType x sz
+                                   z <- A.sub numType y tid'
+                                   w <- A.sub numType z (liftInt 1)
+                                   return w
 
       -- Index this thread writes to
       j0  <- case mseed of
                Nothing -> return i0
                Just{}  -> do szp1 <- return $ indexHead (irArrayShape arrOut)
                              case dir of
-                               L -> do x <- A.mul numType seg szp1
-                                       y <- A.add numType x tid'
-                                       return y
+                               LeftToRight -> do x <- A.mul numType seg szp1
+                                                 y <- A.add numType x tid'
+                                                 return y
 
-                               R -> do x <- A.add numType seg (liftInt 1)
-                                       y <- A.mul numType x szp1
-                                       z <- A.sub numType y tid'
-                                       w <- A.sub numType z (liftInt 1)
-                                       return w
+                               RightToLeft -> do x <- A.add numType seg (liftInt 1)
+                                                 y <- A.mul numType x szp1
+                                                 z <- A.sub numType y tid'
+                                                 w <- A.sub numType z (liftInt 1)
+                                                 return w
 
       -- Stride indices by block dimension
       bd  <- blockDim
       bd' <- int bd
       let next ix = case dir of
-                      L -> A.add numType ix bd'
-                      R -> A.sub numType ix bd'
+                      LeftToRight -> A.add numType ix bd'
+                      RightToLeft -> A.sub numType ix bd'
 
       -- Initialise this scan segment
       --
@@ -957,8 +850,8 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
               writeArray TypeInt   arrOut j0 z
               writeArray TypeInt32 carry (liftInt32 0) z
             j1 <- case dir of
-                   L -> A.add numType j0 (liftInt 1)
-                   R -> A.sub numType j0 (liftInt 1)
+                   LeftToRight -> A.add numType j0 (liftInt 1)
+                   RightToLeft -> A.sub numType j0 (liftInt 1)
             return $ A.trip sz i0 j1
 
           Nothing -> do
@@ -1010,8 +903,8 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
                  then do
                    c <- readArray TypeInt32 carry (liftInt32 0)
                    case dir of
-                     L -> app2 combine c x
-                     R -> app2 combine x c
+                     LeftToRight -> app2 combine c x
+                     RightToLeft -> app2 combine x c
                   else
                     return x
 
@@ -1116,16 +1009,16 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
         -- Index that this thread will read from. Recall that the supremum index
         -- is exclusive.
         i0  <- case dir of
-                 L -> A.add numType inf tid'
-                 R -> do x <- A.sub numType sup tid'
-                         y <- A.sub numType x (liftInt 1)
-                         return y
+                 LeftToRight -> A.add numType inf tid'
+                 RightToLeft -> do x <- A.sub numType sup tid'
+                                   y <- A.sub numType x (liftInt 1)
+                                   return y
 
         -- The index that this thread will write to. This is just shifted along
         -- by one to make room for the initial element.
         j0  <- case dir of
-                 L -> A.add numType i0 (liftInt 1)
-                 R -> A.sub numType i0 (liftInt 1)
+                 LeftToRight -> A.add numType i0 (liftInt 1)
+                 RightToLeft -> A.sub numType i0 (liftInt 1)
 
         -- Evaluate the initial element. Store it into the carry-in slot as well
         -- as to the array as the first element. This is always valid because if
@@ -1138,8 +1031,8 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
         bd  <- blockDim
         bd' <- int bd
         let next ix = case dir of
-                        L -> A.add numType ix bd'
-                        R -> A.sub numType ix bd'
+                        LeftToRight -> A.add numType ix bd'
+                        RightToLeft -> A.sub numType ix bd'
 
         -- Now, threads iterate over the elements along the innermost dimension.
         -- At each iteration the first thread incorporates the carry-in value
@@ -1168,8 +1061,8 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                               then do
                                 c <- readArray TypeInt32 carry (liftInt32 0)
                                 case dir of
-                                  L -> app2 combine c x
-                                  R -> app2 combine x c
+                                  LeftToRight -> app2 combine c x
+                                  RightToLeft -> app2 combine x c
                               else
                                 return x
                       z <- scanBlockSMem dir dev tp combine Nothing y
@@ -1178,8 +1071,8 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                       -- align directly on the boundary of the array this is not
                       -- valid for the last thread.
                       case dir of
-                        L -> when (A.lt  singleType j sup) $ writeArray TypeInt arrOut j z
-                        R -> when (A.gte singleType j inf) $ writeArray TypeInt arrOut j z
+                        LeftToRight -> when (A.lt  singleType j sup) $ writeArray TypeInt arrOut j z
+                        RightToLeft -> when (A.gte singleType j inf) $ writeArray TypeInt arrOut j z
 
                       -- Last thread of the block also saves its result as the
                       -- carry-in value
@@ -1203,8 +1096,8 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                                         then do
                                           c <- readArray TypeInt32 carry (liftInt32 0)
                                           case dir of
-                                            L -> app2 combine c x
-                                            R -> app2 combine x c
+                                            LeftToRight -> app2 combine c x
+                                            RightToLeft -> app2 combine x c
                                         else
                                           return x
                                 return y
@@ -1347,12 +1240,12 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
           prefix <- iterFromStepTo tp (liftInt32 1) (liftInt32 1) steps p0 $ \step x -> do
                       y <- readArray TypeInt32 smem step
                       case dir of
-                        L -> app2 combine x y
-                        R -> app2 combine y x
+                        LeftToRight -> app2 combine x y
+                        RightToLeft -> app2 combine y x
 
           case dir of
-            L -> app2 combine prefix input
-            R -> app2 combine input prefix
+            LeftToRight -> app2 combine prefix input
+            RightToLeft -> app2 combine input prefix
 
 
 -- Warp-wide scan
@@ -1404,8 +1297,8 @@ scanWarpSMem dir dev tp combine smem = scan 0
                       i' <- A.sub numType i offset    -- lane + HALF_WARP - offset
                       x' <- readArray TypeInt32 smem i'
                       case dir of
-                        L -> app2 combine x' x
-                        R -> app2 combine x x'
+                        LeftToRight -> app2 combine x' x
+                        RightToLeft -> app2 combine x x'
 
                     else
                       return x

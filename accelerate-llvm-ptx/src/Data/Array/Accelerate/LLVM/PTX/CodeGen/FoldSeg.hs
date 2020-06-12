@@ -56,34 +56,17 @@ import Prelude                                                      as P
 --
 mkFoldSeg
     :: forall aenv sh i e.
-       Gamma          aenv
+       Gamma            aenv
     -> ArrayR (Array (sh, Int) e)
     -> IntegralType i
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRExp      PTX aenv e
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
+    -> IRFun2       PTX aenv (e -> e -> e)
+    -> Maybe (IRExp PTX aenv e)
+    -> MIRDelayed   PTX aenv (Array (sh, Int) e)
+    -> MIRDelayed   PTX aenv (Segments i)
+    -> CodeGen      PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
 mkFoldSeg aenv repr intTp combine seed arr seg =
-  (+++) <$> mkFoldSegP_block aenv repr intTp combine (Just seed) arr seg
-        <*> mkFoldSegP_warp  aenv repr intTp combine (Just seed) arr seg
-
-
--- Segmented reduction along the innermost dimension of an array, where /all/
--- segments are non-empty.
---
-mkFold1Seg
-    :: forall aenv sh i e.
-       Gamma          aenv
-    -> ArrayR (Array (sh, Int) e)
-    -> IntegralType i
-    -> IRFun2     PTX aenv (e -> e -> e)
-    -> MIRDelayed PTX aenv (Array (sh, Int) e)
-    -> MIRDelayed PTX aenv (Segments i)
-    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkFold1Seg aenv repr intTp combine arr seg =
-  (+++) <$> mkFoldSegP_block aenv repr intTp combine Nothing arr seg
-        <*> mkFoldSegP_warp  aenv repr intTp combine Nothing arr seg
+  (+++) <$> mkFoldSegP_block aenv repr intTp combine seed arr seg
+        <*> mkFoldSegP_warp  aenv repr intTp combine seed arr seg
 
 
 -- This implementation assumes that the segments array represents the offset

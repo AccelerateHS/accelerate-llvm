@@ -185,22 +185,24 @@ liftPreOpenAccSkeleton arch pacc =
 
       liftS :: ShapeR sh -> sh -> Q (TExp sh)
       liftS shr sh = [|| $$(liftConst (shapeType shr) sh) ||]
+
+      liftZ :: HasInitialValue -> Q (TExp HasInitialValue)
+      liftZ True  = [|| True  ||]
+      liftZ False = [|| False ||]
+
+      liftDir :: Direction -> Q (TExp Direction)
+      liftDir LeftToRight = [|| LeftToRight ||]
+      liftDir RightToLeft = [|| RightToLeft ||]
   in
   case pacc of
     Map tp a             -> [|| Map $$(liftTupleType tp) $$(liftA a) ||]
     Generate repr sh     -> [|| Generate $$(liftArrayR repr) $$(liftE sh) ||]
     Transform repr sh a  -> [|| Transform $$(liftArrayR repr) $$(liftE sh) $$(liftA a) ||]
     Backpermute shr sh a -> [|| Backpermute $$(liftShapeR shr) $$(liftE sh) $$(liftA a) ||]
-    Fold a               -> [|| Fold $$(liftD a) ||]
-    Fold1 a              -> [|| Fold1 $$(liftD a) ||]
-    FoldSeg i a s        -> [|| FoldSeg $$(liftIntegralType i) $$(liftD a) $$(liftD s) ||]
-    Fold1Seg i a s       -> [|| Fold1Seg $$(liftIntegralType i) $$(liftD a) $$(liftD s) ||]
-    Scanl a              -> [|| Scanl $$(liftD a) ||]
-    Scanl1 a             -> [|| Scanl1 $$(liftD a) ||]
-    Scanl' a             -> [|| Scanl' $$(liftD a) ||]
-    Scanr a              -> [|| Scanr $$(liftD a) ||]
-    Scanr1 a             -> [|| Scanr1 $$(liftD a) ||]
-    Scanr' a             -> [|| Scanr' $$(liftD a) ||]
+    Fold z a             -> [|| Fold $$(liftZ z) $$(liftD a) ||]
+    FoldSeg i z a s      -> [|| FoldSeg $$(liftIntegralType i) $$(liftZ z) $$(liftD a) $$(liftD s) ||]
+    Scan d z a           -> [|| Scan $$(liftDir d) $$(liftZ z) $$(liftD a) ||]
+    Scan' d a            -> [|| Scan' $$(liftDir d) $$(liftD a) ||]
     Permute d a          -> [|| Permute $$(liftA d) $$(liftD a) ||]
     Stencil1 tp h a      -> [|| Stencil1 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) ||]
     Stencil2 tp h a b    -> [|| Stencil2 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) $$(liftD b) ||]

@@ -35,15 +35,9 @@ instance Skeleton Native where
   generate    = mkGenerate
   transform   = mkTransform
   fold        = mkFold
-  fold1       = mkFold1
   foldSeg     = mkFoldSeg
-  fold1Seg    = mkFold1Seg
-  scanl       = mkScanl
-  scanl1      = mkScanl1
-  scanl'      = mkScanl'
-  scanr       = mkScanr
-  scanr1      = mkScanr1
-  scanr'      = mkScanr'
+  scan        = mkScan
+  scan'       = mkScan'
   permute     = mkPermute
   stencil1    = mkStencil1
   stencil2    = mkStencil2

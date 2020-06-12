@@ -41,45 +41,37 @@ import Control.Applicative
 import Prelude                                                      as P hiding ( length )
 
 
--- Reduce a (possibly empty) array along the innermost dimension. The reduction
+-- Reduce an array along the innermost dimension. The reduction
 -- function must be associative to allow for an efficient parallel
--- implementation. The initial element does not need to be a neutral element of
--- the operator.
+-- implementation. When an initial value is given, the input can be
+-- empty. The initial element does not need to be a neutral element of
+-- the operator. When no initial value is given, the array must be
+-- non-empty
 --
 mkFold
     :: UID
     -> Gamma             aenv
     -> ArrayR (Array sh e)
-    -> IRFun2     Native aenv (e -> e -> e)
-    -> IRExp      Native aenv e
-    -> MIRDelayed Native aenv (Array (sh, Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh e))
+    -> IRFun2       Native aenv (e -> e -> e)
+    -> Maybe (IRExp Native aenv e)
+    -> MIRDelayed   Native aenv (Array (sh, Int) e)
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh e))
 mkFold uid aenv repr f z arr
-  | ArrayR ShapeRz tp <- repr
-  = (+++) <$> mkFoldAll  uid aenv tp f (Just z) arr
-          <*> mkFoldFill uid aenv repr z
+  -- When an initial value is given, the input can be empty. We
+  -- compile a fill kernel to handle that.
+  | Just z' <- z
+  = (+++) <$> codeFold
+          <*> mkFoldFill uid aenv repr z'
 
+  -- When no initial value is given, we only have to generate the
+  -- actual fold kernel.
   | otherwise
-  = (+++) <$> mkFoldDim  uid aenv repr f (Just z) arr
-          <*> mkFoldFill uid aenv repr z
-
-
--- Reduce a non-empty array along the innermost dimension. The reduction
--- function must be associative to allow for efficient parallel implementation.
---
-mkFold1
-    :: UID
-    -> Gamma             aenv
-    -> ArrayR (Array sh e)
-    -> IRFun2     Native aenv (e -> e -> e)
-    -> MIRDelayed Native aenv (Array (sh, Int) e)
-    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh e))
-mkFold1 uid aenv repr f arr
-  | ArrayR ShapeRz tp <- repr
-  = mkFoldAll uid aenv tp f Nothing arr
-
-  | otherwise
-  = mkFoldDim uid aenv repr f Nothing arr
+  = codeFold
+  where
+    -- Code for a non-empty fold
+    codeFold = case repr of
+      ArrayR ShapeRz tp -> mkFoldAll uid aenv tp   f z arr
+      _                 -> mkFoldDim uid aenv repr f z arr
 
 
 -- Reduce a multidimensional (>1) array along the innermost dimension.
