@@ -46,7 +46,7 @@ jobs:
           - os: macOS-latest
             ghc: "8.8"
             llvm: "9"
-            cuda: "10.1"
+            cuda: ""
             allow_failure: true
 
           # ghc-8.8 currently doesn't work on the windows test machines due to a
@@ -55,7 +55,7 @@ jobs:
           - os: windows-latest
             ghc: "8.6"
             llvm: "9.0.1"
-            cuda: "10.2.89"
+            cuda: "10.2.89.20191206"
             allow_failure: true
 
     env:
@@ -65,15 +65,19 @@ jobs:
     - uses: actions/checkout@v2
 
     - uses: actions/setup-haskell@v1.1
-      name: Setup Haskell Stack
       with:
         enable-stack: true
         ghc-version: ${{ matrix.ghc }}
 
+    - name: Set up stack
+      id: stack-setup
+      run: |
+        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
+        echo "::set-output name=stack-root::$(stack path --system-ghc --no-install-ghc --stack-root)"
+
     - uses: actions/cache@v1
-      name: Cache ~/.stack
       with:
-        path: ~/.stack
+        path: ${{ steps.stack-setup.outputs.stack-root }}
         key: ${{ runner.os }}-${{ matrix.ghc }}-${{ matrix.llvm }}-${{ matrix.cuda }}-stack
 
     - name: Setup (Linux)
@@ -94,10 +98,8 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew tap llvm-hs/homebrew-llvm
-        brew tap tmcdonell/homebrew-cask-drivers
         brew install libffi
         brew install llvm-${{ matrix.llvm }}
-        brew cask install nvidia-cuda
         echo "::set-env name=PKG_CONFIG_PATH::$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH"
 
     - name: Setup (Windows)
@@ -106,12 +108,27 @@ jobs:
         choco install llvm --version=${{ matrix.llvm }}
         choco install cuda --version=${{ matrix.cuda }}
 
-    - name: Build
+    - name: Build dependencies
+      run: |
+        stack build $STACK_FLAGS --test --no-run-tests --only-dependencies
+
+    - name: Build accelerate-llvm
       run: |
         ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
-        stack build $STACK_FLAGS --test --no-run-tests
+        stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
 
-    - name: Test
+    - name: Build accelerate-llvm-native
+      run: |
+        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
+        stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+
+    - name: Build accelerate-llvm-ptx
+      if: runner.os /= 'macOS'
+      run: |
+        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
+        stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+
+    - name: Test accelerate-llvm-native
       run: |
         stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
