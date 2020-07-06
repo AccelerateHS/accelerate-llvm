@@ -96,6 +96,8 @@ jobs:
       run: |
         choco install llvm --version=${{ matrix.llvm }}
         choco install cuda --version=${{ matrix.cuda }}
+        pacman -S --noconfirm libffi-devel
+        sed -i'' -e 's,/usr,C:/msys64/usr,' C:\msys64\usr\lib\pkgconfig\libffi.pc
 
     - name: Build dependencies
       run: |
