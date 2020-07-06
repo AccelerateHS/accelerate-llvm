@@ -31,18 +31,6 @@ jobs:
             cuda: "10.1"
             allow_failure: true
 
-          - os: ubuntu-latest
-            ghc: "8.4"
-            llvm: "6.0"
-            cuda: "10.0"
-            allow_failure: true
-
-          - os: ubuntu-latest
-            ghc: "8.2"
-            llvm: "5.0"
-            cuda: "9.2"
-            allow_failure: true
-
           - os: macOS-latest
             ghc: "8.8"
             llvm: "9"
