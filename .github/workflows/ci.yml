@@ -86,6 +86,7 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         brew tap llvm-hs/homebrew-llvm
+        brew install pkg-config
         brew install libffi
         brew install llvm-${{ matrix.llvm }}
         echo "::set-env name=PKG_CONFIG_PATH::$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH"
