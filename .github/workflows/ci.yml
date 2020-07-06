@@ -118,6 +118,7 @@ jobs:
         stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
 
     - name: Test accelerate-llvm-native
+      if: runner.os != 'Windows'
       run: |
         stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=30s --num-threads=1'
 
