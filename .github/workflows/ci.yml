@@ -103,18 +103,15 @@ jobs:
 
     - name: Build accelerate-llvm
       run: |
-        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
         stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
 
     - name: Build accelerate-llvm-native
       run: |
-        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
         stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
 
     - name: Build accelerate-llvm-ptx
       if: runner.os != 'macOS'
       run: |
-        ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
         stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
 
     - name: Test accelerate-llvm-native
