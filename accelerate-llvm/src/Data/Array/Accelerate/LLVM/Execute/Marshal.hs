@@ -25,15 +25,16 @@
 module Data.Array.Accelerate.LLVM.Execute.Marshal
   where
 
--- accelerate
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
+
 import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..) )
 import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Execute.Async
 
--- libraries
 import Data.DList                                               ( DList )
 import qualified Data.DList                                     as DL
 import qualified Data.IntMap                                    as IM
@@ -51,7 +52,7 @@ class Async arch => Marshal arch where
   marshalInt :: Int -> ArgR arch
 
   -- | Pass arrays to kernels
-  marshalScalarData' :: SingleType e' -> ScalarData e' -> Par arch (DList (ArgR arch))
+  marshalScalarData' :: SingleType e -> ScalarArrayData e -> Par arch (DList (ArgR arch))
 
 -- | Convert function arguments into stream a form suitable for function calls
 -- The functions ending in a prime return a DList, other functions return lists.
@@ -68,16 +69,15 @@ marshalArray' (ArrayR shr tp) (Array sh a) = do
   let arg2 = marshalShape' @arch shr sh
   return $ arg1 `DL.append` arg2
 
-marshalArrayData' :: forall arch tp. Marshal arch => TupleType tp -> ArrayData tp -> Par arch (DList (ArgR arch))
-marshalArrayData' TupRunit () = return DL.empty
+marshalArrayData' :: forall arch t. Marshal arch => TypeR t -> ArrayData t -> Par arch (DList (ArgR arch))
+marshalArrayData' TupRunit ()               = return DL.empty
 marshalArrayData' (TupRpair t1 t2) (a1, a2) = do
   l1 <- marshalArrayData' t1 a1
   l2 <- marshalArrayData' t2 a2
   return $ l1 `DL.append` l2
-marshalArrayData' (TupRsingle (SingleScalarType tp)) ad
-  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
-marshalArrayData' (TupRsingle (VectorScalarType (VectorType _ tp))) ad
-  | (ScalarDict, _, _) <- singleDict tp = marshalScalarData' @arch tp ad
+marshalArrayData' (TupRsingle t) ad
+  | ScalarArrayDict _ s <- scalarArrayDict t
+  = marshalScalarData' @arch s ad
 
 marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch [ArgR arch]
 marshalEnv g a = DL.toList <$> marshalEnv' g a
@@ -95,6 +95,7 @@ marshalShape' ShapeRz () = DL.empty
 marshalShape' (ShapeRsnoc shr) (sh, n) = marshalShape' @arch shr sh `DL.snoc` marshalInt @arch n
 
 type ParamsR arch = TupR (ParamR arch)
+
 data ParamR arch a where
   ParamRarray  :: ArrayR (Array sh e) -> ParamR arch (Array sh e)
   ParamRmaybe  :: ParamR arch a       -> ParamR arch (Maybe a)

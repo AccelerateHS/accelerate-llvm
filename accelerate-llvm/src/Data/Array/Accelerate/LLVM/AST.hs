@@ -18,26 +18,20 @@ module Data.Array.Accelerate.LLVM.AST (
   DelayedOpenAcc(..),
   PreOpenAccCommand(..),
   PreOpenAccSkeleton(..),
-
-  PreAfun, PreOpenAfun(..),
-  Fun, OpenFun(..),
-  Exp, OpenExp(..),
-  PairIdx(..),
   UnzipIdx(..),
-  Idx(..), Var(..), ArrayVar, LeftHandSide(..), ALeftHandSide, ELeftHandSide, ShapeR(..),
-  TupR(..), ArrayR(..), HasArraysRepr(..), arrayRepr,
-  Direction(..), HasInitialValue,
+  HasInitialValue,
 
 ) where
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), HasArraysR(..), ArrayVar, ALeftHandSide, Exp, Direction, PrimBool, arrayR )
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.Var
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.AST
-    ( PreOpenAfun(..), OpenExp(..), OpenFun(..), Idx(..), PreAfun, Fun, Exp, Var(..), ArrayVar,
-      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..),
-      Direction(..) )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -61,7 +55,7 @@ data PreOpenAccCommand acc arch aenv a where
               -> Array sh e
               -> PreOpenAccCommand acc arch aenv (Array sh e)
 
-  Unit        :: TupleType e
+  Unit        :: TypeR e
               -> Exp                        aenv e
               -> PreOpenAccCommand acc arch aenv (Scalar e)
 
@@ -82,12 +76,12 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch aenv as
               -> PreOpenAccCommand acc arch aenv bs
 
-  Acond       :: Exp                         aenv Bool
+  Acond       :: Exp                         aenv PrimBool
               -> acc                   arch  aenv arrs
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
 
-  Awhile      :: PreOpenAfun      (acc arch) aenv (arrs -> Scalar Bool)
+  Awhile      :: PreOpenAfun      (acc arch) aenv (arrs -> Scalar PrimBool)
               -> PreOpenAfun      (acc arch) aenv (arrs -> arrs)
               -> acc                   arch  aenv arrs
               -> PreOpenAccCommand acc arch  aenv arrs
@@ -110,7 +104,7 @@ data PreOpenAccSkeleton acc arch aenv a where
   -- Producers. The only way these terms can appear in the AST is if they
   -- are applied to a manifest array.
   --
-  Map         :: TupleType b
+  Map         :: TypeR b
               -> acc                    arch aenv (Array sh a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
@@ -154,12 +148,12 @@ data PreOpenAccSkeleton acc arch aenv a where
               -> DelayedOpenAcc     acc arch aenv (Array sh  e)     -- source values
               -> PreOpenAccSkeleton acc arch aenv (Array sh' e)
 
-  Stencil1    :: TupleType b
+  Stencil1    :: TypeR b
               -> sh                                                 -- stencil offset/halo size
               -> DelayedOpenAcc     acc arch aenv (Array sh a)
               -> PreOpenAccSkeleton acc arch aenv (Array sh b)
 
-  Stencil2    :: TupleType c
+  Stencil2    :: TypeR c
               -> sh                                                 -- stencil offset/halo size
               -> DelayedOpenAcc     acc arch aenv (Array sh a)
               -> DelayedOpenAcc     acc arch aenv (Array sh b)
@@ -191,22 +185,22 @@ data DelayedOpenAcc acc arch aenv a where
               -> acc arch aenv (Array sh e)
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
-instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccCommand acc arch) where
-  arraysRepr (Avar (Var repr _))                   = TupRsingle repr
-  arraysRepr (Alet _ _ a)                          = arraysRepr a
-  arraysRepr (Alloc repr _)                        = TupRsingle repr
-  arraysRepr (Use repr _)                          = TupRsingle repr
-  arraysRepr (Unit tp _)                           = TupRsingle $ ArrayR ShapeRz tp
-  arraysRepr (Apair a1 a2)                         = arraysRepr a1 `TupRpair` arraysRepr a2
-  arraysRepr Anil                                  = TupRunit
-  arraysRepr (Apply repr _ _)                      = repr
-  arraysRepr (Aforeign repr _ _ _)                 = repr
-  arraysRepr (Acond _ a1 _)                        = arraysRepr a1
-  arraysRepr (Awhile _ _ a)                        = arraysRepr a
-  arraysRepr (Reshape shr _ (Var (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp
-  arraysRepr (Unzip idx (Var (ArrayR shr tp) _))   = TupRsingle $ ArrayR shr $ go idx tp
+instance HasArraysR (acc arch) => HasArraysR (PreOpenAccCommand acc arch) where
+  arraysR (Avar (Var repr _))                   = TupRsingle repr
+  arraysR (Alet _ _ a)                          = arraysR a
+  arraysR (Alloc repr _)                        = TupRsingle repr
+  arraysR (Use repr _)                          = TupRsingle repr
+  arraysR (Unit tp _)                           = TupRsingle $ ArrayR ShapeRz tp
+  arraysR (Apair a1 a2)                         = arraysR a1 `TupRpair` arraysR a2
+  arraysR Anil                                  = TupRunit
+  arraysR (Apply repr _ _)                      = repr
+  arraysR (Aforeign repr _ _ _)                 = repr
+  arraysR (Acond _ a1 _)                        = arraysR a1
+  arraysR (Awhile _ _ a)                        = arraysR a
+  arraysR (Reshape shr _ (Var (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp
+  arraysR (Unzip idx (Var (ArrayR shr tp) _))   = TupRsingle $ ArrayR shr $ go idx tp
     where
-      go :: UnzipIdx a b -> TupleType a -> TupleType b
+      go :: UnzipIdx a b -> TypeR a -> TypeR b
       go UnzipId                    t              = t
       go (UnzipPrj PairIdxLeft ix)  (TupRpair t _) = go ix t
       go (UnzipPrj PairIdxRight ix) (TupRpair _ t) = go ix t
@@ -214,25 +208,25 @@ instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccCommand acc arch) 
       go (UnzipPair ix1 ix2)        t              = go ix1 t `TupRpair` go ix2 t
       go _                          _              = error "Time enough for life to unfold all the precious things life has in store."
 
-instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccSkeleton acc arch) where
-  arraysRepr (Map tp a)               = let ArrayR shr _ = arrayRepr a
-                                        in  TupRsingle $ ArrayR shr tp
-  arraysRepr (Generate repr _)        = TupRsingle repr
-  arraysRepr (Transform repr _ _)     = TupRsingle repr
-  arraysRepr (Backpermute shr _ a)    = TupRsingle $ ArrayR shr $ arrayRtype $ arrayRepr a
-  arraysRepr (Fold _ a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
-                                        in  TupRsingle $ ArrayR shr tp
-  arraysRepr (FoldSeg _ _ a _)        = arraysRepr a
-  arraysRepr (Scan _ _ a)             = arraysRepr a
-  arraysRepr (Scan' _ a)              = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
-                                        in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
-  arraysRepr (Permute a _)            = arraysRepr a
-  arraysRepr (Stencil1 tp _ a)        = let ArrayR shr _ = arrayRepr a
-                                        in  TupRsingle $ ArrayR shr tp
-  arraysRepr (Stencil2 tp _ a _)      = let ArrayR shr _ = arrayRepr a
-                                        in  TupRsingle $ ArrayR shr tp
+instance HasArraysR (acc arch) => HasArraysR (PreOpenAccSkeleton acc arch) where
+  arraysR (Map tp a)               = let ArrayR shr _ = arrayR a
+                                     in  TupRsingle $ ArrayR shr tp
+  arraysR (Generate repr _)        = TupRsingle repr
+  arraysR (Transform repr _ _)     = TupRsingle repr
+  arraysR (Backpermute shr _ a)    = TupRsingle $ ArrayR shr $ arrayRtype $ arrayR a
+  arraysR (Fold _ a)               = let ArrayR (ShapeRsnoc shr) tp = arrayR a
+                                     in  TupRsingle $ ArrayR shr tp
+  arraysR (FoldSeg _ _ a _)        = arraysR a
+  arraysR (Scan _ _ a)             = arraysR a
+  arraysR (Scan' _ a)              = let ArrayR (ShapeRsnoc shr) tp = arrayR a
+                                     in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
+  arraysR (Permute a _)            = arraysR a
+  arraysR (Stencil1 tp _ a)        = let ArrayR shr _ = arrayR a
+                                     in  TupRsingle $ ArrayR shr tp
+  arraysR (Stencil2 tp _ a _)      = let ArrayR shr _ = arrayR a
+                                     in  TupRsingle $ ArrayR shr tp
 
-instance HasArraysRepr (acc arch) => HasArraysRepr (DelayedOpenAcc acc arch) where
-  arraysRepr (Delayed  repr _) = TupRsingle repr
-  arraysRepr (Manifest repr _) = repr
+instance HasArraysR (acc arch) => HasArraysR (DelayedOpenAcc acc arch) where
+  arraysR (Delayed  repr _) = TupRsingle repr
+  arraysR (Manifest repr _) = repr
 

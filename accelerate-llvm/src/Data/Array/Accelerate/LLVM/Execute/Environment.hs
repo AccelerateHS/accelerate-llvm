@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP             #-}
 {-# LANGUAGE GADTs           #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
@@ -16,11 +15,10 @@
 module Data.Array.Accelerate.LLVM.Execute.Environment
   where
 
--- accelerate
-import Data.Array.Accelerate.AST                                    ( Idx(..), ALeftHandSide, ELeftHandSide, LeftHandSide(..), ArrayR(..) )
-#if __GLASGOW_HASKELL__ < 800
-import Data.Array.Accelerate.Error
-#endif
+import Data.Array.Accelerate.AST                                    ( ALeftHandSide, ELeftHandSide )
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.Representation.Array
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
@@ -62,7 +60,4 @@ pushE env (LeftHandSidePair l1 l2, e) = do
 prj :: Idx env t -> ValR arch env -> FutureR arch t
 prj ZeroIdx       (Push _   x) = x
 prj (SuccIdx idx) (Push val _) = prj idx val
-#if __GLASGOW_HASKELL__ < 800
-prj _             _            = $internalError "prj" "inconsistent valuation"
-#endif
 

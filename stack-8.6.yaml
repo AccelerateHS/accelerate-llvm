@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: AccelerateHS/accelerate
-  commit: de95f21285a0a39df8b391e27bdf4a47890debb9
+- github: tmcdonell/accelerate
+  commit: aca8e9a575c945ee9ca882bb8e1267016343e4c7
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

@@ -26,10 +26,18 @@ module Data.Array.Accelerate.LLVM.Execute (
 
 ) where
 
--- accelerate
+import Data.Array.Accelerate.AST                                ( Direction, PreOpenAfun(..), ALeftHandSide, ArrayVar, Fun, OpenFun(..), Exp, OpenExp(..), PrimBool, arraysR, arrayR )
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalUndefScalar, evalCoerceScalar )
+import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalCoerceScalar )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Slice
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Representation.Vec
 import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Debug                    as Debug
 
@@ -41,7 +49,6 @@ import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Link
 import qualified Data.Array.Accelerate.LLVM.AST                 as AST
 
--- library
 import Control.Monad
 import System.IO.Unsafe
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
@@ -50,7 +57,7 @@ import Prelude                                                  hiding ( exp, ma
 class Remote arch => Execute arch where
   map           :: Maybe (a :~: b)              -- update values in-place?
                 -> ArrayR (Array sh a)
-                -> TupleType b
+                -> TypeR b
                 -> ExecutableR arch
                 -> Gamma aenv
                 -> ValR arch aenv
@@ -127,7 +134,7 @@ class Remote arch => Execute arch where
                 -> Delayed (Array sh e)
                 -> Par arch (FutureR arch (Array sh' e))
 
-  stencil1      :: TupleType a
+  stencil1      :: TypeR a
                 -> ArrayR (Array sh b)
                 -> sh
                 -> ExecutableR arch
@@ -136,8 +143,8 @@ class Remote arch => Execute arch where
                 -> Delayed (Array sh a)
                 -> Par arch (FutureR arch (Array sh b))
 
-  stencil2      :: TupleType a
-                -> TupleType b
+  stencil2      :: TypeR a
+                -> TypeR b
                 -> ArrayR (Array sh c)
                 -> sh
                 -> ExecutableR arch
@@ -277,7 +284,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         -- type applications, type checking works fine. This appears to be fixed in GHC 8.8; we don't have problems
         -- with type inference there after removing the explicit type applications.
         Acond p (t :: ExecOpenAcc arch aenv a) e
-                               -> (>>=) @(Par arch) @(FutureR arch Bool) @(FutureArraysR arch a) (travE p) (acond t e)
+                               -> (>>=) @(Par arch) @(FutureR arch PrimBool) @(FutureArraysR arch a) (travE p) (acond t e)
         Awhile p f (a :: ExecOpenAcc arch aenv a)
                                -> (>>=) @(Par arch) @(FutureArraysR arch a) @(FutureArraysR arch a)
                                     (spawn @arch @(FutureArraysR arch a) $ travA a)
@@ -287,28 +294,28 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Unzip tix (Var _ ix)   -> liftF1 (unzip tix) (return $ prj ix aenv)
         Aforeign r str asm a   -> do
           x <- travA a
-          y <- spawn $ aforeign str (arraysRepr a) r asm =<< getArrays (arraysRepr a) x
+          y <- spawn $ aforeign str (arraysR a) r asm =<< getArrays (arraysR a) x
           split r y
 
     travA (ExecAcc _ !gamma !kernel pacc) =
       case pacc of
         -- Producers
-        Map tp a               -> exec1 (map_ a (arrayRepr a) tp) (travA a)
+        Map tp a               -> exec1 (map_ a (arrayR a) tp) (travA a)
         Generate repr sh       -> exec1 (generate repr) (travE sh)
-        Transform repr sh a    -> exec2 (transform (arrayRepr a) repr) (travE sh) (travA a)
-        Backpermute shr sh a   -> exec2 (backpermute (arrayRepr a) shr) (travE sh) (travA a)
+        Transform repr sh a    -> exec2 (transform (arrayR a) repr) (travE sh) (travA a)
+        Backpermute shr sh a   -> exec2 (backpermute (arrayR a) shr) (travE sh) (travA a)
 
         -- Consumers
-        Fold z a               -> exec1 (fold z     $ reduceRank $ arrayRepr a) (travD a)
-        FoldSeg i z a s        -> exec2 (foldSeg i z $             arrayRepr a) (travD a) (travD s)
-        Scan d z a             -> exec1 (scan d z   $              arrayRepr a) (travD a)
+        Fold z a               -> exec1 (fold z     $ reduceRank $ arrayR a) (travD a)
+        FoldSeg i z a s        -> exec2 (foldSeg i z $             arrayR a) (travD a) (travD s)
+        Scan d z a             -> exec1 (scan d z   $              arrayR a) (travD a)
         Scan' d a              -> splitPair
-                                $ exec1 (scan' d    $              arrayRepr a) (travD a)
-        Permute d a            -> exec2 (permute_ d (arrayRepr a) $ arrayRshape $ arrayRepr d) (travA d) (travD a)
-        Stencil1 tpB h a       -> let ArrayR shr tpA = arrayRepr a
+                                $ exec1 (scan' d    $              arrayR a) (travD a)
+        Permute d a            -> exec2 (permute_ d (arrayR a) $ arrayRshape $ arrayR d) (travA d) (travD a)
+        Stencil1 tpB h a       -> let ArrayR shr tpA = arrayR a
                                   in  exec1 (stencil1 tpA (ArrayR shr tpB) h) (travD a)
-        Stencil2 tpC h a b     -> let ArrayR shr tpA = arrayRepr a
-                                      ArrayR _   tpB = arrayRepr b
+        Stencil2 tpC h a b     -> let ArrayR shr tpA = arrayR a
+                                      ArrayR _   tpB = arrayR b
                                   in  exec2 (stencil2 tpA tpB (ArrayR shr tpC) h) (travD a) (travD b)
 
       where
@@ -351,7 +358,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     travD (AST.Delayed _ sh) = liftF1 Delayed  (travE sh)
     travD (AST.Manifest _ a) = liftF1 Manifest (travA a)
 
-    unit :: TupleType t -> Exp aenv t -> Par arch (FutureR arch (Scalar t))
+    unit :: TypeR t -> Exp aenv t -> Par arch (FutureR arch (Scalar t))
     unit tp x = do
       x'   <- travE x
       spawn $ newRemoteAsync (ArrayR ShapeRz tp) () . const =<< get x'
@@ -374,23 +381,26 @@ executeOpenAcc !topAcc !aenv = travA topAcc
       return r
 
     -- Array level conditionals
-    acond :: ExecOpenAcc arch aenv a -> ExecOpenAcc arch aenv a -> FutureR arch Bool -> Par arch (FutureArraysR arch a)
+    acond :: ExecOpenAcc arch aenv a
+          -> ExecOpenAcc arch aenv a
+          -> FutureR arch PrimBool
+          -> Par arch (FutureArraysR arch a)
     acond yes no p =
       spawn $ do
         c <- block p
-        if c then travA yes
-             else travA no
+        if toBool c then travA yes
+                    else travA no
 
     -- Array loops
-    awhile :: ExecOpenAfun arch aenv (a -> Scalar Bool)
+    awhile :: ExecOpenAfun arch aenv (a -> Scalar PrimBool)
            -> ExecOpenAfun arch aenv (a -> a)
            -> FutureArraysR arch a
            -> Par arch (FutureArraysR arch a)
     awhile p f a = do
       r  <- get =<< travAF p a
-      ok <- indexRemote (TupRsingle scalarTypeBool) r 0
-      if ok then awhile p f =<< travAF f a
-            else return a
+      ok <- indexRemote (TupRsingle scalarType) r 0
+      if toBool ok then awhile p f =<< travAF f a
+                   else return a
 
     -- Pull apart the unzipped struct-of-array representation
     unzip :: UnzipIdx t e -> Array sh t -> Array sh e
@@ -405,14 +415,14 @@ executeOpenAcc !topAcc !aenv = travA topAcc
 
     map_ :: ExecOpenAcc arch aenv (Array sh a)
          -> ArrayR (Array sh a)
-         -> TupleType b
+         -> TypeR b
          -> ExecutableR arch
          -> Gamma aenv
          -> ValR arch aenv
          -> Array sh a
          -> Par arch (FutureR arch (Array sh b))
     map_ a repr@(ArrayR _ tp) tp'
-      = map (if inplace a then matchTupleType tp tp' else Nothing) repr tp'
+      = map (if inplace a then matchTypeR tp tp' else Nothing) repr tp'
 
     permute_ :: ExecOpenAcc arch aenv (Array sh' e)
              -> ArrayR (Array sh e)
@@ -480,14 +490,14 @@ executeOpenExp rootExp env aenv = travE rootExp
                                      x <- travE bnd
                                      env' <- env `pushE` (lhs, x)
                                      executeOpenExp body env' aenv
-      Undef tp                  -> newFull $ evalUndefScalar tp
+      Undef tp                  -> newFull $ undefElt (TupRsingle tp)
       Const _ c                 -> newFull c
       PrimConst c               -> newFull (evalPrimConst c)
       PrimApp f x               -> lift1 (newFull . evalPrim f) (travE x)
       Nil                       -> newFull ()
       Pair e1 e2                -> liftF2 (,) (travE e1) (travE e2)
-      VecPack   vecr e          -> liftF1 (vecPack   vecr) (travE e)
-      VecUnpack vecr e          -> liftF1 (vecUnpack vecr) (travE e)
+      VecPack   vecr e          -> liftF1 (pack   vecr) (travE e)
+      VecUnpack vecr e          -> liftF1 (unpack vecr) (travE e)
       Cond p t e                -> cond t e =<< travE p
       While p f x               -> while p f =<< travE x
       IndexSlice ix slix sh     -> lift2 (newFull $$ indexSlice ix) (travE slix) (travE sh)
@@ -511,30 +521,34 @@ executeOpenExp rootExp env aenv = travE rootExp
     travAIdx a = return $ prj a aenv
 
     foreignE :: Fun () (a -> b) -> OpenExp env aenv a -> Par arch (FutureR arch b)
-    foreignE (Lam lhs (Body f)) x = do
-                                      e <- travE x
-                                      env' <- Empty `pushE` (lhs, e)
-                                      executeOpenExp f env' Empty
+    foreignE (Lam lhs (Body f)) x = do e    <- travE x
+                                       env' <- Empty `pushE` (lhs, e)
+                                       executeOpenExp f env' Empty
     foreignE _                  _ = error "I bless the rains down in Africa"
 
     travF1 :: OpenFun env aenv (a -> b) -> FutureR arch a -> Par arch (FutureR arch b)
-    travF1 (Lam lhs (Body f)) x = do
-                                    env' <- env `pushE` (lhs, x)
-                                    executeOpenExp f env' aenv
+    travF1 (Lam lhs (Body f)) x = do env' <- env `pushE` (lhs, x)
+                                     executeOpenExp f env' aenv
     travF1 _                  _ = error "LANAAAAAAAA!"
 
-    while :: OpenFun env aenv (a -> Bool) -> OpenFun env aenv (a -> a) -> FutureR arch a -> Par arch (FutureR arch a)
+    while :: OpenFun env aenv (a -> PrimBool)
+          -> OpenFun env aenv (a -> a)
+          -> FutureR arch a
+          -> Par arch (FutureR arch a)
     while p f x = do
       ok <- block =<< travF1 p x
-      if ok then while p f =<< travF1 f x
-            else return x
+      if toBool ok then while p f =<< travF1 f x
+                   else return x
 
-    cond :: OpenExp env aenv a -> OpenExp env aenv a -> FutureR arch Bool -> Par arch (FutureR arch a)
+    cond :: OpenExp env aenv a
+         -> OpenExp env aenv a
+         -> FutureR arch PrimBool
+         -> Par arch (FutureR arch a)
     cond yes no p =
       spawn $ do
         c <- block p
-        if c then travE yes
-             else travE no
+        if toBool c then travE yes
+                    else travE no
 
     indexSlice :: SliceIndex slix sl co sh
                -> slix
@@ -564,6 +578,11 @@ executeOpenExp rootExp env aenv = travE rootExp
 
 -- Utilities
 -- ---------
+
+{-# INLINE toBool #-}
+toBool :: PrimBool -> Bool
+toBool 0 = False
+toBool _ = True
 
 {-# INLINE lift1 #-}
 lift1 :: Async arch

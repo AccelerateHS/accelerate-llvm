@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes            #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE ViewPatterns          #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -45,8 +46,11 @@ import qualified LLVM.AST.Operand                         as LLVM ( Operand(..) 
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
 
+import Data.Array.Accelerate.AST                          ( PrimBool )
+import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.AST                          ( PairIdx(..) )
+import Data.Array.Accelerate.Representation.Type
+import Data.Primitive.Vec
 
 import Prelude                                            hiding ( Ordering(..), quot, rem, div, isNaN )
 
@@ -147,9 +151,9 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LAnd            :: Operand Bool
-                  -> Operand Bool
-                  -> Instruction Bool
+  LAnd            :: Operand PrimBool
+                  -> Operand PrimBool
+                  -> Instruction PrimBool
 
   -- <http://llvm.org/docs/LangRef.html#or-instruction>
   --
@@ -158,9 +162,9 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LOr             :: Operand Bool
-                  -> Operand Bool
-                  -> Instruction Bool
+  LOr             :: Operand PrimBool
+                  -> Operand PrimBool
+                  -> Instruction PrimBool
 
   -- <http://llvm.org/docs/LangRef.html#xor-instruction>
   --
@@ -169,8 +173,8 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LNot            :: Operand Bool
-                  -> Instruction Bool
+  LNot            :: Operand PrimBool
+                  -> Instruction PrimBool
 
   -- Vector Operations
   -- -----------------
@@ -247,7 +251,7 @@ data Instruction a where
                   -> Operand a              -- replacement value
                   -> Atomicity              -- on success
                   -> MemoryOrdering         -- on failure (see docs for restrictions)
-                  -> Instruction (a, Bool)
+                  -> Instruction (a, PrimBool)
 
   -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
   --
@@ -299,7 +303,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#uitofp-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#sitofp-to-instruction>
   --
-  IntToFP         :: Either (IntegralType a) (NonNumType a)
+  IntToFP         :: IntegralType a
                   -> FloatingType b
                   -> Operand a
                   -> Instruction b
@@ -330,11 +334,11 @@ data Instruction a where
                   -> Ordering
                   -> Operand a
                   -> Operand a
-                  -> Instruction Bool
+                  -> Instruction PrimBool
 
   IsNaN           :: FloatingType a
                   -> Operand a
-                  -> Instruction Bool
+                  -> Instruction PrimBool
 
   -- <http://llvm.org/docs/LangRef.html#phi-instruction>
   --
@@ -351,7 +355,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#select-instruction>
   --
   Select          :: SingleType a
-                  -> Operand Bool
+                  -> Operand PrimBool
                   -> Operand a
                   -> Operand a
                   -> Instruction a
@@ -387,7 +391,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
     BOr _ x y             -> LLVM.Or (downcast x) (downcast y) md
     LOr x y               -> LLVM.Or (downcast x) (downcast y) md
     BXor _ x y            -> LLVM.Xor (downcast x) (downcast y) md
-    LNot x                -> LLVM.Xor (downcast x) (constant True) md
+    LNot x                -> LLVM.Xor (downcast x) (constant @PrimBool 1) md
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
     ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
     ExtractValue _ i s    -> extractStruct i (downcast s)
@@ -490,10 +494,10 @@ instance Downcast (Instruction a) LLVM.Instruction where
         | signed t  = LLVM.FPToSI x t' md
         | otherwise = LLVM.FPToUI x t' md
 
-      int2float :: Either (IntegralType a) (NonNumType a) -> FloatingType b -> LLVM.Operand -> LLVM.Instruction
+      int2float :: IntegralType a -> FloatingType b -> LLVM.Operand -> LLVM.Instruction
       int2float a (downcast -> b) x
-        | either signed signed a = LLVM.SIToFP x b md
-        | otherwise              = LLVM.UIToFP x b md
+        | signed a  = LLVM.SIToFP x b md
+        | otherwise = LLVM.UIToFP x b md
 
       isNaN :: LLVM.Operand -> LLVM.Instruction
       isNaN x = LLVM.FCmp FP.UNO x x md
@@ -592,7 +596,7 @@ instance TypeOf Instruction where
     Select _ _ x _        -> typeOf x
     Call f _              -> fun f
     where
-      typeOfVec :: Operand (Vec n a) -> Type a
+      typeOfVec :: HasCallStack => Operand (Vec n a) -> Type a
       typeOfVec x
         | PrimType p          <- typeOf x
         , ScalarPrimType s    <- p
@@ -601,7 +605,7 @@ instance TypeOf Instruction where
         = PrimType (ScalarPrimType (SingleScalarType t))
         --
         | otherwise
-        = $internalError "typeOfVec" "unexpected evaluation"
+        = internalError "unexpected evaluation"
 
       scalar :: ScalarType a -> Type a
       scalar = PrimType . ScalarPrimType
@@ -615,15 +619,11 @@ instance TypeOf Instruction where
       integral :: IntegralType a -> Type a
       integral = single . NumSingleType . IntegralNumType
 
-      nonnum :: NonNumType a -> Type a
-      nonnum = single . NonNumSingleType
-
-      pair :: ScalarType a -> ScalarType b -> TupleType (a, b)
+      pair :: ScalarType a -> ScalarType b -> TypeR (a, b)
       pair a b = TupRsingle a `TupRpair` TupRsingle b
 
       bounded :: BoundedType a -> Type a
       bounded (IntegralBoundedType t) = integral t
-      bounded (NonNumBoundedType   t) = nonnum t
 
       fun :: GlobalFunction args a -> Type a
       fun (Lam _ _ l) = fun l

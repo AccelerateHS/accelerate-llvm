@@ -11,7 +11,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Exp
   where
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 

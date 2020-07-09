@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -20,22 +19,18 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Exp
   where
 
-import Control.Applicative                                          hiding ( Const )
-import Control.Monad
-import Data.Typeable
-import Prelude                                                      hiding ( exp, any )
-import qualified Data.IntMap                                        as IM
-import GHC.TypeNats
-
-import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
+import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation                   hiding ( shape, vecPack, vecUnpack )
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Array                   ( Array, arrayRshape )
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Slice
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Representation.Vec
 import Data.Array.Accelerate.Type
-import qualified Data.Array.Accelerate.Array.Sugar                  as A
-
-import LLVM.AST.Type.Instruction
-import LLVM.AST.Type.Operand                                        ( Operand )
+import qualified Data.Array.Accelerate.Sugar.Foreign                as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -48,27 +43,39 @@ import Data.Array.Accelerate.LLVM.Foreign
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 
+import Data.Primitive.Vec
+
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Operand                                        ( Operand )
+
+import Control.Applicative                                          hiding ( Const )
+import Control.Monad
+import Prelude                                                      hiding ( exp, any )
+import qualified Data.IntMap                                        as IM
+
+import GHC.TypeNats
+
 
 -- Scalar expressions
 -- ==================
 
 {-# INLINEABLE llvmOfFun1 #-}
 llvmOfFun1
-    :: Foreign arch
+    :: (HasCallStack, Foreign arch)
     => Fun aenv (a -> b)
     -> Gamma aenv
     -> IRFun1 arch aenv (a -> b)
 llvmOfFun1 (Lam lhs (Body body)) aenv = IRFun1 $ \x -> llvmOfOpenExp body (Empty `pushE` (lhs, x)) aenv
-llvmOfFun1  _ _ = $internalError "llvmOfFun1" "impossible evaluation"
+llvmOfFun1  _                    _    = internalError "impossible evaluation"
 
 {-# INLINEABLE llvmOfFun2 #-}
 llvmOfFun2
-    :: Foreign arch
+    :: (HasCallStack, Foreign arch)
     => Fun aenv (a -> b -> c)
     -> Gamma aenv
     -> IRFun2 arch aenv (a -> b -> c)
 llvmOfFun2 (Lam lhs1 (Lam lhs2 (Body body))) aenv = IRFun2 $ \x y -> llvmOfOpenExp body (Empty `pushE` (lhs1, x) `pushE` (lhs2, y)) aenv
-llvmOfFun2 _ _ = $internalError "llvmOfFun2" "impossible evaluation"
+llvmOfFun2 _                                 _    = internalError "impossible evaluation"
 
 
 -- | Convert an open scalar expression into a sequence of LLVM Operands instructions.
@@ -77,7 +84,7 @@ llvmOfFun2 _ _ = $internalError "llvmOfFun2" "impossible evaluation"
 --
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
-    :: forall arch env aenv _t. Foreign arch
+    :: forall arch env aenv _t. (HasCallStack, Foreign arch)
     => OpenExp env aenv _t
     -> Val env
     -> Gamma aenv
@@ -87,7 +94,7 @@ llvmOfOpenExp top env aenv = cvtE top
 
     cvtF1 :: OpenFun env aenv (a -> b) -> IROpenFun1 arch env aenv (a -> b)
     cvtF1 (Lam lhs (Body body)) = IRFun1 $ \x -> llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
-    cvtF1 _                     = $internalError "cvtF1" "impossible evaluation"
+    cvtF1 _                     = internalError "impossible evaluation"
 
     cvtE :: forall t. OpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
@@ -134,12 +141,12 @@ llvmOfOpenExp top env aenv = cvtE top
       let sh' = indexFull sliceIdx slx sl
         in OP_Pair sh' sz
 
-    vecPack :: forall n single tuple. KnownNat n => VecR n single tuple -> Operands tuple -> CodeGen arch (Operands (Vec n single))
+    vecPack :: forall n single tuple. (HasCallStack, KnownNat n) => VecR n single tuple -> Operands tuple -> CodeGen arch (Operands (Vec n single))
     vecPack vecr tuple = ir tp <$> go vecr n tuple
       where
         go :: VecR n' single tuple' -> Int -> Operands tuple' -> CodeGen arch (Operand (Vec n single))
         go (VecRnil _)      0 OP_Unit        = return $ undef $ VectorScalarType tp
-        go (VecRnil _)      _ OP_Unit        = $internalError "vecUnpack" "index mismatch"
+        go (VecRnil _)      _ OP_Unit        = internalError "index mismatch"
         go (VecRsucc vecr') i (OP_Pair xs x) = do
           vec <- go vecr' (i - 1) xs
           instr' $ InsertElement (fromIntegral i - 1) vec (op singleTp x)
@@ -147,12 +154,12 @@ llvmOfOpenExp top env aenv = cvtE top
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         tp@(VectorType n singleTp) = vecRvector vecr
 
-    vecUnpack :: forall n single tuple. KnownNat n => VecR n single tuple -> Operands (Vec n single) -> CodeGen arch (Operands tuple)
+    vecUnpack :: forall n single tuple. (HasCallStack, KnownNat n) => VecR n single tuple -> Operands (Vec n single) -> CodeGen arch (Operands tuple)
     vecUnpack vecr (OP_Vec vec) = go vecr n
       where
         go :: VecR n' single tuple' -> Int -> CodeGen arch (Operands tuple')
         go (VecRnil _)      0 = return $ OP_Unit
-        go (VecRnil _)      _ = $internalError "vecUnpack" "index mismatch"
+        go (VecRnil _)      _ = internalError "index mismatch"
         go (VecRsucc vecr') i = do
           xs <- go vecr' (i - 1)
           x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
@@ -173,8 +180,8 @@ llvmOfOpenExp top env aenv = cvtE top
     pair :: Operands t1 -> Operands t2 -> IROpenExp arch env aenv (t1, t2)
     pair a b = return $ OP_Pair a b
 
-    while :: TupleType a
-          -> IROpenFun1 arch env aenv (a -> Bool)
+    while :: TypeR a
+          -> IROpenFun1 arch env aenv (a -> PrimBool)
           -> IROpenFun1 arch env aenv (a -> a)
           -> IROpenExp  arch env aenv a
           -> IROpenExp  arch env aenv a
@@ -182,7 +189,7 @@ llvmOfOpenExp top env aenv = cvtE top
       L.while tp (app1 p) (app1 f) =<< x
 
     foreignE :: A.Foreign asm
-             => TupleType b
+             => TypeR b
              -> asm           (a -> b)
              -> Fun () (a -> b)
              -> Operands a
@@ -263,9 +270,6 @@ llvmOfOpenExp top env aenv = cvtE top
         PrimLAnd                  -> A.uncurry A.land        =<< cvtE x
         PrimLOr                   -> A.uncurry A.lor         =<< cvtE x
         PrimLNot                  -> A.lnot                  =<< cvtE x
-        PrimOrd                   -> A.ord                   =<< cvtE x
-        PrimChr                   -> A.chr                   =<< cvtE x
-        PrimBoolToInt             -> A.boolToInt             =<< cvtE x
         PrimFromIntegral ta tb    -> A.irFromIntegral ta tb  =<< cvtE x
         PrimToFloating ta tb      -> A.toFloating ta tb      =<< cvtE x
           -- no missing patterns, whoo!

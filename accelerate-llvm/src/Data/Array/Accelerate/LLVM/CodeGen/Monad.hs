@@ -40,7 +40,27 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
 ) where
 
--- standard library
+import Data.Array.Accelerate.AST                                    ( PrimBool )
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
+import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.Representation.Type
+import qualified Data.Array.Accelerate.Debug                        as Debug
+
+import LLVM.AST.Type.Downcast
+import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Metadata
+import LLVM.AST.Type.Name
+import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Representation
+import LLVM.AST.Type.Terminator
+import qualified LLVM.AST                                           as LLVM
+import qualified LLVM.AST.Global                                    as LLVM
+
 import Control.Applicative
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -49,7 +69,6 @@ import Data.HashMap.Strict                                          ( HashMap )
 import Data.Map                                                     ( Map )
 import Data.Sequence                                                ( Seq )
 import Data.String
-import Data.Word
 import Prelude
 import Text.Printf
 import qualified Data.Foldable                                      as F
@@ -57,31 +76,6 @@ import qualified Data.HashMap.Strict                                as HashMap
 import qualified Data.Map                                           as Map
 import qualified Data.Sequence                                      as Seq
 import qualified Data.ByteString.Short                              as B
-
--- accelerate
-import Data.Array.Accelerate.Error
-import qualified Data.Array.Accelerate.Debug                        as Debug
-
--- accelerate-llvm
-import LLVM.AST.Type.Downcast
-import LLVM.AST.Type.Instruction
-import LLVM.AST.Type.Metadata
-import LLVM.AST.Type.Name
-import LLVM.AST.Type.Operand
-import LLVM.AST.Type.Representation
-import LLVM.AST.Type.Terminator
-
-import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
-import Data.Array.Accelerate.LLVM.CodeGen.Module
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
-import Data.Array.Accelerate.LLVM.Target
-
-import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
-
--- llvm-hs
-import qualified LLVM.AST                                           as LLVM
-import qualified LLVM.AST.Global                                    as LLVM
 
 
 -- Code generation
@@ -115,7 +109,7 @@ liftCodeGen = CodeGen . lift
 
 {-# INLINEABLE evalCodeGen #-}
 evalCodeGen
-    :: forall arch aenv a. (Target arch, Intrinsic arch)
+    :: forall arch aenv a. (HasCallStack, Target arch, Intrinsic arch)
     => CodeGen arch (IROpenAcc arch aenv a)
     -> LLVM    arch (Module    arch aenv a)
 evalCodeGen ll = do
@@ -156,10 +150,10 @@ evalCodeGen ll = do
 
 -- | An initial block chain
 --
-initBlockChain :: Seq Block
+initBlockChain :: HasCallStack => Seq Block
 initBlockChain
   = Seq.singleton
-  $ Block "entry" Seq.empty ($internalError "entry" "block has no terminator")
+  $ Block "entry" Seq.empty (internalError "block has no terminator")
 
 
 -- | Create a new basic block, but don't yet add it to the block chain. You need
@@ -188,13 +182,13 @@ initBlockChain
 -- instructions might be added to the wrong blocks, or the first set of blocks
 -- will be emitted empty and/or without a terminator.
 --
-newBlock :: String -> CodeGen arch Block
+newBlock :: HasCallStack => String -> CodeGen arch Block
 newBlock nm =
   state $ \s ->
     let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (fromString label) Seq.empty err
-        err     = $internalError label "Block has no terminator"
+        err     = internalError (printf "block `%s' has no terminator" label)
     in
     ( next, s )
 
@@ -209,7 +203,7 @@ setBlock next =
 
 -- | Generate a new block and branch unconditionally to it.
 --
-beginBlock :: String -> CodeGen arch Block
+beginBlock :: HasCallStack => String -> CodeGen arch Block
 beginBlock nm = do
   next <- newBlock nm
   _    <- br next
@@ -221,7 +215,7 @@ beginBlock nm = do
 -- body. The block stream is re-initialised, but module-level state such as the
 -- global symbol table is left intact.
 --
-createBlocks :: CodeGen arch [LLVM.BasicBlock]
+createBlocks :: HasCallStack => CodeGen arch [LLVM.BasicBlock]
 createBlocks
   = state
   $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
@@ -240,7 +234,7 @@ createBlocks
 
 -- | Generate a fresh local reference
 --
-fresh :: TupleType a -> CodeGen arch (Operands a)
+fresh :: TypeR a -> CodeGen arch (Operands a)
 fresh TupRunit         = return OP_Unit
 fresh (TupRpair t2 t1) = OP_Pair <$> fresh t2 <*> fresh t1
 fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
@@ -255,10 +249,10 @@ freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } 
 -- computed, and return the operand (LocalReference) that can be used to later
 -- refer to it.
 --
-instr :: Instruction a -> CodeGen arch (Operands a)
+instr :: HasCallStack => Instruction a -> CodeGen arch (Operands a)
 instr ins = ir (typeOf ins) <$> instr' ins
 
-instr' :: Instruction a -> CodeGen arch (Operand a)
+instr' :: HasCallStack => Instruction a -> CodeGen arch (Operand a)
 instr' ins =
   -- LLVM-5 does not allow instructions of type void to have a name.
   case typeOf ins of
@@ -273,56 +267,56 @@ instr' ins =
 
 -- | Execute an unnamed instruction
 --
-do_ :: Instruction () -> CodeGen arch ()
+do_ :: HasCallStack => Instruction () -> CodeGen arch ()
 do_ ins = instr_ $ downcast (Do ins)
 
 -- | Add raw assembly instructions to the execution stream
 --
-instr_ :: LLVM.Named LLVM.Instruction -> CodeGen arch ()
+instr_ :: HasCallStack => LLVM.Named LLVM.Instruction -> CodeGen arch ()
 instr_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "instr_" "empty block chain"
+      Seq.EmptyR  -> internalError "empty block chain"
       bs Seq.:> b -> s { blockChain = bs Seq.|> b { instructions = instructions b Seq.|> ins } }
 
 
 -- | Return void from a basic block
 --
-return_ :: CodeGen arch ()
+return_ :: HasCallStack => CodeGen arch ()
 return_ = void $ terminate Ret
 
 -- | Return a value from a basic block
 --
-retval_ :: Operand a -> CodeGen arch ()
+retval_ :: HasCallStack => Operand a -> CodeGen arch ()
 retval_ x = void $ terminate (RetVal x)
 
 
 -- | Unconditional branch. Return the name of the block that was branched from.
 --
-br :: Block -> CodeGen arch Block
+br :: HasCallStack => Block -> CodeGen arch Block
 br target = terminate $ Br (blockLabel target)
 
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: Operands Bool -> Block -> Block -> CodeGen arch Block
+cbr :: HasCallStack => Operands PrimBool -> Block -> Block -> CodeGen arch Block
 cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
 
 -- | Add a phi node to the top of the current block
 --
-phi :: forall arch a. TupleType a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
+phi :: forall arch a. HasCallStack => TypeR a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
 phi tp incoming = do
   crit  <- fresh tp
   block <- state $ \s -> case Seq.viewr (blockChain s) of
-                           Seq.EmptyR -> $internalError "phi" "empty block chain"
+                           Seq.EmptyR -> internalError "empty block chain"
                            _ Seq.:> b -> ( b, s )
   phi' tp block crit incoming
 
-phi' :: TupleType a -> Block -> Operands a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
+phi' :: HasCallStack => TypeR a -> Block -> Operands a -> [(Operands a, Block)] -> CodeGen arch (Operands a)
 phi' tp target = go tp
   where
-    go :: TupleType t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
+    go :: TypeR t -> Operands t -> [(Operands t, Block)] -> CodeGen arch (Operands t)
     go TupRunit OP_Unit _
       = return OP_Unit
     go (TupRpair t2 t1) (OP_Pair n2 n1) inc
@@ -330,22 +324,22 @@ phi' tp target = go tp
                 <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
     go (TupRsingle t) tup inc
       | LocalReference _ v <- op t tup = ir t <$> phi1 target v [ (op t x, b) | (x, b) <- inc ]
-      | otherwise                       = $internalError "phi" "expected critical variable to be local reference"
+      | otherwise                       = internalError "expected critical variable to be local reference"
 
 
-phi1 :: Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)
+phi1 :: HasCallStack => Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
       update b  = b { instructions = downcast (crit := Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
       t         = case incoming of
-                    []        -> $internalError "phi" "no incoming values specified"
+                    []        -> internalError "no incoming values specified"
                     (o,_):_   -> case typeOf o of
-                                   VoidType    -> $internalError "phi" "operand has void type"
+                                   VoidType    -> internalError "operand has void type"
                                    PrimType x  -> x
   in
   state $ \s ->
     case Seq.findIndexR (cmp target) (blockChain s) of
-      Nothing -> $internalError "phi" "unknown basic block"
+      Nothing -> internalError "unknown basic block"
       Just i  -> ( LocalReference (PrimType t) crit
                  , s { blockChain = Seq.adjust update i (blockChain s) } )
 
@@ -353,19 +347,19 @@ phi1 target crit incoming =
 -- | Add a termination condition to the current instruction stream. Also return
 -- the block that was just terminated.
 --
-terminate :: Terminator a -> CodeGen arch Block
+terminate :: HasCallStack => Terminator a -> CodeGen arch Block
 terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
-      Seq.EmptyR  -> $internalError "terminate" "empty block chain"
+      Seq.EmptyR  -> internalError "empty block chain"
       bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
 
 
 -- | Add a global declaration to the symbol table
 --
-declare :: LLVM.Global -> CodeGen arch ()
+declare :: HasCallStack => LLVM.Global -> CodeGen arch ()
 declare g =
-  let unique (Just q) | g /= q    = $internalError "global" "duplicate symbol"
+  let unique (Just q) | g /= q    = internalError "duplicate symbol"
                       | otherwise = Just g
       unique _                    = Just g
 

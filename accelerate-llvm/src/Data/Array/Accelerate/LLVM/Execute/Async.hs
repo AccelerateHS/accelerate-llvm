@@ -18,9 +18,10 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Type
+
 
 class Monad (Par arch) => Async arch where
 

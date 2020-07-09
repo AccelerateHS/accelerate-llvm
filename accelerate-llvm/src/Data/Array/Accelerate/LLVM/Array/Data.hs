@@ -32,18 +32,16 @@ module Data.Array.Accelerate.LLVM.Array.Data (
   runArray, runArrayAsync,
   runArrays, runArraysAsync,
 
-  module Data.Array.Accelerate.Array.Data,
-
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
--- standard library
 import Control.Monad                                                ( liftM, liftM2 )
 import Prelude
 
@@ -149,11 +147,11 @@ class Async arch => Remote arch where
   --
   {-# INLINE indexRemoteAsync #-}
   indexRemoteAsync
-      :: TupleType e
+      :: TypeR e
       -> Array sh e
       -> Int
       -> Par arch (FutureR arch e)
-  indexRemoteAsync tp (Array _ ad) i = newFull (unsafeIndexArrayData tp ad i)
+  indexRemoteAsync tp (Array _ ad) i = newFull (indexArrayData tp ad i)
 
 
 -- | Create a new array from its representation on the host, and upload it to
@@ -225,7 +223,7 @@ copyToPeer peer repr arrs =
 -- This is synchronous with respect to both the host and remote device.
 --
 {-# INLINE indexRemote #-}
-indexRemote :: Remote arch => TupleType e -> Array sh e -> Int -> Par arch e
+indexRemote :: Remote arch => TypeR e -> Array sh e -> Int -> Par arch e
 indexRemote tp arr i =
   block =<< indexRemoteAsync tp arr i
 
@@ -238,34 +236,38 @@ indexRemote tp arr i =
 {-# INLINE runIndexArray #-}
 runIndexArray
     :: forall m sh e. Monad m
-    => (forall s. IsScalarData s => Int -> SingleType s -> ArrayData s -> Int -> m (ArrayData s))
-    -> TupleType e
+    => (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> m (ArrayData s))
+    -> TypeR e
     -> Array sh e
     -> Int
     -> m e
-runIndexArray worker tp (Array _ adata) i = flip (unsafeIndexArrayData tp) 0 <$> indexR tp adata
+runIndexArray worker tp (Array _ adata) i = flip (indexArrayData tp) 0 <$> indexR tp adata
   where
-    indexR :: TupleType s -> ArrayData s -> m (ArrayData s)
+    indexR :: TypeR s -> ArrayData s -> m (ArrayData s)
     indexR TupRunit           !_           = return ()
-    indexR (TupRsingle t)     !ad
-      | ScalarDict' m t' <- scalarDict' t  = worker m t' ad i
     indexR (TupRpair !t1 !t2) (!ad1, !ad2) = liftM2 (,) (indexR t1 ad1) (indexR t2 ad2)
+    indexR (TupRsingle t)     !ad
+      | ScalarArrayDict w s <- scalarArrayDict t
+      , SingleArrayDict     <- singleArrayDict s
+      = worker w s ad i
 
 {-# INLINE runIndexArrayAsync #-}
 runIndexArrayAsync
     :: forall arch sh e. Async arch
-    => (forall s. IsScalarData s => Int -> SingleType s -> ArrayData s -> Int -> Par arch (FutureR arch (ArrayData s)))
-    -> TupleType e
+    => (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> Par arch (FutureR arch (ArrayData s)))
+    -> TypeR e
     -> Array sh e
     -> Int
     -> Par arch (FutureR arch e)
-runIndexArrayAsync worker tp (Array _ adata) i = (flip (unsafeIndexArrayData tp) 0) `liftF` indexR tp adata
+runIndexArrayAsync worker tp (Array _ adata) i = (flip (indexArrayData tp) 0) `liftF` indexR tp adata
   where
-    indexR :: TupleType s -> ArrayData s -> Par arch (FutureR arch (ArrayData s))
+    indexR :: TypeR s -> ArrayData s -> Par arch (FutureR arch (ArrayData s))
     indexR TupRunit           !_           = newFull ()
-    indexR (TupRsingle t)     !ad
-      | ScalarDict' m t' <- scalarDict' t  = worker m t' ad i
     indexR (TupRpair !t1 !t2) (!ad1, !ad2) = liftF2' (,) (indexR t1 ad1) (indexR t2 ad2)
+    indexR (TupRsingle t)     !ad
+      | ScalarArrayDict w s <- scalarArrayDict t
+      , SingleArrayDict     <- singleArrayDict s
+      = worker w s ad i
 
     -- It is expected these transfers will be very small, so don't bother
     -- creating new execution streams for them
@@ -315,32 +317,36 @@ runArraysAsync reprs arrs worker = runR reprs arrs
 {-# INLINE runArray #-}
 runArray
     :: forall m sh e. Monad m
-    => TupleType e
+    => TypeR e
     -> Array sh e
-    -> (forall e'. IsScalarData e' => Int -> SingleType e' -> ScalarData e' -> m (ScalarData e'))
+    -> (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> m (ScalarArrayData s))
     -> m (Array sh e)
 runArray tp (Array sh adata) worker = Array sh `liftM` runR tp adata
   where
-    runR :: TupleType e' -> ArrayData e' -> m (ArrayData e')
+    runR :: TypeR s -> ArrayData s -> m (ArrayData s)
     runR (TupRunit)         !_           = return ()
     runR (TupRpair !t2 !t1) (!ad2, !ad1) = liftM2 (,) (runR t2 ad2) (runR t1 ad1)
     runR (TupRsingle !t)    !ad
-      | ScalarDict' m t' <- scalarDict' t = worker m t' ad
+      | ScalarArrayDict w s <- scalarArrayDict t
+      , SingleArrayDict     <- singleArrayDict s
+      = worker w s ad
 
 {-# INLINE runArrayAsync #-}
 runArrayAsync
     :: forall arch sh e. Async arch
-    => TupleType e
+    => TypeR e
     -> Array sh e
-    -> (forall e'. IsScalarData e' => Int -> SingleType e' -> ScalarData e' -> Par arch (FutureR arch (ScalarData e')))
+    -> (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> Par arch (FutureR arch (ScalarArrayData s)))
     -> Par arch (FutureR arch (Array sh e))
 runArrayAsync tp (Array sh adata) worker = Array sh `liftF` runR tp adata
   where
-    runR :: forall e'. TupleType e' -> ArrayData e' -> Par arch (FutureR arch (ArrayData e'))
+    runR :: forall s. TypeR s -> ArrayData s -> Par arch (FutureR arch (ArrayData s))
     runR (TupRunit)         !_           = newFull ()
     runR (TupRpair !t2 !t1) (!ad2, !ad1) = liftF2 (,) (runR t2 ad2) (runR t1 ad1)
     runR (TupRsingle !t)    !ad
-      | ScalarDict' m t' <- scalarDict' t = worker m t' ad
+      | ScalarArrayDict w s <- scalarArrayDict t
+      , SingleArrayDict     <- singleArrayDict s
+      = worker w s ad
 
 {-# INLINE liftF #-}
 liftF :: Async arch
@@ -365,16 +371,4 @@ liftF2 f x y = do
   y' <- spawn y
   fork $ put r =<< liftM2 f (get x') (get y')
   return r
-
-scalarDict' :: ScalarType tp -> ScalarDict' tp
-scalarDict' (SingleScalarType tp)
-  | (ScalarDict, _, _) <- singleDict tp = ScalarDict' 1 tp
-scalarDict' (VectorScalarType (VectorType m tp))
-  | (ScalarDict, _, _) <- singleDict tp = ScalarDict' m tp
-
-data ScalarDict' tp where
-  ScalarDict' :: (ScalarData tp ~ ScalarData tp', IsScalarData tp, IsScalarData tp')
-              => Int
-              -> SingleType tp'
-              -> ScalarDict' tp
 

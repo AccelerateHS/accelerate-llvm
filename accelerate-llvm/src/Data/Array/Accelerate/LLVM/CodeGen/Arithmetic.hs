@@ -19,26 +19,10 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
--- standard/external libraries
-import Control.Applicative
-import Control.Monad
-import Data.Bits                                                    ( finiteBitSize )
-import Data.ByteString.Short                                        ( ShortByteString )
-import Data.Constraint                                              ( Dict(..) )
-import Data.Monoid
-import Data.String
-import Foreign.Storable                                             ( sizeOf )
-import Text.Printf
-import Prelude                                                      ( Eq, Num, Maybe(..), Either(..), ($), (==), (/), undefined, otherwise, flip, fromInteger )
-import qualified Data.Ord                                           as Ord
-import qualified Prelude                                            as P
-
--- accelerate
+import Data.Array.Accelerate.AST                                    ( PrimBool )
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Type
 
--- accelerate-llvm
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Global
 import LLVM.AST.Type.Instruction
@@ -52,6 +36,20 @@ import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Type
+
+import Control.Applicative
+import Control.Monad
+import Data.Bits                                                    ( finiteBitSize )
+import Data.Bool
+import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Constraint                                              ( Dict(..) )
+import Data.Monoid
+import Data.String
+import Foreign.Storable                                             ( sizeOf )
+import Prelude                                                      ( Eq, Num, Maybe(..), ($), (==), (/), undefined, flip, fromInteger )
+import Text.Printf
+import qualified Data.Ord                                           as Ord
+import qualified Prelude                                            as P
 
 
 -- Operations from Num
@@ -111,8 +109,8 @@ signum t x =
       -> do
             l <- gt (NumSingleType t) x (ir f (floating f 0))
             r <- lt (NumSingleType t) x (ir f (floating f 0))
-            u <- instr (IntToFP (Right nonNumType) f (op scalarType l))
-            v <- instr (IntToFP (Right nonNumType) f (op scalarType r))
+            u <- instr (IntToFP integralType f (op scalarType l))
+            v <- instr (IntToFP integralType f (op scalarType r))
             s <- sub t u v
             return s
 
@@ -295,7 +293,7 @@ countLeadingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (integral @PrimBool integralType 0) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -306,7 +304,7 @@ countTrailingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (nonnum nonNumType False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (integral @PrimBool integralType 0) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -391,10 +389,10 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- Operators from RealFloat
 -- ------------------------
 
-isNaN :: FloatingType a -> Operands a -> CodeGen arch (Operands Bool)
+isNaN :: FloatingType a -> Operands a -> CodeGen arch (Operands PrimBool)
 isNaN f (op f -> x) = instr (IsNaN f x)
 
-isInfinite :: forall arch a. FloatingType a -> Operands a -> CodeGen arch (Operands Bool)
+isInfinite :: forall arch a. FloatingType a -> Operands a -> CodeGen arch (Operands PrimBool)
 isInfinite f x = do
   x' <- abs n x
   eq (NumSingleType n) infinity x'
@@ -431,25 +429,25 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Ordering -> SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+cmp :: Ordering -> SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
-lt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+lt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 lt = cmp LT
 
-gt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+gt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 gt = cmp GT
 
-lte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+lte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 lte = cmp LE
 
-gte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+gte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 gte = cmp GE
 
-eq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+eq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 eq = cmp EQ
 
-neq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
+neq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
 neq = cmp NE
 
 max :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands a)
@@ -470,25 +468,25 @@ min ty x y
 -- Note that these implementations are strict in both arguments.
 -- The short circuiting (&&) and (||) operators in the language are not evaluated
 -- using these functions, but defined in terms of if-then-else.
-land :: Operands Bool -> Operands Bool -> CodeGen arch (Operands Bool)
+land :: Operands PrimBool -> Operands PrimBool -> CodeGen arch (Operands PrimBool)
 land (op scalarType -> x) (op scalarType -> y)
   = instr (LAnd x y)
 
-lor :: Operands Bool -> Operands Bool -> CodeGen arch (Operands Bool)
+lor :: Operands PrimBool -> Operands PrimBool -> CodeGen arch (Operands PrimBool)
 lor (op scalarType -> x) (op scalarType -> y)
   = instr (LOr x y)
 
-lnot :: Operands Bool -> CodeGen arch (Operands Bool)
+lnot :: Operands PrimBool -> CodeGen arch (Operands PrimBool)
 lnot (op scalarType -> x) = instr (LNot x)
 
 -- Utilities for implementing bounds checks
-land' :: CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool)
+land' :: CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool)
 land' x y = do
   a <- x
   b <- y
   land a b
 
-lor' :: CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool)
+lor' :: CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool)
 lor' x y = do
   a <- x
   b <- y
@@ -497,28 +495,11 @@ lor' x y = do
 -- Type conversions
 -- ----------------
 
-ord :: Operands Char -> CodeGen arch (Operands Int)
-ord (op scalarType -> x) =
-  case finiteBitSize (undefined :: Int) of
-    32 -> instr (BitCast scalarType x)
-    64 -> instr (Trunc boundedType boundedType x)
-    _  -> $internalError "ord" "I don't know what architecture I am"
-
-chr :: Operands Int -> CodeGen arch (Operands Char)
-chr (op integralType -> x) =
-  case finiteBitSize (undefined :: Int) of
-    32 -> instr (BitCast scalarType x)
-    64 -> instr (Ext boundedType boundedType x)
-    _  -> $internalError "chr" "I don't know what architecture I am"
-
-boolToInt :: Operands Bool -> CodeGen arch (Operands Int)
-boolToInt x = instr (Ext boundedType boundedType (op scalarType x))
-
 irFromIntegral :: forall arch a b. IntegralType a -> NumType b -> Operands a -> CodeGen arch (Operands b)
 irFromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
-      -> instr (IntToFP (Left i1) f x)
+      -> instr (IntToFP i1 f x)
 
     IntegralNumType (i2 :: IntegralType b)
       | IntegralDict <- integralDict i1
@@ -536,7 +517,7 @@ toFloating :: forall arch a b. NumType a -> FloatingType b -> Operands a -> Code
 toFloating n1 f2 (op n1 -> x) =
   case n1 of
     IntegralNumType i1
-      -> instr (IntToFP (Left i1) f2 x)
+      -> instr (IntToFP i1 f2 x)
 
     FloatingNumType (f1 :: FloatingType a)
       | FloatingDict <- floatingDict f1
@@ -598,7 +579,7 @@ untrip t = (fst3 t, snd3 t, thd3 t)
 -- | Lift a constant value into an constant in the intermediate representation.
 --
 {-# INLINABLE lift #-}
-lift :: TupleType a -> a -> Operands a
+lift :: TypeR a -> a -> Operands a
 lift tp v = constant tp v
 
 {-# INLINE liftInt #-}
@@ -614,13 +595,13 @@ liftWord32 :: Word32 -> Operands Word32
 liftWord32 = lift $ TupRsingle scalarTypeWord32
 
 {-# INLINE liftBool #-}
-liftBool :: Bool -> Operands Bool
-liftBool = lift $ TupRsingle scalarTypeBool
+liftBool :: PrimBool -> Operands PrimBool
+liftBool = lift $ TupRsingle scalarType
 
 -- | Standard if-then-else expression
 --
 ifThenElse
-    :: (TupleType a, CodeGen arch (Operands Bool))
+    :: (TypeR a, CodeGen arch (Operands PrimBool))
     -> CodeGen arch (Operands a)
     -> CodeGen arch (Operands a)
     -> CodeGen arch (Operands a)
@@ -647,7 +628,7 @@ ifThenElse (tp, test) yes no = do
 
 -- Execute the body only if the first argument evaluates to True
 --
-when :: CodeGen arch (Operands Bool) -> CodeGen arch () -> CodeGen arch ()
+when :: CodeGen arch (Operands PrimBool) -> CodeGen arch () -> CodeGen arch ()
 when test doit = do
   body <- newBlock "when.body"
   exit <- newBlock "when.exit"
@@ -664,7 +645,7 @@ when test doit = do
 
 -- Execute the body only if the first argument evaluates to False
 --
-unless :: CodeGen arch (Operands Bool) -> CodeGen arch () -> CodeGen arch ()
+unless :: CodeGen arch (Operands PrimBool) -> CodeGen arch () -> CodeGen arch ()
 unless test doit = do
   body <- newBlock "unless.body"
   exit <- newBlock "unless.exit"
@@ -713,16 +694,4 @@ lm t n
       TypeHalf{}    -> n<>"f"   -- XXX: check
       TypeFloat{}   -> n<>"f"
       TypeDouble{}  -> n
-
--- Test whether the given index is the magic value 'ignore'. This operates
--- strictly rather than performing short-circuit (&&).
---
-isIgnore :: ShapeR ix -> Operands ix -> CodeGen arch (Operands Bool)
-isIgnore ShapeRz            OP_Unit        = return (lift (TupRsingle scalarTypeBool) True)
-isIgnore (ShapeRsnoc shr') (OP_Pair sh sz) = do x <- isIgnore shr' sh
-                                                y <- eq t (ir t (single t minusOne)) sz
-                                                land x y
-  where t = NumSingleType $ IntegralNumType TypeInt
-        minusOne :: Int
-        minusOne = P.negate 1
 

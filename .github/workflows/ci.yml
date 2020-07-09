@@ -20,29 +20,35 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            ghc: "8.10"
+            llvm: "9"
+            cuda: "10.2"
+            allow_failure: false
+
+          - os: ubuntu-latest
             ghc: "8.8"
             llvm: "9"
             cuda: "10.2"
-            allow_failure: true
+            allow_failure: false
 
           - os: ubuntu-latest
             ghc: "8.6"
             llvm: "8"
             cuda: "10.1"
-            allow_failure: true
+            allow_failure: false
 
           - os: macOS-latest
             ghc: "8.8"
             llvm: "9"
             cuda: ""
-            allow_failure: true
+            allow_failure: false
 
           # Disabled due to missing libffi
           # - os: windows-latest
           #   ghc: "8.6"
           #   llvm: "9.0.1"
           #   cuda: "10.2.89.20191206"
-          #   allow_failure: true
+          #   allow_failure: false
 
     env:
       STACK_FLAGS: "--system-ghc --no-install-ghc --fast --flag accelerate:nofib"

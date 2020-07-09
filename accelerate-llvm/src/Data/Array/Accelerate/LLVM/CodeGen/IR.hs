@@ -1,8 +1,7 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE RankNTypes      #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
-{-# LANGUAGE TypeOperators   #-}
+{-# LANGUAGE GADTs         #-}
+{-# LANGUAGE RankNTypes    #-}
+{-# LANGUAGE TypeFamilies  #-}
+{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -26,8 +25,10 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
+import Data.Primitive.Vec
 
 import qualified Data.ByteString.Short                              as B
+
 
 -- We use a data family to represent sequences of LLVM (scalar) operands
 -- representing a single Accelerate type. Using a data family rather than a type
@@ -58,8 +59,8 @@ data instance Operands (a,b)      = OP_Pair    (Operands a) (Operands b)
 -- converted between the IR and Operand data types.
 --
 class IROP dict where
-  op :: dict a -> Operands a -> Operand a
-  ir :: dict a -> Operand a -> Operands a
+  op :: HasCallStack => dict a -> Operands a -> Operand a
+  ir :: HasCallStack => dict a -> Operand a -> Operands a
 
 instance IROP Type where
   ir VoidType     _ = OP_Unit
@@ -70,9 +71,9 @@ instance IROP Type where
 
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
-  op t                  = $internalError "op" ("unhandled type: " ++ show t)
+  op t                  = internalError ("unhandled type: " ++ show t)
   ir (ScalarPrimType t) = ir t
-  ir t                  = $internalError "ir" ("unhandled type: " ++ show t)
+  ir t                  = internalError ("unhandled type: " ++ show t)
 
 instance IROP ScalarType where
   op (SingleScalarType t) = op t
@@ -81,17 +82,14 @@ instance IROP ScalarType where
   ir (VectorScalarType t) = ir t
 
 instance IROP SingleType where
-  op (NumSingleType t)    = op t
-  op (NonNumSingleType t) = op t
-  ir (NumSingleType t)    = ir t
-  ir (NonNumSingleType t) = ir t
+  op (NumSingleType t) = op t
+  ir (NumSingleType t) = ir t
 
 instance IROP VectorType where
   op (VectorType _ v) = single v
     where
       single :: SingleType t -> Operands (Vec n t) -> Operand (Vec n t)
-      single (NumSingleType    t) = num t
-      single (NonNumSingleType t) = nonnum t
+      single (NumSingleType t) = num t
 
       num :: NumType t -> Operands (Vec n t) -> Operand (Vec n t)
       num (IntegralNumType t) = integral t
@@ -114,15 +112,10 @@ instance IROP VectorType where
       floating TypeFloat{}  (OP_Vec x) = x
       floating TypeDouble{} (OP_Vec x) = x
 
-      nonnum :: NonNumType t -> Operands (Vec n t) -> Operand (Vec n t)
-      nonnum TypeChar{} (OP_Vec x) = x
-      nonnum TypeBool{} _          = $internalError "op" ("unhandled type: " ++ show v)
-
   ir (VectorType _ v) = single v
     where
       single :: SingleType t -> Operand (Vec n t) -> Operands (Vec n t)
-      single (NumSingleType    t) = num t
-      single (NonNumSingleType t) = nonnum t
+      single (NumSingleType t) = num t
 
       num :: NumType t -> Operand (Vec n t) -> Operands (Vec n t)
       num (IntegralNumType t) = integral t
@@ -144,10 +137,6 @@ instance IROP VectorType where
       floating TypeHalf{}   = OP_Vec
       floating TypeFloat{}  = OP_Vec
       floating TypeDouble{} = OP_Vec
-
-      nonnum :: NonNumType t -> Operand (Vec n t) -> Operands (Vec n t)
-      nonnum TypeChar{} = OP_Vec
-      nonnum TypeBool{} = $internalError "ir" ("unhandled type: " ++ show v)
 
 instance IROP NumType where
   op (IntegralNumType t) = op t
@@ -186,11 +175,4 @@ instance IROP FloatingType where
   ir TypeHalf{}   = OP_Half
   ir TypeFloat{}  = OP_Float
   ir TypeDouble{} = OP_Double
-
-instance IROP NonNumType where
-  op TypeBool{} (OP_Bool x) = x
-  op TypeChar{} (OP_Char x) = x
-  --
-  ir TypeBool{} = OP_Bool
-  ir TypeChar{} = OP_Char
 

@@ -15,6 +15,8 @@
 module LLVM.AST.Type.Terminator
   where
 
+import Data.Array.Accelerate.AST                                    ( PrimBool )
+
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
@@ -48,7 +50,7 @@ data Terminator a where
 
   -- <http://llvm.org/docs/LangRef.html#br-instruction>
   --
-  CondBr        :: Operand Bool
+  CondBr        :: Operand PrimBool
                 -> Label
                 -> Label
                 -> Terminator ()

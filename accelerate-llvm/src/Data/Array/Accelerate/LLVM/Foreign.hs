@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.Foreign
   where
 
-import Data.Array.Accelerate.Array.Sugar                            as A
+import Data.Array.Accelerate.Sugar.Foreign                          as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Execute.Async

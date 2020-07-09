@@ -28,9 +28,7 @@ import qualified LLVM.AST.Type                                      as LLVM
 import Data.Constraint
 import Data.Primitive.ByteArray
 import Data.Primitive.Types
-
-import Data.Array.Accelerate.Array.Data                             () -- instance 'Prim Half'
-import Data.Array.Accelerate.Error
+import Data.Primitive.Vec
 
 
 -- | Although constant expressions and instructions have many similarities,
@@ -69,8 +67,7 @@ instance Downcast (Constant a) LLVM.Constant where
       scalar (VectorScalarType s) = vector s
 
       single :: SingleType s -> s -> LLVM.Constant
-      single (NumSingleType s)    = num s
-      single (NonNumSingleType s) = nonnum s
+      single (NumSingleType s) = num s
 
       vector :: VectorType s -> s -> LLVM.Constant
       vector (VectorType _ s) (Vec ba#)
@@ -90,16 +87,8 @@ instance Downcast (Constant a) LLVM.Constant where
             TypeDouble{}                       -> LLVM.Double v
             TypeHalf{} | Half (CUShort u) <- v -> LLVM.Half u
 
-      nonnum :: NonNumType s -> s -> LLVM.Constant
-      nonnum s v
-        = LLVM.Int (LLVM.typeBits (downcast s))
-        $ case s of
-            TypeBool{}   -> fromIntegral (fromEnum v)
-            TypeChar{}   -> fromIntegral (fromEnum v)
-
       singlePrim :: SingleType s -> Dict (Prim s)
-      singlePrim (NumSingleType s)    = numPrim s
-      singlePrim (NonNumSingleType s) = nonNumPrim s
+      singlePrim (NumSingleType s) = numPrim s
 
       numPrim :: NumType s -> Dict (Prim s)
       numPrim (IntegralNumType s) = integralPrim s
@@ -121,10 +110,6 @@ instance Downcast (Constant a) LLVM.Constant where
       floatingPrim TypeHalf{}   = Dict
       floatingPrim TypeFloat{}  = Dict
       floatingPrim TypeDouble{} = Dict
-
-      nonNumPrim :: NonNumType s -> Dict (Prim s)
-      nonNumPrim TypeBool{} = $internalError "Prim" "unexpected vector of boolean values"
-      nonNumPrim TypeChar{} = Dict
 
 
 instance TypeOf Constant where

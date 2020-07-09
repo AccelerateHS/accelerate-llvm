@@ -14,14 +14,16 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Loop
   where
 
-import Prelude                                                  hiding ( fst, snd, uncurry )
-import Control.Monad
-
+import Data.Array.Accelerate.AST                                ( PrimBool )
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+
+import Prelude                                                  hiding ( fst, snd, uncurry )
+import Control.Monad
 
 
 -- | TODO: Iterate over a multidimensional index space.
@@ -62,7 +64,7 @@ imapFromStepTo start step end body =
 --
 iterFromStepTo
     :: forall i a arch. IsNum i
-    => TupleType a
+    => TypeR a
     -> Operands i                                     -- ^ starting index (inclusive)
     -> Operands i                                     -- ^ step size
     -> Operands i                                     -- ^ final index (exclusive)
@@ -79,11 +81,11 @@ iterFromStepTo tp start step end seed body =
 
 -- | A standard 'for' loop.
 --
-for :: TupleType i
-    -> Operands i                                     -- ^ starting index
-    -> (Operands i -> CodeGen arch (Operands Bool))   -- ^ loop test to keep going
-    -> (Operands i -> CodeGen arch (Operands i))      -- ^ increment loop counter
-    -> (Operands i -> CodeGen arch ())                -- ^ body of the loop
+for :: TypeR i
+    -> Operands i                                         -- ^ starting index
+    -> (Operands i -> CodeGen arch (Operands PrimBool))   -- ^ loop test to keep going
+    -> (Operands i -> CodeGen arch (Operands i))          -- ^ increment loop counter
+    -> (Operands i -> CodeGen arch ())                    -- ^ body of the loop
     -> CodeGen arch ()
 for tp start test incr body =
   void $ while tp test (\i -> body i >> incr i) start
@@ -91,12 +93,12 @@ for tp start test incr body =
 
 -- | An loop with iteration count and accumulator.
 --
-iter :: TupleType i
-     -> TupleType a
-     -> Operands i                                    -- ^ starting index
-     -> Operands a                                    -- ^ initial value
-     -> (Operands i -> CodeGen arch (Operands Bool))  -- ^ index test to keep looping
-     -> (Operands i -> CodeGen arch (Operands i))     -- ^ increment loop counter
+iter :: TypeR i
+     -> TypeR a
+     -> Operands i                                        -- ^ starting index
+     -> Operands a                                        -- ^ initial value
+     -> (Operands i -> CodeGen arch (Operands PrimBool))  -- ^ index test to keep looping
+     -> (Operands i -> CodeGen arch (Operands i))         -- ^ increment loop counter
      -> (Operands i -> Operands a -> CodeGen arch (Operands a))   -- ^ loop body
      -> CodeGen arch (Operands a)
 iter tpi tpa start seed test incr body = do
@@ -111,8 +113,8 @@ iter tpi tpa start seed test incr body = do
 
 -- | A standard 'while' loop
 --
-while :: TupleType a
-      -> (Operands a -> CodeGen arch (Operands Bool))
+while :: TypeR a
+      -> (Operands a -> CodeGen arch (Operands PrimBool))
       -> (Operands a -> CodeGen arch (Operands a))
       -> Operands a
       -> CodeGen arch (Operands a)
