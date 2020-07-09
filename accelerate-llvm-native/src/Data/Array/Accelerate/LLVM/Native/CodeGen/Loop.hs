@@ -16,7 +16,8 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -149,7 +150,7 @@ imapNestFromStepTo start steps end extent body =
 -- given function at each.
 --
 iterFromTo
-    :: TupleType a
+    :: TypeR a
     -> Operands Int                                       -- ^ starting index (inclusive)
     -> Operands Int                                       -- ^ final index (exclusive)
     -> Operands a                                         -- ^ initial value
@@ -158,6 +159,6 @@ iterFromTo
 iterFromTo tp start end seed body =
   Loop.iterFromStepTo tp start (lift typeInt 1) end seed body
 
-typeInt :: TupleType Int
+typeInt :: TypeR Int
 typeInt = TupRsingle scalarTypeInt
 

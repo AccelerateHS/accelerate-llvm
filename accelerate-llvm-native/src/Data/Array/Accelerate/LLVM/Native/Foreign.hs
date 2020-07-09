@@ -29,7 +29,7 @@ module Data.Array.Accelerate.LLVM.Native.Foreign (
 
 ) where
 
-import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import qualified Data.Array.Accelerate.Sugar.Foreign                as S
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar

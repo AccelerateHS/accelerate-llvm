@@ -18,15 +18,8 @@ module Data.Array.Accelerate.LLVM.Native.Compile (
 
 ) where
 
--- llvm-hs
-import LLVM.AST                                                     hiding ( Module )
-import LLVM.Module                                                  as LLVM hiding ( Module )
-import LLVM.Context
-import LLVM.Target
-
--- accelerate
 import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
-import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
@@ -41,7 +34,11 @@ import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
--- standard library
+import LLVM.AST                                                     hiding ( Module )
+import LLVM.Module                                                  as LLVM hiding ( Module )
+import LLVM.Context
+import LLVM.Target
+
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )

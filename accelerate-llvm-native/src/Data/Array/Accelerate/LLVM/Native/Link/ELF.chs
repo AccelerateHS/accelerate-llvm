@@ -2,7 +2,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE RecordWildCards          #-}
-{-# LANGUAGE TemplateHaskell          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link.ELF
 -- Copyright   : [2017] The Accelerate Team
@@ -66,10 +65,10 @@ import Prelude                                            as P
 -- specified in the object file, and are ready to be executed on the target
 -- architecture.
 --
-loadObject :: ByteString -> IO (FunctionTable, ObjectCode)
+loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err                              -> $internalError "loadObject" err
+    Left err                              -> internalError err
     Right (secs, symbols, relocs, strtab) -> do
       -- Load the sections into executable memory
       --
@@ -104,7 +103,8 @@ loadObject obj =
 -- properly.
 --
 loadSegment
-    :: ByteString
+    :: HasCallStack
+    => ByteString
     -> ByteString
     -> Vector SectionHeader
     -> Vector Symbol
@@ -204,7 +204,7 @@ makeJumpIsland jump_p symbolnum Symbol{..} = do
 
 -- Load the section at the correct offset into the given segment
 --
-loadSection :: ByteString -> ByteString -> Ptr Word8 -> Int -> Int -> SectionHeader -> IO ()
+loadSection :: HasCallStack => ByteString -> ByteString -> Ptr Word8 -> Int -> Int -> SectionHeader -> IO ()
 loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
   when (sh_type == ProgBits && sh_size > 0) $ do
     message (printf "section %d: Mem: 0x%09x-0x%09x         %s" sec_num sec_addr (sec_addr+sh_size) (B8.unpack (indexStringTable strtab sh_name)))
@@ -220,7 +220,7 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 
 -- Process local and external relocations.
 --
-processRelocation :: Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
+processRelocation :: HasCallStack => Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
   message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-14s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
@@ -296,7 +296,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
       case sym_binding of
         Local   -> castPtrToWord64 (seg_p `plusPtr` (sec_offset V.! sym_section + fromIntegral sym_value))
         Global  -> sym_value
-        Weak    -> $internalError "processRelocation" "unhandled weak symbol"
+        Weak    -> internalError "unhandled weak symbol"
 
     Symbol{..} = symtab V.! r_symbol
 
@@ -305,7 +305,7 @@ processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
 
 #else
 precessRelocation =
-  $internalError "processRelocation" "not defined for non-x86_64 architectures yet"
+  internalError "not defined for non-x86_64 architectures yet"
 #endif
 
 
@@ -317,7 +317,7 @@ precessRelocation =
 --
 -- Actually loading the sections into executable memory happens separately.
 --
-parseObject :: ByteString -> Either String (Vector SectionHeader, Vector Symbol, Vector Relocation, ByteString)
+parseObject :: HasCallStack => ByteString -> Either String (Vector SectionHeader, Vector Symbol, Vector Relocation, ByteString)
 parseObject obj = do
   (p, tph, tsec, strix) <- runGet readHeader obj
 

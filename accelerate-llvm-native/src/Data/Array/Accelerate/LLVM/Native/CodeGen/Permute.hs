@@ -3,7 +3,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
@@ -18,9 +17,11 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
--- accelerate
+import Data.Array.Accelerate.AST                                    ( PrimMaybe )
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -60,12 +61,13 @@ import Prelude
 -- that are mapped to the magic index 'ignore' are dropped.
 --
 mkPermute
-    :: UID
+    :: HasCallStack
+    => UID
     -> Gamma               aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
     -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermute uid aenv repr shr combine project arr =
@@ -87,7 +89,7 @@ mkPermuteS
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
     -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
@@ -105,8 +107,9 @@ mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
 
       ix' <- app1 project ix
 
-      unless (isIgnore shr ix') $ do
-        j <- intOfIndex shr (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
 
         -- project element onto the destination array and update
         x <- app1 (delayedIndex arrIn) ix
@@ -129,12 +132,13 @@ mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
 -- a queue or some such.
 --
 mkPermuteP
-    :: UID
+    :: HasCallStack
+    => UID
     -> Gamma               aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
     -> MIRDelayed   Native aenv (Array sh e)
     -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP uid aenv repr shr IRPermuteFun{..} project arr =
@@ -147,13 +151,14 @@ mkPermuteP uid aenv repr shr IRPermuteFun{..} project arr =
 -- implement lock-free array updates.
 --
 mkPermuteP_rmw
-    :: UID
+    :: HasCallStack
+    => UID
     -> Gamma aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> RMWOperation
     -> IRFun1     Native aenv (e -> e)
-    -> IRFun1     Native aenv (sh -> sh')
+    -> IRFun1     Native aenv (sh -> PrimMaybe sh')
     -> MIRDelayed Native aenv (Array sh e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP_rmw uid aenv repr shr rmw update project marr =
@@ -171,8 +176,9 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
 
       ix' <- app1 project ix
 
-      unless (isIgnore shr ix') $ do
-        j <- intOfIndex shr (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
         x <- app1 (delayedIndex arrIn) ix
         r <- app1 update x
 
@@ -196,9 +202,9 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
 #endif
                     _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r)
                       | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r)
-                    _                           -> $internalError "mkPermuteP_rmw" "unexpected transition"
+                    _                           -> internalError "unexpected transition"
           --
-          _ -> $internalError "mkPermuteP_rmw" "unexpected transition"
+          _ -> internalError "unexpected transition"
 
     return_
 
@@ -212,7 +218,7 @@ mkPermuteP_mutex
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRFun2     Native aenv (e -> e -> e)
-    -> IRFun1     Native aenv (sh -> sh')
+    -> IRFun1     Native aenv (sh -> PrimMaybe sh')
     -> MIRDelayed Native aenv (Array sh e)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
 mkPermuteP_mutex uid aenv repr shr combine project marr =
@@ -232,8 +238,9 @@ mkPermuteP_mutex uid aenv repr shr combine project marr =
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
-      unless (isIgnore shr ix') $ do
-        j <- intOfIndex shr (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
         x <- app1 (delayedIndex arrIn) ix
 
         atomically arrLock j $ do

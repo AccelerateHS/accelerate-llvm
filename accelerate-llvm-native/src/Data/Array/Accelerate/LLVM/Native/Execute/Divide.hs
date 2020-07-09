@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Divide (
 
 ) where
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Shape
 
 import Data.Bits
 import Data.Sequence                                                ( Seq )

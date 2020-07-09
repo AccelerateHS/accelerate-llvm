@@ -19,7 +19,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
+import Data.Array.Accelerate.AST                                    ( PrimMaybe, PrimBool )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Representation.Type
 
@@ -694,4 +694,10 @@ lm t n
       TypeHalf{}    -> n<>"f"   -- XXX: check
       TypeFloat{}   -> n<>"f"
       TypeDouble{}  -> n
+
+isJust :: Operands (PrimMaybe a) -> CodeGen arch (Operands PrimBool)
+isJust (OP_Pair l _) = return l
+
+fromJust :: Operands (PrimMaybe a) -> CodeGen arch (Operands a)
+fromJust (OP_Pair _ (OP_Pair OP_Unit r)) = return r
 

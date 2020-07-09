@@ -1,5 +1,4 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
@@ -29,7 +28,7 @@ import Data.Array.Accelerate.Error
 mkBuildInfoFileName :: FilePath -> FilePath
 mkBuildInfoFileName path = path </> "accelerate-llvm-native.buildinfo"
 
-readBuildInfo :: FilePath -> IO (Map Module [FilePath])
+readBuildInfo :: HasCallStack => FilePath -> IO (Map Module [FilePath])
 readBuildInfo path = do
   exists <- doesFileExist path
   if not exists
@@ -37,7 +36,7 @@ readBuildInfo path = do
     else do
       f <- B.readFile path
       case decode f of
-        Left err -> $internalError "readBuildInfo" err
+        Left err -> internalError err
         Right m  -> return m
 
 writeBuildInfo :: FilePath -> Map Module [FilePath] -> IO ()

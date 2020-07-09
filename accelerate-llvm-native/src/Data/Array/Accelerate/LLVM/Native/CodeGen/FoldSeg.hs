@@ -17,8 +17,8 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A

@@ -18,17 +18,18 @@ module Data.Array.Accelerate.LLVM.Native.Plugin (
 
 ) where
 
-import GhcPlugins
-import Linker
-import SysTools
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
 import Control.Monad
 import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
-import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
-import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
+import GhcPlugins
+import Linker
+import SysTools
 
 
 -- | This GHC plugin is required to support ahead-of-time compilation for the
@@ -41,7 +42,7 @@ import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 --
 -- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
 --
-plugin :: Plugin
+plugin :: HasCallStack => Plugin
 plugin = defaultPlugin
   { installCoreToDos = install
 #if __GLASGOW_HASKELL__ >= 806
@@ -49,7 +50,7 @@ plugin = defaultPlugin
 #endif
   }
 
-install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
+install :: HasCallStack => [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install _ rest = do
 #if __GLASGOW_HASKELL__ < 802
   reinitializeGlobals
@@ -59,7 +60,7 @@ install _ rest = do
   --
   return $ CoreDoPluginPass "accelerate-llvm-native" pass : filter (not . this) rest
 
-pass :: ModGuts -> CoreM ModGuts
+pass :: HasCallStack => ModGuts -> CoreM ModGuts
 pass guts = do
   -- Determine the current build environment
   --

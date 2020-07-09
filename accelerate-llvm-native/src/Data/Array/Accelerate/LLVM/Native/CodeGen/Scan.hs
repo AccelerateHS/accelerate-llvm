@@ -19,9 +19,10 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Scan
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.AST                                    ( Direction(..) )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -284,7 +285,7 @@ mkScanP
     :: Direction
     -> UID
     -> Gamma             aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
     -> MIRDelayed Native aenv (Vector e)
@@ -305,7 +306,7 @@ mkScanP1
     :: Direction
     -> UID
     -> Gamma             aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)
     -> MIRExp     Native aenv e
     -> MIRDelayed Native aenv (Vector e)
@@ -403,7 +404,7 @@ mkScanP2
     :: Direction
     -> UID
     -> Gamma          aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  Native aenv (e -> e -> e)
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e))
 mkScanP2 dir uid aenv tp combine =
@@ -455,7 +456,7 @@ mkScanP3
     :: Direction
     -> UID
     -> Gamma aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  Native aenv (e -> e -> e)
     -> MIRExp  Native aenv e
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e))
@@ -511,7 +512,7 @@ mkScan'P
     :: Direction
     -> UID
     -> Gamma             aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
     -> MIRDelayed Native aenv (Vector e)
@@ -532,7 +533,7 @@ mkScan'P1
     :: Direction
     -> UID
     -> Gamma             aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)
     -> IRExp      Native aenv e
     -> MIRDelayed Native aenv (Vector e)
@@ -614,7 +615,7 @@ mkScan'P2
     :: Direction
     -> UID
     -> Gamma          aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  Native aenv (e -> e -> e)
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P2 dir uid aenv tp combine =
@@ -670,7 +671,7 @@ mkScan'P3
     :: Direction
     -> UID
     -> Gamma          aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  Native aenv (e -> e -> e)
     -> CodeGen Native      (IROpenAcc Native aenv (Vector e, Scalar e))
 mkScan'P3 dir uid aenv tp combine =
