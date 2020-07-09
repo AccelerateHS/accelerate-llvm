@@ -36,15 +36,9 @@ instance Skeleton PTX where
   generate _  = mkGenerate
   transform _ = mkTransform
   fold _      = mkFold
-  fold1 _     = mkFold1
   foldSeg _   = mkFoldSeg
-  fold1Seg _  = mkFold1Seg
-  scanl _     = mkScanl
-  scanl1 _    = mkScanl1
-  scanl' _    = mkScanl'
-  scanr _     = mkScanr
-  scanr1 _    = mkScanr1
-  scanr' _    = mkScanr'
+  scan _      = mkScan
+  scan' _     = mkScan'
   permute _   = mkPermute
   stencil1 _  = mkStencil1
   stencil2 _  = mkStencil2

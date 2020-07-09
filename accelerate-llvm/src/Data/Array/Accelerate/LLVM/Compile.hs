@@ -45,6 +45,7 @@ import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
 -- standard library
 import Data.IntMap                                                  ( IntMap )
+import qualified Data.IntMap                                        as IntMap
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
 
@@ -162,16 +163,10 @@ compileOpenAcc = traverseAcc
         Backpermute shr sh f a      -> build =<< liftA3 (backpermute shr) <$> travE sh <*> travF f <*> travA a
 
         -- Consumers
-        Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travE z <*> travD a
-        Fold1 f a                   -> build =<< liftA2 fold1         <$> travF f <*> travD a
-        FoldSeg i f z a s           -> build =<< liftA4 (foldSeg i)   <$> travF f <*> travE z <*> travD a <*> travD s
-        Fold1Seg i f a s            -> build =<< liftA3 (fold1Seg i)  <$> travF f <*> travD a <*> travD s
-        Scanl f z a                 -> build =<< liftA3 scanl         <$> travF f <*> travE z <*> travD a
-        Scanl' f z a                -> build =<< liftA3 scanl'        <$> travF f <*> travE z <*> travD a
-        Scanl1 f a                  -> build =<< liftA2 scanl1        <$> travF f <*> travD a
-        Scanr f z a                 -> build =<< liftA3 scanr         <$> travF f <*> travE z <*> travD a
-        Scanr' f z a                -> build =<< liftA3 scanr'        <$> travF f <*> travE z <*> travD a
-        Scanr1 f a                  -> build =<< liftA2 scanr1        <$> travF f <*> travD a
+        Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travME z <*> travD a
+        FoldSeg i f z a s           -> build =<< liftA4 (foldSeg i)   <$> travF f <*> travME z <*> travD a <*> travD s
+        Scan  d f z a               -> build =<< liftA3 (scan  d)     <$> travF f <*> travME z <*> travD a
+        Scan' d f z a               -> build =<< liftA3 (scan' d)     <$> travF f <*> travE z <*> travD a
         Permute f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
         Stencil s tp f x a          -> build =<< liftA3 (stencil1 s tp) <$> travF f <*> travB x <*> travD a
         Stencil2 s1 s2 tp f x a y b -> build =<< liftA5 (stencil2 s1 s2 tp) <$> travF f <*> travB x <*> travD a <*> travB y <*> travD b
@@ -186,16 +181,10 @@ compileOpenAcc = traverseAcc
         generate r sh _        = AST.Generate r sh
         transform r sh _ _ a   = AST.Transform r sh a
         backpermute shr sh _ a = AST.Backpermute shr sh a
-        fold _ _ a             = AST.Fold a
-        fold1 _ a              = AST.Fold1 a
-        foldSeg i _ _ a s      = AST.FoldSeg i a s
-        fold1Seg i _ a s       = AST.Fold1Seg i a s
-        scanl _ _ a            = AST.Scanl a
-        scanl1 _ a             = AST.Scanl1 a
-        scanl' _ _ a           = AST.Scanl' a
-        scanr _ _ a            = AST.Scanr a
-        scanr1 _ a             = AST.Scanr1 a
-        scanr' _ _ a           = AST.Scanr' a
+        fold _ z a             = AST.Fold z a
+        foldSeg i _ z a s      = AST.FoldSeg i z a s
+        scan d _ z a           = AST.Scan d z a
+        scan' d _ _ a          = AST.Scan' d a
         permute _ d _ a        = AST.Permute d a
 
         stencil1 :: StencilR sh a stencil
@@ -400,6 +389,10 @@ compileOpenAcc = traverseAcc
           where
             err :: Fun () (a -> b)
             err = $internalError "foreignE" "attempt to use fallback in foreign expression"
+
+    travME :: Maybe (OpenExp env aenv e) -> LLVM arch (IntMap (Idx' aenv), Bool)
+    travME Nothing  = return (IntMap.empty, False)
+    travME (Just e) = (True <$) <$> travE e
 
 
 -- Applicative

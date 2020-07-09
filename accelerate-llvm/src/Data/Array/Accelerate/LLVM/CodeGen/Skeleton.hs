@@ -39,8 +39,8 @@ import Data.Array.Accelerate.LLVM.Compile.Cache
 --
 class Skeleton arch where
   {-# MINIMAL generate, transform
-            , fold, fold1 , foldSeg, fold1Seg
-            , scanl, scanl', scanl1, scanr, scanr', scanr1
+            , fold , foldSeg
+            , scan, scan'
             , permute
             , stencil1, stencil2 #-}
 
@@ -69,14 +69,7 @@ class Skeleton arch where
                 -> Gamma           aenv
                 -> ArrayR               (Array sh e)
                 -> IRFun2     arch aenv (e -> e -> e)
-                -> IRExp      arch aenv e
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array sh e))
-
-  fold1         :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array sh e)
-                -> IRFun2     arch aenv (e -> e -> e)
+                -> Maybe (IRExp arch aenv e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array sh e))
 
@@ -85,65 +78,28 @@ class Skeleton arch where
                 -> ArrayR               (Array (sh, Int) e)
                 -> IntegralType i
                 -> IRFun2     arch aenv (e -> e -> e)
-                -> IRExp      arch aenv e
+                -> Maybe (IRExp arch aenv e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> MIRDelayed arch aenv (Segments i)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
 
-  fold1Seg      :: UID
+  scan          :: UID
                 -> Gamma           aenv
                 -> ArrayR               (Array (sh, Int) e)
-                -> IntegralType i
+                -> Direction
                 -> IRFun2     arch aenv (e -> e -> e)
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> MIRDelayed arch aenv (Segments i)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
-
-  scanl         :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array (sh, Int) e)
-                -> IRFun2     arch aenv (e -> e -> e)
-                -> IRExp      arch aenv e
+                -> Maybe (IRExp arch aenv e)
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
 
-  scanl'        :: UID
+  scan'         :: UID
                 -> Gamma           aenv
                 -> ArrayR               (Array (sh, Int) e)
+                -> Direction
                 -> IRFun2     arch aenv (e -> e -> e)
                 -> IRExp      arch aenv e
                 -> MIRDelayed arch aenv (Array (sh, Int) e)
                 -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e, Array sh e))
-
-  scanl1        :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array (sh, Int) e)
-                -> IRFun2     arch aenv (e -> e -> e)
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
-
-  scanr         :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array (sh, Int) e)
-                -> IRFun2     arch aenv (e -> e -> e)
-                -> IRExp      arch aenv e
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
-
-  scanr'        :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array (sh, Int) e)
-                -> IRFun2     arch aenv (e -> e -> e)
-                -> IRExp      arch aenv e
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e, Array sh e))
-
-  scanr1        :: UID
-                -> Gamma           aenv
-                -> ArrayR               (Array (sh, Int) e)
-                -> IRFun2     arch aenv (e -> e -> e)
-                -> MIRDelayed arch aenv (Array (sh, Int) e)
-                -> CodeGen    arch      (IROpenAcc arch aenv (Array (sh, Int) e))
 
   permute       :: UID
                 -> Gamma             aenv

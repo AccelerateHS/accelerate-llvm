@@ -26,6 +26,7 @@ module Data.Array.Accelerate.LLVM.AST (
   UnzipIdx(..),
   Idx(..), Var(..), ArrayVar, LeftHandSide(..), ALeftHandSide, ELeftHandSide, ShapeR(..),
   TupR(..), ArrayR(..), HasArraysRepr(..), arrayRepr,
+  Direction(..), HasInitialValue,
 
 ) where
 
@@ -35,7 +36,8 @@ import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.AST
     ( PreOpenAfun(..), OpenExp(..), OpenFun(..), Idx(..), PreAfun, Fun, Exp, Var(..), ArrayVar,
-      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..) )
+      LeftHandSide(..), ALeftHandSide, ELeftHandSide, HasArraysRepr(..), arrayRepr, PairIdx(..),
+      Direction(..) )
 
 
 -- | Non-computational array program operations, parameterised over array
@@ -129,38 +131,23 @@ data PreOpenAccSkeleton acc arch aenv a where
   -- Consumers. These may have been applied to either manifest or delayed
   -- array data.
   --
-  Fold        :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array sh e)
-
-  Fold1       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+  Fold        :: HasInitialValue
+              -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> PreOpenAccSkeleton acc arch aenv (Array sh e)
 
   FoldSeg     :: IntegralType i
+              -> HasInitialValue
               -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> DelayedOpenAcc     acc arch aenv (Segments i)
               -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Fold1Seg    :: IntegralType i
+  Scan        :: Direction
+              -> HasInitialValue
               -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> DelayedOpenAcc     acc arch aenv (Segments i)
               -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
 
-  Scanl       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
-
-  Scanl1      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
-
-  Scanl'      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e, Array sh e)
-
-  Scanr       :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
-
-  Scanr1      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
-              -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e)
-
-  Scanr'      :: DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
+  Scan'       :: Direction
+              -> DelayedOpenAcc     acc arch aenv (Array (sh, Int) e)
               -> PreOpenAccSkeleton acc arch aenv (Array (sh, Int) e, Array sh e)
 
   Permute     :: acc                    arch aenv (Array sh' e)     -- target array (default values)
@@ -183,6 +170,11 @@ data UnzipIdx a b where
   UnzipPrj  :: PairIdx a b   -> UnzipIdx b c ->  UnzipIdx a c
   UnzipUnit ::                                   UnzipIdx a ()
   UnzipPair :: UnzipIdx a b1 -> UnzipIdx a b2 -> UnzipIdx a (b1, b2)
+
+-- Denotes whether the fold or scan has an initial value.
+-- When False, this is a fold1 or scan1.
+--
+type HasInitialValue = Bool
 
 -- | Representation for array arguments.
 --
@@ -228,19 +220,11 @@ instance HasArraysRepr (acc arch) => HasArraysRepr (PreOpenAccSkeleton acc arch)
   arraysRepr (Generate repr _)        = TupRsingle repr
   arraysRepr (Transform repr _ _)     = TupRsingle repr
   arraysRepr (Backpermute shr _ a)    = TupRsingle $ ArrayR shr $ arrayRtype $ arrayRepr a
-  arraysRepr (Fold a)                 = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+  arraysRepr (Fold _ a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
                                         in  TupRsingle $ ArrayR shr tp
-  arraysRepr (Fold1 a)                = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
-                                        in  TupRsingle $ ArrayR shr tp
-  arraysRepr (FoldSeg _ a _)          = arraysRepr a
-  arraysRepr (Fold1Seg _ a _)         = arraysRepr a
-  arraysRepr (Scanl a)                = arraysRepr a
-  arraysRepr (Scanl1 a)               = arraysRepr a
-  arraysRepr (Scanl' a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
-                                        in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
-  arraysRepr (Scanr a)                = arraysRepr a
-  arraysRepr (Scanr1 a)               = arraysRepr a
-  arraysRepr (Scanr' a)               = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
+  arraysRepr (FoldSeg _ _ a _)        = arraysRepr a
+  arraysRepr (Scan _ _ a)             = arraysRepr a
+  arraysRepr (Scan' _ a)              = let ArrayR (ShapeRsnoc shr) tp = arrayRepr a
                                         in  TupRsingle (ArrayR (ShapeRsnoc shr) tp) `TupRpair` TupRsingle (ArrayR shr tp)
   arraysRepr (Permute a _)            = arraysRepr a
   arraysRepr (Stencil1 tp _ a)        = let ArrayR shr _ = arrayRepr a
