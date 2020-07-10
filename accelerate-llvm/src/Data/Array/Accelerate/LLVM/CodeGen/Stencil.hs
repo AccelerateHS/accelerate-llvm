@@ -255,12 +255,12 @@ bounded bndy IRDelayed{..} ix = do
     --
     inside :: ShapeR sh' -> Operands sh' -> Operands sh' -> CodeGen arch (Operands PrimBool)
     inside ShapeRz OP_Unit OP_Unit
-      = return (bool True)
+      = return (OP_Word8 $ bool True)
     inside (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
       = if ( TupRsingle scalarType
             , A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
               A.gte (singleType :: SingleType Int) iz sz)
-          then return (bool False)
+          then return (OP_Word8 $ bool False)
           else inside shr' sh ih
 
 
@@ -269,10 +269,6 @@ bounded bndy IRDelayed{..} ix = do
 
 int :: Int -> Operands Int
 int x = constant (TupRsingle scalarTypeInt) x
-
-bool :: Bool -> Operands PrimBool
-bool False = constant (TupRsingle scalarType) 0
-bool True  = constant (TupRsingle scalarType) 1
 
 unindex :: Operands (sh, Int) -> (Operands sh, Operands Int)
 unindex (OP_Pair sh i) = (sh, i)

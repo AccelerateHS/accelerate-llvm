@@ -13,13 +13,13 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
   primConst,
-  constant, scalar, single, vector, num, integral, floating,
+  constant, scalar, single, vector, num, integral, floating, bool,
   undef,
 
 ) where
 
 
-import Data.Array.Accelerate.AST                                ( PrimConst(..) )
+import Data.Array.Accelerate.AST                                ( PrimBool, PrimConst(..) )
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
@@ -72,6 +72,10 @@ integral t = num (IntegralNumType t)
 
 floating :: FloatingType a -> a -> Operand a
 floating t = num (FloatingNumType t)
+
+bool :: Bool -> Operand PrimBool
+bool False = integral integralType 0
+bool True  = integral integralType 1
 
 
 -- | The string 'undef' can be used anywhere a constant is expected, and

@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic

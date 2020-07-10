@@ -22,6 +22,8 @@ import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Type
 
+import GHC.Stack
+
 
 class Monad (Par arch) => Async arch where
 
@@ -36,40 +38,40 @@ class Monad (Par arch) => Async arch where
 
   -- | Create a new (empty) promise, to be fulfilled at some future point.
   --
-  new :: Par arch (FutureR arch a)
+  new :: HasCallStack => Par arch (FutureR arch a)
 
   -- | The future is here. Multiple 'put's to the same future are not allowed
   -- and (presumably) result in a runtime error.
   --
-  put :: FutureR arch a -> a -> Par arch ()
+  put :: HasCallStack => FutureR arch a -> a -> Par arch ()
 
   -- | Read the value stored in a future, once it is available. It is _not_
   -- required that this is a blocking operation on the host, only that it is
   -- blocking with respect to computations on the remote device.
   --
-  get :: FutureR arch a -> Par arch a
+  get :: HasCallStack => FutureR arch a -> Par arch a
 
   -- | Fork a computation to happen in parallel. The forked computation may
   -- exchange values with other computations using Futures.
   --
-  fork :: Par arch () -> Par arch ()
+  fork :: HasCallStack => Par arch () -> Par arch ()
 
   -- | Lift an operation from the base LLVM monad into the Par monad
   --
-  liftPar :: LLVM arch a -> Par arch a
+  liftPar :: HasCallStack => LLVM arch a -> Par arch a
 
   -- | Read a value stored in a future, once it is available. This is blocking
   -- with respect to both the host and remote device.
   --
   {-# INLINEABLE block #-}
-  block :: FutureR arch a -> Par arch a
+  block :: HasCallStack => FutureR arch a -> Par arch a
   block = get
 
   -- | Evaluate a computation in a new thread/context. This might be implemented
   -- more efficiently than the default implementation.
   --
   {-# INLINEABLE spawn #-}
-  spawn :: Par arch a -> Par arch a
+  spawn :: HasCallStack => Par arch a -> Par arch a
   spawn m = do
     r <- new
     fork $ put r =<< m
@@ -79,7 +81,7 @@ class Monad (Par arch) => Async arch where
   -- might be implemented more efficiently than the default implementation.
   --
   {-# INLINEABLE newFull #-}
-  newFull :: a -> Par arch (FutureR arch a)
+  newFull :: HasCallStack => a -> Par arch (FutureR arch a)
   newFull a = do
     r <- new
     put r a

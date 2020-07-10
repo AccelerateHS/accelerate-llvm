@@ -20,7 +20,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -55,7 +58,7 @@ import Control.Monad
 mkStencil1
     :: Gamma           aenv
     -> StencilR sh a stencil
-    -> TupleType b
+    -> TypeR b
     -> IRFun1      PTX aenv (stencil -> b)
     -> IRBoundary  PTX aenv (Array sh a)
     -> MIRDelayed  PTX aenv (Array sh a)
@@ -73,7 +76,7 @@ mkStencil2
     :: Gamma           aenv
     -> StencilR sh a stencil1
     -> StencilR sh b stencil2
-    -> TupleType c
+    -> TypeR c
     -> IRFun2      PTX aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary  PTX aenv (Array sh a)
     -> MIRDelayed  PTX aenv (Array sh a)

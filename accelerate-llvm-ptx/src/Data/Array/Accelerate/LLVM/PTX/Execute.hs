@@ -26,11 +26,12 @@ module Data.Array.Accelerate.LLVM.PTX.Execute (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Execute
@@ -47,10 +48,8 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
 
--- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
--- library
 import Control.Monad                                            ( when, forM_ )
 import Control.Monad.Reader                                     ( asks, local )
 import Control.Monad.State                                      ( liftIO )
@@ -117,7 +116,8 @@ instance Execute PTX where
 --
 {-# INLINE simpleOp #-}
 simpleOp
-    :: ShortByteString
+    :: HasCallStack
+    => ShortByteString
     -> ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
@@ -139,9 +139,10 @@ simpleOp name repr exe gamma aenv sh =
 --
 {-# INLINE mapOp #-}
 mapOp
-    :: Maybe (a :~: b)
+    :: HasCallStack
+    => Maybe (a :~: b)
     -> ArrayR (Array sh a)
-    -> TupleType b
+    -> TypeR b
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -162,7 +163,8 @@ mapOp inplace repr tp exe gamma aenv input@(shape -> sh) =
 
 {-# INLINE generateOp #-}
 generateOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -172,7 +174,8 @@ generateOp = simpleOp "generate"
 
 {-# INLINE transformOp #-}
 transformOp
-    :: ArrayR (Array sh a)
+    :: HasCallStack
+    => ArrayR (Array sh a)
     -> ArrayR (Array sh' b)
     -> ExecutableR PTX
     -> Gamma aenv
@@ -191,7 +194,8 @@ transformOp repr repr' exe gamma aenv sh' input =
 
 {-# INLINE backpermuteOp #-}
 backpermuteOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ShapeR sh'
     -> ExecutableR PTX
     -> Gamma aenv
@@ -217,21 +221,23 @@ backpermuteOp (ArrayR shr tp) shr' = transformOp (ArrayR shr tp) (ArrayR shr' tp
 --
 {-# INLINE fold1Op #-}
 fold1Op
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array sh e))
 fold1Op repr exe gamma aenv arr@(delayedShape -> sh@(sx, sz))
-  = $boundsCheck "fold1" "empty array" (sz > 0)
+  = boundsCheck "empty array" (sz > 0)
   $ case size (ShapeRsnoc $ arrayRshape repr) sh of
       0 -> newFull =<< allocateRemote repr sx  -- empty, but possibly with one or more non-zero dimensions
       _ -> foldCore repr exe gamma aenv arr
 
 {-# INLINE foldOp #-}
 foldOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -244,7 +250,8 @@ foldOp repr exe gamma aenv arr@(delayedShape -> sh@(sx, _))
 
 {-# INLINE foldCore #-}
 foldCore
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -259,8 +266,8 @@ foldCore repr exe gamma aenv arr
 
 {-# INLINE foldAllOp #-}
 foldAllOp
-    :: forall aenv e.
-       TupleType e
+    :: forall aenv e. HasCallStack
+    => TypeR e
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -312,7 +319,8 @@ foldAllOp tp exe gamma aenv input =
 
 {-# INLINE foldDimOp #-}
 foldDimOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -333,7 +341,8 @@ foldDimOp repr@(ArrayR shr tp) exe gamma aenv input@(delayedShape -> (sh, sz))
 
 {-# INLINE foldSegOp #-}
 foldSegOp
-    :: IntegralType i
+    :: HasCallStack
+    => IntegralType i
     -> ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
@@ -366,7 +375,8 @@ foldSegOp intTp repr exe gamma aenv input@(delayedShape -> (sh, sz)) segments@(d
 
 {-# INLINE scanOp #-}
 scanOp
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -379,19 +389,21 @@ scanOp repr exe gamma aenv input@(delayedShape -> (sz, n)) =
 
 {-# INLINE scan1Op #-}
 scan1Op
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array (sh, Int) e))
 scan1Op repr exe gamma aenv input@(delayedShape -> (_, n))
-  = $boundsCheck "scan1" "empty array" (n > 0)
+  = boundsCheck "empty array" (n > 0)
   $ scanCore repr exe gamma aenv n input
 
 {-# INLINE scanCore #-}
 scanCore
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -407,7 +419,8 @@ scanCore repr exe gamma aenv m input
 
 {-# INLINE scanAllOp #-}
 scanAllOp
-    :: TupleType e
+    :: HasCallStack
+    => TypeR e
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -449,7 +462,8 @@ scanAllOp tp exe gamma aenv m input@(delayedShape -> ((), n)) =
 
 {-# INLINE scanDimOp #-}
 scanDimOp
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -469,7 +483,8 @@ scanDimOp repr exe gamma aenv m input@(delayedShape -> (sz, _)) =
 
 {-# INLINE scan'Op #-}
 scan'Op
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -489,7 +504,8 @@ scan'Op repr exe gamma aenv input@(delayedShape -> (sz, n)) =
 
 {-# INLINE scan'Core #-}
 scan'Core
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -504,7 +520,8 @@ scan'Core repr exe gamma aenv input
 
 {-# INLINE scan'AllOp #-}
 scan'AllOp
-    :: TupleType e
+    :: HasCallStack
+    => TypeR e
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -552,7 +569,8 @@ scan'AllOp tp exe gamma aenv input@(delayedShape -> ((), n)) =
 
 {-# INLINE scan'DimOp #-}
 scan'DimOp
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -571,7 +589,8 @@ scan'DimOp repr@(ArrayR (ShapeRsnoc shr') _) exe gamma aenv input@(delayedShape 
 
 {-# INLINE permuteOp #-}
 permuteOp
-    :: Bool
+    :: HasCallStack
+    => Bool
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> ExecutableR PTX
@@ -591,7 +610,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
         paramR'  = TupRsingle $ ParamRarray repr'
         kernel   = case functionTable ptxExecutable of
                       k:_ -> k
-                      _   -> $internalError "permute" "no kernels found"
+                      _   -> internalError "no kernels found"
     --
     future  <- new
     result  <- if inplace
@@ -614,7 +633,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
         let paramsR = paramR' `TupRpair` TupRsingle (ParamRfuture $ ParamRarray reprLock) `TupRpair` paramR
         executeOp kernel gamma aenv dim1 ((), n) paramsR ((result, barrier), manifest input)
 
-      _               -> $internalError "permute" "unexpected kernel image"
+      _               -> internalError "unexpected kernel image"
     --
     put future result
     return future
@@ -622,7 +641,8 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
 
 {-# INLINE stencil1Op #-}
 stencil1Op
-    :: TupleType a
+    :: HasCallStack
+    => TypeR a
     -> ArrayR (Array sh b)
     -> sh
     -> ExecutableR PTX
@@ -638,8 +658,9 @@ stencil1Op tp repr@(ArrayR shr _) halo exe gamma aenv input@(delayedShape -> sh)
 --
 {-# INLINE stencil2Op #-}
 stencil2Op
-    :: TupleType a
-    -> TupleType b
+    :: HasCallStack
+    => TypeR a
+    -> TypeR b
     -> ArrayR (Array sh c)
     -> sh
     -> ExecutableR PTX
@@ -654,8 +675,8 @@ stencil2Op tpA tpB repr@(ArrayR shr _) halo exe gamma aenv input1@(delayedShape 
 
 {-# INLINE stencilCore #-}
 stencilCore
-    :: forall aenv sh e params.
-       ArrayR (Array sh e)
+    :: forall aenv sh e params. HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR PTX
     -> Gamma aenv
     -> Val aenv
@@ -715,8 +736,8 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
 --
 {-# INLINE stencilBorders #-}
 stencilBorders
-    :: forall sh.
-       ShapeR sh
+    :: forall sh. HasCallStack
+    => ShapeR sh
     -> sh
     -> sh
     -> [(sh, sh)]
@@ -743,7 +764,8 @@ stencilBorders shr sh halo = [ face i | i <- [0 .. (2 * rank shr - 1)] ]
 --
 {-# INLINE aforeignOp #-}
 aforeignOp
-    :: String
+    :: HasCallStack
+    => String
     -> ArraysR as
     -> ArraysR bs
     -> (as -> Par PTX (Future bs))
@@ -768,9 +790,9 @@ aforeignOp name _ _ asm arr = do
 
 -- | Retrieve the named kernel
 --
-(!#) :: FunctionTable -> ShortByteString -> Kernel
+(!#) :: HasCallStack => FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ unpack name))
+  = fromMaybe (internalError ("function not found: " ++ unpack name))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
@@ -787,7 +809,7 @@ manifest Delayed{}    = Nothing
 
 -- | Execute some operation with the supplied executable functions
 --
-withExecutable :: ExecutableR PTX -> (FunctionTable -> Par PTX b) -> Par PTX b
+withExecutable :: HasCallStack => ExecutableR PTX -> (FunctionTable -> Par PTX b) -> Par PTX b
 withExecutable PTXR{..} f =
   local (\(s,_) -> (s,Just ptxExecutable)) $ do
     r <- f (unsafeGetValue ptxExecutable)
@@ -798,8 +820,8 @@ withExecutable PTXR{..} f =
 -- Execute the function implementing this kernel.
 --
 executeOp
-    :: -- (Shape sh, Marshalable (Par PTX) args)
-       Kernel
+    :: HasCallStack
+    => Kernel
     -> Gamma aenv
     -> Val aenv
     -> ShapeR sh
@@ -818,7 +840,7 @@ executeOp kernel gamma aenv shr sh paramsR params =
 -- Execute a device function with the given thread configuration and function
 -- parameters.
 --
-launch :: Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
+launch :: HasCallStack => Kernel -> Stream -> Int -> [CUDA.FunParam] -> IO ()
 launch Kernel{..} stream n args =
   withLifetime stream $ \st ->
     Debug.monitorProcTime query msg (Just st) $

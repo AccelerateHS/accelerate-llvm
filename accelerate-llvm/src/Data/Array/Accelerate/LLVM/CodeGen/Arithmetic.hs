@@ -40,7 +40,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Type
 import Control.Applicative
 import Control.Monad
 import Data.Bits                                                    ( finiteBitSize )
-import Data.Bool
+import Data.Bool                                                    ( Bool(..), otherwise )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Constraint                                              ( Dict(..) )
 import Data.Monoid
@@ -293,7 +293,7 @@ countLeadingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (integral @PrimBool integralType 0) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (bool False) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -304,7 +304,7 @@ countTrailingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (integral @PrimBool integralType 0) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (bool False) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -595,8 +595,9 @@ liftWord32 :: Word32 -> Operands Word32
 liftWord32 = lift $ TupRsingle scalarTypeWord32
 
 {-# INLINE liftBool #-}
-liftBool :: PrimBool -> Operands PrimBool
-liftBool = lift $ TupRsingle scalarType
+liftBool :: Bool -> Operands PrimBool
+liftBool True  = lift (TupRsingle scalarType) 1
+liftBool False = lift (TupRsingle scalarType) 0
 
 -- | Standard if-then-else expression
 --

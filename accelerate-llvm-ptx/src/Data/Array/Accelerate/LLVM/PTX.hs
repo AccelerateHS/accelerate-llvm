@@ -54,14 +54,19 @@ module Data.Array.Accelerate.LLVM.PTX (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftALhs, liftArraysR, lhsToTupR )
-import Data.Array.Accelerate.Array.Sugar                            ( Arrays, ArrRepr, arrays, toArr, fromArr )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysR, liftALeftHandSide )
+import Data.Array.Accelerate.AST.LeftHandSide                       ( lhsToTupR )
+import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
-import Data.Array.Accelerate.Error                                  ( internalError )
+import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Array                   ( liftArraysR )
 import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.Sugar.Array                            ( Arrays, toArr, fromArr, ArraysR )
 import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Debug                                  as Debug
+import Data.Array.Accelerate.Trafo.Delayed
+import Data.Array.Accelerate.Trafo.Sharing                          ( Afunction(..), AfunctionRepr(..), afunctionRepr )
+import qualified Data.Array.Accelerate.Sugar.Array                  as Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
@@ -76,7 +81,6 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 import Foreign.CUDA.Driver                                          as CUDA ( CUDAException, mallocHostForeignPtr )
 
--- standard library
 import Control.Exception
 import Control.Monad.Trans
 import Data.Maybe
@@ -141,7 +145,7 @@ runWithIO target a = execute
       evalPTX target $ do
         build <- phase "compile" (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy (arrays @a)))
+        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy (Sugar.arraysR @a)))
         return $ toArr res
 
 
@@ -231,7 +235,7 @@ runNWith target f = exec
     !acc  = convertAfun f
     !exec = runNWith' @f target acc
 
-runNWith' :: forall f. Afunction f => PTX -> DelayedAfun (AreprFunctionR f) -> AfunctionR f
+runNWith' :: forall f. Afunction f => PTX -> DelayedAfun (ArraysFunctionR f) -> AfunctionR f
 runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
   where
     !afun = unsafePerformIO $ do
@@ -241,7 +245,11 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
                 link  <- phase "link"    (linkAfun build)
                 return link
 
-    go :: forall aenv t tf trepr. AfunctionRepr t tf trepr -> ExecOpenAfun PTX aenv trepr -> Par PTX (Val aenv) -> tf
+    go :: forall aenv t r trepr.
+          AfunctionRepr t r trepr
+       -> ExecOpenAfun PTX aenv trepr
+       -> Par PTX (Val aenv)
+       -> r
     go (AfunctionReprLam repr) (Alam lhs l) k = \ !arrs ->
       let k' = do aenv <- k
                   a    <- useRemoteAsync (lhsToTupR lhs) $ fromArr arrs
@@ -250,7 +258,7 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
     go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
       aenv <- k
       fut  <- executeOpenAcc b aenv
-      toArr <$> copyToHostLazy (arrays @tf) fut
+      toArr <$> copyToHostLazy (Sugar.arraysR @r) fut
     go _ _ _ = error "But that's not right, oh, no, what's the story?"
 
 
@@ -267,7 +275,7 @@ run1AsyncWith = runNAsyncWith
 
 -- | As 'runN', but execute asynchronously.
 --
-runNAsync :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => f -> r
+runNAsync :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => f -> r
 runNAsync f = exec
   where
     !acc  = convertAfun f
@@ -280,7 +288,7 @@ runNAsync f = exec
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => PTX -> f -> r
+runNAsyncWith :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => PTX -> f -> r
 runNAsyncWith target f = exec
   where
     !acc  = convertAfun f
@@ -302,21 +310,21 @@ class RunAsync f where
   runAsync' :: PTX -> ExecOpenAfun PTX aenv (RunAsyncR f) -> Par PTX (Val aenv) -> f
 
 instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
-  type RunAsyncR (a -> b) = ArrRepr a -> RunAsyncR b
+  type RunAsyncR (a -> b) = ArraysR a -> RunAsyncR b
   runAsync' _      Abody{}  _ _     = error "runAsync: function oversaturated"
   runAsync' target (Alam lhs l) k !arrs =
     let k' = do aenv  <- k
-                a     <- useRemoteAsync (arrays @a) $ fromArr arrs
+                a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
                 return (aenv `push` (lhs, a))
     in runAsync' target l k'
 
 instance Arrays b => RunAsync (IO (Async b)) where
-  type RunAsyncR (IO (Async b)) = ArrRepr b
+  type RunAsyncR (IO (Async b)) = ArraysR b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
   runAsync' target (Abody b) k = asyncBound . phase "execute" . evalPTX target . evalPar $ do
     aenv <- k
     ans  <- executeOpenAcc b aenv
-    arrs  <- getArrays (arraysRepr b) ans
+    arrs <- getArrays (arraysR b) ans
     return $ toArr arrs
 
 
@@ -463,7 +471,7 @@ runQ'_ using k f = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
         s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftALhs lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
@@ -476,7 +484,7 @@ runQ'_ using k f = do
                 [| $using (phase "execute" $(k (
                      TH.doE ( reverse stmts ++
                             [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                            , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeQ (liftArraysR (arraysRepr b))) $(TH.varE r) |]
+                            , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
                             , TH.noBindS [| return $ toArr $(TH.varE s) |]
                             ]))))
                  |]
@@ -506,12 +514,12 @@ runQ'_ using k f = do
 -- Note that since the amount of available pageable memory will be reduced,
 -- overall system performance can suffer.
 --
-registerPinnedAllocatorWith :: PTX -> IO ()
+registerPinnedAllocatorWith :: HasCallStack => PTX -> IO ()
 registerPinnedAllocatorWith target =
   registerForeignPtrAllocator $ \bytes ->
     withContext (ptxContext target) (CUDA.mallocHostForeignPtr [] bytes)
     `catch`
-    \e -> $internalError "registerPinnedAlocator" (show (e :: CUDAException))
+    \e -> internalError (show (e :: CUDAException))
 
 
 -- Debugging

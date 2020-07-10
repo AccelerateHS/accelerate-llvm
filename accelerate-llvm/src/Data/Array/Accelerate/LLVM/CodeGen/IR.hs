@@ -96,21 +96,21 @@ instance IROP VectorType where
       num (FloatingNumType t) = floating t
 
       integral :: IntegralType t -> Operands (Vec n t) -> Operand (Vec n t)
-      integral TypeInt{}    (OP_Vec x) = x
-      integral TypeInt8{}   (OP_Vec x) = x
-      integral TypeInt16{}  (OP_Vec x) = x
-      integral TypeInt32{}  (OP_Vec x) = x
-      integral TypeInt64{}  (OP_Vec x) = x
-      integral TypeWord{}   (OP_Vec x) = x
-      integral TypeWord8{}  (OP_Vec x) = x
-      integral TypeWord16{} (OP_Vec x) = x
-      integral TypeWord32{} (OP_Vec x) = x
-      integral TypeWord64{} (OP_Vec x) = x
+      integral TypeInt    (OP_Vec x) = x
+      integral TypeInt8   (OP_Vec x) = x
+      integral TypeInt16  (OP_Vec x) = x
+      integral TypeInt32  (OP_Vec x) = x
+      integral TypeInt64  (OP_Vec x) = x
+      integral TypeWord   (OP_Vec x) = x
+      integral TypeWord8  (OP_Vec x) = x
+      integral TypeWord16 (OP_Vec x) = x
+      integral TypeWord32 (OP_Vec x) = x
+      integral TypeWord64 (OP_Vec x) = x
 
       floating :: FloatingType t -> Operands (Vec n t) -> Operand (Vec n t)
-      floating TypeHalf{}   (OP_Vec x) = x
-      floating TypeFloat{}  (OP_Vec x) = x
-      floating TypeDouble{} (OP_Vec x) = x
+      floating TypeHalf   (OP_Vec x) = x
+      floating TypeFloat  (OP_Vec x) = x
+      floating TypeDouble (OP_Vec x) = x
 
   ir (VectorType _ v) = single v
     where
@@ -122,21 +122,21 @@ instance IROP VectorType where
       num (FloatingNumType t) = floating t
 
       integral :: IntegralType t -> Operand (Vec n t) -> Operands (Vec n t)
-      integral TypeInt{}    = OP_Vec
-      integral TypeInt8{}   = OP_Vec
-      integral TypeInt16{}  = OP_Vec
-      integral TypeInt32{}  = OP_Vec
-      integral TypeInt64{}  = OP_Vec
-      integral TypeWord{}   = OP_Vec
-      integral TypeWord8{}  = OP_Vec
-      integral TypeWord16{} = OP_Vec
-      integral TypeWord32{} = OP_Vec
-      integral TypeWord64{} = OP_Vec
+      integral TypeInt    = OP_Vec
+      integral TypeInt8   = OP_Vec
+      integral TypeInt16  = OP_Vec
+      integral TypeInt32  = OP_Vec
+      integral TypeInt64  = OP_Vec
+      integral TypeWord   = OP_Vec
+      integral TypeWord8  = OP_Vec
+      integral TypeWord16 = OP_Vec
+      integral TypeWord32 = OP_Vec
+      integral TypeWord64 = OP_Vec
 
       floating :: FloatingType t -> Operand (Vec n t) -> Operands (Vec n t)
-      floating TypeHalf{}   = OP_Vec
-      floating TypeFloat{}  = OP_Vec
-      floating TypeDouble{} = OP_Vec
+      floating TypeHalf   = OP_Vec
+      floating TypeFloat  = OP_Vec
+      floating TypeDouble = OP_Vec
 
 instance IROP NumType where
   op (IntegralNumType t) = op t
@@ -145,34 +145,34 @@ instance IROP NumType where
   ir (FloatingNumType t) = ir t
 
 instance IROP IntegralType where
-  op TypeInt{}     (OP_Int     x) = x
-  op TypeInt8{}    (OP_Int8    x) = x
-  op TypeInt16{}   (OP_Int16   x) = x
-  op TypeInt32{}   (OP_Int32   x) = x
-  op TypeInt64{}   (OP_Int64   x) = x
-  op TypeWord{}    (OP_Word    x) = x
-  op TypeWord8{}   (OP_Word8   x) = x
-  op TypeWord16{}  (OP_Word16  x) = x
-  op TypeWord32{}  (OP_Word32  x) = x
-  op TypeWord64{}  (OP_Word64  x) = x
+  op TypeInt     (OP_Int     x) = x
+  op TypeInt8    (OP_Int8    x) = x
+  op TypeInt16   (OP_Int16   x) = x
+  op TypeInt32   (OP_Int32   x) = x
+  op TypeInt64   (OP_Int64   x) = x
+  op TypeWord    (OP_Word    x) = x
+  op TypeWord8   (OP_Word8   x) = x
+  op TypeWord16  (OP_Word16  x) = x
+  op TypeWord32  (OP_Word32  x) = x
+  op TypeWord64  (OP_Word64  x) = x
   --
-  ir TypeInt{}     = OP_Int
-  ir TypeInt8{}    = OP_Int8
-  ir TypeInt16{}   = OP_Int16
-  ir TypeInt32{}   = OP_Int32
-  ir TypeInt64{}   = OP_Int64
-  ir TypeWord{}    = OP_Word
-  ir TypeWord8{}   = OP_Word8
-  ir TypeWord16{}  = OP_Word16
-  ir TypeWord32{}  = OP_Word32
-  ir TypeWord64{}  = OP_Word64
+  ir TypeInt     = OP_Int
+  ir TypeInt8    = OP_Int8
+  ir TypeInt16   = OP_Int16
+  ir TypeInt32   = OP_Int32
+  ir TypeInt64   = OP_Int64
+  ir TypeWord    = OP_Word
+  ir TypeWord8   = OP_Word8
+  ir TypeWord16  = OP_Word16
+  ir TypeWord32  = OP_Word32
+  ir TypeWord64  = OP_Word64
 
 instance IROP FloatingType where
-  op TypeHalf{}   (OP_Half   x) = x
-  op TypeFloat{}  (OP_Float  x) = x
-  op TypeDouble{} (OP_Double x) = x
+  op TypeHalf   (OP_Half   x) = x
+  op TypeFloat  (OP_Float  x) = x
+  op TypeDouble (OP_Double x) = x
   --
-  ir TypeHalf{}   = OP_Half
-  ir TypeFloat{}  = OP_Float
-  ir TypeDouble{} = OP_Double
+  ir TypeHalf   = OP_Half
+  ir TypeFloat  = OP_Float
+  ir TypeDouble = OP_Double
 

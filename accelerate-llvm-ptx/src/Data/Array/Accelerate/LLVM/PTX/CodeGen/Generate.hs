@@ -17,7 +17,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Prelude                                                  hiding ( fromIntegral )
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic

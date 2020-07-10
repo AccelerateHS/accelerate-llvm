@@ -25,12 +25,14 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Data (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.State
@@ -40,7 +42,6 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
 
--- standard library
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.State                                          ( gets )
@@ -80,7 +81,7 @@ instance Remote PTX where
   useRemoteR        = Prim.useArrayAsync
   copyToHostR       = Prim.peekArrayAsync
   copyToRemoteR     = Prim.pokeArrayAsync
-  copyToPeerR       = $internalError "copyToPeerR" "not supported yet"
+  copyToPeerR       = internalError "not supported yet"
 
 
 -- | Copy an array from the remote device to the host. Although the Accelerate
@@ -99,7 +100,8 @@ instance Remote PTX where
 --
 {-# INLINEABLE copyToHostLazy #-}
 copyToHostLazy
-    :: ArraysR arrs
+    :: HasCallStack
+    => ArraysR arrs
     -> FutureArraysR PTX arrs
     -> Par PTX arrs
 copyToHostLazy TupRunit () = return ()
@@ -114,7 +116,7 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
     (Array sh adata) <- case ivar of
       Full a        -> return a
       Pending _ _ a -> return a
-      Empty         -> $internalError "copyToHostLazy" "blocked on an IVar"
+      Empty         -> internalError "blocked on an IVar"
 
     -- Note: [Lazy device-host transfers]
     --
@@ -144,9 +146,9 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
             -> Int
             -> IO (ArrayData e)
       peekR t ad n
-        | (ScalarDict, _, _) <- singleDict t
+        | SingleArrayDict                        <- singleArrayDict t
         , UniqueArray uid (Lifetime lft weak fp) <- ad
-          = unsafeInterleaveIO $ do
+        = unsafeInterleaveIO $ do
           ok  <- evaluated fp
           fp' <- if ok
                     then return fp
@@ -217,13 +219,13 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
 #endif
 #endif
 
-      runR :: TupleType e -> ArrayData e -> Int -> IO (ArrayData e)
+      runR :: TypeR e -> ArrayData e -> Int -> IO (ArrayData e)
       runR TupRunit           !()          !_ = return ()
       runR (TupRpair !t1 !t2) (!ad1, !ad2) !n = (,) <$> runR t1 ad1 n <*> runR t2 ad2 n
       runR (TupRsingle !t)    !ad          !n = case t of
         SingleScalarType s                     -> peekR s ad n
         VectorScalarType (VectorType w s)
-          | (ScalarDict, _, _) <- singleDict s -> peekR s ad (n * w)
+          | SingleArrayDict <- singleArrayDict s -> peekR s ad (n * w)
 
     Array sh <$> runR tp adata (size shr sh)
 
@@ -239,14 +241,14 @@ cloneArrayAsync repr@(ArrayR shr tp) arr@(Array _ src) = do
   where
     sh  = shape arr
 
-    copyR :: TupleType s -> ArrayData s -> ArrayData s -> Int -> Par PTX (Future (ArrayData s))
+    copyR :: TypeR s -> ArrayData s -> ArrayData s -> Int -> Par PTX (Future (ArrayData s))
     copyR TupRunit           !_          !_            !_ = newFull ()
     copyR (TupRpair !t1 !t2) !(ad1, ad2) !(ad1', ad2') !n = liftF2 (,) (copyR t1 ad1 ad1' n)
                                                                        (copyR t2 ad2 ad2' n)
     copyR (TupRsingle !t)    !ad         !ad'          !n = case t of
       SingleScalarType s                     -> copyPrim s ad ad' n
       VectorScalarType (VectorType w s)
-        | (ScalarDict, _, _) <- singleDict s -> copyPrim s ad ad' (n * w)
+        | SingleArrayDict <- singleArrayDict s -> copyPrim s ad ad' (n * w)
 
     copyPrim
         :: SingleType s

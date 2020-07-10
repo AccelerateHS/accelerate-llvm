@@ -19,22 +19,18 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load (
 
 ) where
 
--- llvm-hs
 import LLVM.Context
 import LLVM.Module                                                  as LLVM
 import LLVM.AST                                                     as AST ( Module(..) )
 
--- accelerate
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( ) -- GHC#1012
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( ) -- GHC#1012
 
--- cuda
 import Foreign.CUDA.Analysis
 import qualified Foreign.CUDA.Driver                                as CUDA
 
--- standard library
 import System.IO.Unsafe
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
@@ -107,10 +103,10 @@ $( let
                     | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
                     | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
                   Compute 5 _   -> libdevice_50_mdl   -- 5.x
-                  _             -> $internalError "libdevice"
-                                       (unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
-                                                , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
-                                                ])
+                  _             -> internalError
+                                 $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
+                                           , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
+                                           ]
         |]
       else
         [d| {-# NOINLINE libdevice_mdl #-}

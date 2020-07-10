@@ -16,7 +16,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -37,7 +38,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 --
 mkMap :: Gamma       aenv
       -> ArrayR (Array sh a)
-      -> TupleType b
+      -> TypeR b
       -> IRFun1  PTX aenv (a -> b)
       -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
 mkMap aenv repr@(ArrayR shr _) tp' apply =

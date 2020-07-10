@@ -1,6 +1,5 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
 -- Copyright   : [2014..2019] The Accelerate Team
@@ -23,7 +22,6 @@ module Data.Array.Accelerate.LLVM.PTX.State (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Error
 
 import Data.Array.Accelerate.LLVM.State
@@ -35,7 +33,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
--- standard library
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.Environment                                           ( lookupEnv )
@@ -53,7 +50,7 @@ evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
   CT.withContext (ptxContext ptx) (evalLLVM ptx acc)
   `catch`
-  \e -> $internalError "unhandled" (show (e :: CUDAException))
+  \e -> internalError (show (e :: CUDAException))
 
 
 -- | Create a new PTX execution target for the given device

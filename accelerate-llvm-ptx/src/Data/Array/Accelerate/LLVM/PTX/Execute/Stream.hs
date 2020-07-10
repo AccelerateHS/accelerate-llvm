@@ -62,7 +62,6 @@ streaming
     -> (Event -> a -> LLVM PTX b)
     -> LLVM PTX b
 streaming !action !after = do
-  PTX{..} <- gets llvmTarget
   stream  <- create
   first   <- action stream
   end     <- Event.waypoint stream
