@@ -52,9 +52,6 @@ plugin = defaultPlugin
 
 install :: HasCallStack => [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install _ rest = do
-#if __GLASGOW_HASKELL__ < 802
-  reinitializeGlobals
-#endif
   let this (CoreDoPluginPass "accelerate-llvm-native" _) = True
       this _                                             = False
   --
@@ -89,11 +86,7 @@ pass guts = do
             objs  = map optionOfPath paths
         --
         linkCmdLineLibs
-#if __GLASGOW_HASKELL__ < 800
-               $                       dynFlags { ldInputs = opts ++ objs }
-#else
                $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
-#endif
 
     -- This case is not necessary for GHC-8.6 and above.
     --
@@ -133,12 +126,8 @@ pass guts = do
               GnuGold   opts -> GnuGold   (nub (opts ++ allObjs))
               DarwinLD  opts -> DarwinLD  (nub (opts ++ allObjs))
               SolarisLD opts -> SolarisLD (nub (opts ++ allObjs))
-#if __GLASGOW_HASKELL__ >= 800
               AixLD     opts -> AixLD     (nub (opts ++ allObjs))
-#endif
-#if __GLASGOW_HASKELL__ >= 804
               LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
-#endif
               UnknownLD      -> UnknownLD  -- no linking performed?
 #endif
       return ()

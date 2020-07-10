@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RoleAnnotations       #-}
@@ -18,9 +17,7 @@ module LLVM.AST.Type.Name
 
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Data
-#if __GLASGOW_HASKELL__ >= 800
 import Data.Semigroup
-#endif
 import Data.String
 import Data.Word
 import Prelude
@@ -80,19 +77,11 @@ data Label = Label {-# UNPACK #-} !ShortByteString
 instance IsString Label where
   fromString = Label . fromString
 
-#if __GLASGOW_HASKELL__ >= 800
 instance Semigroup Label where
   Label x <> Label y = Label (x <> y)
-#endif
 
 instance Monoid Label where
-  mempty                      = Label mempty
-#if   __GLASGOW_HASKELL__ < 804
-  {-# INLINE mappend #-}
-  mappend                     = (<>)
-#elif __GLASGOW_HASKELL__ < 800
-  mappend (Label x) (Label y) = Label (mappend x y)
-#endif
+  mempty = Label mempty
 
 
 -- | Convert to llvm-hs

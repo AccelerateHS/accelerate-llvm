@@ -50,15 +50,9 @@ instance Serialize Module where
     n <- get
     return (Module p n)
 
-#if __GLASGOW_HASKELL__ < 800
-instance Serialize PackageKey where
-  put p = put (packageKeyString p)
-  get = stringToPackageKey <$> get
-#else
 instance Serialize UnitId where
   put u = put (unitIdString u)
   get   = stringToUnitId <$> get
-#endif
 
 instance Serialize ModuleName where
   put m = put (moduleNameString m)
