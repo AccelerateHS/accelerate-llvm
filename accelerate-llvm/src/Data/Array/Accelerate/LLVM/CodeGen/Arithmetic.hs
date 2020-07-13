@@ -3,6 +3,7 @@
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -21,6 +22,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 
 import Data.Array.Accelerate.AST                                    ( PrimMaybe, PrimBool )
 import Data.Array.Accelerate.Analysis.Match
+import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 
 import LLVM.AST.Type.Constant
@@ -625,6 +627,46 @@ ifThenElse (tp, test) yes no = do
 
   setBlock ifExit
   phi tp [(tv, tb), (fv, fb)]
+
+
+caseof
+    :: TypeR a
+    -> CodeGen arch (Operands TAG)
+    -> [(TAG, CodeGen arch (Operands a))]
+    -> Maybe (CodeGen arch (Operands a))
+    -> CodeGen arch (Operands a)
+caseof tR tag xs x = do
+  exit   <- newBlock "switch.exit"
+  def    <- newBlock "switch.default"
+  cases  <- forM xs (\(t,e) -> (t,e,) <$> newBlock (printf "switch.l%d" t))
+
+  _    <- beginBlock "switch.entry"
+  p    <- tag
+  _    <- switch p def [(t,b) | (t,_,b) <- cases]
+
+  -- Generate basic blocks for each equation
+  vs   <- forM cases $ \(_,body,label) -> do
+    setBlock label
+    r <- body
+    b <- br exit
+    return (r,b)
+
+  -- Basic block for the default case
+  v    <- do
+    setBlock def
+    r <- case x of
+        Nothing ->
+          let go :: TypeR a -> Operands a
+              go TupRunit       = OP_Unit
+              go (TupRsingle t) = ir t (undef t)
+              go (TupRpair a b) = OP_Pair (go a) (go b)
+          in return (go tR)
+        Just default_ -> default_
+    b <- br exit
+    return (r,b)
+
+  setBlock exit
+  phi tR (v:vs)
 
 
 -- Execute the body only if the first argument evaluates to True

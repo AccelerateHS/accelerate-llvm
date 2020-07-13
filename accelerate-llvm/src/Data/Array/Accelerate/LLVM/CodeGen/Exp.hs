@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -112,6 +113,7 @@ llvmOfOpenExp top env aenv = cvtE top
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
         Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
+        Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
         Cond c t e                  -> A.ifThenElse (expType t, cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh

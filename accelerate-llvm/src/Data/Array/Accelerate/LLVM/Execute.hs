@@ -36,6 +36,7 @@ import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Slice
+import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Representation.Vec
 import Data.Array.Accelerate.Type
@@ -498,6 +499,7 @@ executeOpenExp rootExp env aenv = travE rootExp
       Pair e1 e2                -> liftF2 (,) (travE e1) (travE e2)
       VecPack   vecr e          -> liftF1 (pack   vecr) (travE e)
       VecUnpack vecr e          -> liftF1 (unpack vecr) (travE e)
+      Case p xs x               -> caseof xs x =<< travE p
       Cond p t e                -> cond t e =<< travE p
       While p f x               -> while p f =<< travE x
       IndexSlice ix slix sh     -> lift2 (newFull $$ indexSlice ix) (travE slix) (travE sh)
@@ -549,6 +551,19 @@ executeOpenExp rootExp env aenv = travE rootExp
         c <- block p
         if toBool c then travE yes
                     else travE no
+
+    caseof :: [(TAG, OpenExp env aenv a)]
+           -> Maybe (OpenExp env aenv a)
+           -> FutureR arch TAG
+           -> Par arch (FutureR arch a)
+    caseof xs d p =
+      spawn $ do
+        t <- block p
+        case lookup t xs of
+          Just r  -> travE r
+          Nothing -> case d of
+                       Just r  -> travE r
+                       Nothing -> error "unmatched case"
 
     indexSlice :: SliceIndex slix sl co sh
                -> slix

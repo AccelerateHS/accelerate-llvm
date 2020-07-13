@@ -38,6 +38,7 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Trafo.Delayed
 import Data.Array.Accelerate.Trafo.Substitution
@@ -50,9 +51,9 @@ import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
 import Data.IntMap                                                  ( IntMap )
-import qualified Data.IntMap                                        as IntMap
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
+import qualified Data.IntMap                                        as IntMap
 
 
 class Foreign arch => Compile arch where
@@ -240,6 +241,10 @@ compileOpenAcc = traverseAcc
         travM (Manifest (Avar v)) = return (freevar v, v)
         travM _                   = internalError "expected array variable"
 
+        travME :: Maybe (OpenExp env aenv e) -> LLVM arch (IntMap (Idx' aenv), Bool)
+        travME Nothing  = return (IntMap.empty, False)
+        travME (Just e) = (True <$) <$> travE e
+
         travAF :: HasCallStack
                => DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
@@ -370,6 +375,7 @@ compileOpenAcc = traverseAcc
         Pair e1 e2              -> liftA2 Pair              <$> travE e1 <*> travE e2
         VecPack   vecr e        -> liftA  (VecPack   vecr)  <$> travE e
         VecUnpack vecr e        -> liftA  (VecUnpack vecr)  <$> travE e
+        Case t xs x             -> liftA3 Case              <$> travE t <*> travLE xs <*> travME x
         Cond p t e              -> liftA3 Cond              <$> travE p <*> travE t <*> travE e
         While p f x             -> liftA3 While             <$> travF p <*> travF f <*> travE x
         PrimApp f e             -> liftA  (PrimApp f)       <$> travE e
@@ -390,6 +396,21 @@ compileOpenAcc = traverseAcc
         travF (Body b)    = liftA Body      <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
+        travLE :: HasCallStack
+               => [(TAG, OpenExp env aenv t)]
+               -> LLVM arch (IntMap (Idx' aenv), [(TAG, OpenExp env aenv t)])
+        travLE []     = return $ pure []
+        travLE ((t,x):xs) = do
+          (v,  y)  <- travE x
+          (vs, ys) <- travLE xs
+          return (IntMap.union v vs, (t,y):ys)
+
+        travME :: HasCallStack
+               => Maybe (OpenExp env aenv t)
+               -> LLVM arch (IntMap (Idx' aenv), Maybe (OpenExp env aenv t))
+        travME Nothing  = return $ pure Nothing
+        travME (Just e) = fmap Just <$> travE e
+
         foreignE :: (HasCallStack, A.Foreign asm)
                  => TypeR b
                  -> asm           (a -> b)
@@ -406,10 +427,6 @@ compileOpenAcc = traverseAcc
           where
             err :: Fun () (a -> b)
             err = internalError "attempt to use fallback in foreign expression"
-
-    travME :: Maybe (OpenExp env aenv e) -> LLVM arch (IntMap (Idx' aenv), Bool)
-    travME Nothing  = return (IntMap.empty, False)
-    travME (Just e) = (True <$) <$> travE e
 
 
 -- Applicative

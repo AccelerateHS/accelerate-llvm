@@ -32,7 +32,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   newBlock, setBlock, beginBlock, createBlocks,
 
   -- instructions
-  instr, instr', do_, return_, retval_, br, cbr, phi, phi',
+  instr, instr', do_, return_, retval_, br, cbr, switch, phi, phi',
   instr_,
 
   -- metadata
@@ -48,9 +48,11 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
 import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.Target
+import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import qualified Data.Array.Accelerate.Debug                        as Debug
 
+import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Metadata
@@ -302,6 +304,10 @@ br target = terminate $ Br (blockLabel target)
 cbr :: HasCallStack => Operands PrimBool -> Block -> Block -> CodeGen arch Block
 cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
 
+-- | Switch statement. Return the name of the block that was branched from.
+--
+switch :: HasCallStack => Operands TAG -> Block -> [(TAG, Block)] -> CodeGen arch Block
+switch tag def eqs = terminate $ Switch (op scalarType tag) (blockLabel def) [(ScalarConstant scalarType t, blockLabel b) | (t,b) <- eqs]
 
 -- | Add a phi node to the top of the current block
 --
