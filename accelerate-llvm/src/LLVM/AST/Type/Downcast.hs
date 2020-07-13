@@ -14,7 +14,8 @@
 
 module LLVM.AST.Type.Downcast (
 
-  Downcast(..)
+  Downcast(..),
+  Boolean(..),
 
 ) where
 
@@ -83,4 +84,8 @@ instance Downcast (FloatingType a) LLVM.Type where
   downcast TypeHalf    = LLVM.FloatingPointType LLVM.HalfFP
   downcast TypeFloat   = LLVM.FloatingPointType LLVM.FloatFP
   downcast TypeDouble  = LLVM.FloatingPointType LLVM.DoubleFP
+
+
+class Boolean typed untyped where
+  boolean :: HasCallStack => typed -> untyped
 

@@ -70,7 +70,7 @@ instance Downcast (Terminator a) LLVM.Terminator where
     Ret           -> LLVM.Ret Nothing md
     RetVal x      -> LLVM.Ret (Just (downcast x)) md
     Br l          -> LLVM.Br (downcast l) md
-    CondBr p t f  -> LLVM.CondBr (downcast p) (downcast t) (downcast f) md
+    CondBr p t f  -> LLVM.CondBr (boolean p) (downcast t) (downcast f) md
     Switch p d a  -> LLVM.Switch (downcast p) (downcast d) (downcast a) md
     where
       md :: LLVM.InstructionMetadata

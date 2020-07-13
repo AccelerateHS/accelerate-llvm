@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MagicHash             #-}
@@ -16,6 +17,8 @@
 
 module LLVM.AST.Type.Constant
   where
+
+import Data.Array.Accelerate.AST                                    ( PrimBool )
 
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
@@ -83,9 +86,9 @@ instance Downcast (Constant a) LLVM.Constant where
       num (FloatingNumType s) v
         = LLVM.Float
         $ case s of
-            TypeFloat{}                        -> LLVM.Single v
-            TypeDouble{}                       -> LLVM.Double v
-            TypeHalf{} | Half (CUShort u) <- v -> LLVM.Half u
+            TypeFloat                        -> LLVM.Single v
+            TypeDouble                       -> LLVM.Double v
+            TypeHalf | Half (CUShort u) <- v -> LLVM.Half u
 
       singlePrim :: SingleType s -> Dict (Prim s)
       singlePrim (NumSingleType s) = numPrim s
@@ -95,25 +98,30 @@ instance Downcast (Constant a) LLVM.Constant where
       numPrim (FloatingNumType s) = floatingPrim s
 
       integralPrim :: IntegralType s -> Dict (Prim s)
-      integralPrim TypeInt{}    = Dict
-      integralPrim TypeInt8{}   = Dict
-      integralPrim TypeInt16{}  = Dict
-      integralPrim TypeInt32{}  = Dict
-      integralPrim TypeInt64{}  = Dict
-      integralPrim TypeWord{}   = Dict
-      integralPrim TypeWord8{}  = Dict
-      integralPrim TypeWord16{} = Dict
-      integralPrim TypeWord32{} = Dict
-      integralPrim TypeWord64{} = Dict
+      integralPrim TypeInt    = Dict
+      integralPrim TypeInt8   = Dict
+      integralPrim TypeInt16  = Dict
+      integralPrim TypeInt32  = Dict
+      integralPrim TypeInt64  = Dict
+      integralPrim TypeWord   = Dict
+      integralPrim TypeWord8  = Dict
+      integralPrim TypeWord16 = Dict
+      integralPrim TypeWord32 = Dict
+      integralPrim TypeWord64 = Dict
 
       floatingPrim :: FloatingType s -> Dict (Prim s)
-      floatingPrim TypeHalf{}   = Dict
-      floatingPrim TypeFloat{}  = Dict
-      floatingPrim TypeDouble{} = Dict
-
+      floatingPrim TypeHalf   = Dict
+      floatingPrim TypeFloat  = Dict
+      floatingPrim TypeDouble = Dict
 
 instance TypeOf Constant where
   typeOf (ScalarConstant t _)  = PrimType (ScalarPrimType t)
   typeOf (UndefConstant t)     = t
   typeOf (GlobalReference t _) = t
+
+instance Boolean (Constant PrimBool) LLVM.Constant where
+  boolean = \case
+    UndefConstant _     -> LLVM.Undef (LLVM.IntegerType 1)
+    ScalarConstant _ n  -> LLVM.Int 1 (toInteger n)
+    GlobalReference _ n -> LLVM.GlobalReference (LLVM.IntegerType 1) (downcast n)
 
