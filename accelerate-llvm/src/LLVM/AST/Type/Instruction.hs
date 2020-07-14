@@ -35,7 +35,7 @@ import LLVM.AST.Type.Instruction.Compare                  ( Ordering(..) )
 import LLVM.AST.Type.Instruction.RMW                      ( RMWOperation )
 import LLVM.AST.Type.Instruction.Volatile                 ( Volatility )
 
-import qualified LLVM.AST.Constant                        as LLVM ( Constant(GlobalReference) )
+import qualified LLVM.AST.Constant                        as LLVM ( Constant(GlobalReference, Int) )
 import qualified LLVM.AST.AddrSpace                       as LLVM
 import qualified LLVM.AST.CallingConvention               as LLVM
 import qualified LLVM.AST.FloatingPointPredicate          as FP
@@ -151,9 +151,9 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LAnd            :: Operand PrimBool
-                  -> Operand PrimBool
-                  -> Instruction PrimBool
+  LAnd            :: Operand Bool
+                  -> Operand Bool
+                  -> Instruction Bool
 
   -- <http://llvm.org/docs/LangRef.html#or-instruction>
   --
@@ -162,9 +162,9 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LOr             :: Operand PrimBool
-                  -> Operand PrimBool
-                  -> Instruction PrimBool
+  LOr             :: Operand Bool
+                  -> Operand Bool
+                  -> Instruction Bool
 
   -- <http://llvm.org/docs/LangRef.html#xor-instruction>
   --
@@ -173,8 +173,8 @@ data Instruction a where
                   -> Operand a
                   -> Instruction a
 
-  LNot            :: Operand PrimBool
-                  -> Instruction PrimBool
+  LNot            :: Operand Bool
+                  -> Instruction Bool
 
   -- Vector Operations
   -- -----------------
@@ -247,11 +247,11 @@ data Instruction a where
   CmpXchg         :: IntegralType a
                   -> Volatility
                   -> Operand (Ptr a)
-                  -> Operand a              -- expected value
-                  -> Operand a              -- replacement value
-                  -> Atomicity              -- on success
-                  -> MemoryOrdering         -- on failure (see docs for restrictions)
-                  -> Instruction (a, PrimBool)
+                  -> Operand a                  -- expected value
+                  -> Operand a                  -- replacement value
+                  -> Atomicity                  -- on success
+                  -> MemoryOrdering             -- on failure (see docs for restrictions)
+                  -> Instruction (a, PrimBool)  -- should be (a, Bool)
 
   -- <http://llvm.org/docs/LangRef.html#atomicrmw-instruction>
   --
@@ -270,6 +270,10 @@ data Instruction a where
                   -> Operand a
                   -> Instruction b
 
+  IntToBool       :: IntegralType a
+                  -> Operand a
+                  -> Instruction Bool
+
   -- <http://llvm.org/docs/LangRef.html#fptrunc-to-instruction>
   --
   FTrunc          :: FloatingType a       -- precondition: BitSize a > BitSize b
@@ -285,12 +289,20 @@ data Instruction a where
                   -> Operand a
                   -> Instruction b
 
+  BoolToInt       :: IntegralType a
+                  -> Operand Bool
+                  -> Instruction a
+
   -- <http://llvm.org/docs/LangRef.html#fpext-to-instruction>
   --
   FExt            :: FloatingType a       -- precondition: BitSize a < BitSize b
                   -> FloatingType b
                   -> Operand a
                   -> Instruction b
+
+  BoolToFP        :: FloatingType a
+                  -> Operand Bool
+                  -> Instruction a
 
   -- <http://llvm.org/docs/LangRef.html#fptoui-to-instruction>
   -- <http://llvm.org/docs/LangRef.html#fptosi-to-instruction>
@@ -334,11 +346,11 @@ data Instruction a where
                   -> Ordering
                   -> Operand a
                   -> Operand a
-                  -> Instruction PrimBool
+                  -> Instruction Bool
 
   IsNaN           :: FloatingType a
                   -> Operand a
-                  -> Instruction PrimBool
+                  -> Instruction Bool
 
   -- <http://llvm.org/docs/LangRef.html#phi-instruction>
   --
@@ -355,7 +367,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#select-instruction>
   --
   Select          :: SingleType a
-                  -> Operand PrimBool
+                  -> Operand Bool
                   -> Operand a
                   -> Operand a
                   -> Instruction a
@@ -391,7 +403,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
     BOr _ x y             -> LLVM.Or (downcast x) (downcast y) md
     LOr x y               -> LLVM.Or (downcast x) (downcast y) md
     BXor _ x y            -> LLVM.Xor (downcast x) (downcast y) md
-    LNot x                -> LLVM.Xor (downcast x) (constant @PrimBool 1) md
+    LNot x                -> LLVM.Xor (downcast x) (LLVM.ConstantOperand (LLVM.Int 1 1)) md
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
     ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
     ExtractValue _ i s    -> extractStruct i (downcast s)
@@ -402,8 +414,11 @@ instance Downcast (Instruction a) LLVM.Instruction where
     CmpXchg _ v p x y a m -> LLVM.CmpXchg (downcast v) (downcast p) (downcast x) (downcast y) (downcast a) (downcast m) md
     AtomicRMW t v f p x a -> LLVM.AtomicRMW (downcast v) (downcast (t,f)) (downcast p) (downcast x) (downcast a) md
     Trunc _ t x           -> LLVM.Trunc (downcast x) (downcast t) md
+    IntToBool _ x         -> LLVM.Trunc (downcast x) (LLVM.IntegerType 1) md
     FTrunc _ t x          -> LLVM.FPTrunc (downcast x) (downcast t) md
     Ext a b x             -> ext a b (downcast x)
+    BoolToInt a x         -> LLVM.ZExt (downcast x) (downcast a) md
+    BoolToFP x a          -> LLVM.UIToFP (downcast a) (downcast x) md
     FExt _ t x            -> LLVM.FPExt (downcast x) (downcast t) md
     FPToInt _ b x         -> float2int b (downcast x)
     IntToFP a b x         -> int2float a b (downcast x)
@@ -588,6 +603,9 @@ instance TypeOf Instruction where
     Ext _ t _             -> bounded t
     FPToInt _ t _         -> integral t
     IntToFP _ t _         -> floating t
+    IntToBool _ _         -> type'
+    BoolToInt t _         -> integral t
+    BoolToFP t _          -> floating t
     BitCast t _           -> scalar t
     PtrCast t _           -> PrimType t
     Cmp{}                 -> type'

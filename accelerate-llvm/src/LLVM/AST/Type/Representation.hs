@@ -69,6 +69,7 @@ data Type a where
   PrimType  :: PrimType a -> Type a
 
 data PrimType a where
+  BoolPrimType    ::                            PrimType Bool
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
   StructPrimType  :: TypeR a                 -> PrimType a          -- opaque structures (required for CmpXchg)
@@ -158,6 +159,10 @@ instance IsType (Ptr Float) where
 instance IsType (Ptr Double) where
   type' = PrimType primType
 
+instance IsType Bool where
+  type' = PrimType BoolPrimType
+
+
 -- | All primitive types
 --
 
@@ -242,11 +247,15 @@ instance IsPrim (Ptr Float) where
 instance IsPrim (Ptr Double) where
   primType = PtrPrimType primType defaultAddrSpace
 
+instance IsPrim Bool where
+  primType = BoolPrimType
+
 instance Show (Type a) where
   show VoidType        = "()"
   show (PrimType t)    = show t
 
 instance Show (PrimType a) where
+  show BoolPrimType                   = "Bool"
   show (ScalarPrimType t)             = show t
   show (StructPrimType t)             = show t
   show (ArrayPrimType n t)            = printf "[%d x %s]" n (show t)
@@ -311,6 +320,7 @@ instance Downcast (Type a) LLVM.Type where
   downcast (PrimType t) = downcast t
 
 instance Downcast (PrimType a) LLVM.Type where
+  downcast BoolPrimType         = LLVM.IntegerType 1
   downcast (ScalarPrimType t)   = downcast t
   downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
   downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)

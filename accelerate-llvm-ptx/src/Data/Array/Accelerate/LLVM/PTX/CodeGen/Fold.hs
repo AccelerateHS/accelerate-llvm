@@ -536,7 +536,7 @@ reduceWarpSMem dev tp combine smem size = reduce 0
     -- optimised away.
     valid i =
       case size of
-        Nothing -> return (lift (TupRsingle scalarType) 1)
+        Nothing -> return (liftBool True)
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.

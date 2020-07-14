@@ -40,7 +40,7 @@ asPtr as x =
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
     ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
-    ConstantOperand ScalarConstant{}      -> internalError "unexpected scalar constant"
+    ConstantOperand _                     -> internalError "unexpected constant operand"
 
 -- Treat a pointer operand as a scalar. This is a hack because we can't unpack
 -- IR terms of pointer types.

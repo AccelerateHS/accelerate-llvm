@@ -114,7 +114,7 @@ llvmOfOpenExp top env aenv = cvtE top
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
         Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
         Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
-        Cond c t e                  -> A.ifThenElse (expType t, cvtE c) (cvtE t) (cvtE e)
+        Cond c t e                  -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
         ToIndex shr sh ix           -> join $ intOfIndex shr <$> cvtE sh <*> cvtE ix
@@ -182,13 +182,45 @@ llvmOfOpenExp top env aenv = cvtE top
     pair :: Operands t1 -> Operands t2 -> IROpenExp arch env aenv (t1, t2)
     pair a b = return $ OP_Pair a b
 
+    bool :: IROpenExp arch env aenv PrimBool
+         -> IROpenExp arch env aenv Bool
+    bool p = instr . IntToBool integralType . op integralType =<< p
+
+    primbool :: IROpenExp arch env aenv Bool
+             -> IROpenExp arch env aenv PrimBool
+    primbool b = instr . BoolToInt integralType . A.unbool =<< b
+
+    cond :: TypeR a
+         -> IROpenExp arch env aenv PrimBool
+         -> IROpenExp arch env aenv a
+         -> IROpenExp arch env aenv a
+         -> IROpenExp arch env aenv a
+    cond tp p t e =
+      A.ifThenElse (tp, bool p) t e
+
     while :: TypeR a
           -> IROpenFun1 arch env aenv (a -> PrimBool)
           -> IROpenFun1 arch env aenv (a -> a)
           -> IROpenExp  arch env aenv a
           -> IROpenExp  arch env aenv a
     while tp p f x =
-      L.while tp (app1 p) (app1 f) =<< x
+      L.while tp (bool . app1 p) (app1 f) =<< x
+
+    land :: Operands PrimBool
+         -> Operands PrimBool
+         -> IROpenExp arch env aenv PrimBool
+    land x y = do
+      x' <- instr (IntToBool integralType (op integralType x))
+      y' <- instr (IntToBool integralType (op integralType y))
+      primbool (A.land x' y')
+
+    lor :: Operands PrimBool
+        -> Operands PrimBool
+        -> IROpenExp arch env aenv PrimBool
+    lor x y = do
+      x' <- instr (IntToBool integralType (op integralType x))
+      y' <- instr (IntToBool integralType (op integralType y))
+      primbool (A.lor x' y')
 
     foreignE :: A.Foreign asm
              => TypeR b
@@ -212,68 +244,68 @@ llvmOfOpenExp top env aenv = cvtE top
             -> IROpenExp arch env aenv r
     primFun f x =
       case f of
-        PrimAdd t                 -> A.uncurry (A.add t)     =<< cvtE x
-        PrimSub t                 -> A.uncurry (A.sub t)     =<< cvtE x
-        PrimMul t                 -> A.uncurry (A.mul t)     =<< cvtE x
-        PrimNeg t                 -> A.negate t              =<< cvtE x
-        PrimAbs t                 -> A.abs t                 =<< cvtE x
-        PrimSig t                 -> A.signum t              =<< cvtE x
-        PrimQuot t                -> A.uncurry (A.quot t)    =<< cvtE x
-        PrimRem t                 -> A.uncurry (A.rem t)     =<< cvtE x
-        PrimQuotRem t             -> A.uncurry (A.quotRem t) =<< cvtE x
-        PrimIDiv t                -> A.uncurry (A.idiv t)    =<< cvtE x
-        PrimMod t                 -> A.uncurry (A.mod t)     =<< cvtE x
-        PrimDivMod t              -> A.uncurry (A.divMod t)  =<< cvtE x
-        PrimBAnd t                -> A.uncurry (A.band t)    =<< cvtE x
-        PrimBOr t                 -> A.uncurry (A.bor t)     =<< cvtE x
-        PrimBXor t                -> A.uncurry (A.xor t)     =<< cvtE x
-        PrimBNot t                -> A.complement t          =<< cvtE x
-        PrimBShiftL t             -> A.uncurry (A.shiftL t)  =<< cvtE x
-        PrimBShiftR t             -> A.uncurry (A.shiftR t)  =<< cvtE x
-        PrimBRotateL t            -> A.uncurry (A.rotateL t) =<< cvtE x
-        PrimBRotateR t            -> A.uncurry (A.rotateR t) =<< cvtE x
-        PrimPopCount t            -> A.popCount t            =<< cvtE x
-        PrimCountLeadingZeros t   -> A.countLeadingZeros t   =<< cvtE x
-        PrimCountTrailingZeros t  -> A.countTrailingZeros t  =<< cvtE x
-        PrimFDiv t                -> A.uncurry (A.fdiv t)    =<< cvtE x
-        PrimRecip t               -> A.recip t               =<< cvtE x
-        PrimSin t                 -> A.sin t                 =<< cvtE x
-        PrimCos t                 -> A.cos t                 =<< cvtE x
-        PrimTan t                 -> A.tan t                 =<< cvtE x
-        PrimSinh t                -> A.sinh t                =<< cvtE x
-        PrimCosh t                -> A.cosh t                =<< cvtE x
-        PrimTanh t                -> A.tanh t                =<< cvtE x
-        PrimAsin t                -> A.asin t                =<< cvtE x
-        PrimAcos t                -> A.acos t                =<< cvtE x
-        PrimAtan t                -> A.atan t                =<< cvtE x
-        PrimAsinh t               -> A.asinh t               =<< cvtE x
-        PrimAcosh t               -> A.acosh t               =<< cvtE x
-        PrimAtanh t               -> A.atanh t               =<< cvtE x
-        PrimAtan2 t               -> A.uncurry (A.atan2 t)   =<< cvtE x
-        PrimExpFloating t         -> A.exp t                 =<< cvtE x
-        PrimFPow t                -> A.uncurry (A.fpow t)    =<< cvtE x
-        PrimSqrt t                -> A.sqrt t                =<< cvtE x
-        PrimLog t                 -> A.log t                 =<< cvtE x
-        PrimLogBase t             -> A.uncurry (A.logBase t) =<< cvtE x
-        PrimTruncate ta tb        -> A.truncate ta tb        =<< cvtE x
-        PrimRound ta tb           -> A.round ta tb           =<< cvtE x
-        PrimFloor ta tb           -> A.floor ta tb           =<< cvtE x
-        PrimCeiling ta tb         -> A.ceiling ta tb         =<< cvtE x
-        PrimIsNaN t               -> A.isNaN t               =<< cvtE x
-        PrimIsInfinite t          -> A.isInfinite t          =<< cvtE x
-        PrimLt t                  -> A.uncurry (A.lt t)      =<< cvtE x
-        PrimGt t                  -> A.uncurry (A.gt t)      =<< cvtE x
-        PrimLtEq t                -> A.uncurry (A.lte t)     =<< cvtE x
-        PrimGtEq t                -> A.uncurry (A.gte t)     =<< cvtE x
-        PrimEq t                  -> A.uncurry (A.eq t)      =<< cvtE x
-        PrimNEq t                 -> A.uncurry (A.neq t)     =<< cvtE x
-        PrimMax t                 -> A.uncurry (A.max t)     =<< cvtE x
-        PrimMin t                 -> A.uncurry (A.min t)     =<< cvtE x
-        PrimLAnd                  -> A.uncurry A.land        =<< cvtE x
-        PrimLOr                   -> A.uncurry A.lor         =<< cvtE x
-        PrimLNot                  -> A.lnot                  =<< cvtE x
-        PrimFromIntegral ta tb    -> A.irFromIntegral ta tb  =<< cvtE x
-        PrimToFloating ta tb      -> A.toFloating ta tb      =<< cvtE x
+        PrimAdd t                 -> A.uncurry (A.add t)            =<< cvtE x
+        PrimSub t                 -> A.uncurry (A.sub t)            =<< cvtE x
+        PrimMul t                 -> A.uncurry (A.mul t)            =<< cvtE x
+        PrimNeg t                 -> A.negate t                     =<< cvtE x
+        PrimAbs t                 -> A.abs t                        =<< cvtE x
+        PrimSig t                 -> A.signum t                     =<< cvtE x
+        PrimQuot t                -> A.uncurry (A.quot t)           =<< cvtE x
+        PrimRem t                 -> A.uncurry (A.rem t)            =<< cvtE x
+        PrimQuotRem t             -> A.uncurry (A.quotRem t)        =<< cvtE x
+        PrimIDiv t                -> A.uncurry (A.idiv t)           =<< cvtE x
+        PrimMod t                 -> A.uncurry (A.mod t)            =<< cvtE x
+        PrimDivMod t              -> A.uncurry (A.divMod t)         =<< cvtE x
+        PrimBAnd t                -> A.uncurry (A.band t)           =<< cvtE x
+        PrimBOr t                 -> A.uncurry (A.bor t)            =<< cvtE x
+        PrimBXor t                -> A.uncurry (A.xor t)            =<< cvtE x
+        PrimBNot t                -> A.complement t                 =<< cvtE x
+        PrimBShiftL t             -> A.uncurry (A.shiftL t)         =<< cvtE x
+        PrimBShiftR t             -> A.uncurry (A.shiftR t)         =<< cvtE x
+        PrimBRotateL t            -> A.uncurry (A.rotateL t)        =<< cvtE x
+        PrimBRotateR t            -> A.uncurry (A.rotateR t)        =<< cvtE x
+        PrimPopCount t            -> A.popCount t                   =<< cvtE x
+        PrimCountLeadingZeros t   -> A.countLeadingZeros t          =<< cvtE x
+        PrimCountTrailingZeros t  -> A.countTrailingZeros t         =<< cvtE x
+        PrimFDiv t                -> A.uncurry (A.fdiv t)           =<< cvtE x
+        PrimRecip t               -> A.recip t                      =<< cvtE x
+        PrimSin t                 -> A.sin t                        =<< cvtE x
+        PrimCos t                 -> A.cos t                        =<< cvtE x
+        PrimTan t                 -> A.tan t                        =<< cvtE x
+        PrimSinh t                -> A.sinh t                       =<< cvtE x
+        PrimCosh t                -> A.cosh t                       =<< cvtE x
+        PrimTanh t                -> A.tanh t                       =<< cvtE x
+        PrimAsin t                -> A.asin t                       =<< cvtE x
+        PrimAcos t                -> A.acos t                       =<< cvtE x
+        PrimAtan t                -> A.atan t                       =<< cvtE x
+        PrimAsinh t               -> A.asinh t                      =<< cvtE x
+        PrimAcosh t               -> A.acosh t                      =<< cvtE x
+        PrimAtanh t               -> A.atanh t                      =<< cvtE x
+        PrimAtan2 t               -> A.uncurry (A.atan2 t)          =<< cvtE x
+        PrimExpFloating t         -> A.exp t                        =<< cvtE x
+        PrimFPow t                -> A.uncurry (A.fpow t)           =<< cvtE x
+        PrimSqrt t                -> A.sqrt t                       =<< cvtE x
+        PrimLog t                 -> A.log t                        =<< cvtE x
+        PrimLogBase t             -> A.uncurry (A.logBase t)        =<< cvtE x
+        PrimTruncate ta tb        -> A.truncate ta tb               =<< cvtE x
+        PrimRound ta tb           -> A.round ta tb                  =<< cvtE x
+        PrimFloor ta tb           -> A.floor ta tb                  =<< cvtE x
+        PrimCeiling ta tb         -> A.ceiling ta tb                =<< cvtE x
+        PrimMax t                 -> A.uncurry (A.max t)            =<< cvtE x
+        PrimMin t                 -> A.uncurry (A.min t)            =<< cvtE x
+        PrimFromIntegral ta tb    -> A.irFromIntegral ta tb         =<< cvtE x
+        PrimToFloating ta tb      -> A.toFloating ta tb             =<< cvtE x
+        PrimLAnd                  -> A.uncurry land                 =<< cvtE x
+        PrimLOr                   -> A.uncurry lor                  =<< cvtE x
+        PrimIsNaN t               -> primbool $ A.isNaN t           =<< cvtE x
+        PrimIsInfinite t          -> primbool $ A.isInfinite t      =<< cvtE x
+        PrimLt t                  -> primbool $ A.uncurry (A.lt t)  =<< cvtE x
+        PrimGt t                  -> primbool $ A.uncurry (A.gt t)  =<< cvtE x
+        PrimLtEq t                -> primbool $ A.uncurry (A.lte t) =<< cvtE x
+        PrimGtEq t                -> primbool $ A.uncurry (A.gte t) =<< cvtE x
+        PrimEq t                  -> primbool $ A.uncurry (A.eq t)  =<< cvtE x
+        PrimNEq t                 -> primbool $ A.uncurry (A.neq t) =<< cvtE x
+        PrimLNot                  -> primbool $ A.lnot              =<< bool (cvtE x)
           -- no missing patterns, whoo!
 
 

@@ -15,8 +15,6 @@
 module LLVM.AST.Type.Terminator
   where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
-
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
@@ -50,7 +48,7 @@ data Terminator a where
 
   -- <http://llvm.org/docs/LangRef.html#br-instruction>
   --
-  CondBr        :: Operand PrimBool
+  CondBr        :: Operand Bool
                 -> Label
                 -> Label
                 -> Terminator ()
@@ -70,7 +68,7 @@ instance Downcast (Terminator a) LLVM.Terminator where
     Ret           -> LLVM.Ret Nothing md
     RetVal x      -> LLVM.Ret (Just (downcast x)) md
     Br l          -> LLVM.Br (downcast l) md
-    CondBr p t f  -> LLVM.CondBr (boolean p) (downcast t) (downcast f) md
+    CondBr p t f  -> LLVM.CondBr (downcast p) (downcast t) (downcast f) md
     Switch p d a  -> LLVM.Switch (downcast p) (downcast d) (downcast a) md
     where
       md :: LLVM.InstructionMetadata

@@ -18,14 +18,11 @@ module LLVM.AST.Type.Operand (
 
 ) where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
-
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
 
-import qualified LLVM.AST.Type                                      as LLVM
 import qualified LLVM.AST.Operand                                   as LLVM
 
 
@@ -45,8 +42,4 @@ instance Downcast (Operand a) LLVM.Operand where
 instance TypeOf Operand where
   typeOf (LocalReference t _) = t
   typeOf (ConstantOperand c)  = typeOf c
-
-instance Boolean (Operand PrimBool) LLVM.Operand where
-  boolean (LocalReference _ n) = LLVM.LocalReference (LLVM.IntegerType 1) (downcast n)
-  boolean (ConstantOperand c)  = LLVM.ConstantOperand (boolean c)
 

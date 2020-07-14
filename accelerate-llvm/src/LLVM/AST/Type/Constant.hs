@@ -18,8 +18,6 @@
 module LLVM.AST.Type.Constant
   where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
-
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
@@ -49,6 +47,9 @@ data Constant a where
                         -> a
                         -> Constant a
 
+  BooleanConstant       :: Bool
+                        -> Constant Bool
+
   UndefConstant         :: Type a
                         -> Constant a
 
@@ -63,6 +64,7 @@ instance Downcast (Constant a) LLVM.Constant where
   downcast = \case
     UndefConstant t       -> LLVM.Undef (downcast t)
     GlobalReference t n   -> LLVM.GlobalReference (downcast t) (downcast n)
+    BooleanConstant x     -> LLVM.Int 1 (toInteger (fromEnum x))
     ScalarConstant t x    -> scalar t x
     where
       scalar :: ScalarType s -> s -> LLVM.Constant
@@ -115,13 +117,8 @@ instance Downcast (Constant a) LLVM.Constant where
       floatingPrim TypeDouble = Dict
 
 instance TypeOf Constant where
+  typeOf (BooleanConstant _)   = type'
   typeOf (ScalarConstant t _)  = PrimType (ScalarPrimType t)
   typeOf (UndefConstant t)     = t
   typeOf (GlobalReference t _) = t
-
-instance Boolean (Constant PrimBool) LLVM.Constant where
-  boolean = \case
-    UndefConstant _     -> LLVM.Undef (LLVM.IntegerType 1)
-    ScalarConstant _ n  -> LLVM.Int 1 (toInteger n)
-    GlobalReference _ n -> LLVM.GlobalReference (LLVM.IntegerType 1) (downcast n)
 

@@ -20,7 +20,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
-import Data.Array.Accelerate.AST                                    ( PrimMaybe, PrimBool )
+import Data.Array.Accelerate.AST                                    ( PrimMaybe )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
@@ -93,14 +93,14 @@ signum t x =
       | IntegralDict <- integralDict i
       , unsigned i
       -> do z <- neq (NumSingleType t) x (ir t (num t 0))
-            s <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            s <- instr (BoolToInt i (unbool z))
             return s
       --
       -- http://graphics.stanford.edu/~seander/bithacks.html#CopyIntegerSign
       | IntegralDict <- integralDict i
       -> do let wsib = finiteBitSize (undefined::a)
             z <- neq (NumSingleType t) x (ir t (num t 0))
-            l <- instr (Ext boundedType (IntegralBoundedType i) (op scalarType z))
+            l <- instr (BoolToInt i (unbool z))
             r <- shiftRA i x (ir integralType (integral integralType (wsib P.- 1)))
             s <- bor i l r
             return s
@@ -111,8 +111,8 @@ signum t x =
       -> do
             l <- gt (NumSingleType t) x (ir f (floating f 0))
             r <- lt (NumSingleType t) x (ir f (floating f 0))
-            u <- instr (IntToFP integralType f (op scalarType l))
-            v <- instr (IntToFP integralType f (op scalarType r))
+            u <- instr (BoolToFP f (unbool l))
+            v <- instr (BoolToFP f (unbool r))
             s <- sub t u v
             return s
 
@@ -295,7 +295,7 @@ countLeadingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (bool False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -306,7 +306,7 @@ countTrailingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (bool False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -391,10 +391,10 @@ logBase t x@(op t -> base) y | FloatingDict <- floatingDict t = logBase'
 -- Operators from RealFloat
 -- ------------------------
 
-isNaN :: FloatingType a -> Operands a -> CodeGen arch (Operands PrimBool)
+isNaN :: FloatingType a -> Operands a -> CodeGen arch (Operands Bool)
 isNaN f (op f -> x) = instr (IsNaN f x)
 
-isInfinite :: forall arch a. FloatingType a -> Operands a -> CodeGen arch (Operands PrimBool)
+isInfinite :: forall arch a. FloatingType a -> Operands a -> CodeGen arch (Operands Bool)
 isInfinite f x = do
   x' <- abs n x
   eq (NumSingleType n) infinity x'
@@ -431,64 +431,64 @@ ceiling tf ti x = do
 -- Relational and Equality operators
 -- ---------------------------------
 
-cmp :: Ordering -> SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+cmp :: Ordering -> SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 cmp p dict (op dict -> x) (op dict -> y) = instr (Cmp dict p x y)
 
-lt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+lt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 lt = cmp LT
 
-gt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+gt :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 gt = cmp GT
 
-lte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+lte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 lte = cmp LE
 
-gte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+gte :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 gte = cmp GE
 
-eq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+eq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 eq = cmp EQ
 
-neq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands PrimBool)
+neq :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands Bool)
 neq = cmp NE
 
 max :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands a)
 max ty x y
   | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmax" f x y
-  | otherwise                               = do c <- op singleType <$> gte ty x y
+  | otherwise                               = do c <- unbool <$> gte ty x y
                                                  binop (flip Select c) ty x y
 
 min :: SingleType a -> Operands a -> Operands a -> CodeGen arch (Operands a)
 min ty x y
   | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
-  | otherwise                               = do c <- op singleType <$> lte ty x y
+  | otherwise                               = do c <- unbool <$> lte ty x y
                                                  binop (flip Select c) ty x y
 
 
 -- Logical operators
 -- -----------------
--- Note that these implementations are strict in both arguments.
--- The short circuiting (&&) and (||) operators in the language are not evaluated
+--
+-- Note that these implementations are strict in both arguments. The short
+-- circuiting (&&) and (||) operators in the language are not evaluated
 -- using these functions, but defined in terms of if-then-else.
-land :: Operands PrimBool -> Operands PrimBool -> CodeGen arch (Operands PrimBool)
-land (op scalarType -> x) (op scalarType -> y)
-  = instr (LAnd x y)
+--
+land :: Operands Bool -> Operands Bool -> CodeGen arch (Operands Bool)
+land (OP_Bool x) (OP_Bool y) = instr (LAnd x y)
 
-lor :: Operands PrimBool -> Operands PrimBool -> CodeGen arch (Operands PrimBool)
-lor (op scalarType -> x) (op scalarType -> y)
-  = instr (LOr x y)
+lor :: Operands Bool -> Operands Bool -> CodeGen arch (Operands Bool)
+lor (OP_Bool x) (OP_Bool y) = instr (LOr x y)
 
-lnot :: Operands PrimBool -> CodeGen arch (Operands PrimBool)
-lnot (op scalarType -> x) = instr (LNot x)
+lnot :: Operands Bool -> CodeGen arch (Operands Bool)
+lnot (OP_Bool x) = instr (LNot x)
 
 -- Utilities for implementing bounds checks
-land' :: CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool)
+land' :: CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool)
 land' x y = do
   a <- x
   b <- y
   land a b
 
-lor' :: CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool) -> CodeGen arch (Operands PrimBool)
+lor' :: CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool) -> CodeGen arch (Operands Bool)
 lor' x y = do
   a <- x
   b <- y
@@ -552,11 +552,13 @@ pair :: Operands a -> Operands b -> Operands (a, b)
 pair x y = OP_Pair x y
 
 unpair :: Operands (a, b) -> (Operands a, Operands b)
-unpair x = (fst x, snd x)
+unpair (OP_Pair x y) = (x, y)
 
 uncurry :: (Operands a -> Operands b -> c) -> Operands (a, b) -> c
-uncurry f (unpair -> (x,y)) = f x y
+uncurry f (OP_Pair x y) = f x y
 
+unbool :: Operands Bool -> Operand Bool
+unbool (OP_Bool x) = x
 
 binop :: IROP dict => (dict a -> Operand a -> Operand a -> Instruction a) -> dict a -> Operands a -> Operands a -> CodeGen arch (Operands a)
 binop f dict (op dict -> x) (op dict -> y) = instr (f dict x y)
@@ -597,14 +599,13 @@ liftWord32 :: Word32 -> Operands Word32
 liftWord32 = lift $ TupRsingle scalarTypeWord32
 
 {-# INLINE liftBool #-}
-liftBool :: Bool -> Operands PrimBool
-liftBool True  = lift (TupRsingle scalarType) 1
-liftBool False = lift (TupRsingle scalarType) 0
+liftBool :: Bool -> Operands Bool
+liftBool x = OP_Bool (boolean x)
 
 -- | Standard if-then-else expression
 --
 ifThenElse
-    :: (TypeR a, CodeGen arch (Operands PrimBool))
+    :: (TypeR a, CodeGen arch (Operands Bool))
     -> CodeGen arch (Operands a)
     -> CodeGen arch (Operands a)
     -> CodeGen arch (Operands a)
@@ -671,7 +672,7 @@ caseof tR tag xs x = do
 
 -- Execute the body only if the first argument evaluates to True
 --
-when :: CodeGen arch (Operands PrimBool) -> CodeGen arch () -> CodeGen arch ()
+when :: CodeGen arch (Operands Bool) -> CodeGen arch () -> CodeGen arch ()
 when test doit = do
   body <- newBlock "when.body"
   exit <- newBlock "when.exit"
@@ -688,7 +689,7 @@ when test doit = do
 
 -- Execute the body only if the first argument evaluates to False
 --
-unless :: CodeGen arch (Operands PrimBool) -> CodeGen arch () -> CodeGen arch ()
+unless :: CodeGen arch (Operands Bool) -> CodeGen arch () -> CodeGen arch ()
 unless test doit = do
   body <- newBlock "unless.body"
   exit <- newBlock "unless.exit"
@@ -738,8 +739,8 @@ lm t n
       TypeFloat{}   -> n<>"f"
       TypeDouble{}  -> n
 
-isJust :: Operands (PrimMaybe a) -> CodeGen arch (Operands PrimBool)
-isJust (OP_Pair l _) = return l
+isJust :: Operands (PrimMaybe a) -> CodeGen arch (Operands Bool)
+isJust (OP_Pair l _) = instr (IntToBool integralType (op integralType l))
 
 fromJust :: Operands (PrimMaybe a) -> CodeGen arch (Operands a)
 fromJust (OP_Pair _ (OP_Pair OP_Unit r)) = return r

@@ -32,7 +32,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   newBlock, setBlock, beginBlock, createBlocks,
 
   -- instructions
-  instr, instr', do_, return_, retval_, br, cbr, switch, phi, phi',
+  instr, instr', do_, return_, retval_, br, cbr, switch, phi, phi', phi1,
   instr_,
 
   -- metadata
@@ -40,7 +40,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
 ) where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
@@ -301,8 +300,8 @@ br target = terminate $ Br (blockLabel target)
 
 -- | Conditional branch. Return the name of the block that was branched from.
 --
-cbr :: HasCallStack => Operands PrimBool -> Block -> Block -> CodeGen arch Block
-cbr cond t f = terminate $ CondBr (op scalarType cond) (blockLabel t) (blockLabel f)
+cbr :: HasCallStack => Operands Bool -> Block -> Block -> CodeGen arch Block
+cbr (OP_Bool cond) t f = terminate $ CondBr cond (blockLabel t) (blockLabel f)
 
 -- | Switch statement. Return the name of the block that was branched from.
 --
@@ -330,7 +329,7 @@ phi' tp target = go tp
                 <*> go t1 n1 [ (y, b) | (OP_Pair _ y, b) <- inc ]
     go (TupRsingle t) tup inc
       | LocalReference _ v <- op t tup = ir t <$> phi1 target v [ (op t x, b) | (x, b) <- inc ]
-      | otherwise                       = internalError "expected critical variable to be local reference"
+      | otherwise                      = internalError "expected critical variable to be local reference"
 
 
 phi1 :: HasCallStack => Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)

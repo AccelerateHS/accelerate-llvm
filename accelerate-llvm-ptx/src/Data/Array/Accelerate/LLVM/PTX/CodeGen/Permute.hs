@@ -313,37 +313,38 @@ atomically barriers i action = do
       unlock  = integral integralType 0
       unlock' = ir TypeWord32 unlock
   --
-  spin <- newBlock "spinlock.entry"
-  crit <- newBlock "spinlock.critical-start"
-  skip <- newBlock "spinlock.critical-end"
-  exit <- newBlock "spinlock.exit"
+  entry <- newBlock "spinlock.entry"
+  start <- newBlock "spinlock.critical-start"
+  end   <- newBlock "spinlock.critical-end"
+  exit  <- newBlock "spinlock.exit"
 
   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
-  _    <- br spin
+  _    <- br entry
 
   -- Loop until this thread has completed its critical section. If the slot was
   -- unlocked then we just acquired the lock and the thread can perform the
   -- critical section, otherwise skip to the bottom of the critical section.
-  setBlock spin
+  setBlock entry
   old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlock'
-  no   <- cbr ok crit skip
+  no   <- cbr ok start end
 
   -- If we just acquired the lock, execute the critical section
-  setBlock crit
+  setBlock start
   r    <- action
   _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
-  yes  <- br skip
+  yes  <- br end
 
   -- At the base of the critical section, threads participate in a memory fence
   -- to ensure the lock state is committed to memory. Depending on which
   -- incoming edge the thread arrived at this block from determines whether they
   -- have completed their critical section.
-  setBlock skip
-  done <- phi (TupRsingle scalarType) [(liftBool True, yes), (liftBool False, no)]
+  setBlock end
+  res  <- freshName
+  done <- phi1 end res [(boolean True, yes), (boolean False, no)]
 
   __syncthreads
-  _    <- cbr done exit spin
+  _    <- cbr (OP_Bool done) exit entry
 
   setBlock exit
   return r

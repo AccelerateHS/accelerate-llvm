@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs         #-}
+{-# LANGUAGE LambdaCase    #-}
 {-# LANGUAGE RankNTypes    #-}
 {-# LANGUAGE TypeFamilies  #-}
 {-# LANGUAGE TypeOperators #-}
@@ -49,6 +50,7 @@ data instance Operands Word64     = OP_Word64  (Operand Word64)
 data instance Operands Half       = OP_Half    (Operand Half)
 data instance Operands Float      = OP_Float   (Operand Float)
 data instance Operands Double     = OP_Double  (Operand Double)
+data instance Operands Bool       = OP_Bool    (Operand Bool)
 data instance Operands (Vec n a)  = OP_Vec     (Operand (Vec n a))
 data instance Operands (a,b)      = OP_Pair    (Operands a) (Operands b)
 
@@ -69,8 +71,10 @@ instance IROP Type where
 
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
+  op BoolPrimType       = \case OP_Bool x -> x
   op t                  = internalError ("unhandled type: " ++ show t)
   ir (ScalarPrimType t) = ir t
+  ir BoolPrimType       = OP_Bool
   ir t                  = internalError ("unhandled type: " ++ show t)
 
 instance IROP ScalarType where

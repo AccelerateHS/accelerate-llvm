@@ -19,7 +19,6 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Stencil
   where
 
-import Data.Array.Accelerate.AST                                    ( PrimBool )
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Shape
@@ -253,15 +252,28 @@ bounded bndy IRDelayed{..} ix = do
 
     -- Return whether the index is inside the bounds of the given shape
     --
-    inside :: ShapeR sh' -> Operands sh' -> Operands sh' -> CodeGen arch (Operands PrimBool)
+    inside :: ShapeR sh' -> Operands sh' -> Operands sh' -> CodeGen arch (Operands Bool)
     inside ShapeRz OP_Unit OP_Unit
-      = return (OP_Word8 $ bool True)
+      = return (bool True)
     inside (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
-      = if ( TupRsingle scalarType
-            , A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
-              A.gte (singleType :: SingleType Int) iz sz)
-          then return (OP_Word8 $ bool False)
-          else inside shr' sh ih
+      = do
+           ifNext <- newBlock "inside.next"
+           ifExit <- newBlock "inside.exit"
+
+           _  <- beginBlock "inside.entry"
+           p  <- A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
+                 A.gte (singleType :: SingleType Int) iz sz
+           eb <- cbr p ifExit ifNext
+
+           setBlock ifNext
+           nv <- inside shr' sh ih
+           nb <- br ifExit
+
+           setBlock ifExit
+           crit <- freshName
+           r    <- phi1 ifExit crit [(boolean False, eb), (A.unbool nv, nb)]
+
+           return (OP_Bool r)
 
 
 -- Utilities
@@ -269,6 +281,9 @@ bounded bndy IRDelayed{..} ix = do
 
 int :: Int -> Operands Int
 int x = constant (TupRsingle scalarTypeInt) x
+
+bool :: Bool -> Operands Bool
+bool = OP_Bool . boolean
 
 unindex :: Operands (sh, Int) -> (Operands sh, Operands Int)
 unindex (OP_Pair sh i) = (sh, i)
