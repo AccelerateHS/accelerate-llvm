@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Base
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -16,16 +16,16 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Base
   where
 
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
-
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name

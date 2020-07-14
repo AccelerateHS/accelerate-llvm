@@ -5,12 +5,11 @@
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE UnboxedTuples       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Prim
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -32,13 +31,13 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime                           hiding ( withLifetime )
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Analysis.Type
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -49,11 +48,9 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 import Data.Array.Accelerate.LLVM.PTX.Array.Remote              as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
--- CUDA
 import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Stream                     as CUDA
 
--- standard library
 import Control.Monad
 import Control.Monad.Reader
 import Data.IORef
@@ -68,13 +65,14 @@ import Prelude
 --
 {-# INLINEABLE mallocArray #-}
 mallocArray
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
     -> ArrayData e
     -> LLVM PTX ()
-mallocArray !tp !n !ad = do
-  message ("mallocArray: " ++ showBytes (n * sizeOfSingleType tp))
-  void $ Remote.malloc tp ad n False
+mallocArray !t !n !ad = do
+  message ("mallocArray: " ++ showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  void $ Remote.malloc t ad n False
 
 
 -- | A combination of 'mallocArray' and 'pokeArray', that allocates remotes
@@ -84,15 +82,16 @@ mallocArray !tp !n !ad = do
 --
 {-# INLINEABLE useArrayAsync #-}
 useArrayAsync
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-useArrayAsync !tp !n !ad = do
-  message ("useArrayAsync: " ++ showBytes (n * sizeOfSingleType tp))
-  alloc <- liftPar $ Remote.malloc tp ad n True
+useArrayAsync !t !n !ad = do
+  message ("useArrayAsync: " ++ showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  alloc <- liftPar $ Remote.malloc t ad n True
   if alloc
-    then pokeArrayAsync tp n ad
+    then pokeArrayAsync t n ad
     else newFull ad
 
 
@@ -100,25 +99,29 @@ useArrayAsync !tp !n !ad = do
 --
 {-# INLINEABLE pokeArrayAsync #-}
 pokeArrayAsync
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-pokeArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
-  let !src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-      !bytes = n * sizeOfSingleType tp
-  --
-  stream <- asks ptxStream
-  result <- liftPar $
-    withLifetime stream $ \st  ->
-      withDevicePtr tp ad $ \dst ->
-        nonblocking stream $ do
-          transfer "pokeArray" bytes (Just st) $ do
-            CUDA.pokeArrayAsync n src dst (Just st)
-            Debug.didCopyBytesToRemote (fromIntegral bytes)
-          return ad
-  --
-  return result
+pokeArrayAsync !t !n !ad
+  | SingleArrayDict <- singleArrayDict t
+  , SingleDict      <- singleDict t
+  = do
+    let !src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+        !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+    --
+    stream <- asks ptxStream
+    result <- liftPar $
+      withLifetime stream $ \st  ->
+        withDevicePtr t ad $ \dst ->
+          nonblocking stream $ do
+            transfer "pokeArray" bytes (Just st) $ do
+              CUDA.pokeArrayAsync n src dst (Just st)
+              Debug.didCopyBytesToRemote (fromIntegral bytes)
+            return ad
+    --
+    return result
 
 
 -- | Read an element from an array at the given row-major index.
@@ -128,77 +131,89 @@ pokeArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
 --
 {-# INLINEABLE indexArrayAsync #-}
 indexArrayAsync
-    :: Int              -- actual number of values per element (i.e. this is >1 for SIMD types)
+    :: HasCallStack
+    => Int              -- actual number of values per element (i.e. this is >1 for SIMD types)
     -> SingleType e
     -> ArrayData e
     -> Int              -- element index
     -> Par PTX (Future (ArrayData e))
-indexArrayAsync !n !tp !ad_src !i | (ScalarDict, _, _) <- singleDict tp = do
-  ad_dst <- liftIO $ newArrayData (TupRsingle $ SingleScalarType tp) n
-  let !bytes = n * sizeOfSingleType tp
-      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
-  --
-  stream <- asks ptxStream
-  result <- liftPar $
-    withLifetime stream  $ \st  ->
-    withDevicePtr tp ad_src $ \src ->
-      nonblocking stream $ do
-        transfer "indexArray" bytes (Just st) $ do
-          CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
-          Debug.didCopyBytesFromRemote (fromIntegral bytes)
-        return ad_dst
-  --
-  return result
+indexArrayAsync !n !t !ad_src !i
+  | SingleArrayDict <- singleArrayDict t
+  , SingleDict      <- singleDict t
+  = do
+    ad_dst <- liftIO $ newArrayData (TupRsingle $ SingleScalarType t) n
+    let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+        !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
+    --
+    stream <- asks ptxStream
+    result <- liftPar $
+      withLifetime stream  $ \st  ->
+      withDevicePtr t ad_src $ \src ->
+        nonblocking stream $ do
+          transfer "indexArray" bytes (Just st) $ do
+            CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
+            Debug.didCopyBytesFromRemote (fromIntegral bytes)
+          return ad_dst
+    --
+    return result
 
 
 -- | Copy data from the device into the associated host-side Accelerate array
 --
 {-# INLINEABLE peekArrayAsync #-}
 peekArrayAsync
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-peekArrayAsync !tp !n !ad | (ScalarDict, _, _) <- singleDict tp = do
-  let !bytes = n * sizeOfSingleType tp
-      !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-  --
-  stream <- asks ptxStream
-  result <- liftPar $
-    withLifetime stream $ \st  ->
-      withDevicePtr tp ad  $ \src ->
-        nonblocking stream $ do
-          transfer "peekArray" bytes (Just st) $ do
-            CUDA.peekArrayAsync n src dst (Just st)
-            Debug.didCopyBytesFromRemote (fromIntegral bytes)
-          return ad
-  --
-  return result
+peekArrayAsync !t !n !ad
+  | SingleArrayDict <- singleArrayDict t
+  , SingleDict      <- singleDict t
+  = do
+    let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+        !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+    --
+    stream <- asks ptxStream
+    result <- liftPar $
+      withLifetime stream $ \st  ->
+        withDevicePtr t ad  $ \src ->
+          nonblocking stream $ do
+            transfer "peekArray" bytes (Just st) $ do
+              CUDA.peekArrayAsync n src dst (Just st)
+              Debug.didCopyBytesFromRemote (fromIntegral bytes)
+            return ad
+    --
+    return result
 
 
 -- | Copy data between arrays in the same context
 --
 {-# INLINEABLE copyArrayAsync #-}
 copyArrayAsync
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
     -> ArrayData e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-copyArrayAsync !tp !n !ad_src !ad_dst | (ScalarDict, _, _) <- singleDict tp = do
-  let !bytes = n * sizeOfSingleType tp
-  --
-  stream <- asks ptxStream
-  result <- liftPar $
-    withLifetime stream      $ \st ->
-      withDevicePtr tp ad_src   $ \src ->
-        withDevicePtr tp ad_dst $ \dst -> do
-          (e,r) <- nonblocking stream $ do
-                    transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
-                    return ad_dst
-          return (e, (e,r))
-  --
-  return result
+copyArrayAsync !t !n !ad_src !ad_dst
+  | SingleArrayDict <- singleArrayDict t
+  , SingleDict      <- singleDict t
+  = do
+    let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+    --
+    stream <- asks ptxStream
+    result <- liftPar $
+      withLifetime stream        $ \st ->
+        withDevicePtr t ad_src   $ \src ->
+          withDevicePtr t ad_dst $ \dst -> do
+            (e,r) <- nonblocking stream $ do
+                      transfer "copyArray" bytes (Just st) $ CUDA.copyArrayAsync n src dst (Just st)
+                      return ad_dst
+            return (e, (e,r))
+    --
+    return result
 
 
 {--
@@ -216,8 +231,8 @@ copyArrayPeerAsync
     -> LLVM PTX ()
 copyArrayPeerAsync = error "copyArrayPeerAsync"
 {--
-copyArrayPeerAsync !tp !ctx2 !mt2 !st !n !ad = do
-  let !bytes    = n * sizeOfSingleType tp
+copyArrayPeerAsync !t !ctx2 !mt2 !st !n !ad = do
+  let !bytes    = n * sizeOfSingleType t
   src   <- devicePtr mt1 ad
   dst   <- mallocArray ctx2 mt2 n ad
   transfer "copyArrayPeer" bytes (Just st) $
@@ -239,9 +254,9 @@ copyArrayPeerAsync
     -> LLVM PTX ()
 copyArrayPeerAsync = error "copyArrayPeerAsyncR"
 {--
-copyArrayPeerAsyncR !tp !ctx2 !mt2 !st !from !n !ad = do
-  let !bytes    = n    * sizeOfSingleType tp
-      !offset   = from * sizeOfSingleType tp
+copyArrayPeerAsyncR !t !ctx2 !mt2 !st !from !n !ad = do
+  let !bytes    = n    * sizeOfSingleType t
+      !offset   = from * sizeOfSingleType t
   src <- devicePtr mt1 ad       :: IO (CUDA.DevicePtr a)
   dst <- devicePtr mt2 ad       :: IO (CUDA.DevicePtr a)
   transfer "copyArrayPeer" bytes (Just st) $
@@ -255,23 +270,27 @@ copyArrayPeerAsyncR !tp !ctx2 !mt2 !st !from !n !ad = do
 --
 {-# INLINEABLE memsetArrayAsync #-}
 memsetArrayAsync
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> Int
-    -> ScalarDataRepr e
+    -> ScalarArrayDataR e
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
-memsetArrayAsync !tp !n !v !ad | (ScalarDict, _, _) <- singleDict tp = do
-  let !bytes = n * sizeOfSingleType tp
-  --
-  stream <- asks ptxStream
-  result <- liftPar $
-    withLifetime stream $ \st  ->
-      withDevicePtr tp ad  $ \ptr ->
-        nonblocking stream $ do
-          transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
-          return ad
-  --
-  return result
+memsetArrayAsync !t !n !v !ad
+  | SingleArrayDict <- singleArrayDict t
+  , SingleDict      <- singleDict t
+  = do
+    let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+    --
+    stream <- asks ptxStream
+    result <- liftPar $
+      withLifetime stream $ \st  ->
+        withDevicePtr t ad  $ \ptr ->
+          nonblocking stream $ do
+            transfer "memset" bytes (Just st) $ CUDA.memsetAsync ptr n v (Just st)
+            return ad
+    --
+    return result
 
 
 -- Auxiliary
@@ -282,14 +301,15 @@ memsetArrayAsync !tp !n !v !ad | (ScalarDict, _, _) <- singleDict tp = do
 --
 {-# INLINEABLE withDevicePtr #-}
 withDevicePtr
-    :: SingleType e
+    :: HasCallStack
+    => SingleType e
     -> ArrayData e
-    -> (CUDA.DevicePtr (ScalarDataRepr e) -> LLVM PTX (Maybe Event, r))
+    -> (CUDA.DevicePtr (ScalarArrayDataR e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX r
-withDevicePtr !tp !ad !f = do
-  mr <- withRemote tp ad f
+withDevicePtr !t !ad !f = do
+  mr <- withRemote t ad f
   case mr of
-    Nothing -> $internalError "withDevicePtr" "array does not exist on the device"
+    Nothing -> internalError "array does not exist on the device"
     Just r  -> return r
 
 {--

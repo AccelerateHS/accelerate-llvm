@@ -3,12 +3,11 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -22,10 +21,12 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -77,16 +78,17 @@ import Prelude
 -- a queue or some such.
 --
 mkPermute
-    :: Gamma            aenv
+    :: HasCallStack
+    => Gamma            aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRPermuteFun PTX aenv (e -> e -> e)
-    -> IRFun1       PTX aenv (sh -> sh')
+    -> IRFun1       PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed   PTX aenv (Array sh e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute aenv repr shr' IRPermuteFun{..} project arr =
   let
-      bytes   = sizeOf $ arrayRtype repr
+      bytes   = bytesElt $ arrayRtype repr
       sizeOk  = bytes == 4 || bytes == 8
   in
   case atomicRMW of
@@ -116,12 +118,13 @@ mkPermute aenv repr shr' IRPermuteFun{..} project arr =
 -- lockfree update operations in terms of compare-and-swap.
 --
 mkPermute_rmw
-    :: Gamma aenv
+    :: HasCallStack
+    => Gamma aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> RMWOperation
     -> IRFun1     PTX aenv (e -> e)
-    -> IRFun1     PTX aenv (sh -> sh')
+    -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed PTX aenv (Array sh e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
@@ -134,7 +137,7 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
       paramEnv            = envParam aenv
       start               = liftInt 0
       --
-      bytes               = sizeOf tp
+      bytes               = bytesElt tp
       compute             = computeCapability dev
       compute32           = Compute 3 2
       compute60           = Compute 6 0
@@ -149,8 +152,8 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
       ix  <- indexOfInt shr shIn i
       ix' <- app1 project ix
 
-      unless (isIgnore shr' ix') $ do
-        j <- intOfIndex shr' (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        j <- intOfIndex shr' (irArrayShape arrOut) =<< fromJust ix'
         x <- app1 (delayedLinearIndex arrIn) i
         r <- app1 update x
 
@@ -174,7 +177,7 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
                               RMW.Xor -> atomicCAS_rmw s' (A.xor  t (ir t val)) ptr
                               RMW.Min -> atomicCAS_cmp s' A.lt ptr val
                               RMW.Max -> atomicCAS_cmp s' A.gt ptr val
-                              _       -> $internalError "mkPermute_rmw.integral" "unexpected transition"
+                              _       -> internalError "unexpected transition"
                         where
                           s'      = NumSingleType (IntegralNumType t)
                           primOk  = compute >= compute32
@@ -193,7 +196,7 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
                           RMW.Add
                             | primAdd   -> atomicAdd_f t ptr val
                             | otherwise -> atomicCAS_rmw s' (A.add n (ir t val)) ptr
-                          _             -> $internalError "mkPermute_rmw.floating" "unexpected transition"
+                          _             -> internalError "unexpected transition"
                         where
                           n       = FloatingNumType t
                           s'      = NumSingleType n
@@ -203,20 +206,11 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
 #if MIN_VERSION_llvm_hs_pure(6,0,0)
                                  || compute >= compute60
 #endif
-
-                      rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
-                      rmw_nonnum TypeChar{} ptr val = do
-                        ptr32 <- instr' $ PtrCast (primType   :: PrimType (Ptr Word32)) ptr
-                        val32 <- instr' $ BitCast (scalarType :: ScalarType Word32)     val
-                        void   $ instr' $ AtomicRMW (numType :: NumType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
-                      rmw_nonnum _ _ _ = -- C character types are 8-bit, and thus not supported
-                        $internalError "mkPermute_rmw.nonnum" "unexpected transition"
                   case s of
                     NumSingleType (IntegralNumType t) -> rmw_integral t addr (op t r)
                     NumSingleType (FloatingNumType t) -> rmw_floating t addr (op t r)
-                    NonNumSingleType t                -> rmw_nonnum   t addr (op t r)
           --
-          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+          _ -> internalError "unexpected transition"
 
     return_
 
@@ -229,7 +223,7 @@ mkPermute_mutex
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRFun2     PTX aenv (e -> e -> e)
-    -> IRFun1     PTX aenv (sh -> sh')
+    -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed PTX aenv (Array sh e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
@@ -252,8 +246,8 @@ mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
-      unless (isIgnore shr' ix') $ do
-        j <- intOfIndex shr' (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        j <- intOfIndex shr' (irArrayShape arrOut) =<< fromJust ix'
         x <- app1 (delayedLinearIndex arrIn) i
 
         atomically arrLock j $ do
@@ -319,37 +313,38 @@ atomically barriers i action = do
       unlock  = integral integralType 0
       unlock' = ir TypeWord32 unlock
   --
-  spin <- newBlock "spinlock.entry"
-  crit <- newBlock "spinlock.critical-start"
-  skip <- newBlock "spinlock.critical-end"
-  exit <- newBlock "spinlock.exit"
+  entry <- newBlock "spinlock.entry"
+  start <- newBlock "spinlock.critical-start"
+  end   <- newBlock "spinlock.critical-end"
+  exit  <- newBlock "spinlock.exit"
 
   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
-  _    <- br spin
+  _    <- br entry
 
   -- Loop until this thread has completed its critical section. If the slot was
   -- unlocked then we just acquired the lock and the thread can perform the
   -- critical section, otherwise skip to the bottom of the critical section.
-  setBlock spin
+  setBlock entry
   old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlock'
-  no   <- cbr ok crit skip
+  no   <- cbr ok start end
 
   -- If we just acquired the lock, execute the critical section
-  setBlock crit
+  setBlock start
   r    <- action
   _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
-  yes  <- br skip
+  yes  <- br end
 
   -- At the base of the critical section, threads participate in a memory fence
   -- to ensure the lock state is committed to memory. Depending on which
   -- incoming edge the thread arrived at this block from determines whether they
   -- have completed their critical section.
-  setBlock skip
-  done <- phi (TupRsingle scalarTypeBool) [(liftBool True, yes), (liftBool False, no)]
+  setBlock end
+  res  <- freshName
+  done <- phi1 end res [(boolean True, yes), (boolean False, no)]
 
   __syncthreads
-  _    <- cbr done exit spin
+  _    <- cbr (OP_Bool done) exit entry
 
   setBlock exit
   return r

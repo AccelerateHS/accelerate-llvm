@@ -1,10 +1,8 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -20,13 +18,17 @@ import Data.String
 import Text.Printf
 import qualified Data.IntMap                                    as IM
 
-import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt, ArrayVar, Var(..) )
+import Data.Array.Accelerate.AST                                ( ArrayVar )
+import Data.Array.Accelerate.AST.Idx                            ( Idx(..), idxToInt )
+import Data.Array.Accelerate.AST.Var                            ( Var(..) )
 import Data.Array.Accelerate.Error                              ( internalError )
-import Data.Array.Accelerate.Array.Representation               ( Array, ArrayR(..) )
+import Data.Array.Accelerate.Representation.Array               ( Array, ArrayR(..) )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
 import LLVM.AST.Type.Name
+
+import GHC.Stack
 
 
 -- Scalar environment
@@ -45,9 +47,6 @@ data Val env where
 prj :: Idx env t -> Val env -> Operands t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
-#if __GLASGOW_HASKELL__ < 800
-prj _            _            = $internalError "prj" "inconsistent valuation"
-#endif
 
 
 -- Array environment
@@ -70,10 +69,10 @@ data Idx' aenv where
 -- This returns a pair of operands to access the shape and array data
 -- respectively.
 --
-aprj :: Idx aenv t -> Gamma aenv -> Name t
+aprj :: HasCallStack => Idx aenv t -> Gamma aenv -> Name t
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
-    Nothing             -> $internalError "aprj" "free variable not registered"
+    Nothing             -> internalError "free variable not registered"
     Just (Label n,_)    -> Name n
 
 

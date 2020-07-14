@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Sugar
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -27,7 +27,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Sugar (
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Instruction.Volatile
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module

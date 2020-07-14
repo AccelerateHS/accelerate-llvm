@@ -7,7 +7,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Base
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -44,13 +44,13 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Representation
-
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.Representation.Array                   ( Array, ArrayR(..) )
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import qualified LLVM.AST.Global                                    as LLVM
@@ -65,10 +65,10 @@ import Prelude                                                      as P
 -- References
 -- ----------
 
-local :: TupleType a -> Name a -> Operands a
+local :: TypeR a -> Name a -> Operands a
 local  tp n = travTypeToOperands tp (\t i -> LocalReference (PrimType (ScalarPrimType t)) (rename n i))
 
-global :: TupleType a -> Name a -> Operands a
+global :: TypeR a -> Name a -> Operands a
 global tp n = travTypeToOperands tp (\t i -> ConstantOperand (GlobalReference (PrimType (ScalarPrimType t)) (rename n i)))
 
 
@@ -143,13 +143,13 @@ delayedArray name = \case
 {-# INLINEABLE travTypeToList #-}
 travTypeToList
     :: forall tp a.
-       TupleType tp
+       TypeR tp
     -> (forall s. ScalarType s -> Int -> a)
     -> [a]
 travTypeToList tp f = snd $ go tp 0
   where
     -- DANGER: [1] must traverse in the same order as [2]
-    go :: TupleType s -> Int -> (Int, [a])
+    go :: TypeR s -> Int -> (Int, [a])
     go TupRunit         i = (i,   [])
     go (TupRsingle t')  i = (i+1, [f t' i])
     go (TupRpair t2 t1) i = let (i1, r1) = go t1 i
@@ -159,13 +159,13 @@ travTypeToList tp f = snd $ go tp 0
 
 {-# INLINEABLE travTypeToOperands #-}
 travTypeToOperands
-    :: TupleType t
+    :: TypeR t
     -> (forall s. ScalarType s -> Int -> Operand s)
     -> Operands t
 travTypeToOperands tp f = snd $ go tp 0
   where
     -- DANGER: [2] must traverse in the same order as [1]
-    go :: TupleType s -> Int -> (Int, Operands s)
+    go :: TypeR s -> Int -> (Int, Operands s)
     go TupRunit         i = (i,   OP_Unit)
     go (TupRsingle t')  i = (i+1, ir t' $ f t' i)
     go (TupRpair t2 t1) i = let (i1, r1) = go t1 i
@@ -207,7 +207,7 @@ call f attrs = do
   instr (Call f attrs')
 
 
-parameter :: TupleType t -> Name t -> [LLVM.Parameter]
+parameter :: TypeR t -> Name t -> [LLVM.Parameter]
 parameter tp n = travTypeToList tp (\s i -> scalarParameter s (rename n i))
 
 scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter

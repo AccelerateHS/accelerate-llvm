@@ -2,14 +2,13 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE ViewPatterns        #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -24,11 +23,12 @@ module Data.Array.Accelerate.LLVM.CodeGen (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.AST                                    hiding ( Val(..), prj )
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.Target
 
@@ -46,7 +46,6 @@ import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 
--- standard library
 import Prelude                                                      hiding ( map, scanl, scanl1, scanr, scanr1 )
 
 
@@ -54,7 +53,7 @@ import Prelude                                                      hiding ( map
 --
 {-# INLINEABLE llvmOfPreOpenAcc #-}
 llvmOfPreOpenAcc
-    :: forall arch aenv arrs. (Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
+    :: forall arch aenv arrs. (HasCallStack, Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
     => UID
     -> PreOpenAcc DelayedOpenAcc aenv arrs
     -> Gamma aenv
@@ -62,19 +61,19 @@ llvmOfPreOpenAcc
 llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
   case pacc of
     -- Producers
-    Map tp f (arrayRepr -> repr)               -> map uid aenv repr tp (travF1 f)
-    Generate repr _ f                          -> generate uid aenv repr (travF1 f)
-    Transform repr2 _ p f (arrayRepr -> repr1) -> transform uid aenv repr1 repr2 (travF1 p) (travF1 f)
-    Backpermute shr _ p (arrayRepr -> repr)    -> backpermute uid aenv repr shr (travF1 p)
+    Map tp f (arrayR -> repr)               -> map uid aenv repr tp (travF1 f)
+    Generate repr _ f                       -> generate uid aenv repr (travF1 f)
+    Transform repr2 _ p f (arrayR -> repr1) -> transform uid aenv repr1 repr2 (travF1 p) (travF1 f)
+    Backpermute shr _ p (arrayR -> repr)    -> backpermute uid aenv repr shr (travF1 p)
 
     -- Consumers
-    Fold f z a                                 -> fold uid aenv (reduceRank $ arrayRepr a) (travF2 f) (travE <$> z) (travD a)
-    FoldSeg i f z a s                          -> foldSeg uid aenv (arrayRepr a) i (travF2 f) (travE <$> z) (travD a) (travD s)
-    Scan d f z a                               -> scan uid aenv (arrayRepr a) d (travF2 f) (travE <$> z) (travD a)
-    Scan' d f z a                              -> scan' uid aenv (arrayRepr a) d (travF2 f) (travE z) (travD a)
-    Permute f (arrayRepr -> ArrayR shr _) p a  -> permute uid aenv (arrayRepr a) shr (travPF f) (travF1 p) (travD a)
-    Stencil s tp f b a                         -> stencil1 uid aenv s tp (travF1 f) (travB (stencilElt s) b) (travD a)
-    Stencil2 s1 s2 tp f b1 a1 b2 a2            -> stencil2 uid aenv s1 s2 tp (travF2 f) (travB (stencilElt s1) b1) (travD a1) (travB (stencilElt s2) b2) (travD a2)
+    Fold f z a                              -> fold uid aenv (reduceRank $ arrayR a) (travF2 f) (travE <$> z) (travD a)
+    FoldSeg i f z a s                       -> foldSeg uid aenv (arrayR a) i (travF2 f) (travE <$> z) (travD a) (travD s)
+    Scan d f z a                            -> scan uid aenv (arrayR a) d (travF2 f) (travE <$> z) (travD a)
+    Scan' d f z a                           -> scan' uid aenv (arrayR a) d (travF2 f) (travE z) (travD a)
+    Permute f (arrayR -> ArrayR shr _) p a  -> permute uid aenv (arrayR a) shr (travPF f) (travF1 p) (travD a)
+    Stencil s tp f b a                      -> stencil1 uid aenv s tp (travF1 f) (travB (stencilEltR s) b) (travD a)
+    Stencil2 s1 s2 tp f b1 a1 b2 a2         -> stencil2 uid aenv s1 s2 tp (travF2 f) (travB (stencilEltR s1) b1) (travD a1) (travB (stencilEltR s2) b2) (travD a2)
 
     -- Non-computation forms: sadness
     Alet{}      -> unexpectedError
@@ -97,7 +96,7 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     -- code generation for delayed arrays
     travD :: DelayedOpenAcc aenv (Array sh e) -> MIRDelayed arch aenv (Array sh e)
     travD Delayed{..} = IRDelayedJust $ IRDelayed reprD (travE extentD) (travF1 indexD) (travF1 linearIndexD)
-    travD (Manifest acc) = IRDelayedNothing $ arrayRepr acc
+    travD (Manifest acc) = IRDelayedNothing $ arrayR acc
 
     -- scalar code generation
     travF1 :: Fun aenv (a -> b) -> IRFun1 arch aenv (a -> b)
@@ -112,7 +111,7 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     travE :: Exp aenv t -> IRExp arch aenv t
     travE e = llvmOfOpenExp e Empty aenv
 
-    travB :: TupleType e
+    travB :: TypeR e
           -> Boundary aenv (Array sh e)
           -> IRBoundary arch aenv (Array sh e)
     travB _  Clamp        = IRClamp
@@ -123,6 +122,6 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
 
     -- sadness
     fusionError, unexpectedError :: error
-    fusionError      = $internalError "llvmOfPreOpenAcc" $ "unexpected fusible material: " ++ showPreAccOp pacc
-    unexpectedError  = $internalError "llvmOfPreOpenAcc" $ "unexpected array primitive: "  ++ showPreAccOp pacc
+    fusionError      = internalError $ "unexpected fusible material: " ++ showPreAccOp pacc
+    unexpectedError  = internalError $ "unexpected array primitive: "  ++ showPreAccOp pacc
 

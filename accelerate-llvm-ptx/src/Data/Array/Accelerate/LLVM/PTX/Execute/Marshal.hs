@@ -1,5 +1,4 @@
 {-# LANGUAGE BangPatterns          #-}
-{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
@@ -10,13 +9,9 @@
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-#if __GLASGOW_HASKELL__ <= 708
-{-# LANGUAGE OverlappingInstances  #-}
-{-# OPTIONS_GHC -fno-warn-unrecognised-pragmas #-}
-#endif
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -24,11 +19,14 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal ( module M ) where
+module Data.Array.Accelerate.LLVM.PTX.Execute.Marshal (
 
--- accelerate
+  module Data.Array.Accelerate.LLVM.Execute.Marshal
+
+) where
+
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Execute.Marshal               as M
+import Data.Array.Accelerate.LLVM.Execute.Marshal
 
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
@@ -37,10 +35,8 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim      as Prim
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Array.Data
 
--- cuda
 import qualified Foreign.CUDA.Driver                            as CUDA
 
--- libraries
 import qualified Data.DList                                     as DL
 
 
@@ -48,9 +44,9 @@ instance Marshal PTX where
   type ArgR PTX = CUDA.FunParam
 
   marshalInt = CUDA.VArg
-  marshalScalarData' tp
-    | (ScalarDict, _, _) <- singleDict tp
-    = liftPar . fmap (DL.singleton . CUDA.VArg) . unsafeGetDevicePtr tp
+  marshalScalarData' t
+    | SingleArrayDict <- singleArrayDict t
+    = liftPar . fmap (DL.singleton . CUDA.VArg) . unsafeGetDevicePtr t
 
 -- TODO FIXME !!!
 --
@@ -61,7 +57,7 @@ instance Marshal PTX where
 unsafeGetDevicePtr
     :: SingleType e
     -> ArrayData e
-    -> LLVM PTX (CUDA.DevicePtr (ScalarDataRepr e))
-unsafeGetDevicePtr !tp !ad =
-  Prim.withDevicePtr tp ad (\p -> return (Nothing, p))
+    -> LLVM PTX (CUDA.DevicePtr (ScalarArrayDataR e))
+unsafeGetDevicePtr !t !ad =
+  Prim.withDevicePtr t ad (\p -> return (Nothing, p))
 

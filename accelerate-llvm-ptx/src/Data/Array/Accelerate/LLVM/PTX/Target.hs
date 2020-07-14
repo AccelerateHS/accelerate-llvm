@@ -1,12 +1,11 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -120,18 +119,19 @@ ptxDataLayout = DataLayout
 
 -- | String that describes the target host.
 --
-ptxTargetTriple :: ShortByteString
+ptxTargetTriple :: HasCallStack => ShortByteString
 ptxTargetTriple =
   case bitSize (undefined::Int) of
     32  -> "nvptx-nvidia-cuda"
     64  -> "nvptx64-nvidia-cuda"
-    _   -> $internalError "ptxTargetTriple" "I don't know what architecture I am"
+    _   -> internalError "I don't know what architecture I am"
 
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
 --
 withPTXTargetMachine
-    :: DeviceProperties
+    :: HasCallStack
+    => DeviceProperties
     -> (TargetMachine -> IO a)
     -> IO a
 withPTXTargetMachine dev go =

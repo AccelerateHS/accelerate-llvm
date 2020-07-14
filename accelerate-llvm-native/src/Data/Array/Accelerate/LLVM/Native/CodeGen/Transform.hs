@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -15,7 +15,7 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Transform
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation               ( ArrayR(..), Array, arrayRshape )
+import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -26,7 +26,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 

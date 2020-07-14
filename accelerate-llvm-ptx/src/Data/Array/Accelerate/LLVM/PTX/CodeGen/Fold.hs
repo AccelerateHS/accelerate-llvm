@@ -9,7 +9,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -20,11 +20,11 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold
   where
 
--- accelerate
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Representation                   hiding ( size )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape                   hiding ( size )
+import Data.Array.Accelerate.Representation.Type
 
--- accelerate-llvm-*
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
@@ -43,7 +43,6 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.Representation
 
--- cuda
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Monad                                                ( (>=>) )
@@ -98,7 +97,7 @@ mkFold aenv repr f z acc = case z of
 mkFoldAll
     :: forall aenv e.
        Gamma          aenv                      -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
@@ -118,7 +117,7 @@ mkFoldAllS
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
@@ -135,7 +134,7 @@ mkFoldAllS dev aenv tp combine mseed marr =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   in
   makeOpenAccWith config "foldAllS" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -176,7 +175,7 @@ mkFoldAllM1
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
@@ -193,7 +192,7 @@ mkFoldAllM1 dev aenv tp combine marr =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   in
   makeOpenAccWith config "foldAllM1" (paramTmp ++ paramIn ++ paramEnv) $ do
 
@@ -232,7 +231,7 @@ mkFoldAllM2
     :: forall aenv e.
        DeviceProperties
     -> Gamma       aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)
     -> MIRExp  PTX aenv e
     -> CodeGen PTX      (IROpenAcc PTX aenv (Scalar e))
@@ -249,7 +248,7 @@ mkFoldAllM2 dev aenv tp combine mseed =
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   in
   makeOpenAccWith config "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
 
@@ -317,7 +316,7 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "fold" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -381,7 +380,7 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
                      x <- if (tp, A.lt singleType i to)
                             then app1 (delayedLinearIndex arrIn) i
                             else let
-                                     go :: TupleType a -> Operands a
+                                     go :: TypeR a -> Operands a
                                      go TupRunit       = OP_Unit
                                      go (TupRpair a b) = OP_Pair (go a) (go b)
                                      go (TupRsingle t) = ir t (undef t)
@@ -431,7 +430,7 @@ mkFoldFill aenv repr seed =
 reduceBlockSMem
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target device
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> Maybe (Operands Int32)                         -- ^ number of valid elements (may be less than block size)
     -> Operands e                                     -- ^ calling thread's input element
@@ -442,7 +441,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
     int32 = liftInt32 . P.fromIntegral
 
     -- Temporary storage required for each warp
-    bytes           = sizeOf tp
+    bytes           = bytesElt tp
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
 
     -- Step 1: Reduction in every warp
@@ -519,7 +518,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
 reduceWarpSMem
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target device
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
     -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
@@ -537,7 +536,7 @@ reduceWarpSMem dev tp combine smem size = reduce 0
     -- optimised away.
     valid i =
       case size of
-        Nothing -> return (lift (TupRsingle scalarTypeBool) True)
+        Nothing -> return (liftBool True)
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
@@ -581,7 +580,7 @@ reduceWarpSMem dev tp combine smem size = reduce 0
 
 reduceFromTo
     :: DeviceProperties
-    -> TupleType a
+    -> TypeR a
     -> Operands Int                                   -- ^ starting index
     -> Operands Int                                   -- ^ final index (exclusive)
     -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function

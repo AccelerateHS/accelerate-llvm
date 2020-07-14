@@ -3,7 +3,6 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -11,7 +10,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -29,25 +28,32 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.AST.Environment
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Tag
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Trafo.Delayed
+import Data.Array.Accelerate.Trafo.Substitution
 import Data.Array.Accelerate.Type
-import qualified Data.Array.Accelerate.Array.Sugar                  as A
+import qualified Data.Array.Accelerate.Sugar.Foreign                as A
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
--- standard library
 import Data.IntMap                                                  ( IntMap )
-import qualified Data.IntMap                                        as IntMap
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
+import qualified Data.IntMap                                        as IntMap
 
 
 class Foreign arch => Compile arch where
@@ -90,14 +96,14 @@ type CompiledAfun arch a    = CompiledOpenAfun arch () a
 --
 {-# INLINEABLE compileAcc #-}
 compileAcc
-    :: Compile arch
+    :: (HasCallStack, Compile arch)
     => DelayedAcc a
     -> LLVM arch (CompiledAcc arch a)
 compileAcc = compileOpenAcc
 
 {-# INLINEABLE compileAfun #-}
 compileAfun
-    :: Compile arch
+    :: (HasCallStack, Compile arch)
     => DelayedAfun f
     -> LLVM arch (CompiledAfun arch f)
 compileAfun = compileOpenAfun
@@ -105,7 +111,7 @@ compileAfun = compileOpenAfun
 
 {-# INLINEABLE compileOpenAfun #-}
 compileOpenAfun
-    :: Compile arch
+    :: (HasCallStack, Compile arch)
     => DelayedOpenAfun aenv f
     -> LLVM arch (CompiledOpenAfun arch aenv f)
 compileOpenAfun (Alam lhs l) = Alam lhs <$> compileOpenAfun l
@@ -114,7 +120,7 @@ compileOpenAfun (Abody b)    = Abody    <$> compileOpenAcc b
 
 {-# INLINEABLE compileOpenAcc #-}
 compileOpenAcc
-    :: forall arch _aenv _a. Compile arch
+    :: forall arch _aenv _a. (HasCallStack, Compile arch)
     => DelayedOpenAcc _aenv _a
     -> LLVM arch (CompiledOpenAcc arch _aenv _a)
 compileOpenAcc = traverseAcc
@@ -128,8 +134,11 @@ compileOpenAcc = traverseAcc
     -- array variables that were referred to within scalar sub-expressions.
     -- These will be required during code generation and execution.
     --
-    traverseAcc :: forall aenv arrs. DelayedOpenAcc aenv arrs -> LLVM arch (CompiledOpenAcc arch aenv arrs)
-    traverseAcc Delayed{}       = $internalError "compileOpenAcc" "unexpected delayed array"
+    traverseAcc
+        :: forall aenv arrs. HasCallStack
+        => DelayedOpenAcc aenv arrs
+        -> LLVM arch (CompiledOpenAcc arch aenv arrs)
+    traverseAcc Delayed{}       = internalError "unexpected delayed array"
     traverseAcc (Manifest pacc) =
       case pacc of
         -- Environment and control flow
@@ -188,7 +197,7 @@ compileOpenAcc = traverseAcc
         permute _ d _ a        = AST.Permute d a
 
         stencil1 :: StencilR sh a stencil
-                 -> TupleType b
+                 -> TypeR b
                  -> Fun      aenv (stencil -> b)
                  -> Boundary aenv (Array sh a)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch aenv (Array sh a)
@@ -197,7 +206,7 @@ compileOpenAcc = traverseAcc
 
         stencil2 :: StencilR sh a stencil1
                  -> StencilR sh b stencil2
-                 -> TupleType c
+                 -> TypeR c
                  -> Fun                                          aenv (stencil1 -> stencil2 -> c)
                  -> Boundary                                     aenv (Array sh a)
                  -> AST.DelayedOpenAcc     CompiledOpenAcc arch  aenv (Array sh a)
@@ -210,34 +219,45 @@ compileOpenAcc = traverseAcc
             (_,   h2) = stencilHalo s2
 
         fusionError :: error
-        fusionError = $internalError "execute" $ "unexpected fusible material: " ++ showPreAccOp pacc
+        fusionError = internalError $ "unexpected fusible material: " ++ showPreAccOp pacc
 
-        travA :: DelayedOpenAcc aenv a -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv a)
+        travA :: HasCallStack
+              => DelayedOpenAcc aenv a
+              -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAcc arch aenv a)
         travA acc = pure <$> traverseAcc acc
 
-        travD :: DelayedOpenAcc aenv (Array sh e)
+        travD :: HasCallStack
+              => DelayedOpenAcc aenv (Array sh e)
               -> LLVM arch ( IntMap (Idx' aenv)
                            , AST.DelayedOpenAcc CompiledOpenAcc arch aenv (Array sh e))
         travD acc =
           case acc of
-            Delayed{..} -> liftA2 (const . (AST.Delayed reprD))   <$> travE extentD <*> travF indexD
-            _           -> liftA  (AST.Manifest $ arraysRepr acc) <$> travA acc
+            Delayed{..} -> liftA2 (const . (AST.Delayed reprD)) <$> travE extentD <*> travF indexD
+            _           -> liftA  (AST.Manifest $ arraysR acc)  <$> travA acc
 
-        travM :: DelayedOpenAcc aenv (Array sh e)
+        travM :: HasCallStack
+              => DelayedOpenAcc aenv (Array sh e)
               -> LLVM arch (IntMap (Idx' aenv), ArrayVar aenv (Array sh e))
         travM (Manifest (Avar v)) = return (freevar v, v)
-        travM _                   = $internalError "compileOpenAcc" "expected array variable"
+        travM _                   = internalError "expected array variable"
 
-        travAF :: DelayedOpenAfun aenv f
+        travME :: Maybe (OpenExp env aenv e) -> LLVM arch (IntMap (Idx' aenv), Bool)
+        travME Nothing  = return (IntMap.empty, False)
+        travME (Just e) = (True <$) <$> travE e
+
+        travAF :: HasCallStack
+               => DelayedOpenAfun aenv f
                -> LLVM arch (IntMap (Idx' aenv), CompiledOpenAfun arch aenv f)
         travAF afun = pure <$> compileOpenAfun afun
 
-        travF :: OpenFun env aenv t
+        travF :: HasCallStack
+              => OpenFun env aenv t
               -> LLVM arch (IntMap (Idx' aenv), OpenFun env aenv t)
         travF (Body b)    = liftA Body <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
-        travB :: Boundary aenv t
+        travB :: HasCallStack
+              => Boundary aenv t
               -> LLVM arch (IntMap (Idx' aenv), Boundary aenv t)
         travB Clamp        = return $ pure Clamp
         travB Mirror       = return $ pure Mirror
@@ -250,11 +270,11 @@ compileOpenAcc = traverseAcc
         build (aenv, eacc) = do
           let aval = makeGamma aenv
           kernel <- compileForTarget pacc aval
-          return $! BuildAcc (arraysRepr eacc) aval kernel eacc
+          return $! BuildAcc (arraysR eacc) aval kernel eacc
 
         plain :: (IntMap (Idx' aenv'), AST.PreOpenAccCommand CompiledOpenAcc arch aenv' arrs')
               -> LLVM arch (CompiledOpenAcc arch aenv' arrs')
-        plain (_, eacc) = return (PlainAcc (arraysRepr eacc) eacc)
+        plain (_, eacc) = return (PlainAcc (arraysR eacc) eacc)
 
         -- Filling an array with undefined values is equivalent to allocating an
         -- uninitialised array. We look for this specific pattern because we
@@ -290,7 +310,7 @@ compileOpenAcc = traverseAcc
           , Delayed _ sh index _                <- a
           , Shape u                             <- sh
           , Just v                              <- isIdentityIndexing index
-          , Just Refl                           <- match u v
+          , Just Refl                           <- matchVar u v
           = Just (unzipIdx lhs vars, u)
         unzip _ _
           = Nothing
@@ -299,9 +319,9 @@ compileOpenAcc = traverseAcc
         unzipIdx lhs = go
           where
             go :: Vars ScalarType env y -> AST.UnzipIdx a y
-            go VarsNil                 = AST.UnzipUnit
-            go (VarsPair v1 v2)        = AST.UnzipPair (go v1) (go v2)
-            go (VarsSingle (Var _ ix)) = case lookupVar lhs ix of
+            go TupRunit                = AST.UnzipUnit
+            go (TupRpair v1 v2)        = AST.UnzipPair (go v1) (go v2)
+            go (TupRsingle (Var _ ix)) = case lookupVar lhs ix of
               Right u -> u
               Left ix' -> case ix' of {}
               -- Left branch is unreachable, as `Idx () y` is an empty type
@@ -322,7 +342,7 @@ compileOpenAcc = traverseAcc
         -- this term and continue walking down the list of alternate
         -- implementations.
         --
-        foreignA :: A.Foreign asm
+        foreignA :: (HasCallStack, A.Foreign asm)
                  => ArraysR b
                  -> asm         (a -> b)
                  -> DelayedAfun (a -> b)
@@ -335,7 +355,8 @@ compileOpenAcc = traverseAcc
 
     -- Traverse a scalar expression
     --
-    travE :: OpenExp env aenv e
+    travE :: HasCallStack
+          => OpenExp env aenv e
           -> LLVM arch (IntMap (Idx' aenv), OpenExp env aenv e)
     travE exp =
       case exp of
@@ -354,6 +375,7 @@ compileOpenAcc = traverseAcc
         Pair e1 e2              -> liftA2 Pair              <$> travE e1 <*> travE e2
         VecPack   vecr e        -> liftA  (VecPack   vecr)  <$> travE e
         VecUnpack vecr e        -> liftA  (VecUnpack vecr)  <$> travE e
+        Case t xs x             -> liftA3 Case              <$> travE t <*> travLE xs <*> travME x
         Cond p t e              -> liftA3 Cond              <$> travE p <*> travE t <*> travE e
         While p f x             -> liftA3 While             <$> travF p <*> travF f <*> travE x
         PrimApp f e             -> liftA  (PrimApp f)       <$> travE e
@@ -368,13 +390,29 @@ compileOpenAcc = traverseAcc
               -> LLVM arch (IntMap (Idx' aenv), ArrayVar aenv (Array sh e))
         travA var = return (freevar var, var)
 
-        travF :: OpenFun env aenv t
+        travF :: HasCallStack
+              => OpenFun env aenv t
               -> LLVM arch (IntMap (Idx' aenv), OpenFun env aenv t)
         travF (Body b)    = liftA Body      <$> travE b
         travF (Lam lhs f) = liftA (Lam lhs) <$> travF f
 
-        foreignE :: A.Foreign asm
-                 => TupleType b
+        travLE :: HasCallStack
+               => [(TAG, OpenExp env aenv t)]
+               -> LLVM arch (IntMap (Idx' aenv), [(TAG, OpenExp env aenv t)])
+        travLE []     = return $ pure []
+        travLE ((t,x):xs) = do
+          (v,  y)  <- travE x
+          (vs, ys) <- travLE xs
+          return (IntMap.union v vs, (t,y):ys)
+
+        travME :: HasCallStack
+               => Maybe (OpenExp env aenv t)
+               -> LLVM arch (IntMap (Idx' aenv), Maybe (OpenExp env aenv t))
+        travME Nothing  = return $ pure Nothing
+        travME (Just e) = fmap Just <$> travE e
+
+        foreignE :: (HasCallStack, A.Foreign asm)
+                 => TypeR b
                  -> asm           (a -> b)
                  -> Fun () (a -> b)
                  -> OpenExp env aenv a
@@ -388,11 +426,7 @@ compileOpenAcc = traverseAcc
             _                                 -> error "the slow regard of silent things"
           where
             err :: Fun () (a -> b)
-            err = $internalError "foreignE" "attempt to use fallback in foreign expression"
-
-    travME :: Maybe (OpenExp env aenv e) -> LLVM arch (IntMap (Idx' aenv), Bool)
-    travME Nothing  = return (IntMap.empty, False)
-    travME (Just e) = (True <$) <$> travE e
+            err = internalError "attempt to use fallback in foreign expression"
 
 
 -- Applicative
@@ -404,7 +438,7 @@ liftA4 f a b c d = f <$> a <*> b <*> c <*> d
 liftA5 :: Applicative f => (a -> b -> c -> d -> e -> g) -> f a -> f b -> f c -> f d -> f e -> f g
 liftA5 f a b c d g = f <$> a <*> b <*> c <*> d <*> g
 
-instance HasArraysRepr (CompiledOpenAcc arch) where
-  arraysRepr (BuildAcc r _ _ _) = r
-  arraysRepr (PlainAcc r     _) = r
+instance HasArraysR (CompiledOpenAcc arch) where
+  arraysR (BuildAcc r _ _ _) = r
+  arraysR (PlainAcc r     _) = r
 

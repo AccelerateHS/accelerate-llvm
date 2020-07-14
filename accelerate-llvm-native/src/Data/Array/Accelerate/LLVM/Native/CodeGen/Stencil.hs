@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil
--- Copyright   : [2018..2019] The Accelerate Team
+-- Copyright   : [2018..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -20,7 +20,10 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Stencil (
 
 ) where
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -58,14 +61,14 @@ mkStencil1
     :: UID
     -> Gamma              aenv
     -> StencilR sh a stencil
-    -> TupleType b
+    -> TypeR b
     -> IRFun1      Native aenv (stencil -> b)
     -> IRBoundary  Native aenv (Array sh a)
     -> MIRDelayed  Native aenv (Array sh a)
     -> CodeGen     Native      (IROpenAcc Native aenv (Array sh b))
 mkStencil1 uid aenv sr tp f bnd marr =
   let (arrIn, paramIn) = delayedArray "in" marr
-      repr = ArrayR (stencilShape sr) tp
+      repr = ArrayR (stencilShapeR sr) tp
    in (+++) <$> mkInside uid aenv repr (IRFun1 $ app1 f <=< stencilAccess sr Nothing    arrIn) paramIn
             <*> mkBorder uid aenv repr (IRFun1 $ app1 f <=< stencilAccess sr (Just bnd) arrIn) paramIn
 
@@ -74,7 +77,7 @@ mkStencil2
     -> Gamma              aenv
     -> StencilR sh a stencil1
     -> StencilR sh b stencil2
-    -> TupleType c
+    -> TypeR c
     -> IRFun2      Native aenv (stencil1 -> stencil2 -> c)
     -> IRBoundary  Native aenv (Array sh a)
     -> MIRDelayed  Native aenv (Array sh a)
@@ -86,7 +89,7 @@ mkStencil2 uid aenv sr1 sr2 tp f bnd1 marr1 bnd2 marr2 =
       (arrIn1, paramIn1)  = delayedArray "in1" marr1
       (arrIn2, paramIn2)  = delayedArray "in2" marr2
 
-      repr = ArrayR (stencilShape sr1) tp
+      repr = ArrayR (stencilShapeR sr1) tp
 
       inside  = IRFun1 $ \ix -> do
         stencil1 <- stencilAccess sr1 Nothing arrIn1 ix

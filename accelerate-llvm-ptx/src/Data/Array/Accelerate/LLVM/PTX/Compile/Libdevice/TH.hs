@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications  #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -115,14 +115,14 @@ nvvmReflectBitcode mdl = do
 -- search the libdevice PATH for all files of the appropriate compute capability
 -- and load the "most recent" (by sort order).
 --
-libdeviceBitcode :: Compute -> Q (TExp (ShortByteString, ByteString))
+libdeviceBitcode :: HasCallStack => Compute -> Q (TExp (ShortByteString, ByteString))
 libdeviceBitcode compute = do
   let basename
         | CUDA.libraryVersion < 9000
         , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
         | otherwise                  = "libdevice"
       --
-      err     = $internalError "libdevice" (printf "not found: %s.YY.bc" basename)
+      err     = internalError (printf "not found: %s.YY.bc" basename)
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
 #if MIN_VERSION_nvvm(0,10,0)
       base    = nvvmDeviceLibraryPath

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Divide
--- Copyright   : [2018..2019] The Accelerate Team
+-- Copyright   : [2018..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Divide (
 
 ) where
 
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Shape
 
 import Data.Bits
 import Data.Sequence                                                ( Seq )

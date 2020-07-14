@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Skeleton
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -19,11 +19,11 @@ module Data.Array.Accelerate.LLVM.CodeGen.Skeleton (
 
 ) where
 
-import Prelude                                                  hiding ( id )
-
--- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), prj )
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.AST
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -32,6 +32,8 @@ import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
+
+import Prelude                                                  hiding ( id )
 
 
 -- | A class covering code generation for all of the primitive array operations.
@@ -61,7 +63,7 @@ class Skeleton arch where
   map           :: UID
                 -> Gamma        aenv
                 -> ArrayR            (Array sh a)
-                -> TupleType         b
+                -> TypeR             b
                 -> IRFun1  arch aenv (a -> b)
                 -> CodeGen arch      (IROpenAcc arch aenv (Array sh b))
 
@@ -106,7 +108,7 @@ class Skeleton arch where
                 -> ArrayR                 (Array sh e)
                 -> ShapeR                 sh'
                 -> IRPermuteFun arch aenv (e -> e -> e)
-                -> IRFun1       arch aenv (sh -> sh')
+                -> IRFun1       arch aenv (sh -> PrimMaybe sh')
                 -> MIRDelayed   arch aenv (Array sh e)
                 -> CodeGen      arch      (IROpenAcc arch aenv (Array sh' e))
 
@@ -120,7 +122,7 @@ class Skeleton arch where
   stencil1      :: UID
                 -> Gamma aenv
                 -> StencilR sh a stencil
-                -> TupleType b
+                -> TypeR b
                 -> IRFun1     arch aenv (stencil -> b)
                 -> IRBoundary arch aenv (Array sh a)
                 -> MIRDelayed arch aenv (Array sh a)
@@ -130,7 +132,7 @@ class Skeleton arch where
                 -> Gamma aenv
                 -> StencilR sh a stencil1
                 -> StencilR sh b stencil2
-                -> TupleType c
+                -> TypeR c
                 -> IRFun2 arch aenv (stencil1 -> stencil2 -> c)
                 -> IRBoundary arch aenv (Array sh a)
                 -> MIRDelayed arch aenv (Array sh a)
@@ -154,7 +156,7 @@ defaultMap
     => UID
     -> Gamma        aenv
     -> ArrayR (Array sh a)
-    -> TupleType b
+    -> TypeR b
     -> IRFun1  arch aenv (a -> b)
     -> CodeGen arch      (IROpenAcc arch aenv (Array sh b))
 defaultMap uid aenv repr@(ArrayR shr _) tp f

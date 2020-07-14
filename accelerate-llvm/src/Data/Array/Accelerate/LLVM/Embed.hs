@@ -8,7 +8,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Embed
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -26,9 +26,15 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( liftIdx, liftConst, liftALhs, liftOpenExp, liftArray, liftArraysR, liftArrayR, liftShapeR, liftTupleType, liftIntegralType )
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), ArrayVar, Direction(..), Exp, liftALeftHandSide, liftOpenExp, arrayR )
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -77,16 +83,16 @@ embedAfun = embedOpenAfun
 
 {-# INLINEABLE embedOpenAfun #-}
 embedOpenAfun
-    :: (Embed arch)
+    :: (HasCallStack, Embed arch)
     => arch
     -> CompiledOpenAfun arch aenv f
     -> Q (TExp (ExecOpenAfun arch aenv f))
-embedOpenAfun arch (Alam lhs l) = [|| Alam $$(liftALhs lhs) $$(embedOpenAfun arch l) ||]
+embedOpenAfun arch (Alam lhs l) = [|| Alam $$(liftALeftHandSide lhs) $$(embedOpenAfun arch l) ||]
 embedOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE embedOpenAcc #-}
 embedOpenAcc
-    :: forall arch aenv arrs. Embed arch
+    :: forall arch aenv arrs. (HasCallStack, Embed arch)
     => arch
     -> CompiledOpenAcc arch aenv arrs
     -> Q (TExp (ExecOpenAcc arch aenv arrs))
@@ -126,16 +132,16 @@ embedOpenAcc arch = liftA
 
 {-# INLINEABLE liftPreOpenAfun #-}
 liftPreOpenAfun
-    :: Embed arch
+    :: (HasCallStack, Embed arch)
     => arch
     -> PreOpenAfun (CompiledOpenAcc arch) aenv t
     -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv t))
-liftPreOpenAfun arch (Alam lhs f) = [|| Alam $$(liftALhs lhs) $$(liftPreOpenAfun arch f) ||]
+liftPreOpenAfun arch (Alam lhs f) = [|| Alam $$(liftALeftHandSide lhs) $$(liftPreOpenAfun arch f) ||]
 liftPreOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
 {-# INLINEABLE liftPreOpenAccCommand #-}
 liftPreOpenAccCommand
-    :: forall arch aenv a. Embed arch
+    :: forall arch aenv a. (HasCallStack, Embed arch)
     => arch
     -> PreOpenAccCommand CompiledOpenAcc arch aenv a
     -> Q (TExp (PreOpenAccCommand ExecOpenAcc arch aenv a))
@@ -152,10 +158,10 @@ liftPreOpenAccCommand arch pacc =
   in
   case pacc of
     Avar v            -> [|| Avar $$(liftArrayVar v) ||]
-    Alet lhs bnd body -> [|| Alet $$(liftALhs lhs) $$(liftA bnd) $$(liftA body) ||]
+    Alet lhs bnd body -> [|| Alet $$(liftALeftHandSide lhs) $$(liftA bnd) $$(liftA body) ||]
     Alloc repr sh     -> [|| Alloc $$(liftArrayR repr) $$(liftE sh) ||]
     Use repr a        -> [|| Use $$(liftArrayR repr) $$(liftArray repr a) ||]
-    Unit tp e         -> [|| Unit $$(liftTupleType tp) $$(liftE e) ||]
+    Unit tp e         -> [|| Unit $$(liftTypeR tp) $$(liftE e) ||]
     Apair a1 a2       -> [|| Apair $$(liftA a1) $$(liftA a2) ||]
     Anil              -> [|| Anil ||]
     Apply repr f a    -> [|| Apply $$(liftArraysR repr) $$(liftAF f) $$(liftA a) ||]
@@ -163,11 +169,11 @@ liftPreOpenAccCommand arch pacc =
     Awhile p f a      -> [|| Awhile $$(liftAF p) $$(liftAF f) $$(liftA a) ||]
     Reshape shr sh v  -> [|| Reshape $$(liftShapeR shr) $$(liftE sh) $$(liftArrayVar v) ||]
     Unzip tix v       -> [|| Unzip $$(liftUnzipIdx tix) $$(liftArrayVar v) ||]
-    Aforeign{}        -> $internalError "liftPreOpenAcc" "using foreign functions from template-haskell is not supported yet"
+    Aforeign{}        -> internalError "using foreign functions from template-haskell is not supported yet"
 
 {-# INLINEABLE liftPreOpenAccSkeleton #-}
 liftPreOpenAccSkeleton
-    :: forall arch aenv a. Embed arch
+    :: forall arch aenv a. (HasCallStack, Embed arch)
     => arch
     -> PreOpenAccSkeleton CompiledOpenAcc arch aenv a
     -> Q (TExp (PreOpenAccSkeleton ExecOpenAcc arch aenv a))
@@ -184,7 +190,7 @@ liftPreOpenAccSkeleton arch pacc =
       liftE = liftOpenExp
 
       liftS :: ShapeR sh -> sh -> Q (TExp sh)
-      liftS shr sh = [|| $$(liftConst (shapeType shr) sh) ||]
+      liftS shr sh = [|| $$(liftElt (shapeType shr) sh) ||]
 
       liftZ :: HasInitialValue -> Q (TExp HasInitialValue)
       liftZ True  = [|| True  ||]
@@ -195,7 +201,7 @@ liftPreOpenAccSkeleton arch pacc =
       liftDir RightToLeft = [|| RightToLeft ||]
   in
   case pacc of
-    Map tp a             -> [|| Map $$(liftTupleType tp) $$(liftA a) ||]
+    Map tp a             -> [|| Map $$(liftTypeR tp) $$(liftA a) ||]
     Generate repr sh     -> [|| Generate $$(liftArrayR repr) $$(liftE sh) ||]
     Transform repr sh a  -> [|| Transform $$(liftArrayR repr) $$(liftE sh) $$(liftA a) ||]
     Backpermute shr sh a -> [|| Backpermute $$(liftShapeR shr) $$(liftE sh) $$(liftA a) ||]
@@ -204,8 +210,8 @@ liftPreOpenAccSkeleton arch pacc =
     Scan d z a           -> [|| Scan $$(liftDir d) $$(liftZ z) $$(liftD a) ||]
     Scan' d a            -> [|| Scan' $$(liftDir d) $$(liftD a) ||]
     Permute d a          -> [|| Permute $$(liftA d) $$(liftD a) ||]
-    Stencil1 tp h a      -> [|| Stencil1 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) ||]
-    Stencil2 tp h a b    -> [|| Stencil2 $$(liftTupleType tp) $$(liftS (arrayRshape $ arrayRepr a) h) $$(liftD a) $$(liftD b) ||]
+    Stencil1 tp h a      -> [|| Stencil1 $$(liftTypeR tp) $$(liftS (arrayRshape $ arrayR a) h) $$(liftD a) ||]
+    Stencil2 tp h a b    -> [|| Stencil2 $$(liftTypeR tp) $$(liftS (arrayRshape $ arrayR a) h) $$(liftD a) $$(liftD b) ||]
 
 liftArrayVar :: ArrayVar aenv v -> Q (TExp (ArrayVar aenv v))
 liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]

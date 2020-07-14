@@ -1,9 +1,8 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -29,7 +28,7 @@ import Data.Array.Accelerate.Error
 mkBuildInfoFileName :: FilePath -> FilePath
 mkBuildInfoFileName path = path </> "accelerate-llvm-native.buildinfo"
 
-readBuildInfo :: FilePath -> IO (Map Module [FilePath])
+readBuildInfo :: HasCallStack => FilePath -> IO (Map Module [FilePath])
 readBuildInfo path = do
   exists <- doesFileExist path
   if not exists
@@ -37,7 +36,7 @@ readBuildInfo path = do
     else do
       f <- B.readFile path
       case decode f of
-        Left err -> $internalError "readBuildInfo" err
+        Left err -> internalError err
         Right m  -> return m
 
 writeBuildInfo :: FilePath -> Map Module [FilePath] -> IO ()
@@ -51,15 +50,9 @@ instance Serialize Module where
     n <- get
     return (Module p n)
 
-#if __GLASGOW_HASKELL__ < 800
-instance Serialize PackageKey where
-  put p = put (packageKeyString p)
-  get = stringToPackageKey <$> get
-#else
 instance Serialize UnitId where
   put u = put (unitIdString u)
   get   = stringToUnitId <$> get
-#endif
 
 instance Serialize ModuleName where
   put m = put (moduleNameString m)

@@ -4,7 +4,7 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -16,7 +16,8 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
   where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
@@ -37,7 +38,7 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 --
 mkMap :: Gamma       aenv
       -> ArrayR (Array sh a)
-      -> TupleType b
+      -> TypeR b
       -> IRFun1  PTX aenv (a -> b)
       -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
 mkMap aenv repr@(ArrayR shr _) tp' apply =

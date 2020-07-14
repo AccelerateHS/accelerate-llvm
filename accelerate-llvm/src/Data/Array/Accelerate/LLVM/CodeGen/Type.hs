@@ -2,7 +2,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Type
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -14,7 +14,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Type
   where
 
 import LLVM.AST.Type.Representation
-import Data.Array.Accelerate.Array.Sugar
+import Data.Array.Accelerate.Sugar.Elt
 
 import Data.Constraint
 
@@ -24,7 +24,6 @@ import Data.Constraint
 --
 singleElt :: SingleType a -> Dict (Elt a)
 singleElt (NumSingleType    t) = numElt t
-singleElt (NonNumSingleType t) = nonNumElt t
 
 numElt :: NumType a -> Dict (Elt a)
 numElt (IntegralNumType t) = integralElt t
@@ -46,8 +45,4 @@ floatingElt :: FloatingType a -> Dict (Elt a)
 floatingElt TypeHalf{}   = Dict
 floatingElt TypeFloat{}  = Dict
 floatingElt TypeDouble{} = Dict
-
-nonNumElt :: NonNumType a -> Dict (Elt a)
-nonNumElt TypeBool{} = Dict
-nonNumElt TypeChar{} = Dict
 

@@ -7,7 +7,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Async
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -111,19 +111,19 @@ instance Async Native where
 --
 {-# INLINE evalParIO #-}
 evalParIO :: Native -> Par Native () -> IO ()
-evalParIO native@Native{..} work =
+evalParIO native@Native{} work =
   evalLLVM native (runContT (runPar work) return)
 
 -- | The value represented by a future is now available. Push any blocked
 -- continuations to the worker threads.
 --
 {-# INLINEABLE putIO #-}
-putIO :: Workers -> Future a -> a -> IO ()
+putIO :: HasCallStack => Workers -> Future a -> a -> IO ()
 putIO workers (Future ref) v = do
   ks <- atomicModifyIORef' ref $ \case
           Empty      -> (Full v, Seq.empty)
           Blocked ks -> (Full v, ks)
-          _          -> $internalError "put" "multiple put"
+          _          -> internalError "multiple put"
   --
   schedule workers Job { jobTasks = fmap ($ v) ks
                        , jobDone  = Nothing

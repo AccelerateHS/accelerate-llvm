@@ -4,7 +4,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Downcast
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -14,14 +14,16 @@
 
 module LLVM.AST.Type.Downcast (
 
-  Downcast(..)
+  Downcast(..),
 
 ) where
 
-import Data.Bits
-
 import Data.Array.Accelerate.Type
 import qualified LLVM.AST.Type                                      as LLVM
+
+import Data.Bits
+
+import GHC.Stack
 
 
 -- | Convert a value from our representation of the LLVM AST which uses
@@ -31,7 +33,7 @@ import qualified LLVM.AST.Type                                      as LLVM
 -- The type-level information to generate the appropriate value-level types.
 --
 class Downcast typed untyped where
-  downcast :: typed -> untyped
+  downcast :: HasCallStack => typed -> untyped
 
 instance Downcast a a' => Downcast [a] [a'] where
   downcast = map downcast
@@ -53,38 +55,32 @@ instance Downcast (ScalarType a) LLVM.Type where
   downcast (VectorScalarType t) = downcast t
 
 instance Downcast (SingleType a) LLVM.Type where
-  downcast (NumSingleType t)    = downcast t
-  downcast (NonNumSingleType t) = downcast t
+  downcast (NumSingleType t) = downcast t
 
 instance Downcast (VectorType a) LLVM.Type where
   downcast (VectorType n t) = LLVM.VectorType (fromIntegral n) (downcast t)
 
 instance Downcast (BoundedType t) LLVM.Type where
   downcast (IntegralBoundedType t) = downcast t
-  downcast (NonNumBoundedType t)   = downcast t
 
 instance Downcast (NumType a) LLVM.Type where
   downcast (IntegralNumType t) = downcast t
   downcast (FloatingNumType t) = downcast t
 
 instance Downcast (IntegralType a) LLVM.Type where
-  downcast TypeInt{}     = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
-  downcast TypeInt8{}    = LLVM.IntegerType 8
-  downcast TypeInt16{}   = LLVM.IntegerType 16
-  downcast TypeInt32{}   = LLVM.IntegerType 32
-  downcast TypeInt64{}   = LLVM.IntegerType 64
-  downcast TypeWord{}    = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
-  downcast TypeWord8{}   = LLVM.IntegerType 8
-  downcast TypeWord16{}  = LLVM.IntegerType 16
-  downcast TypeWord32{}  = LLVM.IntegerType 32
-  downcast TypeWord64{}  = LLVM.IntegerType 64
+  downcast TypeInt     = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
+  downcast TypeInt8    = LLVM.IntegerType 8
+  downcast TypeInt16   = LLVM.IntegerType 16
+  downcast TypeInt32   = LLVM.IntegerType 32
+  downcast TypeInt64   = LLVM.IntegerType 64
+  downcast TypeWord    = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
+  downcast TypeWord8   = LLVM.IntegerType 8
+  downcast TypeWord16  = LLVM.IntegerType 16
+  downcast TypeWord32  = LLVM.IntegerType 32
+  downcast TypeWord64  = LLVM.IntegerType 64
 
 instance Downcast (FloatingType a) LLVM.Type where
-  downcast TypeHalf{}    = LLVM.FloatingPointType LLVM.HalfFP
-  downcast TypeFloat{}   = LLVM.FloatingPointType LLVM.FloatFP
-  downcast TypeDouble{}  = LLVM.FloatingPointType LLVM.DoubleFP
-
-instance Downcast (NonNumType a) LLVM.Type where
-  downcast TypeBool{}   = LLVM.IntegerType 1
-  downcast TypeChar{}   = LLVM.IntegerType 32
+  downcast TypeHalf    = LLVM.FloatingPointType LLVM.HalfFP
+  downcast TypeFloat   = LLVM.FloatingPointType LLVM.FloatFP
+  downcast TypeDouble  = LLVM.FloatingPointType LLVM.DoubleFP
 

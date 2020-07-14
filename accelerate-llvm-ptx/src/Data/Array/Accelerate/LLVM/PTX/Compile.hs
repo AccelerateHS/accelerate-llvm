@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -21,21 +21,9 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 
 ) where
 
--- llvm-hs
-import qualified LLVM.AST                                           as AST
-import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.Context                                       as LLVM
-import qualified LLVM.Module                                        as LLVM
-import qualified LLVM.PassManager                                   as LLVM
-import qualified LLVM.Target                                        as LLVM
-import qualified LLVM.Internal.Module                               as LLVM.Internal
-import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
-import qualified LLVM.Analysis                                      as LLVM
-
--- accelerate
 import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
-import Data.Array.Accelerate.Error                                  ( internalError )
-import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
@@ -52,12 +40,20 @@ import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
--- cuda
 import Foreign.CUDA.Path
 import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.NVVM                                       as NVVM
 
--- standard library
+import qualified LLVM.AST                                           as AST
+import qualified LLVM.AST.Name                                      as LLVM
+import qualified LLVM.Context                                       as LLVM
+import qualified LLVM.Module                                        as LLVM
+import qualified LLVM.PassManager                                   as LLVM
+import qualified LLVM.Target                                        as LLVM
+import qualified LLVM.Internal.Module                               as LLVM.Internal
+import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
+import qualified LLVM.Analysis                                      as LLVM
+
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad.Except
@@ -97,7 +93,7 @@ instance Compile PTX where
 -- This generates the target code together with a list of each kernel function
 -- defined in the module paired with its occupancy information.
 --
-compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
+compile :: HasCallStack => PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
 compile pacc aenv = do
 
   -- Generate code for this Acc operation
@@ -148,7 +144,7 @@ compilePTX dev ctx ast = do
 -- | Compile the given PTX assembly to a CUBIN file (SASS object code). The
 -- compiled code will be stored at the given FilePath.
 --
-compileCUBIN :: CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
+compileCUBIN :: HasCallStack => CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
 compileCUBIN dev sass ptx = do
   _verbose  <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.verbose else return False
   _debug    <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug   else return False
@@ -186,7 +182,7 @@ compileCUBIN dev sass ptx = do
     -- wait on the process
     ex <- waitForProcess ph
     case ex of
-      ExitFailure r -> $internalError "compile" (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
+      ExitFailure r -> internalError (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
       ExitSuccess   -> return ()
 
     when _verbose $
@@ -200,7 +196,7 @@ compileCUBIN dev sass ptx = do
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-_compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(ShortByteString, ByteString)] -> LLVM.Module -> IO ByteString
+_compileModuleNVVM :: HasCallStack => CUDA.DeviceProperties -> ShortByteString -> [(ShortByteString, ByteString)] -> LLVM.Module -> IO ByteString
 _compileModuleNVVM dev name libdevice mdl = do
   _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
@@ -221,7 +217,7 @@ _compileModuleNVVM dev name libdevice mdl = do
       header  = case bitSize (undefined::Int) of
                   32 -> "target triple = \"nvptx-nvidia-cuda\"\ntarget datalayout = \"e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
                   64 -> "target triple = \"nvptx64-nvidia-cuda\"\ntarget datalayout = \"e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
-                  _  -> $internalError "_compileModuleNVVM" "I don't know what architecture I am"
+                  _  -> internalError "I don't know what architecture I am"
 
   Debug.when Debug.dump_cc   $ do
     Debug.when Debug.verbose $ do

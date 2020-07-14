@@ -8,7 +8,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -19,12 +19,10 @@
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
   where
 
--- accelerate
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Representation
-
--- accelerate-llvm-*
-import LLVM.AST.Type.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -42,7 +40,8 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, reduceWarpSMem, imapFromTo )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
--- cuda
+import LLVM.AST.Type.Representation
+
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Monad                                                ( void )
@@ -101,7 +100,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "foldSeg_block" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
@@ -195,7 +194,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             x0 <- if (tp, A.lt singleType i0 sup)
                     then app1 (delayedLinearIndex arrIn) i0
                     else let
-                             go :: TupleType a -> Operands a
+                             go :: TypeR a -> Operands a
                              go TupRunit       = OP_Unit
                              go (TupRpair a b) = OP_Pair (go a) (go b)
                              go (TupRsingle t) = ir t (undef t)
@@ -234,7 +233,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                x <- if (tp, A.lt singleType i' sup)
                                       then app1 (delayedLinearIndex arrIn) i'
                                       else let
-                                               go :: TupleType a -> Operands a
+                                               go :: TypeR a -> Operands a
                                                go TupRunit       = OP_Unit
                                                go (TupRpair a b) = OP_Pair (go a) (go b)
                                                go (TupRsingle t) = ir t (undef t)
@@ -299,7 +298,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       grid n m            = multipleOf n (m `P.quot` ws)
       gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes      = (per_warp_elems * sizeOf tp) `P.max` (2 * sizeOf tp)
+      per_warp_bytes      = (per_warp_elems * bytesElt tp) `P.max` (2 * bytesElt tp)
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
@@ -420,7 +419,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             x0  <- if (tp, A.lt singleType i0 sup)
                      then app1 (delayedLinearIndex arrIn) i0
                      else let
-                              go :: TupleType a -> Operands a
+                              go :: TypeR a -> Operands a
                               go TupRunit       = OP_Unit
                               go (TupRpair a b) = OP_Pair (go a) (go b)
                               go (TupRsingle t) = ir t (undef t)
@@ -453,7 +452,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                               x <- if (tp, A.lt singleType i' sup)
                                      then app1 (delayedLinearIndex arrIn) i'
                                      else let
-                                              go :: TupleType a -> Operands a
+                                              go :: TypeR a -> Operands a
                                               go TupRunit       = OP_Unit
                                               go (TupRpair a b) = OP_Pair (go a) (go b)
                                               go (TupRsingle t) = ir t (undef t)

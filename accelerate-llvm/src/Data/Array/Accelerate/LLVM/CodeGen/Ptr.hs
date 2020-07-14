@@ -1,9 +1,8 @@
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Ptr
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -26,11 +25,11 @@ import Data.Array.Accelerate.Error
 -- Treat an operand as a Ptr type. This is a hack because we can't unpack IR
 -- terms of pointer type.
 --
-asPtr :: AddrSpace -> Operand t -> Operand (Ptr t)
+asPtr :: HasCallStack => AddrSpace -> Operand t -> Operand (Ptr t)
 asPtr as x =
   let
       retype :: Type a -> Type (Ptr a)
-      retype VoidType     = $internalError "asPtr" "unexpected void type"
+      retype VoidType     = internalError "unexpected void type"
       retype (PrimType t) = PrimType (PtrPrimType t as)
       --
       rename :: Name a -> Name (Ptr a)
@@ -41,17 +40,17 @@ asPtr as x =
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
     ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
-    ConstantOperand ScalarConstant{}      -> $internalError "asPtr" "unexpected scalar constant"
+    ConstantOperand _                     -> internalError "unexpected constant operand"
 
 -- Treat a pointer operand as a scalar. This is a hack because we can't unpack
 -- IR terms of pointer types.
 --
-unPtr :: Operand (Ptr t) -> Operand t
+unPtr :: HasCallStack => Operand (Ptr t) -> Operand t
 unPtr x =
   let
       retype :: Type (Ptr a) -> Type a
       retype (PrimType (PtrPrimType t _)) = PrimType t
-      retype _                            = $internalError "unPtr" "expected pointer type"
+      retype _                            = internalError "expected pointer type"
       --
       rename :: Name (Ptr a) -> Name a
       rename (Name n)   = Name n
@@ -61,5 +60,5 @@ unPtr x =
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
     ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
-    ConstantOperand ScalarConstant{}      -> $internalError "unPtr" "unexpected scalar constant"
+    ConstantOperand ScalarConstant{}      -> internalError "unexpected scalar constant"
 

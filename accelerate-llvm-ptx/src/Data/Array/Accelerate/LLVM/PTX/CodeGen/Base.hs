@@ -8,7 +8,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -46,7 +46,25 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
 ) where
 
--- llvm
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
+import Data.Array.Accelerate.LLVM.CodeGen.Base
+import Data.Array.Accelerate.LLVM.CodeGen.Constant
+import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.LLVM.CodeGen.Module
+import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Ptr
+import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
+import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+
+import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
+import qualified Foreign.CUDA.Analysis                              as CUDA
+
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
@@ -63,28 +81,6 @@ import qualified LLVM.AST.Linkage                                   as LLVM
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
--- accelerate
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Error
-
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
-import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
-import Data.Array.Accelerate.LLVM.CodeGen.IR
-import Data.Array.Accelerate.LLVM.CodeGen.Module
-import Data.Array.Accelerate.LLVM.CodeGen.Monad
-import Data.Array.Accelerate.LLVM.CodeGen.Ptr
-import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
-import Data.Array.Accelerate.LLVM.PTX.Target
-
--- cuda
-import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
-import qualified Foreign.CUDA.Analysis                              as CUDA
-
--- standard library
 import Control.Applicative
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
@@ -222,7 +218,7 @@ __syncthreads_or = barrier_op "llvm.nvvm.barrier0.or"
 
 -- | Wait until all warp lanes have reached this point.
 --
-__syncwarp :: CodeGen PTX ()
+__syncwarp :: HasCallStack => CodeGen PTX ()
 __syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 
 -- | Wait until all warp lanes named in the mask have executed a __syncwarp()
@@ -234,14 +230,14 @@ __syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 -- Requires LLVM-6.0 or higher.
 -- Only required for devices of SM7 and later.
 --
-__syncwarp_mask :: Operands Word32 -> CodeGen PTX ()
+__syncwarp_mask :: HasCallStack => Operands Word32 -> CodeGen PTX ()
 __syncwarp_mask mask = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   if computeCapability dev < Compute 7 0
     then return ()
     else
 #if !MIN_VERSION_llvm_hs(6,0,0)
-         $internalError "__syncwarp_mask" "LLVM-6.0 or above is required for Volta devices and later"
+         internalError "LLVM-6.0 or above is required for Volta devices and later"
 #else
          void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
 #endif
@@ -278,7 +274,7 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 --
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
-atomicAdd_f :: FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
+atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val =
   let
       width :: Int
@@ -293,7 +289,7 @@ atomicAdd_f t addr val =
         case typeOf addr of
           PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
             -> (ta, tv, as)
-          _ -> $internalError "atomicAdd" "unexpected operand type"
+          _ -> internalError "unexpected operand type"
 
       t_ret = PrimType (ScalarPrimType t_val)
       fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
@@ -315,7 +311,7 @@ sharedMemVolatility = Volatile
 -- space, with enough storage to contain the given number of elements.
 --
 staticSharedMem
-    :: TupleType e
+    :: TypeR e
     -> Word64
     -> CodeGen PTX (IRArray (Vector e))
 staticSharedMem tp n = do
@@ -327,7 +323,7 @@ staticSharedMem tp n = do
                    , irArrayVolatility = sharedMemVolatility
                    }
   where
-    go :: TupleType s -> CodeGen PTX (Operands s)
+    go :: TypeR s -> CodeGen PTX (Operands s)
     go TupRunit          = return OP_Unit
     go (TupRpair t1 t2)  = OP_Pair <$> go t1 <*> go t2
     go tt@(TupRsingle t) = do
@@ -340,7 +336,7 @@ staticSharedMem tp n = do
         , LLVM.type'     = LLVM.ArrayType n (downcast t)
         , LLVM.linkage   = LLVM.External
         , LLVM.name      = downcast nm
-        , LLVM.alignment = 4 `P.max` P.fromIntegral (sizeOf tt)
+        , LLVM.alignment = 4 `P.max` P.fromIntegral (bytesElt tt)
         }
 
       -- Return a pointer to the first element of the __shared__ memory array.
@@ -375,7 +371,7 @@ initialiseDynamicSharedMemory = do
 --
 dynamicSharedMem
     :: forall e int.
-       TupleType e
+       TypeR e
     -> IntegralType int
     -> Operands int                                 -- number of array elements
     -> Operands int                                 -- #bytes of shared memory the have already been allocated
@@ -385,7 +381,7 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
     let numTp = IntegralNumType int
     smem <- initialiseDynamicSharedMemory
     let
-        go :: TupleType s -> Operand int -> CodeGen PTX (Operand int, Operands s)
+        go :: TypeR s -> Operand int -> CodeGen PTX (Operand int, Operands s)
         go TupRunit         i  = return (i, OP_Unit)
         go (TupRpair t2 t1) i0 = do
           (i1, p1) <- go t1 i0
@@ -394,7 +390,7 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
         go (TupRsingle t)   i  = do
           p <- instr' $ GetElementPtr smem [num numTp 0, i] -- TLM: note initial zero index!!
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-          a <- instr' $ Mul numTp m (integral int (P.fromIntegral (sizeOf (TupRsingle t))))
+          a <- instr' $ Mul numTp m (integral int (P.fromIntegral (bytesElt (TupRsingle t))))
           b <- instr' $ Add numTp i a
           return (b, ir t (unPtr q))
     --

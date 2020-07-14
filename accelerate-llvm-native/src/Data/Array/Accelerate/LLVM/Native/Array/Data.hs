@@ -5,7 +5,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Array.Data
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -20,18 +20,19 @@ module Data.Array.Accelerate.LLVM.Native.Array.Data (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Unique
-import Data.Array.Accelerate.Analysis.Type
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Array.Data
 import Data.Array.Accelerate.LLVM.Native.Execute.Async              ()  -- Async Native
 import Data.Array.Accelerate.LLVM.Native.Target
 
--- standard library
 import Control.Monad.Trans
 import Foreign.Ptr
 
@@ -54,7 +55,7 @@ cloneArray repr (Array sh src) = liftIO $ do
   where
     n = size (arrayRshape repr) sh
 
-    copyR :: TupleType e -> ArrayData e -> ArrayData e -> IO ()
+    copyR :: TypeR e -> ArrayData e -> ArrayData e -> IO ()
     copyR TupRunit          !_          !_          = return ()
     copyR (TupRsingle t)    !ad1        !ad2        = copyPrim t ad1 ad2
     copyR (TupRpair !t !t') (ad1, ad1') (ad2, ad2') = do
@@ -63,10 +64,10 @@ cloneArray repr (Array sh src) = liftIO $ do
 
     copyPrim :: ScalarType e -> ArrayData e -> ArrayData e -> IO ()
     copyPrim !tp !a1 !a2
-      | (_, ScalarDict) <- scalarDict tp = do
+      | ScalarArrayDict{} <- scalarArrayDict tp = do
       let p1 = unsafeUniqueArrayPtr a1
           p2 = unsafeUniqueArrayPtr a2
-      memcpy (castPtr p2) (castPtr p1) (n * sizeOfScalarType tp)
+      memcpy (castPtr p2) (castPtr p1) (n * bytesElt (TupRsingle tp))
 
 
 -- Standard C functions

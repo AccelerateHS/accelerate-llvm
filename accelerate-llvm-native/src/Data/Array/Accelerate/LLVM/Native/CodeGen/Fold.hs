@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeOperators       #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -17,8 +17,9 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
@@ -136,7 +137,7 @@ mkFoldDim uid aenv repr@(ArrayR _ tp) combine mseed mdelayed =
 mkFoldAll
     :: UID
     -> Gamma aenv                                   -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRExp     Native aenv e                     -- ^ seed element, if this is an exclusive reduction
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
@@ -153,7 +154,7 @@ mkFoldAll uid aenv tp combine mseed mdelayed =
 mkFoldAllS
     :: UID
     -> Gamma aenv                                   -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRExp     Native aenv e                     -- ^ seed element, if this is an exclusive reduction
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
@@ -181,8 +182,8 @@ mkFoldAllS uid aenv tp combine mseed mdelayed  =
 --
 mkFoldAllP1
     :: UID
-    -> Gamma            aenv                        -- ^ array environment
-    -> TupleType e
+    -> Gamma             aenv                       -- ^ array environment
+    -> TypeR e
     -> IRFun2     Native aenv (e -> e -> e)         -- ^ combination function
     -> MIRDelayed Native aenv (Vector e)            -- ^ input data
     -> CodeGen    Native      (IROpenAcc Native aenv (Scalar e))
@@ -219,7 +220,7 @@ mkFoldAllP1 uid aenv tp combine mdelayed =
 mkFoldAllP2
     :: UID
     -> Gamma          aenv                          -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  Native aenv (e -> e -> e)            -- ^ combination function
     -> MIRExp  Native aenv e                        -- ^ seed element, if this is an exclusive reduction
     -> CodeGen Native      (IROpenAcc Native aenv (Scalar e))
@@ -258,7 +259,7 @@ mkFoldFill uid aenv repr seed =
 -- Reduction of a (possibly empty) index space.
 --
 reduceFromTo
-    :: TupleType a
+    :: TypeR a
     -> Operands Int                                              -- ^ starting index
     -> Operands Int                                              -- ^ final index (exclusive)
     -> (Operands a -> Operands a -> CodeGen Native (Operands a)) -- ^ combination function
@@ -275,7 +276,7 @@ reduceFromTo tp m n f z get =
 -- contain at least one element.
 --
 reduce1FromTo
-    :: TupleType a
+    :: TypeR a
     -> Operands Int                                              -- ^ starting index
     -> Operands Int                                              -- ^ final index
     -> (Operands a -> Operands a -> CodeGen Native (Operands a)) -- ^ combination function

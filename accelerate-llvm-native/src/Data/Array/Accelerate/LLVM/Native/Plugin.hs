@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Plugin
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -18,17 +18,18 @@ module Data.Array.Accelerate.LLVM.Native.Plugin (
 
 ) where
 
-import GhcPlugins
-import Linker
-import SysTools
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
 import Control.Monad
 import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
-import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
-import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
+import GhcPlugins
+import Linker
+import SysTools
 
 
 -- | This GHC plugin is required to support ahead-of-time compilation for the
@@ -41,7 +42,7 @@ import Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 --
 -- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
 --
-plugin :: Plugin
+plugin :: HasCallStack => Plugin
 plugin = defaultPlugin
   { installCoreToDos = install
 #if __GLASGOW_HASKELL__ >= 806
@@ -49,17 +50,14 @@ plugin = defaultPlugin
 #endif
   }
 
-install :: [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
+install :: HasCallStack => [CommandLineOption] -> [CoreToDo] -> CoreM [CoreToDo]
 install _ rest = do
-#if __GLASGOW_HASKELL__ < 802
-  reinitializeGlobals
-#endif
   let this (CoreDoPluginPass "accelerate-llvm-native" _) = True
       this _                                             = False
   --
   return $ CoreDoPluginPass "accelerate-llvm-native" pass : filter (not . this) rest
 
-pass :: ModGuts -> CoreM ModGuts
+pass :: HasCallStack => ModGuts -> CoreM ModGuts
 pass guts = do
   -- Determine the current build environment
   --
@@ -88,11 +86,7 @@ pass guts = do
             objs  = map optionOfPath paths
         --
         linkCmdLineLibs
-#if __GLASGOW_HASKELL__ < 800
-               $                       dynFlags { ldInputs = opts ++ objs }
-#else
                $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
-#endif
 
     -- This case is not necessary for GHC-8.6 and above.
     --
@@ -132,12 +126,8 @@ pass guts = do
               GnuGold   opts -> GnuGold   (nub (opts ++ allObjs))
               DarwinLD  opts -> DarwinLD  (nub (opts ++ allObjs))
               SolarisLD opts -> SolarisLD (nub (opts ++ allObjs))
-#if __GLASGOW_HASKELL__ >= 800
               AixLD     opts -> AixLD     (nub (opts ++ allObjs))
-#endif
-#if __GLASGOW_HASKELL__ >= 804
               LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
-#endif
               UnknownLD      -> UnknownLD  -- no linking performed?
 #endif
       return ()

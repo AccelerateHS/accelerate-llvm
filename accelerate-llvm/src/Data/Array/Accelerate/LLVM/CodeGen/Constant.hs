@@ -2,7 +2,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Constant
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -13,19 +13,22 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
   primConst,
-  constant, scalar, single, vector, num, integral, floating, nonnum,
+  constant, scalar, single, vector, num, integral, floating, boolean,
   undef,
 
 ) where
 
 
 import Data.Array.Accelerate.AST                                ( PrimConst(..) )
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
+
+import Data.Primitive.Vec
 
 
 -- | Primitive constant values
@@ -37,11 +40,9 @@ primConst (PrimPi t)       = primPi t
 
 primMinBound :: BoundedType a -> a
 primMinBound (IntegralBoundedType t) | IntegralDict <- integralDict t = minBound
-primMinBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = minBound
 
 primMaxBound :: BoundedType a -> a
 primMaxBound (IntegralBoundedType t) | IntegralDict <- integralDict t = maxBound
-primMaxBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = maxBound
 
 primPi :: FloatingType a -> a
 primPi t | FloatingDict <- floatingDict t = pi
@@ -49,7 +50,7 @@ primPi t | FloatingDict <- floatingDict t = pi
 
 -- | A constant value
 --
-constant :: TupleType a -> a -> Operands a
+constant :: TypeR a -> a -> Operands a
 constant TupRunit         ()    = OP_Unit
 constant (TupRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
 constant (TupRsingle t)   a     = ir t (scalar t a)
@@ -72,8 +73,8 @@ integral t = num (IntegralNumType t)
 floating :: FloatingType a -> a -> Operand a
 floating t = num (FloatingNumType t)
 
-nonnum :: NonNumType a -> a -> Operand a
-nonnum t = single (NonNumSingleType t)
+boolean :: Bool -> Operand Bool
+boolean = ConstantOperand . BooleanConstant
 
 
 -- | The string 'undef' can be used anywhere a constant is expected, and

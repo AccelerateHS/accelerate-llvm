@@ -6,7 +6,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Link
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -25,7 +25,8 @@ module Data.Array.Accelerate.LLVM.Link (
 ) where
 
 -- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), HasArraysR(..) )
 
 import Data.Array.Accelerate.LLVM.AST
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -61,9 +62,9 @@ data ExecOpenAcc arch aenv a where
             -> PreOpenAccCommand  ExecOpenAcc arch aenv a
             -> ExecOpenAcc arch aenv a
 
-instance HasArraysRepr (ExecOpenAcc arch) where
-  arraysRepr (ExecAcc r _ _ _) = r
-  arraysRepr (EvalAcc r _)     = r
+instance HasArraysR (ExecOpenAcc arch) where
+  arraysR (ExecAcc r _ _ _) = r
+  arraysR (EvalAcc r _)     = r
 
 -- An AST annotated with compiled and linked functions in the target address
 -- space, suitable for execution.

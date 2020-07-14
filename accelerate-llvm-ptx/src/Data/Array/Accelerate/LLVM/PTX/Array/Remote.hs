@@ -8,7 +8,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Remote
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -27,11 +27,12 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
-import Data.Array.Accelerate.Lifetime
-import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Analysis.Type
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Unique
+import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Remote                     as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
 
@@ -68,23 +69,27 @@ instance Remote.RemoteMemory (LLVM PTX) where
           Left e                      -> do message ("malloc failed with error: " ++ show e)
                                             throwIO e
 
-  peekRemote tp n src ad | (ScalarDict, _, _) <- singleDict tp =
-    let bytes = n * sizeOfSingleType tp
-        dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesFromRemote (i64 bytes)
-      transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+  peekRemote t n src ad
+    | SingleArrayDict <- singleArrayDict t
+    , SingleDict      <- singleDict t
+    = let bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+          dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesFromRemote (i64 bytes)
+        transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
-  pokeRemote tp n dst ad | (ScalarDict, _, _) <- singleDict tp =
-    let bytes = n * sizeOfSingleType tp
-        src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesToRemote (i64 bytes)
-      transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+  pokeRemote t n dst ad
+    | SingleArrayDict <- singleArrayDict t
+    , SingleDict      <- singleDict t
+    = let bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+          src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesToRemote (i64 bytes)
+        transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr        = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo
@@ -115,7 +120,7 @@ malloc !tp !ad !n !frozen = do
 withRemote
     :: SingleType e
     -> ArrayData e
-    -> (CUDA.DevicePtr (ScalarDataRepr e) -> LLVM PTX (Maybe Event, r))
+    -> (CUDA.DevicePtr (ScalarArrayDataR e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX (Maybe r)
 withRemote !tp !ad !f = do
   PTX{..} <- gets llvmTarget

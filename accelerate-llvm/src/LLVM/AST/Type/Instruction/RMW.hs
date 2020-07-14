@@ -1,11 +1,10 @@
 {-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TemplateHaskell       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Instruction.RMW
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -69,5 +68,5 @@ instance Downcast (FloatingType a, RMWOperation) LLVM.RMWOperation where
       Add             -> LLVM.FAdd
       Sub             -> LLVM.FSub
 #endif
-      _               -> $internalError "downcast" "unsupported operand type to RMWOperation"
+      _               -> internalError "unsupported operand type to RMWOperation"
 

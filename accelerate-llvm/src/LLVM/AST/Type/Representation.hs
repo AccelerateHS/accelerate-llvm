@@ -5,7 +5,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Representation
--- Copyright   : [2015..2019] The Accelerate Team
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -23,6 +23,7 @@ module LLVM.AST.Type.Representation (
 ) where
 
 import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.Representation.Type
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Downcast
@@ -68,9 +69,10 @@ data Type a where
   PrimType  :: PrimType a -> Type a
 
 data PrimType a where
+  BoolPrimType    ::                            PrimType Bool
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
-  StructPrimType  :: TupleType a             -> PrimType a          -- opaque structures (required for CmpXchg)
+  StructPrimType  :: TypeR a                 -> PrimType a          -- opaque structures (required for CmpXchg)
   ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
 
 -- | All types
@@ -121,12 +123,6 @@ instance IsType Float where
 instance IsType Double where
   type' = PrimType primType
 
-instance IsType Bool where
-  type' = PrimType primType
-
-instance IsType Char where
-  type' = PrimType primType
-
 instance IsType (Ptr Int) where
   type' = PrimType primType
 
@@ -163,11 +159,9 @@ instance IsType (Ptr Float) where
 instance IsType (Ptr Double) where
   type' = PrimType primType
 
-instance IsType (Ptr Bool) where
-  type' = PrimType primType
+instance IsType Bool where
+  type' = PrimType BoolPrimType
 
-instance IsType (Ptr Char) where
-  type' = PrimType primType
 
 -- | All primitive types
 --
@@ -214,12 +208,6 @@ instance IsPrim Float where
 instance IsPrim Double where
   primType = ScalarPrimType scalarType
 
-instance IsPrim Bool where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim Char where
-  primType = ScalarPrimType scalarType
-
 instance IsPrim (Ptr Int) where
   primType = PtrPrimType primType defaultAddrSpace
 
@@ -259,17 +247,15 @@ instance IsPrim (Ptr Float) where
 instance IsPrim (Ptr Double) where
   primType = PtrPrimType primType defaultAddrSpace
 
-instance IsPrim (Ptr Bool) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr Char) where
-  primType = PtrPrimType primType defaultAddrSpace
+instance IsPrim Bool where
+  primType = BoolPrimType
 
 instance Show (Type a) where
   show VoidType        = "()"
   show (PrimType t)    = show t
 
 instance Show (PrimType a) where
+  show BoolPrimType                   = "Bool"
   show (ScalarPrimType t)             = show t
   show (StructPrimType t)             = show t
   show (ArrayPrimType n t)            = printf "[%d x %s]" n (show t)
@@ -297,14 +283,12 @@ instance IsSigned ScalarType where
 
 instance IsSigned SingleType where
   signed (NumSingleType t)    = signed t
-  signed (NonNumSingleType t) = signed t
 
 instance IsSigned VectorType where
   signed (VectorType _ t) = signed t
 
 instance IsSigned BoundedType where
   signed (IntegralBoundedType t) = signed t
-  signed (NonNumBoundedType t)   = signed t
 
 instance IsSigned NumType where
   signed (IntegralNumType t) = signed t
@@ -322,11 +306,6 @@ instance IsSigned IntegralType where
 instance IsSigned FloatingType where
   signed _ = True
 
-instance IsSigned NonNumType where
-  signed = \case
-    TypeBool{}    -> False
-    TypeChar{}    -> False
-
 
 -- | Recover the type of a container
 --
@@ -341,12 +320,13 @@ instance Downcast (Type a) LLVM.Type where
   downcast (PrimType t) = downcast t
 
 instance Downcast (PrimType a) LLVM.Type where
+  downcast BoolPrimType         = LLVM.IntegerType 1
   downcast (ScalarPrimType t)   = downcast t
   downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
   downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)
   downcast (StructPrimType t)   = LLVM.StructureType False (go t)
     where
-      go :: TupleType t -> [LLVM.Type]
+      go :: TypeR t -> [LLVM.Type]
       go TupRunit         = []
       go (TupRsingle s)   = [downcast s]
       go (TupRpair ta tb) = go ta ++ go tb

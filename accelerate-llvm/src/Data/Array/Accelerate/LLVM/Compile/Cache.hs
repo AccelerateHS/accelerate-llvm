@@ -1,7 +1,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile.Cache
--- Copyright   : [2017..2019] The Accelerate Team
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -21,7 +21,7 @@ module Data.Array.Accelerate.LLVM.Compile.Cache (
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Hash
 import Data.Array.Accelerate.Debug
-import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.State
 

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -16,8 +16,9 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -80,7 +81,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 mkMap :: UID
       -> Gamma aenv
       -> ArrayR (Array sh a)
-      -> TupleType b
+      -> TypeR b
       -> IRFun1  Native aenv (a -> b)
       -> CodeGen Native      (IROpenAcc Native aenv (Array sh b))
 mkMap uid aenv repr tp apply =
@@ -99,6 +100,6 @@ mkMap uid aenv repr tp apply =
 
     return_
 
-reprOut :: ArrayR (Array sh a) -> TupleType b -> ArrayR (Array sh b)
+reprOut :: ArrayR (Array sh a) -> TypeR b -> ArrayR (Array sh b)
 reprOut (ArrayR shr _) tp = ArrayR shr tp
 

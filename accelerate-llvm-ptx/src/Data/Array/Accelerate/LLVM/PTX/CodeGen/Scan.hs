@@ -10,7 +10,7 @@
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -24,10 +24,11 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.AST                                    ( Direction(..) )
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -138,7 +139,7 @@ mkScanAllP1
     :: forall aenv e.
        Direction
     -> Gamma          aenv                      -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ seed element, if this is an exclusive scan
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
@@ -159,7 +160,7 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -258,7 +259,7 @@ mkScanAllP2
     :: forall aenv e.
        Direction
     -> Gamma       aenv                         -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)           -- ^ combination function
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
 mkScanAllP2 dir aenv tp combine = do
@@ -278,7 +279,7 @@ mkScanAllP2 dir aenv tp combine = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scanP2" (paramTmp ++ paramEnv) $ do
 
@@ -351,7 +352,7 @@ mkScanAllP3
     :: forall aenv e.
        Direction
     -> Gamma       aenv                         -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)           -- ^ combination function
     -> MIRExp  PTX aenv e                       -- ^ seed element, if this is an exclusive scan
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
@@ -448,7 +449,7 @@ mkScan'AllP1
     :: forall aenv e.
        Direction
     -> Gamma          aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Vector e)
@@ -469,7 +470,7 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -561,7 +562,7 @@ mkScan'AllP2
     :: forall aenv e.
        Direction
     -> Gamma aenv
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP2 dir aenv tp combine = do
@@ -582,7 +583,7 @@ mkScan'AllP2 dir aenv tp combine = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
 
@@ -615,7 +616,7 @@ mkScan'AllP2 dir aenv tp combine = do
       x0 <- if (tp, valid i0)
               then readArray TypeInt arrTmp i0
               else
-                let go :: TupleType a -> Operands a
+                let go :: TypeR a -> Operands a
                     go TupRunit       = OP_Unit
                     go (TupRpair a b) = OP_Pair (go a) (go b)
                     go (TupRsingle t) = ir t (undef t)
@@ -668,7 +669,7 @@ mkScan'AllP3
     :: forall aenv e.
        Direction
     -> Gamma aenv                                   -- ^ array environment
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP3 dir aenv tp combine = do
@@ -772,7 +773,7 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scan" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -891,7 +892,7 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
           x <- if (tp, A.lt singleType tid' n)
                  then app1 (delayedLinearIndex arrIn) i
                  else let
-                          go :: TupleType a -> Operands a
+                          go :: TypeR a -> Operands a
                           go TupRunit       = OP_Unit
                           go (TupRpair a b) = OP_Pair (go a) (go b)
                           go (TupRsingle t) = ir t (undef t)
@@ -970,7 +971,7 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
           per_warp  = ws + ws `P.quot` 2
-          bytes     = sizeOf tp
+          bytes     = bytesElt tp
   --
   makeOpenAccWith config "scan" (paramOut ++ paramSum ++ paramIn ++ paramEnv) $ do
 
@@ -1103,7 +1104,7 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                                 return y
                               else
                                 let
-                                    go :: TupleType a -> Operands a
+                                    go :: TypeR a -> Operands a
                                     go TupRunit       = OP_Unit
                                     go (TupRpair a b) = OP_Pair (go a) (go b)
                                     go (TupRsingle t) = ir t (undef t)
@@ -1179,7 +1180,7 @@ scanBlockSMem
     :: forall aenv e.
        Direction
     -> DeviceProperties                             -- ^ properties of the target device
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> Maybe (Operands Int32)                       -- ^ number of valid elements (may be less than block size)
     -> Operands e                                   -- ^ calling thread's input element
@@ -1191,7 +1192,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
 
     -- Temporary storage required for each warp
     warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
-    warp_smem_bytes = warp_smem_elems  * sizeOf tp
+    warp_smem_bytes = warp_smem_elems  * bytesElt tp
 
     -- Step 1: Scan in every warp
     warpScan :: Operands e -> CodeGen PTX (Operands e)
@@ -1263,7 +1264,7 @@ scanWarpSMem
     :: forall aenv e.
        Direction
     -> DeviceProperties                             -- ^ properties of the target device
-    -> TupleType e
+    -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
     -> Operands e                                   -- ^ calling thread's input element

@@ -10,7 +10,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -57,12 +57,15 @@ module Data.Array.Accelerate.LLVM.Native (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysRepr, liftALhs, liftArraysR, lhsToTupR )
-import Data.Array.Accelerate.Array.Sugar                            ( Arrays, toArr, fromArr, arrays, ArrRepr )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysR, liftALeftHandSide )
+import Data.Array.Accelerate.AST.LeftHandSide
 import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
+import Data.Array.Accelerate.Representation.Array                   ( liftArraysR )
 import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.Sugar.Array                            ( Arrays, toArr, fromArr, ArraysR )
 import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Trafo.Sharing                          ( Afunction(..), AfunctionRepr(..), afunctionRepr )
+import qualified Data.Array.Accelerate.Sugar.Array                  as Sugar
 
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
@@ -75,7 +78,6 @@ import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
--- standard library
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
@@ -119,7 +121,7 @@ runWithIO target a = execute
       evalNative target $ do
         build <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    elapsedS (linkAcc build)
-        res   <- phase "execute" elapsedP (evalPar (executeAcc exec >>= getArrays (arraysRepr exec)))
+        res   <- phase "execute" elapsedP (evalPar (executeAcc exec >>= getArrays (arraysR exec)))
         return $ toArr res
 
 
@@ -191,19 +193,19 @@ runNWith target f = go (afunctionRepr @f) afun (return Empty)
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
 
-    go :: AfunctionRepr t (AfunctionR t) (AreprFunctionR t)
-       -> ExecOpenAfun Native aenv (AreprFunctionR t)
+    go :: AfunctionRepr t (AfunctionR t) (ArraysFunctionR t)
+       -> ExecOpenAfun Native aenv (ArraysFunctionR t)
        -> Par Native (Val aenv)
        -> AfunctionR t
     go (AfunctionReprLam repr) (Alam lhs l) k = \(arrs :: a) ->
       let k' = do aenv  <- k
-                  a     <- useRemoteAsync (arrays @a) $ fromArr arrs
+                  a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
                   return (aenv `push` (lhs, a))
       in go repr l k'
     go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target . evalPar $ do
       aenv <- k
       res  <- executeOpenAcc b aenv
-      arrs <- getArrays (arraysRepr b) res
+      arrs <- getArrays (arraysR b) res
       return $ toArr arrs
     go _ _ _ = error "The moon is hanging upside down"
 
@@ -221,12 +223,12 @@ run1AsyncWith = runNAsyncWith
 
 -- | As 'runN', but execute asynchronously.
 --
-runNAsync :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => f -> r
+runNAsync :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => f -> r
 runNAsync = runNAsyncWith defaultTarget
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, AreprFunctionR f ~ RunAsyncR r) => Native -> f -> r
+runNAsyncWith :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => Native -> f -> r
 runNAsyncWith target f = exec
   where
     !acc  = convertAfun f
@@ -243,21 +245,21 @@ class RunAsync f where
   runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> Par Native (Val aenv) -> f
 
 instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
-  type RunAsyncR (a -> b) = ArrRepr a -> RunAsyncR b
+  type RunAsyncR (a -> b) = ArraysR a -> RunAsyncR b
   runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
   runAsync' target (Alam lhs l) k arrs =
     let k' = do aenv  <- k
-                a     <- useRemoteAsync (arrays @a) $ fromArr arrs
+                a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
                 return (aenv `push` (lhs, a))
     in runAsync' target l k'
 
 instance Arrays b => RunAsync (IO (Async b)) where
-  type RunAsyncR  (IO (Async b)) = ArrRepr b
+  type RunAsyncR  (IO (Async b)) = ArraysR b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
   runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target . evalPar $ do
     aenv  <- k
     ans   <- executeOpenAcc b aenv
-    arrs  <- getArrays (arraysRepr b) ans
+    arrs  <- getArrays (arraysR b) ans
     return $ toArr arrs
 
 
@@ -393,7 +395,7 @@ runQ' using target f = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
         s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftALhs lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
@@ -406,7 +408,7 @@ runQ' using target f = do
                 [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
                       $(TH.doE ( reverse stmts ++
                                [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysRepr b))) $(TH.varE r) |]
+                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
                                , TH.noBindS [| return $ toArr $(TH.varE s) |]
                                ]))
                  |]

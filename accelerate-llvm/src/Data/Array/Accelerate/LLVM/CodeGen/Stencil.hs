@@ -8,7 +8,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Stencil
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -19,18 +19,19 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Stencil
   where
 
--- accelerate
-import Data.Array.Accelerate.AST                                hiding ( Val(..), Boundary(..), prj )
-import Data.Array.Accelerate.Array.Representation
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Stencil
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
-import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic            ( ifThenElse )
+import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                ( ifThenElse )
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
-import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic  as A
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 
 import Control.Applicative
 import Prelude
@@ -49,15 +50,16 @@ data IRBoundary arch aenv t where
 -- Generate the stencil pattern including boundary conditions
 --
 stencilAccess
-    :: StencilR sh e stencil
+    :: HasCallStack
+    => StencilR sh e stencil
     -> Maybe (IRBoundary arch aenv (Array sh e))
     ->        IRDelayed  arch aenv (Array sh e)
     -> Operands sh
     -> IRExp arch aenv stencil
-stencilAccess stencilR mbndy arr =
+stencilAccess sR mbndy arr =
   case mbndy of
-    Nothing   -> goR stencilR (inbounds     arr)
-    Just bndy -> goR stencilR (bounded bndy arr)
+    Nothing   -> goR sR (inbounds     arr)
+    Just bndy -> goR sR (bounded bndy arr)
   where
     -- Base cases, nothing interesting to do here since we know the lower
     -- dimension is Z.
@@ -120,7 +122,7 @@ stencilAccess stencilR mbndy arr =
     -- _left-most_ index component
     --
     goR (StencilRtup3 s1 s2 s3) rf ix =
-      let shr = stencilShape s1
+      let shr = stencilShapeR s1
           (i, ix') = uncons shr ix
           rf' 0 ds = rf (cons shr i ds)
           rf' d ds = do d' <- A.add numType i (int d)
@@ -131,7 +133,7 @@ stencilAccess stencilR mbndy arr =
            <*> goR s3 (rf'   1)  ix'
 
     goR (StencilRtup5 s1 s2 s3 s4 s5) rf ix =
-      let shr = stencilShape s1
+      let shr = stencilShapeR s1
           (i, ix') = uncons shr ix
           rf' 0 ds = rf (cons shr i ds)
           rf' d ds = do d' <- A.add numType i (int d)
@@ -144,7 +146,7 @@ stencilAccess stencilR mbndy arr =
            <*> goR s5 (rf'   2)  ix'
 
     goR (StencilRtup7 s1 s2 s3 s4 s5 s6 s7) rf ix =
-      let shr = stencilShape s1
+      let shr = stencilShapeR s1
           (i, ix') = uncons shr ix
           rf' 0 ds = rf (cons shr i ds)
           rf' d ds = do d' <- A.add numType i (int d)
@@ -159,7 +161,7 @@ stencilAccess stencilR mbndy arr =
            <*> goR s7 (rf'   3)  ix'
 
     goR (StencilRtup9 s1 s2 s3 s4 s5 s6 s7 s8 s9) rf ix =
-      let shr = stencilShape s1
+      let shr = stencilShapeR s1
           (i, ix') = uncons shr ix
           rf' 0 ds = rf (cons shr i ds)
           rf' d ds = do d' <- A.add numType i (int d)
@@ -189,14 +191,14 @@ inbounds IRDelayed{..} ix =
 -- Apply boundary conditions to the given index
 --
 bounded
-    :: forall sh e arch aenv.
-       IRBoundary arch aenv (Array sh e)
+    :: forall sh e arch aenv. HasCallStack
+    => IRBoundary arch aenv (Array sh e)
     -> IRDelayed  arch aenv (Array sh e)
     -> Operands sh
     -> IRExp arch aenv e
 bounded bndy IRDelayed{..} ix = do
   let
-    tp :: TupleType e -- GHC 8.4 needs this type annotation
+    tp :: TypeR e -- GHC 8.4 needs this type annotation
     ArrayR shr tp = delayedRepr
   sh <- delayedExtent
   case bndy of
@@ -230,7 +232,7 @@ bounded bndy IRDelayed{..} ix = do
                           IRClamp  -> return (int 0)
                           IRMirror -> A.negate numType iz
                           IRWrap   -> A.add    numType sz iz
-                          _        -> $internalError "bound" "unexpected boundary condition"
+                          _        -> internalError "unexpected boundary condition"
                       else
                         if ( TupRsingle scalarTypeInt
                             , A.gte (singleType :: SingleType Int) iz sz)
@@ -243,7 +245,7 @@ bounded bndy IRDelayed{..} ix = do
                                 b <- A.add numType a (int 2)
                                 c <- A.sub numType sz b
                                 return c
-                              _        -> $internalError "bound" "unexpected boundary condition"
+                              _        -> internalError "unexpected boundary condition"
                           else
                             return iz
             return $ OP_Pair ix' i'
@@ -254,11 +256,24 @@ bounded bndy IRDelayed{..} ix = do
     inside ShapeRz OP_Unit OP_Unit
       = return (bool True)
     inside (ShapeRsnoc shr') (OP_Pair sh sz) (OP_Pair ih iz)
-      = if ( TupRsingle scalarTypeBool
-            , A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
-              A.gte (singleType :: SingleType Int) iz sz)
-          then return (bool False)
-          else inside shr' sh ih
+      = do
+           ifNext <- newBlock "inside.next"
+           ifExit <- newBlock "inside.exit"
+
+           _  <- beginBlock "inside.entry"
+           p  <- A.lt  (singleType :: SingleType Int) iz (int 0) `A.lor'`
+                 A.gte (singleType :: SingleType Int) iz sz
+           eb <- cbr p ifExit ifNext
+
+           setBlock ifNext
+           nv <- inside shr' sh ih
+           nb <- br ifExit
+
+           setBlock ifExit
+           crit <- freshName
+           r    <- phi1 ifExit crit [(boolean False, eb), (A.unbool nv, nb)]
+
+           return (OP_Bool r)
 
 
 -- Utilities
@@ -268,7 +283,7 @@ int :: Int -> Operands Int
 int x = constant (TupRsingle scalarTypeInt) x
 
 bool :: Bool -> Operands Bool
-bool b = constant (TupRsingle scalarTypeBool) b
+bool = OP_Bool . boolean
 
 unindex :: Operands (sh, Int) -> (Operands sh, Operands Int)
 unindex (OP_Pair sh i) = (sh, i)

@@ -13,7 +13,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -28,13 +28,14 @@ module Data.Array.Accelerate.LLVM.Native.Execute (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Representation
+import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Unique
 
 import Data.Array.Accelerate.LLVM.Execute
 import Data.Array.Accelerate.LLVM.Execute.Async (FutureArraysR)
@@ -50,7 +51,6 @@ import Data.Array.Accelerate.LLVM.Native.Link
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
--- library
 import Control.Concurrent                                           ( myThreadId )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
@@ -125,7 +125,8 @@ instance Execute Native where
 --
 {-# INLINE simpleOp #-}
 simpleOp
-    :: ShortByteString
+    :: HasCallStack
+    => ShortByteString
     -> ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
@@ -148,9 +149,10 @@ simpleOp name repr NativeR{..} gamma aenv sh = do
 --
 {-# INLINE mapOp #-}
 mapOp
-    :: Maybe (a :~: b)
+    :: HasCallStack
+    => Maybe (a :~: b)
     -> ArrayR (Array sh a)
-    -> TupleType b
+    -> TypeR b
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -174,7 +176,8 @@ mapOp inplace repr tp NativeR{..} gamma aenv input = do
 
 {-# INLINE generateOp #-}
 generateOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -184,7 +187,8 @@ generateOp = simpleOp "generate"
 
 {-# INLINE transformOp #-}
 transformOp
-    :: ArrayR (Array sh  a)
+    :: HasCallStack
+    => ArrayR (Array sh  a)
     -> ArrayR (Array sh' b)
     -> ExecutableR Native
     -> Gamma aenv
@@ -205,7 +209,8 @@ transformOp repr repr' NativeR{..} gamma aenv sh' input = do
 
 {-# INLINE backpermuteOp #-}
 backpermuteOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ShapeR sh'
     -> ExecutableR Native
     -> Gamma aenv
@@ -239,21 +244,23 @@ backpermuteOp (ArrayR shr tp) shr' = transformOp (ArrayR shr tp) (ArrayR shr' tp
 
 {-# INLINE fold1Op #-}
 fold1Op
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array sh e))
 fold1Op repr exe gamma aenv arr@(delayedShape -> sh@(sx, sz))
-  = $boundsCheck "fold1" "empty array" (sz > 0)
+  = boundsCheck "empty array" (sz > 0)
   $ case size (ShapeRsnoc $ arrayRshape repr) sh of
       0 -> newFull =<< allocateRemote repr sx    -- empty, but possibly with non-zero dimensions
       _ -> foldCore repr exe gamma aenv arr
 
 {-# INLINE foldOp #-}
 foldOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -266,7 +273,8 @@ foldOp repr exe gamma aenv arr@(delayedShape -> sh@(sx, _)) =
 
 {-# INLINE foldCore #-}
 foldCore
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -281,7 +289,8 @@ foldCore repr exe gamma aenv arr
 
 {-# INLINE foldAllOp #-}
 foldAllOp
-    :: TupleType e
+    :: HasCallStack
+    => TypeR e
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -323,7 +332,8 @@ foldAllOp tp NativeR{..} gamma aenv arr = do
 
 {-# INLINE foldDimOp #-}
 foldDimOp
-    :: ArrayR (Array sh e)
+    :: HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -348,7 +358,8 @@ foldDimOp repr NativeR{..} gamma aenv arr@(delayedShape -> (sh, _)) = do
 
 {-# INLINE foldSegOp #-}
 foldSegOp
-    :: IntegralType i
+    :: HasCallStack
+    => IntegralType i
     -> ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
@@ -379,7 +390,8 @@ foldSegOp int repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segmen
 
 {-# INLINE scanOp #-}
 scanOp
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -392,19 +404,21 @@ scanOp repr exe gamma aenv arr@(delayedShape -> (sz, n)) =
 
 {-# INLINE scan1Op #-}
 scan1Op
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e))
 scan1Op repr exe gamma aenv arr@(delayedShape -> (_, n))
-  = $boundsCheck "scan1" "empty array" (n > 0)
+  = boundsCheck "empty array" (n > 0)
   $ scanCore repr exe gamma aenv n arr
 
 {-# INLINE scanCore #-}
 scanCore
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -474,7 +488,8 @@ scanCore repr NativeR{..} gamma aenv m input@(delayedShape -> (sz, n)) = do
 
 {-# INLINE scan'Op #-}
 scan'Op
-    :: ArrayR (Array (sh, Int) e)
+    :: HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -494,8 +509,8 @@ scan'Op repr exe gamma aenv arr@(delayedShape -> (sz, n)) = do
 
 {-# INLINE scan'Core #-}
 scan'Core
-    :: forall aenv sh e.
-       ArrayR (Array (sh, Int) e)
+    :: forall aenv sh e. HasCallStack
+    => ArrayR (Array (sh, Int) e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -576,8 +591,8 @@ isMultiDim _                    = True
 --
 {-# INLINE permuteOp #-}
 permuteOp
-    :: forall sh e sh' aenv.
-       Bool
+    :: forall sh e sh' aenv. HasCallStack
+    => Bool
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> ExecutableR Native
@@ -638,7 +653,8 @@ permuteOp inplace repr shr' NativeR{..} gamma aenv defaults@(shape -> shOut) inp
 
 {-# INLINE stencil1Op #-}
 stencil1Op
-    :: TupleType a
+    :: HasCallStack
+    => TypeR a
     -> ArrayR (Array sh b)
     -> sh
     -> ExecutableR Native
@@ -651,9 +667,9 @@ stencil1Op tp repr halo exe gamma aenv input@(delayedShape -> sh) =
 
 {-# INLINE stencil2Op #-}
 stencil2Op
-    :: forall aenv sh a b c.
-       TupleType a
-    -> TupleType b
+    :: forall aenv sh a b c. HasCallStack
+    => TypeR a
+    -> TypeR b
     -> ArrayR (Array sh c)
     -> sh
     -> ExecutableR Native
@@ -666,13 +682,13 @@ stencil2Op t1 t2 repr halo exe gamma aenv input1@(delayedShape -> sh1) input2@(d
   stencilCore repr exe gamma aenv halo (intersect (arrayRshape repr) sh1 sh2) (param t1 `TupRpair` param t2) (manifest input1, manifest input2)
   where
     shr = arrayRshape repr
-    param :: TupleType t -> ParamsR Native (Maybe (Array sh t))
+    param :: TypeR t -> ParamsR Native (Maybe (Array sh t))
     param = TupRsingle . ParamRmaybe . ParamRarray . ArrayR shr
 
 {-# INLINE stencilCore #-}
 stencilCore
-    :: forall aenv sh e params.
-       ArrayR (Array sh e)
+    :: forall aenv sh e params. HasCallStack
+    => ArrayR (Array sh e)
     -> ExecutableR Native
     -> Gamma aenv
     -> Val aenv
@@ -722,8 +738,8 @@ stencilCore repr NativeR{..} gamma aenv halo sh paramsR params = do
 --
 {-# INLINE stencilBorders #-}
 stencilBorders
-    :: forall sh.
-       ShapeR sh
+    :: forall sh. HasCallStack
+    => ShapeR sh
     -> sh
     -> sh
     -> Seq (sh, sh)
@@ -747,7 +763,8 @@ stencilBorders shr sh halo = Seq.fromFunction (2 * rank shr) face
 
 {-# INLINE aforeignOp #-}
 aforeignOp
-    :: String
+    :: HasCallStack
+    => String
     -> ArraysR as
     -> ArraysR bs
     -> (as -> Par Native (Future bs))
@@ -764,9 +781,9 @@ aforeignOp name _ _ asm arr = do
 -- Skeleton execution
 -- ------------------
 
-(!#) :: Lifetime FunctionTable -> ShortByteString -> Function
+(!#) :: HasCallStack => Lifetime FunctionTable -> ShortByteString -> Function
 (!#) exe name
-  = fromMaybe ($internalError "lookupFunction" ("function not found: " ++ S8.unpack name))
+  = fromMaybe (internalError ("function not found: " ++ S8.unpack name))
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
@@ -787,7 +804,8 @@ manifest Delayed{}    = Nothing
 
 {-# INLINABLE scheduleOp #-}
 scheduleOp
-    :: Function
+    :: HasCallStack
+    => Function
     -> Gamma aenv
     -> Val aenv
     -> ShapeR sh

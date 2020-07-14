@@ -2,13 +2,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Async
--- Copyright   : [2014..2019] The Accelerate Team
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -110,7 +109,7 @@ instance Async PTX where
     liftIO . modifyIORef' ref $ \case
       Empty -> if ready then Full v
                         else Pending event kernel v
-      _     -> $internalError "put" "multiple put"
+      _     -> internalError "multiple put"
 
   -- Get the value of Future. Since the actual cross-stream synchronisation
   -- happens on the device, we should never have to block/reschedule the main
@@ -135,7 +134,7 @@ instance Async PTX where
             else
               Event.after event stream
           return v
-        Empty           -> $internalError "get" "blocked on an IVar"
+        Empty           -> internalError "blocked on an IVar"
 
   {-# INLINEABLE block #-}
   block = liftIO . wait
@@ -160,5 +159,5 @@ wait (Future ref) = do
         Just f  -> touchLifetime f
         Nothing -> return ()
       return v
-    Empty           -> $internalError "wait" "blocked on an IVar"
+    Empty           -> internalError "blocked on an IVar"
 

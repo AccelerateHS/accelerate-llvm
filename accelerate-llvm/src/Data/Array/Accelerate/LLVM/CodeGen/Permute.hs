@@ -7,7 +7,7 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Permute
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -26,10 +26,14 @@ module Data.Array.Accelerate.LLVM.CodeGen.Permute (
 ) where
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
-import Data.Array.Accelerate.Trafo
-import Data.Array.Accelerate.Type
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Trafo.Substitution
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -44,6 +48,7 @@ import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Atomic
 import LLVM.AST.Type.Instruction.RMW                                as RMW
 import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
@@ -118,7 +123,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       | otherwise
       = Nothing
 
-    fast :: TupleType e -> Bool
+    fast :: TypeR e -> Bool
     fast tp
       | TupRsingle{} <- tp = True
       | otherwise          = unsafePerformIO (getFlag fast_permute_const)
@@ -180,22 +185,17 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
 -- > }
 --
 atomicCAS_rmw
-    :: forall arch e.
-       SingleType e
+    :: forall arch e. HasCallStack
+    => SingleType e
     -> (Operands e -> CodeGen arch (Operands e))
     -> Operand (Ptr e)
     -> CodeGen arch ()
 atomicCAS_rmw t update addr =
   case t of
-    NonNumSingleType s                -> nonnum s
     NumSingleType (FloatingNumType f) -> floating f
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen arch ()
-    nonnum TypeBool{}     = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeChar{}     = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-
     floating :: FloatingType t -> CodeGen arch ()
     floating TypeHalf{}   = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
     floating TypeFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
@@ -206,7 +206,8 @@ atomicCAS_rmw t update addr =
 
 
 atomicCAS_rmw'
-    :: SingleType t
+    :: HasCallStack
+    => SingleType t
     -> IntegralType i
     -> (Operands t -> CodeGen arch (Operands t))
     -> Operand (Ptr t)
@@ -230,7 +231,15 @@ atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
   done  <- instr' $ ExtractValue scalarType PairIdxRight r
   next' <- instr' $ ExtractValue si         PairIdxLeft  r
 
-  bot   <- cbr (ir scalarType done) exit spin
+  -- Since we removed Bool from the set of primitive types Accelerate
+  -- supports, we have to do a small hack to have LLVM consider this as its
+  -- correct type of a 1-bit integer (rather than the 8-bits it is actually
+  -- stored as)
+  done' <- case done of
+             LocalReference _ (UnName n) -> return $ OP_Bool (LocalReference type' (UnName n))
+             _                           -> internalError "expected unnamed local reference"
+
+  bot   <- cbr done' exit spin
   _     <- phi' (TupRsingle si) spin old' [(ir i init',top), (ir i next',bot)]
 
   setBlock exit
@@ -260,23 +269,18 @@ atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
 -- address.
 --
 atomicCAS_cmp
-    :: forall arch e.
-       SingleType e
+    :: forall arch e. HasCallStack
+    => SingleType e
     -> (SingleType e -> Operands e -> Operands e -> CodeGen arch (Operands Bool))
     -> Operand (Ptr e)
     -> Operand e
     -> CodeGen arch ()
 atomicCAS_cmp t cmp addr val =
   case t of
-    NonNumSingleType s                -> nonnum s
     NumSingleType (FloatingNumType f) -> floating f
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen arch ()
-    nonnum TypeBool{}     = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeChar{}     = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-
     floating :: FloatingType t -> CodeGen arch ()
     floating TypeHalf{}   = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
     floating TypeFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
@@ -287,7 +291,8 @@ atomicCAS_cmp t cmp addr val =
 
 
 atomicCAS_cmp'
-    :: SingleType t       -- actual type of elements
+    :: HasCallStack
+    => SingleType t       -- actual type of elements
     -> IntegralType i     -- unsigned integral type of same bit size as 't'
     -> (SingleType t -> Operands t -> Operands t -> CodeGen arch (Operands Bool))
     -> Operand (Ptr t)
@@ -327,7 +332,11 @@ atomicCAS_cmp' t i cmp addr val = withDict (singleElt t) $ do
   next  <- instr' $ ExtractValue si         PairIdxLeft  r
   next' <- instr' $ BitCast (SingleScalarType t) next
 
-  bot   <- cbr (ir scalarType done) exit test
+  done' <- case done of
+             LocalReference _ (UnName n) -> return $ OP_Bool (LocalReference type' (UnName n))
+             _                           -> internalError "expected unnamed local reference"
+
+  bot   <- cbr done' exit test
   _     <- phi' (TupRsingle $ SingleScalarType t) test old [(ir t start,top), (ir t next',bot)]
 
   setBlock exit

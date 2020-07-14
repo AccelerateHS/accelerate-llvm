@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Foreign
--- Copyright   : [2016..2019] The Accelerate Team
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
 -- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
@@ -29,7 +29,7 @@ module Data.Array.Accelerate.LLVM.Native.Foreign (
 
 ) where
 
-import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import qualified Data.Array.Accelerate.Sugar.Foreign                as S
 
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
