@@ -236,7 +236,7 @@ indexRemote tp arr i =
 {-# INLINE runIndexArray #-}
 runIndexArray
     :: forall m sh e. Monad m
-    => (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> m (ArrayData s))
+    => (forall s. ArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> m (ArrayData s))
     -> TypeR e
     -> Array sh e
     -> Int
@@ -254,7 +254,7 @@ runIndexArray worker tp (Array _ adata) i = flip (indexArrayData tp) 0 <$> index
 {-# INLINE runIndexArrayAsync #-}
 runIndexArrayAsync
     :: forall arch sh e. Async arch
-    => (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> Par arch (FutureR arch (ArrayData s)))
+    => (forall s. ArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ArrayData s -> Int -> Par arch (FutureR arch (ArrayData s)))
     -> TypeR e
     -> Array sh e
     -> Int
@@ -319,7 +319,7 @@ runArray
     :: forall m sh e. Monad m
     => TypeR e
     -> Array sh e
-    -> (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> m (ScalarArrayData s))
+    -> (forall s. ArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> m (ScalarArrayData s))
     -> m (Array sh e)
 runArray tp (Array sh adata) worker = Array sh `liftM` runR tp adata
   where
@@ -336,7 +336,7 @@ runArrayAsync
     :: forall arch sh e. Async arch
     => TypeR e
     -> Array sh e
-    -> (forall s. GArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> Par arch (FutureR arch (ScalarArrayData s)))
+    -> (forall s. ArrayData s ~ ScalarArrayData s => Int -> SingleType s -> ScalarArrayData s -> Par arch (FutureR arch (ScalarArrayData s)))
     -> Par arch (FutureR arch (Array sh e))
 runArrayAsync tp (Array sh adata) worker = Array sh `liftF` runR tp adata
   where
