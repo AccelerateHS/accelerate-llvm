@@ -45,7 +45,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
 import Control.Applicative
 import Control.Monad.Reader
 import Control.Monad.State                                          ( gets )
-import Data.IORef
 import System.IO.Unsafe
 import Prelude
 
@@ -104,19 +103,15 @@ copyToHostLazy
     => ArraysR arrs
     -> FutureArraysR PTX arrs
     -> Par PTX arrs
-copyToHostLazy TupRunit () = return ()
+copyToHostLazy TupRunit         ()       = return ()
 copyToHostLazy (TupRpair r1 r2) (f1, f2) = do
   a1 <- copyToHostLazy r1 f1
   a2 <- copyToHostLazy r2 f2
   return (a1, a2)
-copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
+copyToHostLazy (TupRsingle (ArrayR shr tp)) future = do
   ptx <- gets llvmTarget
   liftIO $ do
-    ivar <- readIORef ref
-    (Array sh adata) <- case ivar of
-      Full a        -> return a
-      Pending _ _ a -> return a
-      Empty         -> internalError "blocked on an IVar"
+    Array sh adata <- wait future
 
     -- Note: [Lazy device-host transfers]
     --
@@ -145,7 +140,7 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
             -> ArrayData e
             -> Int
             -> IO (ArrayData e)
-      peekR t ad n
+      peekR t ad m
         | SingleArrayDict                        <- singleArrayDict t
         , UniqueArray uid (Lifetime lft weak fp) <- ad
         = unsafeInterleaveIO $ do
@@ -153,8 +148,7 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
           fp' <- if ok
                     then return fp
                     else unsafeInterleaveIO . evalPTX ptx . evalPar $ do
-                          !_ <- get future -- stream synchronisation
-                          !_ <- block =<< Prim.peekArrayAsync t n ad
+                          !_ <- block =<< Prim.peekArrayAsync t m ad
                           return fp
           --
           return $ UniqueArray uid (Lifetime lft weak fp')
@@ -218,16 +212,18 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future@(Future ref) = do
         return False
 #endif
 #endif
+      n = size shr sh
 
-      runR :: TypeR e -> ArrayData e -> Int -> IO (ArrayData e)
-      runR TupRunit           !()          !_ = return ()
-      runR (TupRpair !t1 !t2) (!ad1, !ad2) !n = (,) <$> runR t1 ad1 n <*> runR t2 ad2 n
-      runR (TupRsingle !t)    !ad          !n = case t of
-        SingleScalarType s                     -> peekR s ad n
-        VectorScalarType (VectorType w s)
-          | SingleArrayDict <- singleArrayDict s -> peekR s ad (n * w)
+      runR :: TypeR e -> ArrayData e -> IO (ArrayData e)
+      runR TupRunit           !()          = return ()
+      runR (TupRpair !t1 !t2) (!ad1, !ad2) = (,) <$> runR t1 ad1 <*> runR t2 ad2
+      runR (TupRsingle !t)    !ad          =
+        case t of
+          SingleScalarType s                       -> peekR s ad n
+          VectorScalarType (VectorType w s)
+            | SingleArrayDict <- singleArrayDict s -> peekR s ad (n * w)
 
-    Array sh <$> runR tp adata (size shr sh)
+    Array sh <$> runR tp adata
 
 -- | Clone an array into a newly allocated array on the device.
 --
@@ -237,18 +233,19 @@ cloneArrayAsync
     -> Par PTX (Future (Array sh e))
 cloneArrayAsync repr@(ArrayR shr tp) arr@(Array _ src) = do
   Array _ dst <- allocateRemote repr sh
-  Array sh `liftF` copyR tp src dst (size shr sh)
+  Array sh `liftF` copyR tp src dst
   where
-    sh  = shape arr
+    sh = shape arr
+    n  = size shr sh
 
-    copyR :: TypeR s -> ArrayData s -> ArrayData s -> Int -> Par PTX (Future (ArrayData s))
-    copyR TupRunit           !_          !_            !_ = newFull ()
-    copyR (TupRpair !t1 !t2) !(ad1, ad2) !(ad1', ad2') !n = liftF2 (,) (copyR t1 ad1 ad1' n)
-                                                                       (copyR t2 ad2 ad2' n)
-    copyR (TupRsingle !t)    !ad         !ad'          !n = case t of
-      SingleScalarType s                     -> copyPrim s ad ad' n
-      VectorScalarType (VectorType w s)
-        | SingleArrayDict <- singleArrayDict s -> copyPrim s ad ad' (n * w)
+    copyR :: TypeR s -> ArrayData s -> ArrayData s -> Par PTX (Future (ArrayData s))
+    copyR TupRunit           !_          !_            = newFull ()
+    copyR (TupRpair !t1 !t2) !(ad1, ad2) !(ad1', ad2') = liftF2 (,) (copyR t1 ad1 ad1') (copyR t2 ad2 ad2')
+    copyR (TupRsingle !t)    !ad         !ad'          =
+      case t of
+        SingleScalarType s                       -> copyPrim s ad ad' n
+        VectorScalarType (VectorType w s)
+          | SingleArrayDict <- singleArrayDict s -> copyPrim s ad ad' (n * w)
 
     copyPrim
         :: SingleType s
