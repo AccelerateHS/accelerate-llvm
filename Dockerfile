@@ -31,7 +31,7 @@ RUN update-alternatives --install "/usr/bin/ld" "ld" "/usr/bin/ld.bfd" 10
 RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
  && add-apt-repository "deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic main" \
  && apt-get update \
- && apt-get install -y llvm-8-dev
+ && apt-get install -y llvm-9-dev
 
 # GHC requires a specific LLVM version on the system PATH for its LLVM backend.
 # The version is tracked here:
@@ -43,7 +43,7 @@ RUN wget -O - http://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - \
 WORKDIR ${PREFIX}
 COPY ./README.md                                            ${PREFIX}/
 COPY ./LICENSE                                              ${PREFIX}/
-COPY ./stack-8.6.yaml                                       ${PREFIX}/stack.yaml
+COPY ./stack-8.10.yaml                                      ${PREFIX}/stack.yaml
 COPY ./accelerate-llvm/accelerate-llvm.cabal                ${PREFIX}/accelerate-llvm/
 COPY ./accelerate-llvm-native/accelerate-llvm-native.cabal  ${PREFIX}/accelerate-llvm-native/
 COPY ./accelerate-llvm-ptx/accelerate-llvm-ptx.cabal        ${PREFIX}/accelerate-llvm-ptx/
