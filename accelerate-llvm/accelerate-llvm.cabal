@@ -55,7 +55,7 @@ description:
 license:                BSD3
 license-file:           LICENSE
 author:                 Trevor L. McDonell
-maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+maintainer:             Trevor L. McDonell <trevor.mcdonell@gmail.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Compilers/Interpreters, Concurrency, Data, Parallelism
 

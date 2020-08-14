@@ -2,7 +2,7 @@
 
 # https://hub.docker.com/r/nvidia/cuda/
 FROM nvidia/cuda:10.2-devel-ubuntu18.04
-LABEL maintainer "Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>"
+LABEL maintainer "Trevor L. McDonell <trevor.mcdonell@gmail.com>"
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PREFIX=/opt/accelerate-llvm
