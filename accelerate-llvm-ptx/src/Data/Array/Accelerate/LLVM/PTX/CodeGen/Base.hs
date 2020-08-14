@@ -68,7 +68,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
-import LLVM.AST.Type.Global
+import LLVM.AST.Type.Function
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Metadata
@@ -98,7 +98,7 @@ import Prelude                                                      as P
 --
 specialPTXReg :: Label -> CodeGen PTX (Operands Int32)
 specialPTXReg f =
-  call (Body type' f) [NoUnwind, ReadNone]
+  call (Body type' (Just Tail) f) [NoUnwind, ReadNone]
 
 blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen PTX (Operands Int32)
 blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
@@ -180,10 +180,10 @@ gangParam =
 -- | Call a built-in CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen PTX ()
-barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate, Convergent]
+barrier f = void $ call (Body VoidType (Just Tail) f) [NoUnwind, NoDuplicate, Convergent]
 
 barrier_op :: Label -> Operands Int32 -> CodeGen PTX (Operands Int32)
-barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwind, NoDuplicate, Convergent]
+barrier_op f x = call (Lam primType (op integralType x) (Body type' (Just Tail) f)) [NoUnwind, NoDuplicate, Convergent]
 
 
 -- | Wait until all threads in the thread block have reached this point, and all
@@ -239,7 +239,7 @@ __syncwarp_mask mask = do
 #if !MIN_VERSION_llvm_hs(6,0,0)
          internalError "LLVM-6.0 or above is required for Volta devices and later"
 #else
-         void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
+         void $ call (Lam primType (op primType mask) (Body VoidType (Just Tail) "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
 #endif
 
 
@@ -294,7 +294,7 @@ atomicAdd_f t addr val =
       t_ret = PrimType (ScalarPrimType t_val)
       fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
   in
-  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret fun))) [NoUnwind]
+  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
 
 
 -- Shared memory

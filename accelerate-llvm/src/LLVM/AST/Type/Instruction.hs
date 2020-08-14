@@ -25,7 +25,8 @@ module LLVM.AST.Type.Instruction
 
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
-import LLVM.AST.Type.Global
+import LLVM.AST.Type.Function
+import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
@@ -41,8 +42,7 @@ import qualified LLVM.AST.CallingConvention               as LLVM
 import qualified LLVM.AST.FloatingPointPredicate          as FP
 import qualified LLVM.AST.Instruction                     as LLVM
 import qualified LLVM.AST.IntegerPredicate                as IP
-import qualified LLVM.AST.Name                            as LLVM
-import qualified LLVM.AST.Operand                         as LLVM ( Operand(..) )
+import qualified LLVM.AST.Operand                         as LLVM ( Operand(..), CallableOperand )
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
 
@@ -52,7 +52,7 @@ import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Type
 import Data.Primitive.Vec
 
-import Prelude                                            hiding ( Ordering(..), quot, rem, div, isNaN )
+import Prelude                                            hiding ( Ordering(..), quot, rem, div, isNaN, tail )
 
 
 -- | Non-terminating instructions
@@ -360,7 +360,7 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#call-instruction>
   --
-  Call            :: GlobalFunction args t
+  Call            :: Function (Either InlineAssembly Label) args t
                   -> [Either GroupID FunctionAttribute]
                   -> Instruction t
 
@@ -548,22 +548,26 @@ instance Downcast (Instruction a) LLVM.Instruction where
           ui GT = IP.UGT
           ui GE = IP.UGE
 
-      call :: GlobalFunction args t -> [Either GroupID FunctionAttribute] -> LLVM.Instruction
-      call f as = LLVM.Call Nothing LLVM.C [] (Right (LLVM.ConstantOperand (LLVM.GlobalReference funt name))) argv (downcast as) md
+      call :: Function (Either InlineAssembly Label) args t -> [Either GroupID FunctionAttribute] -> LLVM.Instruction
+      call f as = LLVM.Call tail LLVM.C [] target argv (downcast as) md
         where
-          trav :: GlobalFunction args t
+          trav :: Function (Either InlineAssembly Label) args t
                -> ( [LLVM.Type]                                 -- argument types
                   , [(LLVM.Operand, [LLVM.ParameterAttribute])] -- argument operands
+                  , Maybe LLVM.TailCallKind                     -- calling kind
                   , LLVM.Type                                   -- return type
-                  , LLVM.Name                                   -- function name
+                  , LLVM.CallableOperand                        -- function name or inline assembly
                   )
-          trav (Body u n)   = ([], [], downcast u, downcast n)
+          trav (Body u k o) =
+            case o of
+              Left asm -> ([], [], downcast k, downcast u, Left (downcast (u, asm)))
+              Right n  -> ([], [], downcast k, downcast u, Right (LLVM.ConstantOperand (LLVM.GlobalReference funt (downcast n))))
           trav (Lam t x l)  =
-            let (ts, xs, r, n)  = trav l
-            in  (downcast t : ts, (downcast x, []) : xs, r, n)
+            let (ts, xs, k, r, n)  = trav l
+            in  (downcast t : ts, (downcast x, []) : xs, k, r, n)
 
-          (argt, argv, ret, name) = trav f
-          funt                    = LLVM.PointerType (LLVM.FunctionType ret argt False) (LLVM.AddrSpace 0)
+          (argt, argv, tail, ret, target) = trav f
+          funt                            = LLVM.PointerType (LLVM.FunctionType ret argt False) (LLVM.AddrSpace 0)
 
 
 instance Downcast (i a) i' => Downcast (Named i a) (LLVM.Named i') where
@@ -643,7 +647,7 @@ instance TypeOf Instruction where
       bounded :: BoundedType a -> Type a
       bounded (IntegralBoundedType t) = integral t
 
-      fun :: GlobalFunction args a -> Type a
-      fun (Lam _ _ l) = fun l
-      fun (Body t _)  = t
+      fun :: Function kind args a -> Type a
+      fun (Lam _ _ l)  = fun l
+      fun (Body t _ _) = t
 
