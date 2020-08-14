@@ -1,7 +1,7 @@
 name:                   accelerate-llvm-ptx
 version:                1.4.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC >= 8.0
+tested-with:            GHC >= 8.6
 build-type:             Simple
 
 synopsis:               Accelerate backend for NVIDIA GPUs
@@ -122,6 +122,7 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Embed
 
     System.Process.Extra
+    GHC.Heap.NormalForm
 
     Paths_accelerate_llvm_ptx
 

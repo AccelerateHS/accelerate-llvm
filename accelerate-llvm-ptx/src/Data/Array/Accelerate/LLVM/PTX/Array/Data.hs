@@ -48,18 +48,7 @@ import Control.Monad.State                                          ( gets )
 import System.IO.Unsafe
 import Prelude
 
-#if __GLASGOW_HASKELL__ >= 806
-import Text.Printf
-import GHC.Exts.Heap                                                hiding ( size )
-import qualified Data.Array.Accelerate.Debug                        as Debug
-#elif UNBOXED_TUPLES
-import Util                                                         ( ghciTablesNextToCode )
-import GHC.Exts
-import GHCi.InfoTable
-import Foreign.Ptr                                                  ( plusPtr )
-import Foreign.Storable                                             ( sizeOf )
-#include "rts/storage/ClosureTypes.h"
-#endif
+import GHC.Heap.NormalForm
 
 
 -- | Remote memory management for the PTX target. Data can be copied
@@ -130,11 +119,6 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future = do
     -- check whether the pointer is a thunk, and only initiate the
     -- transfer if so.
     --
-    -- XXX: The current approach of checking the heap representation
-    -- (function 'evaluated' below) is not particularly reliable. We
-    -- should improve this situation somehow.
-    --    -- TLM 2019-06-06
-    --
     let
       peekR :: SingleType e
             -> ArrayData e
@@ -144,8 +128,8 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future = do
         | SingleArrayDict                        <- singleArrayDict t
         , UniqueArray uid (Lifetime lft weak fp) <- ad
         = unsafeInterleaveIO $ do
-          ok  <- evaluated fp
-          fp' <- if ok
+          yes <- isNormalForm fp
+          fp' <- if yes
                     then return fp
                     else unsafeInterleaveIO . evalPTX ptx . evalPar $ do
                           !_ <- block =<< Prim.peekArrayAsync t m ad
@@ -153,65 +137,6 @@ copyToHostLazy (TupRsingle (ArrayR shr tp)) future = do
           --
           return $ UniqueArray uid (Lifetime lft weak fp')
 
-      -- Check that the argument is evaluated to normal form. In particular
-      -- we are only concerned with the array payload (ForeignPtr).
-      --
-      evaluated :: a -> IO Bool
-#if __GLASGOW_HASKELL__ >= 806
-      evaluated x = do
-        c <- getClosureData x
-        case c of
-          ThunkClosure{}        -> return False
-          ArrWordsClosure{}     -> return True                      -- ByteArray#
-          ConstrClosure{..}     -> and <$> mapM evaluated ptrArgs   -- a data constructor
-          BlackholeClosure{..}  -> evaluated indirectee             -- evaluated by another thread (check if this is just an indirection?)
-          MutVarClosure{..}     -> evaluated var                    -- in case this is not a PlainForeignPtr
-          _                     -> do
-            Debug.when Debug.verbose $
-              Debug.traceIO Debug.dump_gc $
-                printf "copyToHostLazy encountered: %s" (show c)
-            return False
-#else
-#if UNBOXED_TUPLES
-      evaluated x =
-        case unpackClosure# x of
-          (# iptr, ptrs, _ #) -> do
-              let iptr0 = Ptr iptr
-              let iptr1
-                    | ghciTablesNextToCode = iptr0
-                    | otherwise            = iptr0 `plusPtr` negate wORD_SIZE
-              itbl <- peekItbl iptr1
-              case tipe itbl of
-                ARR_WORDS                                     -> return True
-                i | i >= THUNK  && i < THUNK_SELECTOR         -> return False
-                i | i >= CONSTR && i <= CONSTR_NOCAF          -> and <$> mapM evaluated (dumpArray# ptrs)
-                i | i == MUT_VAR_CLEAN || i == MUT_VAR_DIRTY  -> evaluated (headArray# ptrs)
-                BLACKHOLE                                     -> evaluated (headArray# ptrs)
-                _                                             -> return False
-
-      wORD_SIZE = sizeOf (undefined::Word)
-
-      -- using indexArray# makes sure that the 'Any' is looked up without
-      -- evaluating the value itself. This is not possible with Data.Array.!
-      --
-      dumpArray# :: Array# Any -> [Any]
-      dumpArray# arr# = go 0#
-        where
-          l#    = sizeofArray# arr#
-          go i# = case i# <# l# of
-                    0# -> []
-                    _  -> case indexArray# arr# i# of
-                            (# h #) -> h : go (i# +# 1#)
-
-      headArray# :: Array# Any -> Any
-      headArray# arr# =
-        case indexArray# arr# 0# of
-          (# h #) -> h
-#else
-      evaluated _ =
-        return False
-#endif
-#endif
       n = size shr sh
 
       runR :: TypeR e -> ArrayData e -> IO (ArrayData e)
