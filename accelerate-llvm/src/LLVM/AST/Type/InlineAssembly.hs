@@ -12,12 +12,16 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module LLVM.AST.Type.InlineAssembly
-  where
+module LLVM.AST.Type.InlineAssembly (
+
+  module LLVM.AST.Type.InlineAssembly,
+  LLVM.Dialect(..),
+
+) where
 
 import LLVM.AST.Type.Downcast
-import LLVM.AST.Type.Representation
 
+import qualified LLVM.AST.Type                                      as LLVM
 import qualified LLVM.AST.InlineAssembly                            as LLVM
 
 import Data.ByteString
@@ -34,7 +38,7 @@ data InlineAssembly where
                  -> LLVM.Dialect
                  -> InlineAssembly
 
-instance Downcast (Type r, InlineAssembly) LLVM.InlineAssembly where
+instance Downcast (LLVM.Type, InlineAssembly) LLVM.InlineAssembly where
   downcast (t, InlineAssembly asm cst s a d) =
-    LLVM.InlineAssembly (downcast t) asm cst s a d
+    LLVM.InlineAssembly t asm cst s a d
 

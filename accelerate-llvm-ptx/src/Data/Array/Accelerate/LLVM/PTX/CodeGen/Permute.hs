@@ -131,8 +131,8 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      repr'               = ArrayR shr' tp
-      (arrOut, paramOut)  = mutableArray repr' "out"
+      outR                = ArrayR shr' tp
+      (arrOut, paramOut)  = mutableArray outR "out"
       (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
       start               = liftInt 0
@@ -228,9 +228,10 @@ mkPermute_mutex
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
   let
-      repr'                 = ArrayR shr' tp
-      (arrOut,  paramOut)   = mutableArray repr' "out"
-      (arrLock, paramLock)  = mutableArray reprLock "lock"
+      outR                  = ArrayR shr' tp
+      lockR                 = ArrayR (ShapeRsnoc ShapeRz) (TupRsingle scalarTypeWord32)
+      (arrOut,  paramOut)   = mutableArray outR "out"
+      (arrLock, paramLock)  = mutableArray lockR "lock"
       (arrIn,   paramIn)    = delayedArray "in" marr
       paramEnv              = envParam aenv
       start                 = liftInt 0
@@ -256,6 +257,93 @@ mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
           writeArray TypeInt arrOut j r
 
     return_
+
+
+-- Atomically execute the critical section only when the lock at the given
+-- array indexed is obtained.
+--
+atomically
+    :: IRArray (Vector Word32)
+    -> Operands Int
+    -> CodeGen PTX a
+    -> CodeGen PTX a
+atomically barriers i action = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  if computeCapability dev >= Compute 7 0
+     then atomically_thread barriers i action
+     else atomically_warp   barriers i action
+
+
+-- Atomically execute the critical section only when the lock at the given
+-- array index is obtained. The thread spins waiting for the lock to be
+-- released with exponential backoff on failure in case the lock is
+-- contended.
+--
+-- > uint32_t ns = 8;
+-- > while ( atomic_exchange(&lock[i], 1) == 1 ) {
+-- >     __nanosleep(ns);
+-- >     if ( ns < 256 ) {
+-- >         ns *= 2;
+-- >     }
+-- > }
+--
+-- Requires independent thread scheduling features of SM7+.
+--
+atomically_thread
+    :: IRArray (Vector Word32)
+    -> Operands Int
+    -> CodeGen PTX a
+    -> CodeGen PTX a
+atomically_thread barriers i action = do
+  let
+      lock    = integral integralType 1
+      unlock  = integral integralType 0
+      unlock' = ir TypeWord32 unlock
+      i32     = TupRsingle scalarTypeInt32
+  --
+  entry <- newBlock "spinlock.entry"
+  sleep <- newBlock "spinlock.backoff"
+  moar  <- newBlock "spinlock.backoff-moar"
+  start <- newBlock "spinlock.critical-start"
+  end   <- newBlock "spinlock.critical-end"
+  exit  <- newBlock "spinlock.exit"
+  ns    <- fresh i32
+
+  addr  <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+  top   <- br entry
+
+  -- Loop until this thread has completed its critical section. If the slot
+  -- was unlocked we just acquired the lock and the thread can perform its
+  -- critical section, otherwise sleep the thread and try again later.
+  setBlock entry
+  old   <- instr $ AtomicRMW numType NonVolatile Exchange addr lock (CrossThread, Acquire)
+  ok    <- A.eq singleType old unlock'
+  _     <- cbr ok start sleep
+
+  -- We did not acquire the lock. Sleep the thread for a small amount of
+  -- time and (possibly) increase the sleep duration for the next round
+  setBlock sleep
+  _     <- nanosleep ns
+  p     <- A.lt singleType ns (ir TypeInt32 (integral integralType 256))
+  _     <- cbr p moar entry
+
+  setBlock moar
+  ns'   <- A.mul numType ns (ir TypeInt32 (integral integralType 2))
+  _     <- phi' i32 entry ns [(ir TypeInt32 (integral (integralType) 8), top), (ns, sleep), (ns', moar)]
+  _     <- br entry
+
+  -- If we just acquired the lock, execute the critical section, then
+  -- release the lock and continue with your day.
+  setBlock start
+  r     <- action
+  _     <- br end
+
+  setBlock end
+  _     <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
+  _     <- br exit
+
+  setBlock exit
+  return r
 
 
 -- Atomically execute the critical section only when the lock at the given array
@@ -302,12 +390,12 @@ mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
 -- >   }
 -- > } while ( done == 0 );
 --
-atomically
+atomically_warp
     :: IRArray (Vector Word32)
     -> Operands Int
     -> CodeGen PTX a
     -> CodeGen PTX a
-atomically barriers i action = do
+atomically_warp barriers i action = do
   let
       lock    = integral integralType 1
       unlock  = integral integralType 0
@@ -348,7 +436,4 @@ atomically barriers i action = do
 
   setBlock exit
   return r
-
-reprLock :: ArrayR (Array ((), Int) Word32)
-reprLock = ArrayR (ShapeRsnoc ShapeRz) $ TupRsingle scalarTypeWord32
 

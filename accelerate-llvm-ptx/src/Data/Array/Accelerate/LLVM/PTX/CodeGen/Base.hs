@@ -29,6 +29,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   laneId, warpId,
   laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge,
   atomicAdd_f,
+  nanosleep,
 
   -- Barriers and synchronisation
   __syncthreads, __syncthreads_count, __syncthreads_and, __syncthreads_or,
@@ -69,6 +70,7 @@ import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
+import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Metadata
@@ -402,6 +404,21 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
                        , irArrayAddrSpace  = sharedMemAddrSpace
                        , irArrayVolatility = sharedMemVolatility
                        }
+
+
+-- Other functions
+-- ---------------
+
+-- Sleep the thread for (approximately) the given number of nanoseconds.
+-- Requires compute capability >= 7.0
+--
+nanosleep :: Operands Int32 -> CodeGen PTX ()
+nanosleep ns =
+  let
+      attrs = [NoUnwind, Convergent]
+      asm   = InlineAssembly "nanosleep.u32 $0;" "r" True False ATTDialect
+  in
+  void $ instr (Call (Lam primType (op integralType ns) (Body VoidType (Just Tail) (Left asm))) (map Right attrs))
 
 
 -- Global kernel definitions

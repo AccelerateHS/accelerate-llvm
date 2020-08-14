@@ -560,14 +560,15 @@ instance Downcast (Instruction a) LLVM.Instruction where
                   )
           trav (Body u k o) =
             case o of
-              Left asm -> ([], [], downcast k, downcast u, Left (downcast (u, asm)))
-              Right n  -> ([], [], downcast k, downcast u, Right (LLVM.ConstantOperand (LLVM.GlobalReference funt (downcast n))))
+              Left asm -> ([], [], downcast k, downcast u, Left  (downcast (LLVM.FunctionType ret argt False, asm)))
+              Right n  -> ([], [], downcast k, downcast u, Right (LLVM.ConstantOperand (LLVM.GlobalReference ptr_fun_ty (downcast n))))
           trav (Lam t x l)  =
             let (ts, xs, k, r, n)  = trav l
             in  (downcast t : ts, (downcast x, []) : xs, k, r, n)
 
           (argt, argv, tail, ret, target) = trav f
-          funt                            = LLVM.PointerType (LLVM.FunctionType ret argt False) (LLVM.AddrSpace 0)
+          fun_ty                          = LLVM.FunctionType ret argt False
+          ptr_fun_ty                      = LLVM.PointerType fun_ty (LLVM.AddrSpace 0)
 
 
 instance Downcast (i a) i' => Downcast (Named i a) (LLVM.Named i') where
