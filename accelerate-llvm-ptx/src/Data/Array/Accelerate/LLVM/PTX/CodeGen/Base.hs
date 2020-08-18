@@ -86,9 +86,15 @@ import qualified LLVM.AST.Type                                      as LLVM
 import Control.Applicative
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
+import Prelude                                                      as P
+
+#if MIN_VERSION_llvm_hs(10,0,0)
+import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
+import LLVM.AST.Type.Instruction.Atomic
+#elif !MIN_VERSION_llvm_hs(9,0,0)
 import Data.String
 import Text.Printf
-import Prelude                                                      as P
+#endif
 
 
 -- Thread identifiers
@@ -270,33 +276,53 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 -- additional support for atomic add on floating point types, which can be
 -- accessed through the following intrinsics.
 --
--- Double precision is only supported on Compute 6.0 devices and later. LLVM-4.0
--- currently lacks support for this intrinsic, however it may be possible to use
--- inline assembly.
+-- Double precision is supported on Compute 6.0 devices and later. Half
+-- precision is supported on Compute 7.0 devices and later.
+--
+-- LLVM-4.0 currently lacks support for this intrinsic, however it is
+-- accessible via inline assembly.
+--
+-- LLVM-9 integrated floating-point atomic operations into the AtomicRMW
+-- instruction, but this functionality is missing from llvm-hs-9. We access
+-- it via inline assembly..
 --
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
 atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val =
+#if MIN_VERSION_llvm_hs(10,0,0)
+  void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.FAdd addr val (CrossThread, AcquireRelease)
+#else
   let
-      width :: Int
-      width =
+      _width :: Int
+      _width =
         case t of
-          TypeHalf{}    -> 16
-          TypeFloat{}   -> 32
-          TypeDouble{}  -> 64
+          TypeHalf    -> 16
+          TypeFloat   -> 32
+          TypeDouble  -> 64
 
-      addrspace :: Word32
-      (t_addr, t_val, addrspace) =
+      (t_addr, t_val, _addrspace) =
         case typeOf addr of
           PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
             -> (ta, tv, as)
           _ -> internalError "unexpected operand type"
 
       t_ret = PrimType (ScalarPrimType t_val)
-      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
+#if MIN_VERSION_llvm_hs(9,0,0) || !MIN_VERSION_llvm_hs(6,0,0)
+      asm   =
+        case t of
+          -- assuming .address_size 64
+          TypeHalf   -> InlineAssembly "atom.add.noftz.f16  $0, [$1], $2;" "=c,l,c" True False ATTDialect
+          TypeFloat  -> InlineAssembly "atom.global.add.f32 $0, [$1], $2;" "=f,l,f" True False ATTDialect
+          TypeDouble -> InlineAssembly "atom.global.add.f64 $0, [$1], $2;" "=d,l,d" True False ATTDialect
+  in
+  void $ instr (Call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) (Left asm)))) [Right NoUnwind])
+#else
+      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" _width (_addrspace :: Word32) _width
   in
   void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
+#endif
+#endif
 
 
 -- Shared memory

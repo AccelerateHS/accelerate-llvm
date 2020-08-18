@@ -87,13 +87,9 @@ mkPermute
     -> MIRDelayed   PTX aenv (Array sh e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute aenv repr shr' IRPermuteFun{..} project arr =
-  let
-      bytes   = bytesElt $ arrayRtype repr
-      sizeOk  = bytes == 4 || bytes == 8
-  in
   case atomicRMW of
-    Just (rmw, f) | sizeOk -> mkPermute_rmw   aenv repr shr' rmw f   project arr
-    _                      -> mkPermute_mutex aenv repr shr' combine project arr
+    Just (rmw, f) -> mkPermute_rmw   aenv repr shr' rmw f   project arr
+    _             -> mkPermute_mutex aenv repr shr' combine project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
@@ -103,15 +99,15 @@ mkPermute aenv repr shr' IRPermuteFun{..} project arr =
 -- the element type and compute capability of the target hardware we may need to
 -- emulate the operation using atomic compare-and-swap.
 --
---              Int32    Int64    Float32    Float64
---           +----------------------------------------
---    (+)    |  2.0       2.0       2.0        6.0
---    (-)    |  2.0       2.0        x          x
+--              Int32    Int64    Float16    Float32    Float64
+--           +-------------------------------------------------
+--    (+)    |  2.0       2.0       7.0        2.0        6.0
+--    (-)    |  2.0       2.0        x          x          x
 --    (.&.)  |  2.0       3.2
 --    (.|.)  |  2.0       3.2
 --    xor    |  2.0       3.2
---    min    |  2.0       3.2        x          x
---    max    |  2.0       3.2        x          x
+--    min    |  2.0       3.2        x          x          x
+--    max    |  2.0       3.2        x          x          x
 --    CAS    |  2.0       2.0
 --
 -- Note that NVPTX requires at least compute 2.0, so we can always implement the
@@ -141,6 +137,7 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
       compute             = computeCapability dev
       compute32           = Compute 3 2
       compute60           = Compute 6 0
+      compute70           = Compute 7 0
   --
   makeOpenAcc "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -200,12 +197,11 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
                         where
                           n       = FloatingNumType t
                           s'      = NumSingleType n
-                          primAdd = bytes == 4
-                                 -- Available directly in LLVM-6 and later;
-                                 -- earlier versions could use inline assembly
-#if MIN_VERSION_llvm_hs_pure(6,0,0)
-                                 || compute >= compute60
-#endif
+                          primAdd =
+                            case t of
+                              TypeHalf   -> compute >= compute70
+                              TypeFloat  -> True
+                              TypeDouble -> compute >= compute60
                   case s of
                     NumSingleType (IntegralNumType t) -> rmw_integral t addr (op t r)
                     NumSingleType (FloatingNumType t) -> rmw_floating t addr (op t r)
