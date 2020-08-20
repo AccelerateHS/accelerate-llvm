@@ -26,7 +26,7 @@ import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 
 import LLVM.AST.Type.Constant
-import LLVM.AST.Type.Global
+import LLVM.AST.Type.Function
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Compare
 import LLVM.AST.Type.Name
@@ -83,8 +83,8 @@ abs n x =
               t = PrimType p
           in
           case finiteBitSize (undefined :: a) of
-            64 -> call (Lam p (op n x) (Body t "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam p (op n x) (Body t "abs"))   [NoUnwind, ReadNone]
+            64 -> call (Lam p (op n x) (Body t Nothing "llabs")) [NoUnwind, ReadNone]
+            _  -> call (Lam p (op n x) (Body t Nothing "abs"))   [NoUnwind, ReadNone]
 
 signum :: forall arch a. NumType a -> Operands a -> CodeGen arch (Operands a)
 signum t x =
@@ -284,7 +284,7 @@ popCount i x
            p     = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t     = PrimType p
        --
-       c <- call (Lam p (op i x) (Body t ctpop)) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Body t Nothing ctpop)) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -295,7 +295,7 @@ countLeadingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t Nothing clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -306,7 +306,7 @@ countTrailingZeros i x
            p   = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType i)))
            t   = PrimType p
        --
-       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t clz))) [NoUnwind, ReadNone]
+       c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t Nothing clz))) [NoUnwind, ReadNone]
        r <- irFromIntegral i numType c
        return r
 
@@ -718,7 +718,7 @@ mathf n f (op f -> x) = do
       t = PrimType s
   --
   name <- lm f n
-  r    <- call (Lam s x (Body t name)) [NoUnwind, ReadOnly]
+  r    <- call (Lam s x (Body t Nothing name)) [NoUnwind, ReadOnly]
   return r
 
 
@@ -728,7 +728,7 @@ mathf2 n f (op f -> x) (op f -> y) = do
       t = PrimType s
   --
   name <- lm f n
-  r    <- call (Lam s x (Lam s y (Body t name))) [NoUnwind, ReadOnly]
+  r    <- call (Lam s x (Lam s y (Body t Nothing name))) [NoUnwind, ReadOnly]
   return r
 
 lm :: FloatingType t -> ShortByteString -> CodeGen arch Label

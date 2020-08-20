@@ -29,6 +29,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   laneId, warpId,
   laneMask_eq, laneMask_lt, laneMask_le, laneMask_gt, laneMask_ge,
   atomicAdd_f,
+  nanosleep,
 
   -- Barriers and synchronisation
   __syncthreads, __syncthreads_count, __syncthreads_and, __syncthreads_or,
@@ -68,7 +69,8 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
-import LLVM.AST.Type.Global
+import LLVM.AST.Type.Function
+import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Metadata
@@ -84,9 +86,15 @@ import qualified LLVM.AST.Type                                      as LLVM
 import Control.Applicative
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
+import Prelude                                                      as P
+
+#if MIN_VERSION_llvm_hs(10,0,0)
+import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
+import LLVM.AST.Type.Instruction.Atomic
+#elif !MIN_VERSION_llvm_hs(9,0,0)
 import Data.String
 import Text.Printf
-import Prelude                                                      as P
+#endif
 
 
 -- Thread identifiers
@@ -98,7 +106,7 @@ import Prelude                                                      as P
 --
 specialPTXReg :: Label -> CodeGen PTX (Operands Int32)
 specialPTXReg f =
-  call (Body type' f) [NoUnwind, ReadNone]
+  call (Body type' (Just Tail) f) [NoUnwind, ReadNone]
 
 blockDim, gridDim, threadIdx, blockIdx, warpSize :: CodeGen PTX (Operands Int32)
 blockDim    = specialPTXReg "llvm.nvvm.read.ptx.sreg.ntid.x"
@@ -180,10 +188,10 @@ gangParam =
 -- | Call a built-in CUDA synchronisation intrinsic
 --
 barrier :: Label -> CodeGen PTX ()
-barrier f = void $ call (Body VoidType f) [NoUnwind, NoDuplicate, Convergent]
+barrier f = void $ call (Body VoidType (Just Tail) f) [NoUnwind, NoDuplicate, Convergent]
 
 barrier_op :: Label -> Operands Int32 -> CodeGen PTX (Operands Int32)
-barrier_op f x = call (Lam primType (op integralType x) (Body type' f)) [NoUnwind, NoDuplicate, Convergent]
+barrier_op f x = call (Lam primType (op integralType x) (Body type' (Just Tail) f)) [NoUnwind, NoDuplicate, Convergent]
 
 
 -- | Wait until all threads in the thread block have reached this point, and all
@@ -239,7 +247,7 @@ __syncwarp_mask mask = do
 #if !MIN_VERSION_llvm_hs(6,0,0)
          internalError "LLVM-6.0 or above is required for Volta devices and later"
 #else
-         void $ call (Lam primType (op primType mask) (Body VoidType "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
+         void $ call (Lam primType (op primType mask) (Body VoidType (Just Tail) "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
 #endif
 
 
@@ -268,33 +276,53 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 -- additional support for atomic add on floating point types, which can be
 -- accessed through the following intrinsics.
 --
--- Double precision is only supported on Compute 6.0 devices and later. LLVM-4.0
--- currently lacks support for this intrinsic, however it may be possible to use
--- inline assembly.
+-- Double precision is supported on Compute 6.0 devices and later. Half
+-- precision is supported on Compute 7.0 devices and later.
+--
+-- LLVM-4.0 currently lacks support for this intrinsic, however it is
+-- accessible via inline assembly.
+--
+-- LLVM-9 integrated floating-point atomic operations into the AtomicRMW
+-- instruction, but this functionality is missing from llvm-hs-9. We access
+-- it via inline assembly..
 --
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
 atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val =
+#if MIN_VERSION_llvm_hs(10,0,0)
+  void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.FAdd addr val (CrossThread, AcquireRelease)
+#else
   let
-      width :: Int
-      width =
+      _width :: Int
+      _width =
         case t of
-          TypeHalf{}    -> 16
-          TypeFloat{}   -> 32
-          TypeDouble{}  -> 64
+          TypeHalf    -> 16
+          TypeFloat   -> 32
+          TypeDouble  -> 64
 
-      addrspace :: Word32
-      (t_addr, t_val, addrspace) =
+      (t_addr, t_val, _addrspace) =
         case typeOf addr of
           PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
             -> (ta, tv, as)
           _ -> internalError "unexpected operand type"
 
       t_ret = PrimType (ScalarPrimType t_val)
-      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" width addrspace width
+#if MIN_VERSION_llvm_hs(9,0,0) || !MIN_VERSION_llvm_hs(6,0,0)
+      asm   =
+        case t of
+          -- assuming .address_size 64
+          TypeHalf   -> InlineAssembly "atom.add.noftz.f16  $0, [$1], $2;" "=c,l,c" True False ATTDialect
+          TypeFloat  -> InlineAssembly "atom.global.add.f32 $0, [$1], $2;" "=f,l,f" True False ATTDialect
+          TypeDouble -> InlineAssembly "atom.global.add.f64 $0, [$1], $2;" "=d,l,d" True False ATTDialect
   in
-  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret fun))) [NoUnwind]
+  void $ instr (Call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) (Left asm)))) [Right NoUnwind])
+#else
+      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" _width (_addrspace :: Word32) _width
+  in
+  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
+#endif
+#endif
 
 
 -- Shared memory
@@ -402,6 +430,21 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
                        , irArrayAddrSpace  = sharedMemAddrSpace
                        , irArrayVolatility = sharedMemVolatility
                        }
+
+
+-- Other functions
+-- ---------------
+
+-- Sleep the thread for (approximately) the given number of nanoseconds.
+-- Requires compute capability >= 7.0
+--
+nanosleep :: Operands Int32 -> CodeGen PTX ()
+nanosleep ns =
+  let
+      attrs = [NoUnwind, Convergent]
+      asm   = InlineAssembly "nanosleep.u32 $0;" "r" True False ATTDialect
+  in
+  void $ instr (Call (Lam primType (op integralType ns) (Body VoidType (Just Tail) (Left asm))) (map Right attrs))
 
 
 -- Global kernel definitions

@@ -37,7 +37,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
+import LLVM.AST.Type.Function
 import LLVM.AST.Type.Global
+import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Name
@@ -202,9 +204,13 @@ call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (Operands t
 call f attrs = do
   let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
       attrs'    = map Right attrs
+      --
+      go :: GlobalFunction args t -> Function (Either InlineAssembly Label) args t
+      go (Body t k l) = Body t k (Right l)
+      go (Lam t x l)  = Lam t x (go l)
   --
   declare decl
-  instr (Call f attrs')
+  instr (Call (go f) attrs')
 
 
 parameter :: TypeR t -> Name t -> [LLVM.Parameter]
