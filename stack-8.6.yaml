@@ -12,6 +12,9 @@ extra-deps:
 - github: tmcdonell/accelerate
   commit: c63e746c8bb44d77a69e7ab7890a382bd22d3d5c
 
+- github: tmcdonell/cuda
+  commit: 1128c99c2e7a41b5e21363a9bf12c7bb240184ac
+
 # Override default flag values for local packages and extra-deps
 # flags: {}
 

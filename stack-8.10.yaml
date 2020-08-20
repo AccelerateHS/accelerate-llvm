@@ -14,7 +14,7 @@ extra-deps:
   commit: c63e746c8bb44d77a69e7ab7890a382bd22d3d5c
 
 - github: tmcdonell/cuda
-  commit: bf6efc8f9118caac91bde8c9535970f7ab645ead
+  commit: 1128c99c2e7a41b5e21363a9bf12c7bb240184ac
 
 - github: tmcdonell/nvvm
   commit: 219637eab3aab7275ce0a0c9b0e1855be912fe8a
