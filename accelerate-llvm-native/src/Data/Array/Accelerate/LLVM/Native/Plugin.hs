@@ -42,7 +42,7 @@ import SysTools
 --
 -- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
 --
-plugin :: HasCallStack => Plugin
+plugin :: Plugin
 plugin = defaultPlugin
   { installCoreToDos = install
 #if __GLASGOW_HASKELL__ >= 806
