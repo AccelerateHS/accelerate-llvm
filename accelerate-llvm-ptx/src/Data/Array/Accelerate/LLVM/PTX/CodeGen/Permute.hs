@@ -336,6 +336,7 @@ atomically_thread barriers i action = do
 
   setBlock end
   _     <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
+  _     <- __threadfence_grid   -- TODO: why is this required?
   _     <- br exit
 
   setBlock exit
