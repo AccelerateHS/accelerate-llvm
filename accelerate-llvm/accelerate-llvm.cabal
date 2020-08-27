@@ -36,7 +36,7 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-8-dev
+    > apt-get install llvm-9-dev
     .
     /Building from source/
     .
