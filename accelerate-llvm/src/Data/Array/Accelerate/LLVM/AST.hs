@@ -186,6 +186,7 @@ data DelayedOpenAcc acc arch aenv a where
               -> DelayedOpenAcc acc arch aenv (Array sh e)
 
 instance HasArraysR (acc arch) => HasArraysR (PreOpenAccCommand acc arch) where
+  {-# INLINEABLE arraysR #-}
   arraysR (Avar (Var repr _))                   = TupRsingle repr
   arraysR (Alet _ _ a)                          = arraysR a
   arraysR (Alloc repr _)                        = TupRsingle repr
@@ -209,6 +210,7 @@ instance HasArraysR (acc arch) => HasArraysR (PreOpenAccCommand acc arch) where
       go _                          _              = error "Time enough for life to unfold all the precious things life has in store."
 
 instance HasArraysR (acc arch) => HasArraysR (PreOpenAccSkeleton acc arch) where
+  {-# INLINEABLE arraysR #-}
   arraysR (Map tp a)               = let ArrayR shr _ = arrayR a
                                      in  TupRsingle $ ArrayR shr tp
   arraysR (Generate repr _)        = TupRsingle repr
@@ -227,6 +229,7 @@ instance HasArraysR (acc arch) => HasArraysR (PreOpenAccSkeleton acc arch) where
                                      in  TupRsingle $ ArrayR shr tp
 
 instance HasArraysR (acc arch) => HasArraysR (DelayedOpenAcc acc arch) where
+  {-# INLINEABLE arraysR #-}
   arraysR (Delayed  repr _) = TupRsingle repr
   arraysR (Manifest repr _) = repr
 

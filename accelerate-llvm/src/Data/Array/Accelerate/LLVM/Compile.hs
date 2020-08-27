@@ -439,6 +439,7 @@ liftA5 :: Applicative f => (a -> b -> c -> d -> e -> g) -> f a -> f b -> f c -> 
 liftA5 f a b c d g = f <$> a <*> b <*> c <*> d <*> g
 
 instance HasArraysR (CompiledOpenAcc arch) where
+  {-# INLINEABLE arraysR #-}
   arraysR (BuildAcc r _ _ _) = r
   arraysR (PlainAcc r     _) = r
 

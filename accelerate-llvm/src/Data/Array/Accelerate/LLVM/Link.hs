@@ -63,6 +63,7 @@ data ExecOpenAcc arch aenv a where
             -> ExecOpenAcc arch aenv a
 
 instance HasArraysR (ExecOpenAcc arch) where
+  {-# INLINEABLE arraysR #-}
   arraysR (ExecAcc r _ _ _) = r
   arraysR (EvalAcc r _)     = r
 
