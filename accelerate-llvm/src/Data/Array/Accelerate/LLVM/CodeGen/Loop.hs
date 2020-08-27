@@ -94,15 +94,15 @@ for tp start test incr body =
 --
 iter :: TypeR i
      -> TypeR a
-     -> Operands i                                        -- ^ starting index
-     -> Operands a                                        -- ^ initial value
-     -> (Operands i -> CodeGen arch (Operands Bool))      -- ^ index test to keep looping
-     -> (Operands i -> CodeGen arch (Operands i))         -- ^ increment loop counter
+     -> Operands i                                                -- ^ starting index
+     -> Operands a                                                -- ^ initial value
+     -> (Operands i -> CodeGen arch (Operands Bool))              -- ^ index test to keep looping
+     -> (Operands i -> CodeGen arch (Operands i))                 -- ^ increment loop counter
      -> (Operands i -> Operands a -> CodeGen arch (Operands a))   -- ^ loop body
      -> CodeGen arch (Operands a)
 iter tpi tpa start seed test incr body = do
-  let tp = TupRpair tpi tpa
-  r <- while tp (test . fst)
+  r <- while (TupRpair tpi tpa)
+             (test . fst)
              (\v -> do v' <- uncurry body v     -- update value and then...
                        i' <- incr (fst v)       -- ...calculate new index
                        return $ pair i' v')

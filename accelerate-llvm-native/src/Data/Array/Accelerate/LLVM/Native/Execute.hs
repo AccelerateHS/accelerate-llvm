@@ -350,7 +350,7 @@ foldDimOp repr NativeR{..} gamma aenv arr@(delayedShape -> (sh, _)) = do
       minsize = 1
       param   = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray $ ArrayR (ShapeRsnoc shr) tp)
   --
-  scheduleOpWith splits minsize fun gamma aenv dim1 ((), size shr sh) param (result, manifest arr)
+  scheduleOpWith splits minsize fun gamma aenv shr sh param (result, manifest arr)
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
   return future
@@ -371,17 +371,15 @@ foldSegOp int repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segmen
   Native{..}  <- gets llvmTarget
   future      <- new
   let
-      ArrayR shr _ = repr
       n       = ss-1
       splits  = numWorkers workers
-      minsize = case arrayRshape repr of
-                  ShapeRsnoc ShapeRz -> 64
-                  _                  -> 16
-      reprSegments = ArrayR dim1 $ TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType int
-      param   = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray reprSegments)
+      minsize = 1
+      shR     = arrayRshape repr
+      segR    = ArrayR dim1 $ TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType int
+      param   = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray segR)
   --
   result  <- allocateRemote repr (sh, n)
-  scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv dim1 ((), size shr (sh, n)) param ((result, manifest input), manifest segments)
+  scheduleOpWith splits minsize (nativeExecutable !# "foldSegP") gamma aenv shR (sh, n) param ((result, manifest input), manifest segments)
     `andThen` do putIO workers future result
                  touchLifetime nativeExecutable
 
@@ -426,13 +424,14 @@ scanCore
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e))
 scanCore repr NativeR{..} gamma aenv m input@(delayedShape -> (sz, n)) = do
-  let
-      paramA = TupRsingle $ ParamRarray repr
-      param  = paramA `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote repr (sz, m)
   --
+  let paramA = TupRsingle $ ParamRarray repr
+      param  = paramA `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+      shR    = arrayRshape (reduceRank repr)
+
   if isMultiDim $ arrayRshape repr
     -- This is a multidimensional scan. Each partial scan result is evaluated
     -- individually by a thread, so no inter-thread communication is required.
@@ -442,7 +441,7 @@ scanCore repr NativeR{..} gamma aenv m input@(delayedShape -> (sz, n)) = do
           splits  = numWorkers workers
           minsize = 1
       in
-      scheduleOpWith splits minsize fun gamma aenv dim1 ((), size (arrayRshape $ reduceRank repr) sz) param (result, manifest input)
+      scheduleOpWith splits minsize fun gamma aenv shR sz param (result, manifest input)
         `andThen` do putIO workers future result
                      touchLifetime nativeExecutable
 
@@ -453,7 +452,7 @@ scanCore repr NativeR{..} gamma aenv m input@(delayedShape -> (sz, n)) = do
       if n < 8192
         -- sequential execution
         then
-          scheduleOpUsing (Seq.singleton (0, ((), 0), ((), 1))) (nativeExecutable !# "scanS") gamma aenv dim1 param (result, manifest input)
+          scheduleOpUsing (Seq.singleton (0, (), ())) (nativeExecutable !# "scanS") gamma aenv dim0 param (result, manifest input)
             `andThen` do putIO workers future result
                          touchLifetime nativeExecutable
 
@@ -518,18 +517,18 @@ scan'Core
     -> Par Native (Future (Array (sh, Int) e, Array sh e))
 scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
   let
-      shr  :: ShapeR (sh, Int)
-      shr' :: ShapeR sh
-      ArrayR shr@(ShapeRsnoc shr') tp = repr
-      repr'   = ArrayR shr' tp
-      paramA  = TupRsingle $ ParamRarray repr
-      paramA' = TupRsingle $ ParamRarray repr'
+      ArrayR shR eR   = repr
+      ShapeRsnoc shR' = shR
+      repr'           = ArrayR shR' eR
+      paramA          = TupRsingle $ ParamRarray repr
+      paramA'         = TupRsingle $ ParamRarray repr'
+  --
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- allocateRemote repr  sh
   sums        <- allocateRemote repr' sz
   --
-  if isMultiDim shr
+  if isMultiDim shR
     -- This is a multidimensional scan. Each partial scan result is evaluated
     -- individually by a thread, so no inter-thread communication is required.
     --
@@ -539,7 +538,7 @@ scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
           minsize = 1
           param   = paramA `TupRpair` paramA' `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
       in
-      scheduleOpWith splits minsize fun gamma aenv dim1 ((), size shr' sz) param ((result, sums), manifest input)
+      scheduleOpWith splits minsize fun gamma aenv shR' sz param ((result, sums), manifest input)
         `andThen` do putIO workers future (result, sums)
                      touchLifetime nativeExecutable
 
@@ -552,7 +551,7 @@ scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
         -- sequential execution
         then
           let param = paramA `TupRpair` paramA' `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
-          in  scheduleOpUsing (Seq.singleton (0, ((), 0), ((), 1))) (nativeExecutable !# "scanS") gamma aenv dim1 param ((result, sums), manifest input)
+          in  scheduleOpUsing (Seq.singleton (0, (), ())) (nativeExecutable !# "scanS") gamma aenv dim0 param ((result, sums), manifest input)
                 `andThen` do putIO workers future (result, sums)
                              touchLifetime nativeExecutable
 
@@ -563,7 +562,7 @@ scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
               minsize  = 8192
               ranges   = divideWork1 splits minsize ((), 0) ((), n) (,,)
               steps    = Seq.length ranges
-              reprTmp  = ArrayR dim1 tp
+              reprTmp  = ArrayR dim1 eR
               paramTmp = TupRsingle $ ParamRarray reprTmp
               param1   = TupRsingle ParamRint `TupRpair` paramA `TupRpair` paramTmp `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
               param2   = paramA' `TupRpair` paramTmp
@@ -582,7 +581,7 @@ scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
   --
   return future
 
-isMultiDim :: ShapeR shr -> Bool
+isMultiDim :: ShapeR sh -> Bool
 isMultiDim (ShapeRsnoc ShapeRz) = False
 isMultiDim _                    = True
 
@@ -638,9 +637,9 @@ permuteOp inplace repr shr' NativeR{..} gamma aenv defaults@(shape -> shOut) inp
 
         -- uses a temporary array of spin-locks to guard the critical section
         Nothing -> do
-          let m = size shr' shOut
-          let reprBarrier  = ArrayR dim1 $ TupRsingle scalarTypeWord8
-          let paramR' = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray reprBarrier) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
+          let m           = size shr' shOut
+              reprBarrier = ArrayR dim1 $ TupRsingle scalarTypeWord8
+              paramR'     = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray reprBarrier) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
           --
           barrier@(Array _ adb) <- allocateRemote reprBarrier ((), m) :: Par Native (Vector Word8)
           liftIO $ memset (unsafeUniqueArrayPtr adb) 0 m

@@ -84,11 +84,11 @@ mkMap :: UID
       -> TypeR b
       -> IRFun1  Native aenv (a -> b)
       -> CodeGen Native      (IROpenAcc Native aenv (Array sh b))
-mkMap uid aenv repr tp apply =
+mkMap uid aenv (ArrayR shR aR) bR apply =
   let
-      (start, end, paramGang)   = gangParam (ShapeRsnoc ShapeRz)
-      (arrIn,  paramIn)         = mutableArray repr "in"
-      (arrOut, paramOut)        = mutableArray (reprOut repr tp) "out"
+      (start, end, paramGang)   = gangParam dim1
+      (arrIn,  paramIn)         = mutableArray (ArrayR shR aR) "in"
+      (arrOut, paramOut)        = mutableArray (ArrayR shR bR) "out"
       paramEnv                  = envParam aenv
   in
   makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
@@ -99,7 +99,4 @@ mkMap uid aenv repr tp apply =
       writeArray TypeInt arrOut i ys
 
     return_
-
-reprOut :: ArrayR (Array sh a) -> TypeR b -> ArrayR (Array sh b)
-reprOut (ArrayR shr _) tp = ArrayR shr tp
 

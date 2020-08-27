@@ -18,14 +18,13 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.FoldSeg
   where
 
 import Data.Array.Accelerate.Representation.Array
-import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
-import Data.Array.Accelerate.LLVM.CodeGen.Exp                       ( indexHead )
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -35,7 +34,6 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Fold
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
-import Control.Applicative
 import Control.Monad
 import Prelude                                                      as P
 
@@ -112,47 +110,35 @@ mkFoldSeg
     -> MIRDelayed Native aenv (Array (sh, Int) e)
     -> MIRDelayed Native aenv (Segments i)
     -> CodeGen    Native      (IROpenAcc Native aenv (Array (sh, Int) e))
-mkFoldSeg uid aenv repr int combine mseed marr mseg =
+mkFoldSeg uid aenv aR@(ArrayR shR eR) int combine mseed marr mseg =
   let
-      (start, end, paramGang) = gangParam dim1
-      (arrOut, paramOut)      = mutableArray repr "out"
-      (arrIn,  paramIn)       = delayedArray      "in"  marr
-      (arrSeg, paramSeg)      = delayedArray      "seg" mseg
+      (start, end, paramGang) = gangParam shR
+      (arrOut, paramOut)      = mutableArray aR "out"
+      (arrIn,  paramIn)       = delayedArray    "in"  marr
+      (arrSeg, paramSeg)      = delayedArray    "seg" mseg
       paramEnv                = envParam aenv
-      tp                      = arrayRtype repr
   in
   makeOpenAcc uid "foldSegP" (paramGang ++ paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
-    -- Number of segments and size of the innermost dimension. These are
-    -- required if we are reducing a DIM2 or higher array, to properly compute
-    -- the start and end indices of the portion of the array to reduce. Note
-    -- that this is a segment-offset array computed by 'scanl (+) 0' of the
-    -- segment length array, so its size has increased by one.
-    sz <- indexHead <$> delayedExtent arrIn
-    ss <- do n <- indexHead <$> delayedExtent arrSeg
-             A.sub numType n (liftInt 1)
+    imapNestFromTo shR start end (irArrayShape arrOut) $ \ix ii -> do
 
-    imapFromTo (indexHead start) (indexHead end) $ \s -> do
+      -- Determine the start and end indices of the innermost portion of
+      -- the array to reduce. This is a segment-offset array computed by
+      -- 'scanl (+) 0' of the segment length array.
+      --
+      let iz = indexTail ix
+          i  = indexHead ix
+      --
+      j <- A.add numType i (liftInt 1)
+      u <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) i
+      v <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) j
 
-      i   <- case arrayRshape repr of
-               ShapeRsnoc ShapeRz -> return s
-               _                  -> A.rem TypeInt s ss
-      j   <- A.add numType i (liftInt 1)
-      u   <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) i
-      v   <- A.fromIntegral int numType =<< app1 (delayedLinearIndex arrSeg) j
+      r <- case mseed of
+             Just seed -> do z <- seed
+                             reduceFromTo  eR u v (app2 combine) z (app1 (delayedIndex arrIn) . indexCons iz)
+             Nothing   ->    reduce1FromTo eR u v (app2 combine)   (app1 (delayedIndex arrIn) . indexCons iz)
 
-      (inf,sup) <- A.unpair <$> case arrayRshape repr of
-                     ShapeRsnoc ShapeRz -> return (A.pair u v)
-                     _ -> do q <- A.quot TypeInt s ss
-                             a <- A.mul numType q sz
-                             A.pair <$> A.add numType u a <*> A.add numType v a
-
-      r   <- case mseed of
-               Just seed -> do z <- seed
-                               reduceFromTo  tp inf sup (app2 combine) z (app1 (delayedLinearIndex arrIn))
-               Nothing   ->    reduce1FromTo tp inf sup (app2 combine)   (app1 (delayedLinearIndex arrIn))
-
-      writeArray TypeInt arrOut s r
+      writeArray TypeInt arrOut ii r
 
     return_
 

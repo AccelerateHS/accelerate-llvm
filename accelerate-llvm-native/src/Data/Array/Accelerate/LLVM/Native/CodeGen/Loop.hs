@@ -18,7 +18,6 @@ module Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- accelerate
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Representation.Shape
-import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
@@ -38,7 +37,7 @@ imapFromTo
     -> (Operands Int -> CodeGen Native ())            -- ^ apply at each index
     -> CodeGen Native ()
 imapFromTo start end body =
-  Loop.imapFromStepTo start (lift typeInt 1) end body
+  Loop.imapFromStepTo start (liftInt 1) end body
 
 
 -- | Generate a series of nested 'for' loops which iterate between the start and
@@ -48,9 +47,9 @@ imapFromTo start end body =
 --
 imapNestFromTo
     :: ShapeR sh
-    -> Operands sh                                    -- ^ initial index (inclusive)
-    -> Operands sh                                    -- ^ final index (exclusive)
-    -> Operands sh                                    -- ^ total array extent
+    -> Operands sh                                          -- ^ initial index (inclusive)
+    -> Operands sh                                          -- ^ final index (exclusive)
+    -> Operands sh                                          -- ^ total array extent
     -> (Operands sh -> Operands Int -> CodeGen Native ())   -- ^ apply at each index
     -> CodeGen Native ()
 imapNestFromTo shr start end extent body =
@@ -157,8 +156,5 @@ iterFromTo
     -> (Operands Int -> Operands a -> CodeGen Native (Operands a))    -- ^ apply at each index
     -> CodeGen Native (Operands a)
 iterFromTo tp start end seed body =
-  Loop.iterFromStepTo tp start (lift typeInt 1) end seed body
-
-typeInt :: TypeR Int
-typeInt = TupRsingle scalarTypeInt
+  Loop.iterFromStepTo tp start (liftInt 1) end seed body
 
