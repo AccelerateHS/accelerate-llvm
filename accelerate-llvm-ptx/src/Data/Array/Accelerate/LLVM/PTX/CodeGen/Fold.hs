@@ -622,10 +622,10 @@ reduceFromTo dev tp from to combine get set = do
 -- ---------
 
 i32 :: Operands Int -> CodeGen PTX (Operands Int32)
-i32 = A.irFromIntegral integralType numType
+i32 = A.fromIntegral integralType numType
 
 int :: Operands Int32 -> CodeGen PTX (Operands Int)
-int = A.irFromIntegral integralType numType
+int = A.fromIntegral integralType numType
 
 imapFromTo
     :: Operands Int

@@ -149,7 +149,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                _ -> A.rem integralType s ss
         j <- A.add numType i =<< int tid
         v <- app1 (delayedLinearIndex arrSeg) j
-        writeArray TypeInt32 smem tid =<< A.irFromIntegral intTp numType v
+        writeArray TypeInt32 smem tid =<< A.fromIntegral intTp numType v
 
       -- Once all threads have caught up, begin work on the new segment.
       __syncthreads
@@ -380,7 +380,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                _ -> A.rem integralType s ss
         b <- A.add numType a =<< int lane
         c <- app1 (delayedLinearIndex arrSeg) b
-        writeArray TypeInt32 lim lane =<< A.irFromIntegral intTp numType c
+        writeArray TypeInt32 lim lane =<< A.fromIntegral intTp numType c
 
       __syncwarp
 
@@ -484,8 +484,8 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
 
 
 i32 :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int32)
-i32 = A.irFromIntegral integralType numType
+i32 = A.fromIntegral integralType numType
 
 int :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int)
-int = A.irFromIntegral integralType numType
+int = A.fromIntegral integralType numType
 

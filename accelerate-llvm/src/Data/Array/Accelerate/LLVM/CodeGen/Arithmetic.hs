@@ -239,7 +239,7 @@ complement t x | IntegralDict <- integralDict t = xor t x (ir t (integral t (P.n
 
 shiftL :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
 shiftL t x i = do
-  i' <- irFromIntegral integralType (IntegralNumType t) i
+  i' <- fromIntegral integralType (IntegralNumType t) i
   binop ShiftL t x i'
 
 shiftR :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
@@ -249,13 +249,13 @@ shiftR t
 
 shiftRL :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
 shiftRL t x i = do
-  i' <- irFromIntegral integralType (IntegralNumType t) i
+  i' <- fromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRL t x i'
   return r
 
 shiftRA :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
 shiftRA t x i = do
-  i' <- irFromIntegral integralType (IntegralNumType t) i
+  i' <- fromIntegral integralType (IntegralNumType t) i
   r  <- binop ShiftRA t x i'
   return r
 
@@ -285,7 +285,7 @@ popCount i x
            t     = PrimType p
        --
        c <- call (Lam p (op i x) (Body t Nothing ctpop)) [NoUnwind, ReadNone]
-       r <- irFromIntegral i numType c
+       r <- fromIntegral i numType c
        return r
 
 countLeadingZeros :: forall arch a. IntegralType a -> Operands a -> CodeGen arch (Operands Int)
@@ -296,7 +296,7 @@ countLeadingZeros i x
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t Nothing clz))) [NoUnwind, ReadNone]
-       r <- irFromIntegral i numType c
+       r <- fromIntegral i numType c
        return r
 
 countTrailingZeros :: forall arch a. IntegralType a -> Operands a -> CodeGen arch (Operands Int)
@@ -307,7 +307,7 @@ countTrailingZeros i x
            t   = PrimType p
        --
        c <- call (Lam p (op i x) (Lam primType (boolean False) (Body t Nothing clz))) [NoUnwind, ReadNone]
-       r <- irFromIntegral i numType c
+       r <- fromIntegral i numType c
        return r
 
 
@@ -497,8 +497,8 @@ lor' x y = do
 -- Type conversions
 -- ----------------
 
-irFromIntegral :: forall arch a b. IntegralType a -> NumType b -> Operands a -> CodeGen arch (Operands b)
-irFromIntegral i1 n (op i1 -> x) =
+fromIntegral :: forall arch a b. IntegralType a -> NumType b -> Operands a -> CodeGen arch (Operands b)
+fromIntegral i1 n (op i1 -> x) =
   case n of
     FloatingNumType f
       -> instr (IntToFP i1 f x)

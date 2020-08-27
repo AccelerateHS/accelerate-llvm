@@ -406,9 +406,10 @@ dynamicSharedMem
     -> CodeGen PTX (IRArray (Vector e))
 dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
   | IntegralDict <- integralDict int = do
-    let numTp = IntegralNumType int
-    smem <- initialiseDynamicSharedMemory
+    smem         <- initialiseDynamicSharedMemory
     let
+        numTp = IntegralNumType int
+
         go :: TypeR s -> Operand int -> CodeGen PTX (Operand int, Operands s)
         go TupRunit         i  = return (i, OP_Unit)
         go (TupRpair t2 t1) i0 = do
@@ -423,7 +424,7 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           return (b, ir t (unPtr q))
     --
     (_, ad) <- go tp offset
-    sz <- A.irFromIntegral int (numType :: NumType Int) n
+    sz      <- A.fromIntegral int (numType :: NumType Int) n
     return   $ IRArray { irArrayRepr       = ArrayR dim1 tp
                        , irArrayShape      = OP_Pair OP_Unit sz
                        , irArrayData       = ad
