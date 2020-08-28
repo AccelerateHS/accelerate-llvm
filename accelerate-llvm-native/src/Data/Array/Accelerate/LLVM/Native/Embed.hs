@@ -1,14 +1,15 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE ViewPatterns    #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Embed
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -39,12 +40,16 @@ import Control.Concurrent.Unique
 import Control.Monad
 import Data.Hashable
 import Foreign.Ptr
-import GHC.Ptr                                                      ( Ptr(..) )
 import Language.Haskell.TH                                          ( Q, TExp )
 import Numeric
 import System.IO.Unsafe
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
+
+#if __GLASGOW_HASKELL__ >= 806
+import Data.Maybe
+import qualified Data.Set                                           as Set
+#endif
 
 
 instance Embed Native where
@@ -56,20 +61,13 @@ instance Embed Native where
 --
 embed :: Native -> ObjectR Native -> Q (TExp (ExecutableR Native))
 embed target (ObjectR uid nms !_) = do
-  objFile <- TH.runIO (evalNative target (cacheOfUID uid))
+  objFile <- getObjectFile
   funtab  <- forM nms $ \fn -> return [|| ( $$(liftSBS (BS.take (BS.length fn - 65) fn)), $$(makeFFI fn objFile) ) ||]
   --
   [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE funtab))) ||]
   where
     listE :: [Q (TExp a)] -> Q (TExp [a])
     listE xs = TH.unsafeTExpCoerce (TH.listE (map TH.unTypeQ xs))
-
-    liftSBS :: ShortByteString -> Q (TExp ShortByteString)
-    liftSBS bs =
-      let bytes = BS.unpack bs
-          len   = BS.length bs
-      in
-      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
     makeFFI :: ShortByteString -> FilePath -> Q (TExp (FunPtr ()))
     makeFFI (S8.unpack -> fn) objFile = do
@@ -79,4 +77,26 @@ embed target (ObjectR uid nms !_) = do
       ann <- TH.pragAnnD (TH.ValueAnnotation fn') [| (Object objFile) |]
       TH.addTopDecls [dec, ann]
       TH.unsafeTExpCoerce (TH.varE fn')
+
+    -- Note: [Template Haskell and raw object files]
+    --
+    -- We can only addForeignFilePath once per object file, otherwise the
+    -- linker will complain about duplicate symbols. To work around this,
+    -- we use putQ/getQ to keep track of which object files have already
+    -- been encountered during compilation _of the current module_. This
+    -- means that we might still run into problems if runQ is invoked at
+    -- multiple modules.
+    --
+    getObjectFile :: Q FilePath
+    getObjectFile = do
+      this <- TH.runIO (evalNative target (cacheOfUID uid))
+#if __GLASGOW_HASKELL__ >= 806
+      rest <- fromMaybe Set.empty <$> TH.getQ
+      if Set.member this rest
+         then return ()
+         else do
+           TH.addForeignFilePath TH.RawObject this
+           TH.putQ (Set.insert this rest)
+#endif
+      return this
 

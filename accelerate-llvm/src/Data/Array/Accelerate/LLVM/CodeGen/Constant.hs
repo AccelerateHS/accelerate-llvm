@@ -2,10 +2,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Constant
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -13,19 +13,22 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Constant (
 
   primConst,
-  constant, scalar, single, vector, num, integral, floating, nonnum,
+  constant, scalar, single, vector, num, integral, floating, boolean,
   undef,
 
 ) where
 
 
 import Data.Array.Accelerate.AST                                ( PrimConst(..) )
-import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.LLVM.CodeGen.IR
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
+
+import Data.Primitive.Vec
 
 
 -- | Primitive constant values
@@ -37,11 +40,9 @@ primConst (PrimPi t)       = primPi t
 
 primMinBound :: BoundedType a -> a
 primMinBound (IntegralBoundedType t) | IntegralDict <- integralDict t = minBound
-primMinBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = minBound
 
 primMaxBound :: BoundedType a -> a
 primMaxBound (IntegralBoundedType t) | IntegralDict <- integralDict t = maxBound
-primMaxBound (NonNumBoundedType t)   | NonNumDict   <- nonNumDict t   = maxBound
 
 primPi :: FloatingType a -> a
 primPi t | FloatingDict <- floatingDict t = pi
@@ -49,10 +50,10 @@ primPi t | FloatingDict <- floatingDict t = pi
 
 -- | A constant value
 --
-constant :: TupleType a -> a -> Operands a
-constant TypeRunit         ()    = OP_Unit
-constant (TypeRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
-constant (TypeRscalar t)   a     = ir' t (scalar t a)
+constant :: TypeR a -> a -> Operands a
+constant TupRunit         ()    = OP_Unit
+constant (TupRpair ta tb) (a,b) = OP_Pair (constant ta a) (constant tb b)
+constant (TupRsingle t)   a     = ir t (scalar t a)
 
 scalar :: ScalarType a -> a -> Operand a
 scalar t = ConstantOperand . ScalarConstant t
@@ -60,7 +61,7 @@ scalar t = ConstantOperand . ScalarConstant t
 single :: SingleType a -> a -> Operand a
 single t = scalar (SingleScalarType t)
 
-vector :: VectorType (v a) -> (v a) -> Operand (v a)
+vector :: VectorType (Vec n a) -> (Vec n a) -> Operand (Vec n a)
 vector t = scalar (VectorScalarType t)
 
 num :: NumType a -> a -> Operand a
@@ -72,8 +73,8 @@ integral t = num (IntegralNumType t)
 floating :: FloatingType a -> a -> Operand a
 floating t = num (FloatingNumType t)
 
-nonnum :: NonNumType a -> a -> Operand a
-nonnum t = single (NonNumSingleType t)
+boolean :: Bool -> Operand Bool
+boolean = ConstantOperand . BooleanConstant
 
 
 -- | The string 'undef' can be used anywhere a constant is expected, and

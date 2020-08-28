@@ -3,11 +3,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -19,14 +18,8 @@ module Data.Array.Accelerate.LLVM.Native.Compile (
 
 ) where
 
--- llvm-hs
-import LLVM.AST                                                     hiding ( Module )
-import LLVM.Module                                                  as LLVM hiding ( Module )
-import LLVM.Context
-import LLVM.Target
-
--- accelerate
-import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
+import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
@@ -41,7 +34,11 @@ import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
--- standard library
+import LLVM.AST                                                     hiding ( Module )
+import LLVM.Module                                                  as LLVM hiding ( Module )
+import LLVM.Context
+import LLVM.Target
+
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -67,15 +64,19 @@ instance Intrinsic Native
 
 -- | Compile an Accelerate expression to object code
 --
-compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
-compile acc aenv = do
-  target            <- gets llvmTarget
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
+compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
+compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target uid acc aenv
-      triple        = fromMaybe BS.empty (moduleTargetTriple ast)
+  -- We require the metadata result, which will give us the names of the
+  -- functions which will be contained in the object code, but the actual
+  -- code generation step is executed lazily.
+  --
+  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
+  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
+
+  let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
       nms           = [ f | Name f <- Map.keys md ]
 

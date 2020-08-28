@@ -1,0 +1,61 @@
+# vim: nospell
+
+clone_folder: "c:\\accelerate"
+
+skip_commits:
+  message: /\[ci skip\]/
+
+environment:
+  global:
+    STACK_ROOT: "c:\\sr"
+  matrix:
+    # - GHC: "8.6"    # llvm-6.0
+    # - GHC: "8.4"    # llvm-6.0
+    - GHC: "8.2"
+    # - GHC: "8.0"    # llvm-4.0
+    # - GHC: "7.10"   # llvm-4.0
+
+before_build:
+  - set PATH=%PATH%;C:\Program Files\Git\mingw64\bin
+  - set PATH=%PATH%;C:\Users\appveyor\AppData\Roaming\local\bin
+  - set PATH=%PATH%;C:\msys64\usr\bin
+
+  # install a copy of LLVM built with shared library support
+  # includes patch to llvm-config: https://gist.github.com/yuhangwang/380b94bebe2af386fea9d2e352dbae52
+  - appveyor DownloadFile "https://drive.google.com/uc?export=download&id=1VTs8qaSiVAGO1BQYUbfafAXigDuxra5H" -FileName llvm-5.0.0.7z
+  - 7z x llvm-5.0.0.7z -oC:\
+  - set PATH=C:\llvm-5.0.0\bin;%PATH%
+  - llvm-config --version
+
+  # install CUDA-9.0
+  - appveyor DownloadFile "https://developer.nvidia.com/compute/cuda/9.0/Prod/network_installers/cuda_9.0.176_windows_network-exe" -FileName install_cuda.exe
+  - install_cuda.exe -s compiler_9.0 cudart_9.0 cublas_9.0 cublas_dev_9.0 cufft_9.0 cufft_dev_9.0 cusolver_9.0 cusolver_dev_9.0 cusparse_9.0 cusparse_dev_9.0
+  - set PATH=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v9.0\nvvm\bin;%PATH%
+  - set PATH=%ProgramFiles%\NVIDIA GPU Computing Toolkit\CUDA\v9.0\bin;%PATH%
+  - nvcc --version
+
+  # CUDA refuses to install the driver if no compatible GPU can be found, so
+  # copy these .dll files manually
+  - appveyor DownloadFile "https://drive.google.com/uc?export=download&id=14x0RX8QlHQ6vKhimbR4FDRgfP7EoHfgc" -FileName nvdriver-9.0.176.7z
+  - 7z x nvdriver-9.0.176.7z -oC:\Windows\System32
+
+  # use MSYS2 to install libffi & fix install prefix in pkg-config file
+  - pacman -S --noconfirm libffi-devel
+  - sed -i'' -e 's,/usr,C:/msys64/usr,' C:\msys64\usr\lib\pkgconfig\libffi.pc
+
+  # install stack
+  - appveyor DownloadFile "https://www.stackage.org/stack/windows-x86_64" -FileName stack.zip
+  - 7z x stack.zip stack.exe
+  - stack --version
+
+  # windows is a whacky world where .dll's live in the bin directory. The
+  # extra-lib-dirs argument is required for llvm-hs.
+  - ln -s stack-%GHC%.yaml stack.yaml
+  - stack setup --no-terminal > NUL
+  - stack build --no-terminal --no-copy-bins --fast --only-dependencies --extra-lib-dirs=C:\llvm-5.0.0\bin
+
+build_script:
+  - stack build accelerate-llvm        --no-terminal --fast
+  - stack build accelerate-llvm-native --no-terminal --fast
+  - stack build accelerate-llvm-ptx    --no-terminal --fast
+

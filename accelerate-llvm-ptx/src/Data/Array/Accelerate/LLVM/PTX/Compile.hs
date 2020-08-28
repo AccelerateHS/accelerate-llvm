@@ -6,11 +6,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -22,7 +21,29 @@ module Data.Array.Accelerate.LLVM.PTX.Compile (
 
 ) where
 
--- llvm-hs
+import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Trafo.Delayed
+
+import Data.Array.Accelerate.LLVM.CodeGen
+import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
+import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
+import Data.Array.Accelerate.LLVM.Compile
+import Data.Array.Accelerate.LLVM.Extra
+import Data.Array.Accelerate.LLVM.State
+
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
+import Data.Array.Accelerate.LLVM.PTX.CodeGen
+import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
+import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
+import Data.Array.Accelerate.LLVM.PTX.Target
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+
+import Foreign.CUDA.Path
+import qualified Foreign.CUDA.Analysis                              as CUDA
+import qualified Foreign.NVVM                                       as NVVM
+
 import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
@@ -33,31 +54,6 @@ import qualified LLVM.Internal.Module                               as LLVM.Inte
 import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
 import qualified LLVM.Analysis                                      as LLVM
 
--- accelerate
-import Data.Array.Accelerate.Error                                  ( internalError )
-import Data.Array.Accelerate.Trafo                                  ( DelayedOpenAcc )
-
-import Data.Array.Accelerate.LLVM.CodeGen
-import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
-import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
-import Data.Array.Accelerate.LLVM.Compile
-import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Util
-
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
-import Data.Array.Accelerate.LLVM.PTX.CodeGen
-import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
-import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
-import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
-import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
-
--- cuda
-import Foreign.CUDA.Path
-import qualified Foreign.CUDA.Analysis                              as CUDA
-import qualified Foreign.NVVM                                       as NVVM
-
--- standard library
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad.Except
@@ -81,7 +77,6 @@ import qualified Data.Map                                           as Map
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Internal                           as B
-import qualified Data.ByteString.Short.Char8                        as S8
 import Prelude                                                      as P
 
 
@@ -98,16 +93,15 @@ instance Compile PTX where
 -- This generates the target code together with a list of each kernel function
 -- defined in the module paired with its occupancy information.
 --
-compile :: DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
-compile acc aenv = do
-  target            <- gets llvmTarget
-  (uid, cacheFile)  <- cacheOfOpenAcc acc
+compile :: HasCallStack => PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM PTX (ObjectR PTX)
+compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
-  let Module ast md = llvmOfOpenAcc target uid acc aenv
-      dev           = ptxDeviceProperties target
-      config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
+  dev               <- gets ptxDeviceProperties
+  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
+  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
+  let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
 
   -- Lower the generated LLVM into a CUBIN object code.
   --
@@ -139,9 +133,9 @@ compile acc aenv = do
 compilePTX :: CUDA.DeviceProperties -> LLVM.Context -> AST.Module -> IO ByteString
 compilePTX dev ctx ast = do
 #ifdef ACCELERATE_USE_NVVM
-  ptx <- withLibdeviceNVVM  dev ctx ast (compileModuleNVVM dev (AST.moduleName ast))
+  ptx <- withLibdeviceNVVM  dev ctx ast (_compileModuleNVVM dev (AST.moduleName ast))
 #else
-  ptx <- withLibdeviceNVPTX dev ctx ast (compileModuleNVPTX dev)
+  ptx <- withLibdeviceNVPTX dev ctx ast (_compileModuleNVPTX dev)
 #endif
   Debug.when Debug.dump_asm $ Debug.traceIO Debug.verbose (B8.unpack ptx)
   return ptx
@@ -150,7 +144,7 @@ compilePTX dev ctx ast = do
 -- | Compile the given PTX assembly to a CUBIN file (SASS object code). The
 -- compiled code will be stored at the given FilePath.
 --
-compileCUBIN :: CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
+compileCUBIN :: HasCallStack => CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
 compileCUBIN dev sass ptx = do
   _verbose  <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.verbose else return False
   _debug    <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug   else return False
@@ -188,7 +182,7 @@ compileCUBIN dev sass ptx = do
     -- wait on the process
     ex <- waitForProcess ph
     case ex of
-      ExitFailure r -> $internalError "compile" (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
+      ExitFailure r -> internalError (printf "ptxas %s (exit %d)\n%s" (unwords flags) r info)
       ExitSuccess   -> return ()
 
     when _verbose $
@@ -202,8 +196,8 @@ compileCUBIN dev sass ptx = do
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
-compileModuleNVVM :: CUDA.DeviceProperties -> ShortByteString -> [(String, ByteString)] -> LLVM.Module -> IO ByteString
-compileModuleNVVM dev name libdevice mdl = do
+_compileModuleNVVM :: HasCallStack => CUDA.DeviceProperties -> ShortByteString -> [(ShortByteString, ByteString)] -> LLVM.Module -> IO ByteString
+_compileModuleNVVM dev name libdevice mdl = do
   _debug <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug else return False
   --
   let arch    = CUDA.computeCapability dev
@@ -223,7 +217,7 @@ compileModuleNVVM dev name libdevice mdl = do
       header  = case bitSize (undefined::Int) of
                   32 -> "target triple = \"nvptx-nvidia-cuda\"\ntarget datalayout = \"e-p:32:32:32-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
                   64 -> "target triple = \"nvptx64-nvidia-cuda\"\ntarget datalayout = \"e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64\""
-                  _  -> $internalError "compileModuleNVVM" "I don't know what architecture I am"
+                  _  -> internalError "I don't know what architecture I am"
 
   Debug.when Debug.dump_cc   $ do
     Debug.when Debug.verbose $ do
@@ -233,11 +227,7 @@ compileModuleNVVM dev name libdevice mdl = do
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
   bc  <- LLVM.moduleBitcode mdl
-#if MIN_VERSION_nvvm(0,9,0)
-  ptx <- NVVM.compileModules (("",header) : (name,bc) : fmap (\(n,b) -> (S8.pack n, b)) libdevice) flags
-#else
-  ptx <- NVVM.compileModules (("",header) : (S8.unpack name,bc) : libdevice) flags
-#endif
+  ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
     Debug.traceIO Debug.dump_cc $ "llvm: " ++ B8.unpack (NVVM.compileLog ptx)
@@ -248,8 +238,8 @@ compileModuleNVVM dev name libdevice mdl = do
 
 -- Compiling with the NVPTX backend uses LLVM-3.3 and above
 --
-compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
-compileModuleNVPTX dev mdl =
+_compileModuleNVPTX :: CUDA.DeviceProperties -> LLVM.Module -> IO ByteString
+_compileModuleNVPTX dev mdl =
   withPTXTargetMachine dev $ \nvptx -> do
 
     when Debug.internalChecksAreEnabled $ LLVM.verify mdl

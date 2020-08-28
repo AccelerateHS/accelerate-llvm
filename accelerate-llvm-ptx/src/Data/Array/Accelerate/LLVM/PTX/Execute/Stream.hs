@@ -3,11 +3,10 @@
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Stream
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -63,7 +62,6 @@ streaming
     -> (Event -> a -> LLVM PTX b)
     -> LLVM PTX b
 streaming !action !after = do
-  PTX{..} <- gets llvmTarget
   stream  <- create
   first   <- action stream
   end     <- Event.waypoint stream

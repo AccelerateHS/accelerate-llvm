@@ -1,11 +1,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Loop
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -13,90 +14,95 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Loop
   where
 
-import Prelude                                                  hiding ( fst, snd, uncurry )
-import Control.Monad
-
+import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Array.Sugar                        hiding ( iter )
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
+import Prelude                                                  hiding ( fst, snd, uncurry )
+import Control.Monad
+
 
 -- | TODO: Iterate over a multidimensional index space.
 --
--- Build nested loops that iterate over a hype-rectangular index space
--- between the given coordinates. The LLVM optimiser will be able to
--- vectorise nested loops, including when we insert conversions to the
--- corresponding linear index (e.g., in order to index arrays).
+-- Build nested loops that iterate over a hyper-rectangular index space between
+-- the given coordinates. The LLVM optimiser will be able to vectorise nested
+-- loops, including when we insert conversions to the corresponding linear index
+-- (e.g., in order to index arrays).
 --
 -- iterate
 --     :: Shape sh
---     => IR sh                                    -- ^ starting index
---     -> IR sh                                    -- ^ final index
---     -> (IR sh -> CodeGen (IR a))                -- ^ body of the loop
---     -> CodeGen (IR a)
+--     => Operands sh                                    -- ^ starting index
+--     -> Operands sh                                    -- ^ final index
+--     -> (Operands sh -> CodeGen (Operands a))          -- ^ body of the loop
+--     -> CodeGen (Operands a)
 -- iterate from to body = error "CodeGen.Loop.iterate"
 
 
 -- | Execute the given function at each index in the range
 --
 imapFromStepTo
-    :: (IsNum i, Elt i)
-    => IR i                                     -- ^ starting index (inclusive)
-    -> IR i                                     -- ^ step size
-    -> IR i                                     -- ^ final index (exclusive)
-    -> (IR i -> CodeGen ())                     -- ^ loop body
-    -> CodeGen ()
+    :: forall i arch. IsNum i
+    => Operands i                                     -- ^ starting index (inclusive)
+    -> Operands i                                     -- ^ step size
+    -> Operands i                                     -- ^ final index (exclusive)
+    -> (Operands i -> CodeGen arch ())                -- ^ loop body
+    -> CodeGen arch ()
 imapFromStepTo start step end body =
-  for start
-      (\i -> lt singleType i end)
-      (\i -> add numType i step)
+  for (TupRsingle $ SingleScalarType $ NumSingleType num) start
+      (\i -> lt (NumSingleType num) i end)
+      (\i -> add num i step)
       body
+  where num = numType @i
 
 
 -- | Iterate with an accumulator between given start and end indices, executing
 -- the given function at each.
 --
 iterFromStepTo
-    :: (IsNum i, Elt i, Elt a)
-    => IR i                                     -- ^ starting index (inclusive)
-    -> IR i                                     -- ^ step size
-    -> IR i                                     -- ^ final index (exclusive)
-    -> IR a                                     -- ^ initial value
-    -> (IR i -> IR a -> CodeGen (IR a))         -- ^ loop body
-    -> CodeGen (IR a)
-iterFromStepTo start step end seed body =
-  iter start seed
-       (\i -> lt singleType i end)
-       (\i -> add numType i step)
+    :: forall i a arch. IsNum i
+    => TypeR a
+    -> Operands i                                     -- ^ starting index (inclusive)
+    -> Operands i                                     -- ^ step size
+    -> Operands i                                     -- ^ final index (exclusive)
+    -> Operands a                                     -- ^ initial value
+    -> (Operands i -> Operands a -> CodeGen arch (Operands a))    -- ^ loop body
+    -> CodeGen arch (Operands a)
+iterFromStepTo tp start step end seed body =
+  iter (TupRsingle $ SingleScalarType $ NumSingleType num) tp start seed
+       (\i -> lt (NumSingleType num) i end)
+       (\i -> add num i step)
        body
+  where num = numType @i
 
 
 -- | A standard 'for' loop.
 --
-for :: Elt i
-    => IR i                                     -- ^ starting index
-    -> (IR i -> CodeGen (IR Bool))              -- ^ loop test to keep going
-    -> (IR i -> CodeGen (IR i))                 -- ^ increment loop counter
-    -> (IR i -> CodeGen ())                     -- ^ body of the loop
-    -> CodeGen ()
-for start test incr body =
-  void $ while test (\i -> body i >> incr i) start
+for :: TypeR i
+    -> Operands i                                         -- ^ starting index
+    -> (Operands i -> CodeGen arch (Operands Bool))       -- ^ loop test to keep going
+    -> (Operands i -> CodeGen arch (Operands i))          -- ^ increment loop counter
+    -> (Operands i -> CodeGen arch ())                    -- ^ body of the loop
+    -> CodeGen arch ()
+for tp start test incr body =
+  void $ while tp test (\i -> body i >> incr i) start
 
 
 -- | An loop with iteration count and accumulator.
 --
-iter :: (Elt i, Elt a)
-     => IR i                                    -- ^ starting index
-     -> IR a                                    -- ^ initial value
-     -> (IR i -> CodeGen (IR Bool))             -- ^ index test to keep looping
-     -> (IR i -> CodeGen (IR i))                -- ^ increment loop counter
-     -> (IR i -> IR a -> CodeGen (IR a))        -- ^ loop body
-     -> CodeGen (IR a)
-iter start seed test incr body = do
-  r <- while (test . fst)
+iter :: TypeR i
+     -> TypeR a
+     -> Operands i                                                -- ^ starting index
+     -> Operands a                                                -- ^ initial value
+     -> (Operands i -> CodeGen arch (Operands Bool))              -- ^ index test to keep looping
+     -> (Operands i -> CodeGen arch (Operands i))                 -- ^ increment loop counter
+     -> (Operands i -> Operands a -> CodeGen arch (Operands a))   -- ^ loop body
+     -> CodeGen arch (Operands a)
+iter tpi tpa start seed test incr body = do
+  r <- while (TupRpair tpi tpa)
+             (test . fst)
              (\v -> do v' <- uncurry body v     -- update value and then...
                        i' <- incr (fst v)       -- ...calculate new index
                        return $ pair i' v')
@@ -106,12 +112,12 @@ iter start seed test incr body = do
 
 -- | A standard 'while' loop
 --
-while :: Elt a
-      => (IR a -> CodeGen (IR Bool))
-      -> (IR a -> CodeGen (IR a))
-      -> IR a
-      -> CodeGen (IR a)
-while test body start = do
+while :: TypeR a
+      -> (Operands a -> CodeGen arch (Operands Bool))
+      -> (Operands a -> CodeGen arch (Operands a))
+      -> Operands a
+      -> CodeGen arch (Operands a)
+while tp test body start = do
   loop <- newBlock   "while.top"
   exit <- newBlock   "while.exit"
   _    <- beginBlock "while.entry"
@@ -121,7 +127,7 @@ while test body start = do
   top  <- cbr p loop exit
 
   -- Create the critical variable that will be used to accumulate the results
-  prev <- fresh
+  prev <- fresh tp
 
   -- Generate the loop body. Afterwards, we insert a phi node at the head of the
   -- instruction stream, which selects the input value depending on which edge
@@ -132,9 +138,9 @@ while test body start = do
   p'   <- test next
   bot  <- cbr p' loop exit
 
-  _    <- phi' loop prev [(start,top), (next,bot)]
+  _    <- phi' tp loop prev [(start,top), (next,bot)]
 
   -- Now the loop exit
   setBlock exit
-  phi [(start,top), (next,bot)]
+  phi tp [(start,top), (next,bot)]
 

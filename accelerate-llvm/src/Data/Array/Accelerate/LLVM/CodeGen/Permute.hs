@@ -2,14 +2,15 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Permute
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -25,10 +26,13 @@ module Data.Array.Accelerate.LLVM.CodeGen.Permute (
 ) where
 
 import Data.Array.Accelerate.AST
-import Data.Array.Accelerate.Analysis.Match
-import Data.Array.Accelerate.Array.Sugar                            hiding ( Foreign )
-import Data.Array.Accelerate.Product
-import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.AST.Idx
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.AST.Var
+import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Trafo.Substitution
 import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -44,10 +48,13 @@ import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Atomic
 import LLVM.AST.Type.Instruction.RMW                                as RMW
 import LLVM.AST.Type.Instruction.Volatile
+import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
 import Control.Applicative
+import Data.Constraint                                              ( withDict )
+import System.IO.Unsafe
 import Prelude
 
 
@@ -78,26 +85,24 @@ data IRPermuteFun arch aenv t where
 --
 llvmOfPermuteFun
     :: forall arch aenv e. Foreign arch
-    => arch
-    -> DelayedFun aenv (e -> e -> e)
+    => Fun aenv (e -> e -> e)
     -> Gamma aenv
     -> IRPermuteFun arch aenv (e -> e -> e)
-llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
+llvmOfPermuteFun fun aenv = IRPermuteFun{..}
   where
-    combine   = llvmOfFun2 arch fun aenv
+    combine   = llvmOfFun2 fun aenv
     atomicRMW
       -- If the old value is not used (i.e. permute const) then we can just
       -- store the new value directly. Since we do not require the return value
-      -- we can do this for any scalar value with a regular Store. This is not
-      -- possible for product types however since we use an unzipped
-      -- struct-of-array representation; this requires multiple store
-      -- instructions so the different fields could get their value from
-      -- different threads.
+      -- we can do this for any scalar value with a regular Store. However,
+      -- as we use an unzipped struct-of-array representation for product
+      -- types, the multiple store instructions for the different fields
+      -- could come from different threads, so we only allow the non-atomic
+      -- version if the flag @-ffast-permute-const@ is set.
       --
-      | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType (undefined::e)
-      , Just body'            <- strengthenE latest body
-      , fun'                  <- llvmOfFun1 arch (Lam (Body body')) aenv
+      | Lam lhs (Lam (LeftHandSideWildcard tp) (Body body)) <- fun
+      , True                  <- fast tp
+      , fun'                  <- llvmOfFun1 (Lam lhs (Body body)) aenv
       = Just (Exchange, fun')
 
       -- LLVM natively supports atomic operations on integral types only.
@@ -109,17 +114,26 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
       -- atomic compare-and-swap, which is likely to be more performant than the
       -- generic spin-lock based approach.
       --
-      | Lam (Lam (Body body)) <- fun
-      , TypeRscalar{}         <- eltType (undefined::e)
+      | Lam lhs@(LeftHandSideSingle _) (Lam (LeftHandSideSingle _) (Body body)) <- fun
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
-      , fun'                  <- llvmOfFun1 arch (Lam (Body x')) aenv
+      , fun'                  <- llvmOfFun1 (Lam lhs (Body x')) aenv
       = Just (rmw, fun')
 
       | otherwise
       = Nothing
 
-    rmwOp :: DelayedOpenExp (((),e),e) aenv e -> Maybe (RMWOperation, DelayedOpenExp (((),e),e) aenv e)
+    fast :: TypeR e -> Bool
+    fast tp
+      | TupRsingle{} <- tp = True
+      | otherwise          = unsafePerformIO (getFlag fast_permute_const)
+
+    -- XXX: This doesn't work for newtypes because the coercion gets in the
+    -- way. This should be generalised to work for product types (e.g.
+    -- complex numbers) and take this factor into account as well.
+    --    TLM-2019-09-27
+    --
+    rmwOp :: OpenExp (((),e),e) aenv e -> Maybe (RMWOperation, OpenExp (((),e),e) aenv e)
     rmwOp (PrimApp f xs)
       | PrimAdd{}  <- f = (RMW.Add,) <$> extract xs
       | PrimSub{}  <- f = (RMW.Sub,) <$> extract xs
@@ -138,10 +152,10 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
     -- In the permutation function, the old value is given as the second
     -- argument, corresponding to ZeroIdx.
     --
-    extract :: DelayedOpenExp (((),e),e) aenv (e,e) -> Maybe (DelayedOpenExp (((),e),e) aenv e)
-    extract (Tuple (SnocTup (SnocTup NilTup x) y))
-      | Just Refl <- match x (Var ZeroIdx) = Just y
-      | Just Refl <- match y (Var ZeroIdx) = Just x
+    extract :: OpenExp (((),e),e) aenv (e,e) -> Maybe (OpenExp (((),e),e) aenv e)
+    extract (Pair x y)
+      | Evar (Var _ ZeroIdx) <- x = Just y
+      | Evar (Var _ ZeroIdx) <- y = Just x
     extract _
       = Nothing
 
@@ -171,42 +185,34 @@ llvmOfPermuteFun arch fun aenv = IRPermuteFun{..}
 -- > }
 --
 atomicCAS_rmw
-    :: SingleType t
-    -> (IR t -> CodeGen (IR t))
-    -> Operand (Ptr t)
-    -> CodeGen ()
+    :: forall arch e. HasCallStack
+    => SingleType e
+    -> (Operands e -> CodeGen arch (Operands e))
+    -> Operand (Ptr e)
+    -> CodeGen arch ()
 atomicCAS_rmw t update addr =
   case t of
-    NonNumSingleType s                -> nonnum s
     NumSingleType (FloatingNumType f) -> floating f
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen ()
-    nonnum TypeBool{}      = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeChar{}      = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    nonnum TypeCChar{}     = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeCSChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
-    nonnum TypeCUChar{}    = atomicCAS_rmw' t (integralType :: IntegralType Word8)  update addr
+    floating :: FloatingType t -> CodeGen arch ()
+    floating TypeHalf{}   = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
+    floating TypeFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
+    floating TypeDouble{} = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
 
-    floating :: FloatingType t -> CodeGen ()
-    floating TypeHalf{}    = atomicCAS_rmw' t (integralType :: IntegralType Word16) update addr
-    floating TypeFloat{}   = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    floating TypeDouble{}  = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
-    floating TypeCFloat{}  = atomicCAS_rmw' t (integralType :: IntegralType Word32) update addr
-    floating TypeCDouble{} = atomicCAS_rmw' t (integralType :: IntegralType Word64) update addr
-
-    integral :: IntegralType t -> CodeGen ()
-    integral i             = atomicCAS_rmw' t i update addr
+    integral :: IntegralType t -> CodeGen arch ()
+    integral i            = atomicCAS_rmw' t i update addr
 
 
 atomicCAS_rmw'
-    :: SingleType t
+    :: HasCallStack
+    => SingleType t
     -> IntegralType i
-    -> (IR t -> CodeGen (IR t))
+    -> (Operands t -> CodeGen arch (Operands t))
     -> Operand (Ptr t)
-    -> CodeGen ()
-atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
+    -> CodeGen arch ()
+atomicCAS_rmw' t i update addr = withDict (integralElt i) $ do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   spin  <- newBlock "rmw.spin"
@@ -214,7 +220,7 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
 
   addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   init' <- instr' $ Load si NonVolatile addr'
-  old'  <- fresh
+  old'  <- fresh  $ TupRsingle si
   top   <- br spin
 
   setBlock spin
@@ -222,11 +228,19 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
   val   <- update $ ir t old
   val'  <- instr' $ BitCast si (op t val)
   r     <- instr' $ CmpXchg i NonVolatile addr' (op i old') val' (CrossThread, AcquireRelease) Monotonic
-  done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
-  next' <- instr' $ ExtractValue si (SuccTupIdx ZeroTupIdx) r
+  done  <- instr' $ ExtractValue scalarType PairIdxRight r
+  next' <- instr' $ ExtractValue si         PairIdxLeft  r
 
-  bot   <- cbr (ir scalarType done) exit spin
-  _     <- phi' spin old' [(ir i init',top), (ir i next',bot)]
+  -- Since we removed Bool from the set of primitive types Accelerate
+  -- supports, we have to do a small hack to have LLVM consider this as its
+  -- correct type of a 1-bit integer (rather than the 8-bits it is actually
+  -- stored as)
+  done' <- case done of
+             LocalReference _ (UnName n) -> return $ OP_Bool (LocalReference type' (UnName n))
+             _                           -> internalError "expected unnamed local reference"
+
+  bot   <- cbr done' exit spin
+  _     <- phi' (TupRsingle si) spin old' [(ir i init',top), (ir i next',bot)]
 
   setBlock exit
 
@@ -255,44 +269,36 @@ atomicCAS_rmw' t i update addr | EltDict <- integralElt i = do
 -- address.
 --
 atomicCAS_cmp
-    :: SingleType t
-    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
-    -> Operand (Ptr t)
-    -> Operand t
-    -> CodeGen ()
+    :: forall arch e. HasCallStack
+    => SingleType e
+    -> (SingleType e -> Operands e -> Operands e -> CodeGen arch (Operands Bool))
+    -> Operand (Ptr e)
+    -> Operand e
+    -> CodeGen arch ()
 atomicCAS_cmp t cmp addr val =
   case t of
-    NonNumSingleType s                -> nonnum s
     NumSingleType (FloatingNumType f) -> floating f
     NumSingleType (IntegralNumType i) -> integral i
 
   where
-    nonnum :: NonNumType t -> CodeGen ()
-    nonnum TypeBool{}      = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeChar{}      = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    nonnum TypeCChar{}     = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeCSChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
-    nonnum TypeCUChar{}    = atomicCAS_cmp' t (integralType :: IntegralType Word8)  cmp addr val
+    floating :: FloatingType t -> CodeGen arch ()
+    floating TypeHalf{}   = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
+    floating TypeFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
+    floating TypeDouble{} = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
 
-    floating :: FloatingType t -> CodeGen ()
-    floating TypeHalf{}    = atomicCAS_cmp' t (integralType :: IntegralType Word16) cmp addr val
-    floating TypeFloat{}   = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    floating TypeDouble{}  = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
-    floating TypeCFloat{}  = atomicCAS_cmp' t (integralType :: IntegralType Word32) cmp addr val
-    floating TypeCDouble{} = atomicCAS_cmp' t (integralType :: IntegralType Word64) cmp addr val
-
-    integral :: IntegralType t -> CodeGen ()
-    integral i             = atomicCAS_cmp' t i cmp addr val
+    integral :: IntegralType t -> CodeGen arch ()
+    integral i            = atomicCAS_cmp' t i cmp addr val
 
 
 atomicCAS_cmp'
-    :: SingleType t       -- actual type of elements
+    :: HasCallStack
+    => SingleType t       -- actual type of elements
     -> IntegralType i     -- unsigned integral type of same bit size as 't'
-    -> (SingleType t -> IR t -> IR t -> CodeGen (IR Bool))
+    -> (SingleType t -> Operands t -> Operands t -> CodeGen arch (Operands Bool))
     -> Operand (Ptr t)
     -> Operand t
-    -> CodeGen ()
-atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
+    -> CodeGen arch ()
+atomicCAS_cmp' t i cmp addr val = withDict (singleElt t) $ do
   let si = SingleScalarType (NumSingleType (IntegralNumType i))
   --
   test  <- newBlock "cas.cmp"
@@ -302,7 +308,7 @@ atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
   -- The new value and address to swap cast to integral type
   addr' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType si) defaultAddrSpace) addr
   val'  <- instr' $ BitCast si val
-  old   <- fresh
+  old   <- fresh  $ TupRsingle $ SingleScalarType t
 
   -- Read the current value at the address
   start <- instr' $ Load (SingleScalarType t) NonVolatile addr
@@ -322,12 +328,16 @@ atomicCAS_cmp' t i cmp addr val | EltDict <- singleElt t = do
   setBlock spin
   old'  <- instr' $ BitCast si (op t old)
   r     <- instr' $ CmpXchg i NonVolatile addr' old' val' (CrossThread, AcquireRelease) Monotonic
-  done  <- instr' $ ExtractValue scalarType ZeroTupIdx r
-  next  <- instr' $ ExtractValue si (SuccTupIdx ZeroTupIdx) r
+  done  <- instr' $ ExtractValue scalarType PairIdxRight r
+  next  <- instr' $ ExtractValue si         PairIdxLeft  r
   next' <- instr' $ BitCast (SingleScalarType t) next
 
-  bot   <- cbr (ir scalarType done) exit test
-  _     <- phi' test old [(ir t start,top), (ir t next',bot)]
+  done' <- case done of
+             LocalReference _ (UnName n) -> return $ OP_Bool (LocalReference type' (UnName n))
+             _                           -> internalError "expected unnamed local reference"
+
+  bot   <- cbr done' exit test
+  _     <- phi' (TupRsingle $ SingleScalarType t) test old [(ir t start,top), (ir t next',bot)]
 
   setBlock exit
 

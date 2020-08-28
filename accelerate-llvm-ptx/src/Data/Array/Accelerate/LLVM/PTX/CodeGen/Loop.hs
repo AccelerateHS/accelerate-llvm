@@ -1,9 +1,9 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -20,6 +20,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop        as Loop
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
+import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 -- | A standard loop where the CUDA threads cooperatively step over an index
@@ -37,7 +38,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 --       boundary. This might not always be the case, so provide a version that
 --       explicitly aligns reads to the warp boundary.
 --
-imapFromTo :: IR Int -> IR Int -> (IR Int -> CodeGen ()) -> CodeGen ()
+imapFromTo :: Operands Int -> Operands Int -> (Operands Int -> CodeGen PTX ()) -> CodeGen PTX ()
 imapFromTo start end body = do
   step  <- A.fromIntegral integralType numType =<< gridSize
   tid   <- A.fromIntegral integralType numType =<< globalThreadIdx

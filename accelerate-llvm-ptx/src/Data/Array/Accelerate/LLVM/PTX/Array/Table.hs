@@ -1,10 +1,10 @@
 {-# LANGUAGE BangPatterns #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Table
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -56,5 +56,4 @@ trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
 {-# INLINE message #-}
 message :: String -> IO ()
 message s = s `trace` return ()
-
 

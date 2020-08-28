@@ -1,10 +1,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile.Cache
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -13,14 +13,15 @@ module Data.Array.Accelerate.LLVM.Compile.Cache (
 
   Persistent(..), UID,
   cacheOfUID,
-  cacheOfOpenAcc,
+  cacheOfPreOpenAcc,
   removeCacheDirectory,
 
 ) where
 
-import Data.Array.Accelerate.Debug
-import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Hash
+import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.State
 
@@ -53,13 +54,14 @@ type UID = Hash
 -- | Return the unique cache file path corresponding to a given accelerate
 -- computation.
 --
-{-# INLINEABLE cacheOfOpenAcc #-}
-cacheOfOpenAcc
+{-# INLINEABLE cacheOfPreOpenAcc #-}
+cacheOfPreOpenAcc
     :: Persistent arch
-    => DelayedOpenAcc aenv a
+    => PreOpenAcc DelayedOpenAcc aenv a
     -> LLVM arch (UID, FilePath)
-cacheOfOpenAcc acc = do
-  let uid = hashDelayedOpenAcc acc
+cacheOfPreOpenAcc pacc = do
+  let opt = defaultHashOptions { perfect=False }
+      uid = hashPreOpenAccWith opt encodeDelayedOpenAcc pacc
   cacheFile <- cacheOfUID uid
   return (uid, cacheFile)
 
@@ -74,7 +76,7 @@ cacheOfUID
     -> LLVM arch FilePath
 cacheOfUID uid = do
   dbg       <- liftIO $ if debuggingIsEnabled then getFlag debug else return False
-  appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
+  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
   let
       (base, file)  = splitFileName template
@@ -92,7 +94,7 @@ cacheOfUID uid = do
 {-# INLINEABLE removeCacheDirectory #-}
 removeCacheDirectory :: Persistent arch => LLVM arch ()
 removeCacheDirectory = do
-  appdir    <- liftIO $ getAppUserDataDirectory "accelerate"
+  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
   let
       (base, _)     = splitFileName template

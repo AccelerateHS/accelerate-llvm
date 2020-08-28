@@ -1,16 +1,19 @@
 {-# LANGUAGE BangPatterns         #-}
+{-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -49,34 +52,32 @@ module Data.Array.Accelerate.LLVM.Native (
   runQAsync, runQAsyncWith,
 
   -- * Execution targets
-  Native, Strategy,
-  createTarget, balancedParIO, unbalancedParIO,
+  Native,
+  createTarget,
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Arrays )
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..) )
-import Data.Array.Accelerate.Async
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), arraysR, liftALeftHandSide )
+import Data.Array.Accelerate.AST.LeftHandSide
+import Data.Array.Accelerate.Async                                  ( Async, async, wait, poll, cancel )
+import Data.Array.Accelerate.Representation.Array                   ( liftArraysR )
 import Data.Array.Accelerate.Smart                                  ( Acc )
+import Data.Array.Accelerate.Sugar.Array                            ( Arrays, toArr, fromArr, ArraysR )
 import Data.Array.Accelerate.Trafo
+import Data.Array.Accelerate.Trafo.Sharing                          ( Afunction(..), AfunctionRepr(..), afunctionRepr )
+import qualified Data.Array.Accelerate.Sugar.Array                  as Sugar
 
-import Data.Array.Accelerate.LLVM.Execute.Async                     ( AsyncR(..) )
-import Data.Array.Accelerate.LLVM.Execute.Environment               ( AvalR(..) )
 import Data.Array.Accelerate.LLVM.Native.Array.Data                 ( useRemoteAsync )
 import Data.Array.Accelerate.LLVM.Native.Compile                    ( CompiledOpenAfun, compileAcc, compileAfun )
 import Data.Array.Accelerate.LLVM.Native.Embed                      ( embedOpenAcc )
 import Data.Array.Accelerate.LLVM.Native.Execute                    ( executeAcc, executeOpenAcc )
-import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Aval )
+import Data.Array.Accelerate.LLVM.Native.Execute.Async              ( Par, evalPar, getArrays )
+import Data.Array.Accelerate.LLVM.Native.Execute.Environment        ( Val, ValR(..), push )
 import Data.Array.Accelerate.LLVM.Native.Link                       ( ExecOpenAfun, linkAcc, linkAfun )
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
-import qualified Data.Array.Accelerate.LLVM.Native.Execute.Async    as E
 
--- standard library
-import Data.Typeable
 import Control.Monad.Trans
 import System.IO.Unsafe
 import Text.Printf
@@ -97,8 +98,7 @@ run = runWith defaultTarget
 -- | As 'run', but execute using the specified target (thread gang).
 --
 runWith :: Arrays a => Native -> Acc a -> a
-runWith target a = unsafePerformIO (run' target a)
-
+runWith target a = unsafePerformIO (runWithIO target a)
 
 -- | As 'run', but allow the computation to run asynchronously and return
 -- immediately without waiting for the result. The status of the computation can
@@ -110,19 +110,19 @@ runAsync = runAsyncWith defaultTarget
 -- | As 'runAsync', but execute using the specified target (thread gang).
 --
 runAsyncWith :: Arrays a => Native -> Acc a -> IO (Async a)
-runAsyncWith target a = async (run' target a)
+runAsyncWith target a = async (runWithIO target a)
 
-run' :: Arrays a => Native -> Acc a -> IO a
-run' target a = execute
+runWithIO :: Arrays a => Native -> Acc a -> IO a
+runWithIO target a = execute
   where
-    !acc        = convertAccWith (config target) a
-    execute     = do
+    !acc    = convertAcc a
+    execute = do
       dumpGraph acc
       evalNative target $ do
         build <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
         exec  <- phase "link"    elapsedS (linkAcc build)
-        res   <- phase "execute" elapsedP (executeAcc exec)
-        return res
+        res   <- phase "execute" elapsedP (evalPar (executeAcc exec >>= getArrays (arraysR exec)))
+        return $ toArr res
 
 
 -- | This is 'runN', specialised to an array program of one argument.
@@ -182,27 +182,32 @@ runN = runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target (thread gang).
 --
-runNWith :: Afunction f => Native -> f -> AfunctionR f
-runNWith target f = exec
+runNWith :: forall f. Afunction f => Native -> f -> AfunctionR f
+runNWith target f = go (afunctionRepr @f) afun (return Empty)
   where
-    !acc  = convertAfunWith (config target) f
+    !acc  = convertAfun f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
                 build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
-    !exec = go afun (return Aempty)
 
-    go :: ExecOpenAfun Native aenv t -> LLVM Native (Aval aenv) -> t
-    go (Alam l) k = \arrs ->
-      let k' = do aenv       <- k
-                  AsyncR _ a <- E.async (useRemoteAsync arrs)
-                  return (aenv `Apush` a)
-      in go l k'
-    go (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target $ do
-      aenv   <- k
-      E.get =<< E.async (executeOpenAcc b aenv)
+    go :: AfunctionRepr t (AfunctionR t) (ArraysFunctionR t)
+       -> ExecOpenAfun Native aenv (ArraysFunctionR t)
+       -> Par Native (Val aenv)
+       -> AfunctionR t
+    go (AfunctionReprLam repr) (Alam lhs l) k = \(arrs :: a) ->
+      let k' = do aenv  <- k
+                  a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
+                  return (aenv `push` (lhs, a))
+      in go repr l k'
+    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target . evalPar $ do
+      aenv <- k
+      res  <- executeOpenAcc b aenv
+      arrs <- getArrays (arraysR b) res
+      return $ toArr arrs
+    go _ _ _ = error "The moon is hanging upside down"
 
 
 -- | As 'run1', but execute asynchronously.
@@ -218,41 +223,44 @@ run1AsyncWith = runNAsyncWith
 
 -- | As 'runN', but execute asynchronously.
 --
-runNAsync :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => f -> r
+runNAsync :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => f -> r
 runNAsync = runNAsyncWith defaultTarget
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, AfunctionR f ~ RunAsyncR r) => Native -> f -> r
-runNAsyncWith target f = runAsync' target afun (return Aempty)
+runNAsyncWith :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => Native -> f -> r
+runNAsyncWith target f = exec
   where
-    !acc  = convertAfunWith (config target) f
+    !acc  = convertAfun f
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
                 build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
                 link  <- phase "link"    elapsedS (linkAfun build)
                 return link
+    !exec = runAsync' target afun (return Empty)
 
 class RunAsync f where
   type RunAsyncR f
-  runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> LLVM Native (Aval aenv) -> f
+  runAsync' :: Native -> ExecOpenAfun Native aenv (RunAsyncR f) -> Par Native (Val aenv) -> f
 
-instance RunAsync b => RunAsync (a -> b) where
-  type RunAsyncR (a -> b) = a -> RunAsyncR b
+instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
+  type RunAsyncR (a -> b) = ArraysR a -> RunAsyncR b
   runAsync' _      Abody{}  _ _    = error "runAsync: function oversaturated"
-  runAsync' target (Alam l) k arrs =
-    let k' = do aenv       <- k
-                AsyncR _ a <- E.async (useRemoteAsync arrs)
-                return (aenv `Apush` a)
+  runAsync' target (Alam lhs l) k arrs =
+    let k' = do aenv  <- k
+                a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
+                return (aenv `push` (lhs, a))
     in runAsync' target l k'
 
-instance RunAsync (IO (Async b)) where
-  type RunAsyncR  (IO (Async b)) = b
+instance Arrays b => RunAsync (IO (Async b)) where
+  type RunAsyncR  (IO (Async b)) = ArraysR b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
-  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target $ do
-    aenv   <- k
-    E.get =<< E.async (executeOpenAcc b aenv)
+  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target . evalPar $ do
+    aenv  <- k
+    ans   <- executeOpenAcc b aenv
+    arrs  <- getArrays (arraysR b) ans
+    return $ toArr arrs
 
 
 -- | Stream a lazily read list of input arrays through the given program,
@@ -299,35 +307,14 @@ streamWith target f arrs = map go arrs
 -- Note that at the splice point the usage of @f@ must monomorphic; i.e. the
 -- types @a@, @b@ and @c@ must be at some known concrete type.
 --
--- In order to link the final program together, the included GHC plugin must be
--- used when compiling and linking the program. Add the following option to the
--- .cabal file of your project:
---
--- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
---
--- Similarly, the plugin must also run when loading modules in @ghci@.
---
--- Additionally, when building a _library_ with Cabal which utilises 'runQ', you
--- will need to use the following custom build @Setup.hs@ to ensure that the
--- library is linked together properly:
---
--- > import Data.Array.Accelerate.LLVM.Native.Distribution.Simple
--- > main = defaultMain
---
--- And in the .cabal file:
---
--- > build-type: Custom
--- > custom-setup
--- >   setup-depends:
--- >       base
--- >     , Cabal
--- >     , accelerate-llvm-native
---
--- The custom @Setup.hs@ is only required when building a library with Cabal.
--- Building executables with cabal requires only the GHC plugin.
---
 -- See the <https://github.com/tmcdonell/lulesh-accelerate lulesh-accelerate>
 -- project for an example.
+--
+-- [/Note:/]
+--
+-- It is recommended to use GHC-8.6 or later. Earlier GHC versions can
+-- successfully build executables utilising 'runQ', but fail to correctly link
+-- libraries containing this function.
 --
 -- [/Note:/]
 --
@@ -382,59 +369,58 @@ runQAsyncWith f = do
   TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
 
 
-runQ' :: Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQ' :: forall f. Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
 runQ' using target f = do
-  -- Reification of the program for segmented folds depends on whether we are
-  -- executing in parallel or sequentially, where the parallel case requires
-  -- some extra work to convert the segments descriptor into a segment offset
-  -- array. Also do this conversion, so that the program can be run both in
-  -- parallel as well as sequentially (albeit with some additional work that
-  -- could have been avoided).
-  --
-  -- TLM: We could also just reify the program twice and select at runtime which
-  --      version to execute.
-  --
-  afun  <- let acc = convertAfunWith (phases { convertOffsetOfSegment = True }) f
-           in  TH.runIO $ do
-                 dumpGraph acc
-                 evalNative (defaultTarget { segmentOffset = True }) $
-                   phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+#if MIN_VERSION_template_haskell(2,13,0)
+  -- The plugin ensures that objects are loaded correctly into GHCi
+  TH.addCorePlugin "Data.Array.Accelerate.LLVM.Native.Plugin"
+#endif
 
-  -- generate a lambda function with the correct number of arguments and apply
-  -- directly to the body expression.
+  afun  <- let acc = convertAfun f
+            in TH.runIO $ do
+                 dumpGraph acc
+                 evalNative defaultTarget $
+                  phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+
+  -- generate a lambda function with the correct number of arguments and
+  -- apply directly to the body expression.
+  --
+  -- XXX: remove use of 'getArrays', 'toArr', and 'fromArr' in the embedded
+  -- code; we should be able to generate all bindings directly and assemble
+  -- the pieces directly.
+  --
   let
-      go :: Typeable aenv => CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
-      go (Alam lam) xs as stmts = do
+      go :: CompiledOpenAfun Native aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
+      go (Alam lhs l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.conP 'AsyncR [TH.wildP, TH.varP a]) [| E.async (useRemoteAsync $(TH.varE x)) |]
-        go lam (TH.varP x : xs) (TH.varE a : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
-      go (Abody body) xs as stmts =
-        let aenv = foldr (\a gamma -> [| $gamma `Apush` $a |] ) [| Aempty |] as
-            eval = TH.noBindS [| E.get =<< E.async (executeOpenAcc $(TH.unTypeQ (embedOpenAcc (defaultTarget { segmentOffset = True }) body)) $aenv) |]
-        in
-        TH.lamE (reverse xs) [| $using . phase "execute" elapsedP . evalNative ($target { segmentOffset = True }) $
-                                  $(TH.doE (reverse (eval : stmts))) |]
+      go (Abody b) xs as stmts = do
+        r <- TH.newName "r" -- result
+        s <- TH.newName "s"
+        let
+            aenv  = foldr (\a gamma -> [| $gamma `push` $a |]) [| Empty |] as
+            body  = embedOpenAcc defaultTarget b
+        --
+        TH.lamE (reverse xs)
+                [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
+                      $(TH.doE ( reverse stmts ++
+                               [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
+                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
+                               , TH.noBindS [| return $ toArr $(TH.varE s) |]
+                               ]))
+                 |]
   --
   go afun [] [] []
-
-
--- How the Accelerate program should be evaluated.
---
--- TODO: make sharing/fusion runtime configurable via debug flags or otherwise.
---
-config :: Native -> Phase
-config target = phases
-  { convertOffsetOfSegment = segmentOffset target
-  }
 
 
 -- Debugging
 -- =========
 
 dumpStats :: MonadIO m => a -> m a
-dumpStats x = dumpSimplStats >> return x
+dumpStats x = liftIO dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
 phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go

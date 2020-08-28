@@ -2,10 +2,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -26,7 +26,7 @@ import Prelude                                                      as P
 
 
 instance Intrinsic PTX where
-  intrinsicForTarget _ = libdeviceIndex
+  intrinsicForTarget = libdeviceIndex
 
 -- The list of functions implemented by libdevice. These are all more-or-less
 -- named consistently based on the standard mathematical functions they

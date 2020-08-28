@@ -1,14 +1,16 @@
-{-# LANGUAGE DataKinds            #-}
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE KindSignatures       #-}
-{-# LANGUAGE TypeOperators        #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ParallelListComp      #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Global
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,40 +18,30 @@
 module LLVM.AST.Type.Global
   where
 
+import LLVM.AST.Type.Downcast
+import LLVM.AST.Type.Function
 import LLVM.AST.Type.Name
-import LLVM.AST.Type.Operand
-import LLVM.AST.Type.Representation
 
+import qualified LLVM.AST.Global                                    as LLVM
+import qualified LLVM.AST.Name                                      as LLVM
+import qualified LLVM.AST.Type                                      as LLVM
 
--- | Parameters for functions
---
-data Parameter a where
-  Parameter :: PrimType a -> Name a -> Parameter a
-
--- | Attributes for the function call instruction
---
-data FunctionAttribute
-  = NoReturn
-  | NoUnwind
-  | ReadOnly
-  | ReadNone
-  | AlwaysInline
-  | NoDuplicate
-  | Convergent
-
--- | Attribute groups are groups of attributes that are referenced by
--- objects within the IR. To use an attribute group, an object must
--- reference its GroupID.
---
-data GroupID = GroupID !Word
 
 -- | A global function definition.
 --
-data GlobalFunction args t where
-  Body :: Type r     -> Label                              -> GlobalFunction '[]         r
-  Lam  :: PrimType a -> Operand a -> GlobalFunction args t -> GlobalFunction (a ': args) t
+type GlobalFunction args t = Function Label args t
 
-data HList (l :: [*]) where
-  HNil  ::                 HList '[]
-  HCons :: e -> HList l -> HList (e ': l)
+instance Downcast (GlobalFunction args t) LLVM.Global where
+  downcast f = LLVM.functionDefaults { LLVM.name       = nm
+                                     , LLVM.returnType = res
+                                     , LLVM.parameters = (params, False)
+                                     }
+    where
+      trav :: GlobalFunction args t -> ([LLVM.Type], LLVM.Type, LLVM.Name)
+      trav (Body t _ n) = ([], downcast t, downcast n)
+      trav (Lam a _ l)  = let (as, r, n) = trav l
+                          in  (downcast a : as, r, n)
+      --
+      (args, res, nm)  = trav f
+      params           = [ LLVM.Parameter t (LLVM.UnName i) [] | t <- args | i <- [0..] ]
 

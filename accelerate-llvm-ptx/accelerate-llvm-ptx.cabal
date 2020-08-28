@@ -1,7 +1,7 @@
 name:                   accelerate-llvm-ptx
-version:                1.2.0.1
+version:                1.3.0.0
 cabal-version:          >= 1.10
-tested-with:            GHC >= 8.0
+tested-with:            GHC >= 8.6
 build-type:             Simple
 
 synopsis:               Accelerate backend for NVIDIA GPUs
@@ -26,7 +26,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/llvm/llvm-8
+    > brew install llvm-hs/llvm/llvm-9
     .
     /Debian & Ubuntu/
     .
@@ -35,41 +35,25 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-8-dev
+    > apt-get install llvm-9-dev
     .
     /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/7.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/9.0.0/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
     option includes the @NVPTX@ target (if not specified all targets are built).
     .
-    [/Installing accelerate-llvm/]
-    .
-    To use @accelerate-llvm@ it is important that the @llvm-hs@ package is
-    installed against the @libLLVM@ shared library, rather than statically
-    linked, so that we can use LLVM from GHCi and Template Haskell. This is the
-    default configuration, but you can also enforce this explicitly by adding
-    the following to your @stack.yaml@ file:
-    .
-    > flags:
-    >   llvm-hs:
-    >     shared-llvm: true
-    .
-    Or by specifying the @shared-llvm@ flag to cabal:
-    .
-    > cabal install llvm-hs -fshared-llvm
-    .
 
 license:                BSD3
 license-file:           LICENSE
 author:                 Trevor L. McDonell
-maintainer:             Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+maintainer:             Trevor L. McDonell <trevor.mcdonell@gmail.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
-category:               Compilers/Interpreters, Concurrency, Data, Parallelism
+category:               Accelerate, Compilers/Interpreters, Concurrency, Data, Parallelism
 
 extra-source-files:
     CHANGELOG.md
@@ -121,8 +105,9 @@ Library
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
-    -- Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
     Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
+    Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Cache
@@ -137,31 +122,42 @@ Library
     Data.Array.Accelerate.LLVM.PTX.Embed
 
     System.Process.Extra
+    GHC.Heap.NormalForm
 
     Paths_accelerate_llvm_ptx
 
   build-depends:
-          base                          >= 4.7 && < 4.13
-        , accelerate                    == 1.2.*
-        , accelerate-llvm               == 1.2.*
+          base                          >= 4.10 && < 5
+        , accelerate                    == 1.3.*
+        , accelerate-llvm               == 1.3.*
         , bytestring                    >= 0.10.4
-        , containers                    >= 0.5 && <0.7
-        , cuda                          >= 0.9
+        , containers                    >= 0.5 && < 0.7
+        , cuda                          >= 0.10
         , deepseq                       >= 1.3
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 8.1
-        , llvm-hs-pure                  >= 4.1 && < 8.1
+        , llvm-hs                       >= 4.1 && < 9.1
+        , llvm-hs-pure                  >= 4.1 && < 9.1
         , mtl                           >= 2.2.1
-        , nvvm                          >= 0.7.5
+        , nvvm                          >= 0.9
         , pretty                        >= 1.1
         , process                       >= 1.4.3
         , template-haskell
-        , time                          >= 1.4
         , unordered-containers          >= 0.2
+
+  if impl(ghc >= 8.6)
+    build-depends:
+          ghc-heap
+  else
+    build-depends:
+          ghc
+        , ghci
+
+    cpp-options:
+        -DUNBOXED_TUPLES=1
 
   hs-source-dirs:
         src
@@ -193,7 +189,7 @@ test-suite nofib-llvm-ptx
   main-is:              Main.hs
 
   build-depends:
-          base                          >= 4.7
+          base                          >= 4.10
         , accelerate
         , accelerate-llvm-ptx
 
@@ -207,6 +203,7 @@ test-suite nofib-llvm-ptx
         -rtsopts
         -with-rtsopts=-A128M
         -with-rtsopts=-n4M
+        -- -with-rtsopts=-N
 
 
 source-repository head
@@ -215,7 +212,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  v1.2.0.1
+  tag:                  v1.3.0.0
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell

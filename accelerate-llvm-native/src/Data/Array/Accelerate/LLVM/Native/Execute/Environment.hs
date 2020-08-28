@@ -2,24 +2,23 @@
 {-# LANGUAGE GADTs #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Environment
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
 
 module Data.Array.Accelerate.LLVM.Native.Execute.Environment (
 
-  Aval, aprj
+  module Data.Array.Accelerate.LLVM.Execute.Environment,
+  module Data.Array.Accelerate.LLVM.Native.Execute.Environment,
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Execute.Environment
 
-type Aval = AvalR Native
+type Val = ValR Native
 

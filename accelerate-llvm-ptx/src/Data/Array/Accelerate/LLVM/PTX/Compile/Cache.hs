@@ -2,10 +2,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Cache
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -23,7 +23,7 @@ import Control.Monad.State
 import Data.Version
 import Foreign.CUDA.Analysis
 import System.FilePath
-import qualified Data.ByteString.Char8                              as B8
+import Text.Printf
 import qualified Data.ByteString.Short.Char8                        as S8
 
 import Paths_accelerate_llvm_ptx
@@ -31,12 +31,10 @@ import Paths_accelerate_llvm_ptx
 
 instance Persistent PTX where
   targetCacheTemplate = do
-    dev <- gets ptxDeviceProperties
-    let Compute m n = computeCapability dev
-    --
+    Compute m n <- gets (computeCapability . ptxDeviceProperties)
     return $ "accelerate-llvm-ptx-" ++ showVersion version
          </> "llvm-hs-" ++ VERSION_llvm_hs
          </> S8.unpack ptxTargetTriple
-         </> B8.unpack (ptxISAVersion m n)
+         </> printf "sm%d%d" m n
          </> "morp.sass"
 

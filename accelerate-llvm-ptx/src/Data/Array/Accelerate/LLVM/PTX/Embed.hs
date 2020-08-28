@@ -1,12 +1,13 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Embed
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -17,8 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.Embed (
 
 ) where
 
-import Data.ByteString.Short.Char8                                  as S8
-import Data.ByteString.Short.Internal                               as BS
+import Data.ByteString.Short.Extra                                  as BS
 
 import Data.Array.Accelerate.Lifetime
 
@@ -30,7 +30,6 @@ import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Context
 
--- import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 import Foreign.Ptr
@@ -70,17 +69,10 @@ embed target (ObjectR _ cfg obj) = do
     linkQ :: TH.Name -> (Kernel, Q (TExp (Int -> Int))) -> Q (TExp Kernel)
     linkQ jit (Kernel name _ dsmem cta _, grid) =
       [|| unsafePerformIO $ do
-            f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(TH.unsafeTExpCoerce (TH.lift (S8.unpack name)))
+            f <- CUDA.getFun (CUDA.jitModule $$(TH.unsafeTExpCoerce (TH.varE jit))) $$(liftSBS name)
             return $ Kernel $$(liftSBS name) f dsmem cta $$grid
        ||]
 
     listE :: [Q (TExp a)] -> Q (TExp [a])
     listE xs = TH.unsafeTExpCoerce (TH.listE (map TH.unTypeQ xs))
-
-    liftSBS :: ShortByteString -> Q (TExp ShortByteString)
-    liftSBS bs =
-      let bytes = BS.unpack bs
-          len   = BS.length bs
-      in
-      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 

@@ -2,4 +2,5 @@
 :set -iaccelerate-llvm
 :set -iaccelerate-llvm-native
 :set -iaccelerate-llvm-ptx
-:set -optP-include -optPutils/cabal_macros.h
+:set -UUNBOXED_TUPLES
+:set -DUNBOXED_TUPLES=0

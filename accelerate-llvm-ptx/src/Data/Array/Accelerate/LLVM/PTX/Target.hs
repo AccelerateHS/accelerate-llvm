@@ -1,15 +1,14 @@
 {-# LANGUAGE CPP               #-}
 {-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Target
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -21,7 +20,7 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.AST.AddrSpace
 import LLVM.AST.DataLayout
 import LLVM.Target                                                  hiding ( Target )
@@ -33,22 +32,22 @@ import qualified LLVM.CodeGenOpt                                    as CGO
 -- accelerate
 import Data.Array.Accelerate.Error
 
+import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.Target
-import Data.Array.Accelerate.LLVM.Util
 
-import Control.Parallel.Meta                                        ( Executable )
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
 import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
-import qualified Foreign.CUDA.Driver                                as CUDA
+import Foreign.CUDA.Analysis.Device
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.String
+import Debug.Trace
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                           as Map
@@ -69,22 +68,21 @@ data PTX = PTX {
   , ptxMemoryTable              :: {-# UNPACK #-} !MemoryTable
   , ptxKernelTable              :: {-# UNPACK #-} !KernelTable
   , ptxStreamReservoir          :: {-# UNPACK #-} !Reservoir
-  , fillP                       :: {-# UNPACK #-} !Executable
   }
 
 instance Target PTX where
-  targetTriple _     = Just ptxTargetTriple
+  targetTriple     = Just ptxTargetTriple
 #if ACCELERATE_USE_NVVM
-  targetDataLayout _ = Nothing            -- see note: [NVVM and target data layout]
+  targetDataLayout = Nothing              -- see note: [NVVM and target data layout]
 #else
-  targetDataLayout _ = Just ptxDataLayout
+  targetDataLayout = Just ptxDataLayout
 #endif
 
 
 -- | Extract the properties of the device the current PTX execution state is
 -- executing on.
 --
-ptxDeviceProperties :: PTX -> CUDA.DeviceProperties
+ptxDeviceProperties :: PTX -> DeviceProperties
 ptxDeviceProperties = deviceProperties . ptxContext
 
 
@@ -121,53 +119,80 @@ ptxDataLayout = DataLayout
 
 -- | String that describes the target host.
 --
-ptxTargetTriple :: ShortByteString
+ptxTargetTriple :: HasCallStack => ShortByteString
 ptxTargetTriple =
   case bitSize (undefined::Int) of
     32  -> "nvptx-nvidia-cuda"
     64  -> "nvptx64-nvidia-cuda"
-    _   -> $internalError "ptxTargetTriple" "I don't know what architecture I am"
+    _   -> internalError "I don't know what architecture I am"
 
 
 -- | Bracket creation and destruction of the NVVM TargetMachine.
 --
 withPTXTargetMachine
-    :: CUDA.DeviceProperties
+    :: HasCallStack
+    => DeviceProperties
     -> (TargetMachine -> IO a)
     -> IO a
 withPTXTargetMachine dev go =
-  let CUDA.Compute m n = CUDA.computeCapability dev
-      isa              = CPUFeature (ptxISAVersion m n)
-      sm               = fromString (printf "sm_%d%d" m n)
+  let (sm, isa) = ptxTargetVersion (computeCapability dev)
   in
   withTargetOptions $ \options -> do
     withTargetMachine
-        ptxTarget
-        ptxTargetTriple
-        sm
-        (Map.singleton isa True)    -- CPU features
-        options                     -- target options
-        R.Default                   -- relocation model
-        CM.Default                  -- code model
-        CGO.Default                 -- optimisation level
-        go
+      ptxTarget
+      ptxTargetTriple
+      sm                                    -- CPU
+      (Map.singleton (CPUFeature isa) True) -- CPU features
+      options                               -- target options
+      R.Default                             -- relocation model
+      CM.Default                            -- code model
+      CGO.Default                           -- optimisation level
+      go
 
--- Some libdevice functions require at least ptx40, even though devices at
--- that compute capability also accept older ISA versions.
+-- Compile using the earliest version of the SM target PTX ISA supported by
+-- the given compute device and this version of LLVM.
 --
---   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+-- Note that we require at least ptx40 for some libnvvm device functions.
 --
-ptxISAVersion :: Int -> Int -> ByteString
-ptxISAVersion 2 _ = "ptx40"
-ptxISAVersion 3 7 = "ptx41"
-ptxISAVersion 3 _ = "ptx40"
-ptxISAVersion 5 0 = "ptx40"
-ptxISAVersion 5 2 = "ptx41"
-ptxISAVersion 5 3 = "ptx42"
-ptxISAVersion 6 _ = "ptx50"
-ptxISAVersion 7 _ = "ptx60"
-ptxISAVersion _ _ = "ptx40"
-
+-- See table NVPTX supported processors:
+--
+--   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+--
+-- PTX ISA verison history:
+--
+--   https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#release-notes
+--
+ptxTargetVersion :: Compute -> (ByteString, ByteString)
+ptxTargetVersion compute@(Compute m n)
+#if MIN_VERSION_llvm_hs(8,0,0)
+  | m >= 7 && n >= 5    = ("sm_75", "ptx63")
+#endif
+#if MIN_VERSION_llvm_hs(7,0,0)
+  | m >= 7 && n >= 2    = ("sm_72", "ptx61")
+#endif
+#if MIN_VERSION_llvm_hs(6,0,0)
+  | m >= 7              = ("sm_70", "ptx60")
+#endif
+  | m >  6              = ("sm_62", "ptx50")  -- fallthrough
+  --
+  | m == 6 && n == 2    = ("sm_62", "ptx50")
+  | m == 6 && n == 1    = ("sm_61", "ptx50")
+  | m == 6              = ("sm_60", "ptx50")
+  | m == 5 && n == 3    = ("sm_53", "ptx42")
+  | m == 5 && n == 2    = ("sm_52", "ptx41")
+  | m == 5              = ("sm_50", "ptx40")
+  | m == 3 && n == 7    = ("sm_37", "ptx41")
+  | m == 3 && n == 5    = ("sm_35", "ptx40")
+  | m == 3 && n == 2    = ("sm_32", "ptx40")
+  | m == 3              = ("sm_30", "ptx40")
+  | m == 2 && n == 1    = ("sm_21", "ptx40")
+  | m == 2              = ("sm_20", "ptx40")
+  --
+  | otherwise
+  = trace warning (fromString (printf "sm_%d%d" m n), "ptx40")
+  where
+    warning = unlines [ "*** Warning: Unhandled CUDA device compute capability: " ++ show compute
+                      , "*** Please submit a bug report at https://github.com/AccelerateHS/accelerate/issues" ]
 
 -- | The NVPTX target for this host.
 --

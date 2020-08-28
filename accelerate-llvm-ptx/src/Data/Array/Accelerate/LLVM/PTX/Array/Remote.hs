@@ -1,15 +1,17 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Remote
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -25,8 +27,12 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
-import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Array.Data
+import Data.Array.Accelerate.Array.Unique
+import Data.Array.Accelerate.Lifetime
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 import qualified Data.Array.Accelerate.Array.Remote                     as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
 
@@ -37,10 +43,10 @@ import qualified Foreign.CUDA.Driver.Stream                             as CUDA
 
 import Control.Exception
 import Control.Monad.State
-import Data.Typeable
-import Foreign.Ptr
-import Foreign.Storable
 import Text.Printf
+
+import GHC.Base
+import GHC.Int
 
 
 -- Events signal once a computation has completed
@@ -57,31 +63,35 @@ instance Remote.RemoteMemory (LLVM PTX) where
     | otherwise = liftIO $ do
         ep <- try (CUDA.mallocArray n)
         case ep of
-          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (fromIntegral n))
+          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (i64 n))
                                             return (Just p)
           Left (ExitCode OutOfMemory) -> do return Nothing
           Left e                      -> do message ("malloc failed with error: " ++ show e)
                                             throwIO e
 
-  peekRemote n src ad =
-    let bytes = n * sizeOfPtr src
-        dst   = CUDA.HostPtr (ptrsOfArrayData ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesFromRemote (fromIntegral bytes)
-      transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
+  peekRemote t n src ad
+    | SingleArrayDict <- singleArrayDict t
+    , SingleDict      <- singleDict t
+    = let bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+          dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesFromRemote (i64 bytes)
+        transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
-  pokeRemote n dst ad =
-    let bytes = n * sizeOfPtr dst
-        src   = CUDA.HostPtr (ptrsOfArrayData ad)
-    in
-    blocking            $ \stream ->
-    withLifetime stream $ \st     -> do
-      Debug.didCopyBytesToRemote (fromIntegral bytes)
-      transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
+  pokeRemote t n dst ad
+    | SingleArrayDict <- singleArrayDict t
+    , SingleDict      <- singleDict t
+    = let bytes = n * bytesElt (TupRsingle (SingleScalarType t))
+          src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
+      in
+      blocking            $ \stream ->
+      withLifetime stream $ \st     -> do
+        Debug.didCopyBytesToRemote (i64 bytes)
+        transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
-  castRemotePtr _      = CUDA.castDevPtr
+  castRemotePtr        = CUDA.castDevPtr
   availableRemoteMem   = liftIO $ fst `fmap` CUDA.getMemInfo
   totalRemoteMem       = liftIO $ snd `fmap` CUDA.getMemInfo
   remoteAllocationSize = return 4096
@@ -94,27 +104,27 @@ instance Remote.RemoteMemory (LLVM PTX) where
 --
 {-# INLINEABLE malloc #-}
 malloc
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
+    :: SingleType e
+    -> ArrayData e
     -> Int
     -> Bool
     -> LLVM PTX Bool
-malloc !ad !n !frozen = do
+malloc !tp !ad !n !frozen = do
   PTX{..} <- gets llvmTarget
-  Remote.malloc ptxMemoryTable ad frozen n
+  Remote.malloc ptxMemoryTable tp ad frozen n
 
 
 -- | Lookup up the remote array pointer for the given host-side array
 --
 {-# INLINEABLE withRemote #-}
 withRemote
-    :: (ArrayElt e, ArrayPtrs e ~ Ptr a, Typeable e, Typeable a, Storable a)
-    => ArrayData e
-    -> (CUDA.DevicePtr a -> LLVM PTX (Maybe Event, r))
+    :: SingleType e
+    -> ArrayData e
+    -> (CUDA.DevicePtr (ScalarArrayDataR e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX (Maybe r)
-withRemote !ad !f = do
+withRemote !tp !ad !f = do
   PTX{..} <- gets llvmTarget
-  Remote.withRemote ptxMemoryTable ad f
+  Remote.withRemote ptxMemoryTable tp ad f
 
 
 -- Auxiliary
@@ -130,16 +140,21 @@ blocking !fun =
     liftIO $ block e
     return r
 
-{-# INLINE sizeOfPtr #-}
-sizeOfPtr :: forall a. Storable a => CUDA.DevicePtr a -> Int
-sizeOfPtr _ = sizeOf (undefined :: a)
+{-# INLINE i64 #-}
+i64 :: Int -> Int64
+i64 (I# i#) = I64# i#
+
+{-# INLINE double #-}
+double :: Int -> Double
+double (I# i#) = D# (int2Double# i#)
+
 
 -- Debugging
 -- ---------
 
 {-# INLINE showBytes #-}
 showBytes :: Int -> String
-showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B"
+showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (double x) "B"
 
 {-# INLINE trace #-}
 trace :: String -> IO a -> IO a
@@ -152,7 +167,7 @@ message s = s `trace` return ()
 {-# INLINE transfer #-}
 transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
-  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
+  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (double x / t) "B/s"
         msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
                               name
                               (showBytes bytes)

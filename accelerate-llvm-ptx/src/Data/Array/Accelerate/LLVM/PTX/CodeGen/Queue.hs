@@ -3,10 +3,10 @@
 {-# LANGUAGE TemplateHaskell     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Queue
--- Copyright   : [2014..2017] Trevor L. McDonell
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --

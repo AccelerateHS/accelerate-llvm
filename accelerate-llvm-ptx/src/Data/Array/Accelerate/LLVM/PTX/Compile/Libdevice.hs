@@ -4,11 +4,10 @@
 {-# LANGUAGE ViewPatterns      #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -119,7 +118,7 @@ withLibdeviceNVVM
     :: DeviceProperties
     -> Context
     -> Module
-    -> ([(String, ByteString)] -> LLVM.Module -> IO a)
+    -> ([(ShortByteString, ByteString)] -> LLVM.Module -> IO a)
     -> IO a
 withLibdeviceNVVM dev ctx ast next =
   LLVM.withModuleFromAST ctx ast $ \mdl -> do

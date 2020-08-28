@@ -1,11 +1,12 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -39,8 +40,8 @@ import Prelude                                                  as P
 --   sqrt       -> llvm.sqrt.f64
 --
 class Intrinsic arch where
-  intrinsicForTarget :: arch -> HashMap ShortByteString Label
-  intrinsicForTarget _ = llvmIntrinsic
+  intrinsicForTarget :: HashMap ShortByteString Label
+  intrinsicForTarget = llvmIntrinsic
 
 
 llvmIntrinsic :: HashMap ShortByteString Label

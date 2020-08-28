@@ -1,11 +1,10 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -27,21 +26,20 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Intrinsic ()
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Map
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Stencil
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Transform
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 
 instance Skeleton PTX where
-  map ptx _       = mkMap ptx
-  generate ptx _  = mkGenerate ptx
-  fold ptx _      = mkFold ptx
-  fold1 ptx _     = mkFold1 ptx
-  foldSeg ptx _   = mkFoldSeg ptx
-  fold1Seg ptx _  = mkFold1Seg ptx
-  scanl ptx _     = mkScanl ptx
-  scanl1 ptx _    = mkScanl1 ptx
-  scanl' ptx _    = mkScanl' ptx
-  scanr ptx _     = mkScanr ptx
-  scanr1 ptx _    = mkScanr1 ptx
-  scanr' ptx _    = mkScanr' ptx
-  permute ptx _   = mkPermute ptx
+  map _       = mkMap
+  generate _  = mkGenerate
+  transform _ = mkTransform
+  fold _      = mkFold
+  foldSeg _   = mkFoldSeg
+  scan _      = mkScan
+  scan' _     = mkScan'
+  permute _   = mkPermute
+  stencil1 _  = mkStencil1
+  stencil2 _  = mkStencil2
 

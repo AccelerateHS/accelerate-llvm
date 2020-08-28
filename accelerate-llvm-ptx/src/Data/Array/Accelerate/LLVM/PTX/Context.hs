@@ -2,11 +2,10 @@
 {-# LANGUAGE RecordWildCards #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Context
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -22,11 +21,10 @@ import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
 
-import qualified Foreign.CUDA.Analysis                          as CUDA
-import qualified Foreign.CUDA.Driver                            as CUDA
 import qualified Foreign.CUDA.Driver.Device                     as CUDA
 import qualified Foreign.CUDA.Driver.Context                    as CUDA
 
+import Control.Concurrent
 import Control.Exception
 import Control.Monad
 import Data.Hashable
@@ -102,9 +100,10 @@ raw dev prp ctx = do
 --
 {-# INLINE withContext #-}
 withContext :: Context -> IO a -> IO a
-withContext Context{..} action =
-  withLifetime deviceContext $ \ctx ->
-    bracket_ (push ctx) pop action
+withContext Context{..} action
+  = runInBoundThread
+  $ withLifetime deviceContext $ \ctx ->
+      bracket_ (push ctx) pop action
 
 {-# INLINE push #-}
 push :: CUDA.Context -> IO ()

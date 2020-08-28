@@ -3,11 +3,10 @@
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.State
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,7 +15,6 @@ module Data.Array.Accelerate.LLVM.State
   where
 
 -- library
-import Control.Applicative                              ( Applicative )
 import Control.Concurrent                               ( forkIO, threadDelay )
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )

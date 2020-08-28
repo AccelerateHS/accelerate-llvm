@@ -1,14 +1,11 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Target
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -23,6 +20,6 @@ import Data.ByteString.Short                              ( ShortByteString )
 -- | Describes some target specific information needed for code generation
 --
 class Target t where
-  targetTriple          :: t {- dummy -} -> Maybe ShortByteString
-  targetDataLayout      :: t {- dummy -} -> Maybe DataLayout
+  targetTriple      :: Maybe ShortByteString
+  targetDataLayout  :: Maybe DataLayout
 

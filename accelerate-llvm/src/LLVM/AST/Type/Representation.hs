@@ -1,12 +1,14 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Representation
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -21,9 +23,12 @@ module LLVM.AST.Type.Representation (
 ) where
 
 import Data.Array.Accelerate.Type
-import Data.Array.Accelerate.Product
+import Data.Array.Accelerate.Representation.Type
 
 import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.Downcast
+
+import qualified LLVM.AST.Type                                      as LLVM
 
 import Foreign.Ptr
 import Text.Printf
@@ -64,9 +69,10 @@ data Type a where
   PrimType  :: PrimType a -> Type a
 
 data PrimType a where
+  BoolPrimType    ::                            PrimType Bool
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
-  StructPrimType  :: TupleType (ProdRepr a)  -> PrimType a          -- opaque structures (required for CmpXchg)
+  StructPrimType  :: TypeR a                 -> PrimType a          -- opaque structures (required for CmpXchg)
   ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
 
 -- | All types
@@ -108,55 +114,13 @@ instance IsType Word32 where
 instance IsType Word64 where
   type' = PrimType primType
 
-instance IsType CShort where
-  type' = PrimType primType
-
-instance IsType CUShort where
-  type' = PrimType primType
-
-instance IsType CInt where
-  type' = PrimType primType
-
-instance IsType CUInt where
-  type' = PrimType primType
-
-instance IsType CLong where
-  type' = PrimType primType
-
-instance IsType CULong where
-  type' = PrimType primType
-
-instance IsType CLLong where
-  type' = PrimType primType
-
-instance IsType CULLong where
+instance IsType Half where
   type' = PrimType primType
 
 instance IsType Float where
   type' = PrimType primType
 
 instance IsType Double where
-  type' = PrimType primType
-
-instance IsType CFloat where
-  type' = PrimType primType
-
-instance IsType CDouble where
-  type' = PrimType primType
-
-instance IsType Bool where
-  type' = PrimType primType
-
-instance IsType Char where
-  type' = PrimType primType
-
-instance IsType CChar where
-  type' = PrimType primType
-
-instance IsType CSChar where
-  type' = PrimType primType
-
-instance IsType CUChar where
   type' = PrimType primType
 
 instance IsType (Ptr Int) where
@@ -189,56 +153,14 @@ instance IsType (Ptr Word32) where
 instance IsType (Ptr Word64) where
   type' = PrimType primType
 
-instance IsType (Ptr CShort) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUShort) where
-  type' = PrimType primType
-
-instance IsType (Ptr CInt) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUInt) where
-  type' = PrimType primType
-
-instance IsType (Ptr CLong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CULong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CLLong) where
-  type' = PrimType primType
-
-instance IsType (Ptr CULLong) where
-  type' = PrimType primType
-
 instance IsType (Ptr Float) where
   type' = PrimType primType
 
 instance IsType (Ptr Double) where
   type' = PrimType primType
 
-instance IsType (Ptr CFloat) where
-  type' = PrimType primType
-
-instance IsType (Ptr CDouble) where
-  type' = PrimType primType
-
-instance IsType (Ptr Bool) where
-  type' = PrimType primType
-
-instance IsType (Ptr Char) where
-  type' = PrimType primType
-
-instance IsType (Ptr CChar) where
-  type' = PrimType primType
-
-instance IsType (Ptr CSChar) where
-  type' = PrimType primType
-
-instance IsType (Ptr CUChar) where
-  type' = PrimType primType
+instance IsType Bool where
+  type' = PrimType BoolPrimType
 
 
 -- | All primitive types
@@ -277,55 +199,13 @@ instance IsPrim Word32 where
 instance IsPrim Word64 where
   primType = ScalarPrimType scalarType
 
-instance IsPrim CShort where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUShort where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CInt where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUInt where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CLong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CULong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CLLong where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CULLong where
+instance IsPrim Half where
   primType = ScalarPrimType scalarType
 
 instance IsPrim Float where
   primType = ScalarPrimType scalarType
 
 instance IsPrim Double where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CFloat where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CDouble where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim Bool where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim Char where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CChar where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CSChar where
-  primType = ScalarPrimType scalarType
-
-instance IsPrim CUChar where
   primType = ScalarPrimType scalarType
 
 instance IsPrim (Ptr Int) where
@@ -358,28 +238,7 @@ instance IsPrim (Ptr Word32) where
 instance IsPrim (Ptr Word64) where
   primType = PtrPrimType primType defaultAddrSpace
 
-instance IsPrim (Ptr CShort) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUShort) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CInt) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUInt) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CLong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CULong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CLLong) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CULLong) where
+instance IsPrim (Ptr Half) where
   primType = PtrPrimType primType defaultAddrSpace
 
 instance IsPrim (Ptr Float) where
@@ -388,33 +247,15 @@ instance IsPrim (Ptr Float) where
 instance IsPrim (Ptr Double) where
   primType = PtrPrimType primType defaultAddrSpace
 
-instance IsPrim (Ptr CFloat) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CDouble) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr Bool) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr Char) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CSChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
-instance IsPrim (Ptr CUChar) where
-  primType = PtrPrimType primType defaultAddrSpace
-
+instance IsPrim Bool where
+  primType = BoolPrimType
 
 instance Show (Type a) where
   show VoidType        = "()"
   show (PrimType t)    = show t
 
 instance Show (PrimType a) where
+  show BoolPrimType                   = "Bool"
   show (ScalarPrimType t)             = show t
   show (StructPrimType t)             = show t
   show (ArrayPrimType n t)            = printf "[%d x %s]" n (show t)
@@ -425,4 +266,68 @@ instance Show (PrimType a) where
         | otherwise = printf "[addrspace %d]" n
       -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
       --   | otherwise           = show t
+
+
+-- | Does the concrete type represent signed or unsigned values?
+--
+class IsSigned dict where
+  signed   :: dict a -> Bool
+  signed   = not . unsigned
+  --
+  unsigned :: dict a -> Bool
+  unsigned = not . signed
+
+instance IsSigned ScalarType where
+  signed (SingleScalarType t) = signed t
+  signed (VectorScalarType t) = signed t
+
+instance IsSigned SingleType where
+  signed (NumSingleType t)    = signed t
+
+instance IsSigned VectorType where
+  signed (VectorType _ t) = signed t
+
+instance IsSigned BoundedType where
+  signed (IntegralBoundedType t) = signed t
+
+instance IsSigned NumType where
+  signed (IntegralNumType t) = signed t
+  signed (FloatingNumType t) = signed t
+
+instance IsSigned IntegralType where
+  signed = \case
+    TypeInt{}     -> True
+    TypeInt8{}    -> True
+    TypeInt16{}   -> True
+    TypeInt32{}   -> True
+    TypeInt64{}   -> True
+    _             -> False
+
+instance IsSigned FloatingType where
+  signed _ = True
+
+
+-- | Recover the type of a container
+--
+class TypeOf f where
+  typeOf :: f a -> Type a
+
+
+-- | Convert to llvm-hs
+--
+instance Downcast (Type a) LLVM.Type where
+  downcast VoidType     = LLVM.VoidType
+  downcast (PrimType t) = downcast t
+
+instance Downcast (PrimType a) LLVM.Type where
+  downcast BoolPrimType         = LLVM.IntegerType 1
+  downcast (ScalarPrimType t)   = downcast t
+  downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
+  downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)
+  downcast (StructPrimType t)   = LLVM.StructureType False (go t)
+    where
+      go :: TypeR t -> [LLVM.Type]
+      go TupRunit         = []
+      go (TupRsingle s)   = [downcast s]
+      go (TupRpair ta tb) = go ta ++ go tb
 

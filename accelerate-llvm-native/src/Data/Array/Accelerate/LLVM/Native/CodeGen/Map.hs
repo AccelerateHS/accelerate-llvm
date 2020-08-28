@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Map
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,12 +16,15 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Map
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Elt )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
+import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Array
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
+import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
@@ -70,27 +73,30 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 -- declare float @apply(float)
 --
 
-
 -- Apply the given unary function to each element of an array.
 --
-mkMap :: forall aenv sh a b. Elt b
-      => UID
-      -> Gamma            aenv
-      -> IRFun1    Native aenv (a -> b)
-      -> IRDelayed Native aenv (Array sh a)
-      -> CodeGen (IROpenAcc Native aenv (Array sh b))
-mkMap uid aenv apply IRDelayed{..} =
+-- The map operation can always treat an array of any dimension in its flat
+-- underlying representation, which simplifies code generation.
+--
+mkMap :: UID
+      -> Gamma aenv
+      -> ArrayR (Array sh a)
+      -> TypeR b
+      -> IRFun1  Native aenv (a -> b)
+      -> CodeGen Native      (IROpenAcc Native aenv (Array sh b))
+mkMap uid aenv (ArrayR shR aR) bR apply =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh b))
+      (start, end, paramGang)   = gangParam dim1
+      (arrIn,  paramIn)         = mutableArray (ArrayR shR aR) "in"
+      (arrOut, paramOut)        = mutableArray (ArrayR shR bR) "out"
       paramEnv                  = envParam aenv
   in
-  makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "map" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    imapFromTo start end $ \i -> do
-      xs <- app1 delayedLinearIndex i
+    imapFromTo (indexHead start) (indexHead end) $ \i -> do
+      xs <- readArray TypeInt arrIn i
       ys <- app1 apply xs
-      writeArray arrOut i ys
+      writeArray TypeInt arrOut i ys
 
     return_
 

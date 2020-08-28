@@ -1,14 +1,15 @@
+{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,10 +17,11 @@
 module Data.Array.Accelerate.LLVM.Native.CodeGen.Permute
   where
 
--- accelerate
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
+import Data.Array.Accelerate.AST                                    ( PrimMaybe )
 import Data.Array.Accelerate.Error
-import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -47,7 +49,6 @@ import LLVM.AST.Type.Representation
 
 import Control.Applicative
 import Control.Monad                                                ( void )
-import Data.Typeable
 import Prelude
 
 
@@ -60,16 +61,18 @@ import Prelude
 -- that are mapped to the magic index 'ignore' are dropped.
 --
 mkPermute
-    :: (Shape sh, Shape sh', Elt e)
+    :: HasCallStack
     => UID
-    -> Gamma aenv
+    -> Gamma               aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermute uid aenv combine project arr =
-  (+++) <$> mkPermuteS uid aenv combine project arr
-        <*> mkPermuteP uid aenv combine project arr
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed   Native aenv (Array sh e)
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermute uid aenv repr shr combine project arr =
+  (+++) <$> mkPermuteS uid aenv repr shr combine project arr
+        <*> mkPermuteP uid aenv repr shr combine project arr
 
 
 -- Forward permutation which does not require locking the output array. This
@@ -81,37 +84,39 @@ mkPermute uid aenv combine project arr =
 -- co-domain).
 --
 mkPermuteS
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => UID
-    -> Gamma aenv
+    :: UID
+    -> Gamma               aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed   Native aenv (Array sh e)
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    (arrayRshape repr)
+      (arrOut, paramOut)      = mutableArray (reprOut repr shr) "out"
+      (arrIn,  paramIn)       = delayedArray "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteS" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "permuteS" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
-    imapFromTo start end $ \i -> do
+    imapNestFromTo (arrayRshape repr) start end sh $ \ix _ -> do
 
-      ix  <- indexOfInt sh i
       ix' <- app1 project ix
 
-      unless (ignore ix') $ do
-        j <- intOfIndex (irArrayShape arrOut) ix'
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
 
         -- project element onto the destination array and update
-        x <- app1 delayedLinearIndex i
-        y <- readArray arrOut j
+        x <- app1 (delayedIndex arrIn) ix
+        y <- readArray TypeInt arrOut j
         r <- app2 combine x y
 
-        writeArray arrOut j r
+        writeArray TypeInt arrOut j r
 
     return_
 
@@ -127,71 +132,79 @@ mkPermuteS uid aenv IRPermuteFun{..} project IRDelayed{..} =
 -- a queue or some such.
 --
 mkPermuteP
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    :: HasCallStack
     => UID
-    -> Gamma aenv
+    -> Gamma               aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> IRPermuteFun Native aenv (e -> e -> e)
-    -> IRFun1       Native aenv (sh -> sh')
-    -> IRDelayed    Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP uid aenv IRPermuteFun{..} project arr =
+    -> IRFun1       Native aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed   Native aenv (Array sh e)
+    -> CodeGen      Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP uid aenv repr shr IRPermuteFun{..} project arr =
   case atomicRMW of
-    Nothing       -> mkPermuteP_mutex uid aenv combine project arr
-    Just (rmw, f) -> mkPermuteP_rmw   uid aenv rmw f   project arr
+    Nothing       -> mkPermuteP_mutex uid aenv repr shr combine project arr
+    Just (rmw, f) -> mkPermuteP_rmw   uid aenv repr shr rmw f   project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
 -- implement lock-free array updates.
 --
 mkPermuteP_rmw
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
+    :: HasCallStack
     => UID
     -> Gamma aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> RMWOperation
-    -> IRFun1    Native aenv (e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
+    -> IRFun1     Native aenv (e -> e)
+    -> IRFun1     Native aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed Native aenv (Array sh e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP_rmw uid aenv repr shr rmw update project marr =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    (arrayRshape repr)
+      (arrOut, paramOut)      = mutableArray (reprOut repr shr) "out"
+      (arrIn,  paramIn)       = delayedArray "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteP_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "permuteP_rmw" (paramGang ++ paramOut ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
-    imapFromTo start end $ \i -> do
+    imapNestFromTo (arrayRshape repr) start end sh $ \ix _ -> do
 
-      ix  <- indexOfInt sh i
       ix' <- app1 project ix
 
-      unless (ignore ix') $ do
-        j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
+        x <- app1 (delayedIndex arrIn) ix
         r <- app1 update x
 
         case rmw of
           Exchange
-            -> writeArray arrOut j r
+            -> writeArray TypeInt arrOut j r
           --
-          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
-            , Just adata                        <- gcast (irArrayData arrOut)
-            , Just r'                           <- gcast r
+          _ | TupRsingle (SingleScalarType s)   <- arrayRtype repr
+            , adata                             <- irArrayData arrOut
             -> do
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   case s of
-                    NumSingleType (IntegralNumType t) -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r') (CrossThread, AcquireRelease)
-                    NumSingleType t | RMW.Add <- rmw  -> atomicCAS_rmw s (A.add t r') addr
-                    NumSingleType t | RMW.Sub <- rmw  -> atomicCAS_rmw s (A.sub t r') addr
-                    _ -> case rmw of
-                           RMW.Min                    -> atomicCAS_cmp s A.lt addr (op s r')
-                           RMW.Max                    -> atomicCAS_cmp s A.gt addr (op s r')
-                           _                          -> $internalError "mkPermute_rmw" "unexpected transition"
+#if MIN_VERSION_llvm_hs(10,0,0)
+                    NumSingleType t             -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
+#else
+                    NumSingleType t
+                      | IntegralNumType{} <- t  -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
+                      | RMW.Add <- rmw          -> atomicCAS_rmw s (A.add t r) addr
+                      | RMW.Sub <- rmw          -> atomicCAS_rmw s (A.sub t r) addr
+#endif
+                    _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r)
+                      | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r)
+                    _                           -> internalError "unexpected transition"
           --
-          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+          _ -> internalError "unexpected transition"
 
     return_
 
@@ -200,38 +213,40 @@ mkPermuteP_rmw uid aenv rmw update project IRDelayed{..} =
 -- a mutex before updating the value at that location.
 --
 mkPermuteP_mutex
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => UID
-    -> Gamma aenv
-    -> IRFun2    Native aenv (e -> e -> e)
-    -> IRFun1    Native aenv (sh -> sh')
-    -> IRDelayed Native aenv (Array sh e)
-    -> CodeGen (IROpenAcc Native aenv (Array sh' e))
-mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
+    :: UID
+    -> Gamma             aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
+    -> IRFun2     Native aenv (e -> e -> e)
+    -> IRFun1     Native aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed Native aenv (Array sh e)
+    -> CodeGen    Native      (IROpenAcc Native aenv (Array sh' e))
+mkPermuteP_mutex uid aenv repr shr combine project marr =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word8))
-      paramEnv                  = envParam aenv
+      (start, end, paramGang) = gangParam    (arrayRshape repr)
+      (arrOut,  paramOut)     = mutableArray (reprOut repr shr)  "out"
+      (arrLock, paramLock)    = mutableArray reprLock "lock"
+      (arrIn,   paramIn)      = delayedArray "in" marr
+      paramEnv                = envParam aenv
   in
-  makeOpenAcc uid "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc uid "permuteP_mutex" (paramGang ++ paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    sh <- delayedExtent arrIn
 
-    imapFromTo start end $ \i -> do
+    imapNestFromTo (arrayRshape repr) start end sh $ \ix _ -> do
 
-      ix  <- indexOfInt sh i
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
-      unless (ignore ix') $ do
-        j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+      when (isJust ix') $ do
+        i <- fromJust ix'
+        j <- intOfIndex shr (irArrayShape arrOut) i
+        x <- app1 (delayedIndex arrIn) ix
 
         atomically arrLock j $ do
-          y <- readArray arrOut j
+          y <- readArray TypeInt arrOut j
           r <- app2 combine x y
-          writeArray arrOut j r
+          writeArray TypeInt arrOut j r
 
     return_
 
@@ -249,14 +264,14 @@ mkPermuteP_mutex uid aenv combine project IRDelayed{..} =
 --
 atomically
     :: IRArray (Vector Word8)
-    -> IR Int
-    -> CodeGen a
-    -> CodeGen a
+    -> Operands Int
+    -> CodeGen Native a
+    -> CodeGen Native a
 atomically barriers i action = do
   let
       lock      = integral integralType 1
       unlock    = integral integralType 0
-      unlocked  = lift 0
+      unlocked  = ir TypeWord8 unlock
   --
   spin <- newBlock "spinlock.entry"
   crit <- newBlock "spinlock.critical-section"
@@ -269,7 +284,7 @@ atomically barriers i action = do
   -- was unlocked we just acquired it, otherwise the state remains unchanged and
   -- we spin until it becomes available.
   setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlocked
   _    <- cbr ok crit spin
 
@@ -279,7 +294,7 @@ atomically barriers i action = do
   -- rules.
   setBlock crit
   r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, Release)
   _    <- br exit
 
   setBlock exit
@@ -289,18 +304,9 @@ atomically barriers i action = do
 -- Helper functions
 -- ----------------
 
--- Test whether the given index is the magic value 'ignore'. This operates
--- strictly rather than performing short-circuit (&&).
---
-ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
-ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
-  where
-    go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
-    go TypeRunit           ()          OP_Unit        = return (lift True)
-    go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
-                                                           y <- go tsz isz sz
-                                                           land' x y
-    go (TypeRscalar s)     ig         sz              = case s of
-                                                          SingleScalarType t -> A.eq t (ir t (single t ig)) (ir t (op' t sz))
-                                                          VectorScalarType{} -> $internalError "ignore" "unexpected shape type"
+reprOut :: ArrayR (Array sh e) -> ShapeR sh' -> ArrayR (Array sh' e)
+reprOut (ArrayR _ tp) shr = ArrayR shr tp
+
+reprLock :: ArrayR (Array ((), Int) Word8)
+reprLock = ArrayR (ShapeRsnoc ShapeRz) $ TupRsingle scalarTypeWord8
 

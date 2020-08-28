@@ -1,9 +1,9 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Event-boot
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --

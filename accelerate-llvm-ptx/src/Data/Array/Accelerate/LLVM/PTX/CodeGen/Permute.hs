@@ -3,14 +3,14 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ViewPatterns        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -21,11 +21,12 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Permute (
 
 ) where
 
--- accelerate
-import Data.Array.Accelerate.Analysis.Type
-import Data.Array.Accelerate.Array.Sugar                            ( Array, Vector, Shape, Elt, eltType )
+import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Error
-import qualified Data.Array.Accelerate.Array.Sugar                  as S
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Elt
+import Data.Array.Accelerate.Representation.Shape
+import Data.Array.Accelerate.Representation.Type
 
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Array
@@ -41,7 +42,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
-import Data.Array.Accelerate.LLVM.PTX.Context
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.AddrSpace
@@ -54,8 +54,8 @@ import LLVM.AST.Type.Representation
 
 import Foreign.CUDA.Analysis
 
-import Data.Typeable
 import Control.Monad                                                ( void )
+import Control.Monad.State                                          ( gets )
 import Prelude
 
 
@@ -78,21 +78,18 @@ import Prelude
 -- a queue or some such.
 --
 mkPermute
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
+    :: HasCallStack
+    => Gamma            aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> IRPermuteFun PTX aenv (e -> e -> e)
-    -> IRFun1       PTX aenv (sh -> sh')
-    -> IRDelayed    PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute ptx aenv IRPermuteFun{..} project arr =
-  let
-      bytes   = sizeOf (eltType (undefined :: e))
-      sizeOk  = bytes == 4 || bytes == 8
-  in
+    -> IRFun1       PTX aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed   PTX aenv (Array sh e)
+    -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute aenv repr shr' IRPermuteFun{..} project arr =
   case atomicRMW of
-    Just (rmw, f) | sizeOk -> mkPermute_rmw   ptx aenv rmw f   project arr
-    _                      -> mkPermute_mutex ptx aenv combine project arr
+    Just (rmw, f) -> mkPermute_rmw   aenv repr shr' rmw f   project arr
+    _             -> mkPermute_mutex aenv repr shr' combine project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
@@ -102,68 +99,74 @@ mkPermute ptx aenv IRPermuteFun{..} project arr =
 -- the element type and compute capability of the target hardware we may need to
 -- emulate the operation using atomic compare-and-swap.
 --
---              Int32    Int64    Float32    Float64
---           +----------------------------------------
---    (+)    |  2.0       2.0       2.0        6.0
---    (-)    |  2.0       2.0        x          x
+--              Int32    Int64    Float16    Float32    Float64
+--           +-------------------------------------------------
+--    (+)    |  2.0       2.0       7.0        2.0        6.0
+--    (-)    |  2.0       2.0        x          x          x
 --    (.&.)  |  2.0       3.2
 --    (.|.)  |  2.0       3.2
 --    xor    |  2.0       3.2
---    min    |  2.0       3.2        x          x
---    max    |  2.0       3.2        x          x
+--    min    |  2.0       3.2        x          x          x
+--    max    |  2.0       3.2        x          x          x
 --    CAS    |  2.0       2.0
 --
 -- Note that NVPTX requires at least compute 2.0, so we can always implement the
 -- lockfree update operations in terms of compare-and-swap.
 --
 mkPermute_rmw
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
+    :: HasCallStack
+    => Gamma aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
     -> RMWOperation
-    -> IRFun1    PTX aenv (e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project IRDelayed{..} =
+    -> IRFun1     PTX aenv (e -> e)
+    -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  --
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out" :: Name (Array sh' e))
-      paramEnv                  = envParam aenv
+      outR                = ArrayR shr' tp
+      (arrOut, paramOut)  = mutableArray outR "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
+      start               = liftInt 0
       --
-      bytes                     = sizeOf (eltType (undefined :: e))
-      compute                   = computeCapability dev
-      compute32                 = Compute 3 2
-      compute60                 = Compute 6 0
-  in
-  makeOpenAcc ptx "permute_rmw" (paramGang ++ paramOut ++ paramEnv) $ do
+      bytes               = bytesElt tp
+      compute             = computeCapability dev
+      compute32           = Compute 3 2
+      compute60           = Compute 6 0
+      compute70           = Compute 7 0
+  --
+  makeOpenAcc "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    shIn  <- delayedExtent arrIn
+    end   <- shapeSize shr shIn
 
     imapFromTo start end $ \i -> do
 
-      ix  <- indexOfInt sh i
+      ix  <- indexOfInt shr shIn i
       ix' <- app1 project ix
 
-      unless (ignore ix') $ do
-        j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+      when (isJust ix') $ do
+        j <- intOfIndex shr' (irArrayShape arrOut) =<< fromJust ix'
+        x <- app1 (delayedLinearIndex arrIn) i
         r <- app1 update x
 
         case rmw of
           Exchange
-            -> writeArray arrOut j r
+            -> writeArray TypeInt arrOut j r
           --
-          _ | TypeRscalar (SingleScalarType s)  <- eltType (undefined::e)
-            , Just adata                        <- gcast (irArrayData arrOut)
-            , Just r'                           <- gcast r
+          _ | TupRsingle (SingleScalarType s)   <- tp
+            , adata                             <- irArrayData arrOut
             -> do
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   let
-                      rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
+                      rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_integral t ptr val
-                        | primOk    = void . instr' $ AtomicRMW t NonVolatile rmw ptr val (CrossThread, AcquireRelease)
+                        | primOk    = void . instr' $ AtomicRMW (IntegralNumType t) NonVolatile rmw ptr val (CrossThread, AcquireRelease)
                         | otherwise =
                             case rmw of
                               RMW.And -> atomicCAS_rmw s' (A.band t (ir t val)) ptr
@@ -171,7 +174,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                               RMW.Xor -> atomicCAS_rmw s' (A.xor  t (ir t val)) ptr
                               RMW.Min -> atomicCAS_cmp s' A.lt ptr val
                               RMW.Max -> atomicCAS_cmp s' A.gt ptr val
-                              _       -> $internalError "mkPermute_rmw.integral" "unexpected transition"
+                              _       -> internalError "unexpected transition"
                         where
                           s'      = NumSingleType (IntegralNumType t)
                           primOk  = compute >= compute32
@@ -181,7 +184,7 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                                       RMW.Sub -> True
                                       _       -> False
 
-                      rmw_floating :: FloatingType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
+                      rmw_floating :: FloatingType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
                       rmw_floating t ptr val =
                         case rmw of
                           RMW.Min       -> atomicCAS_cmp s' A.lt ptr val
@@ -190,30 +193,20 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
                           RMW.Add
                             | primAdd   -> atomicAdd_f t ptr val
                             | otherwise -> atomicCAS_rmw s' (A.add n (ir t val)) ptr
-                          _             -> $internalError "mkPermute_rmw.floating" "unexpected transition"
+                          _             -> internalError "unexpected transition"
                         where
                           n       = FloatingNumType t
                           s'      = NumSingleType n
-                          primAdd = bytes == 4
-                                 -- Available directly in LLVM-6 and later;
-                                 -- earlier versions could use inline assembly
-#if MIN_VERSION_llvm_hs_pure(6,0,0)
-                                 || compute >= compute60
-#endif
-
-                      rmw_nonnum :: NonNumType t -> Operand (Ptr t) -> Operand t -> CodeGen ()
-                      rmw_nonnum TypeChar{} ptr val = do
-                        ptr32 <- instr' $ PtrCast (primType   :: PrimType (Ptr Word32)) ptr
-                        val32 <- instr' $ BitCast (scalarType :: ScalarType Word32)     val
-                        void   $ instr' $ AtomicRMW (integralType :: IntegralType Word32) NonVolatile rmw ptr32 val32 (CrossThread, AcquireRelease)
-                      rmw_nonnum _ _ _ = -- C character types are 8-bit, and thus not supported
-                        $internalError "mkPermute_rmw.nonnum" "unexpected transition"
+                          primAdd =
+                            case t of
+                              TypeHalf   -> compute >= compute70
+                              TypeFloat  -> True
+                              TypeDouble -> compute >= compute60
                   case s of
-                    NumSingleType (IntegralNumType t) -> rmw_integral t addr (op t r')
-                    NumSingleType (FloatingNumType t) -> rmw_floating t addr (op t r')
-                    NonNumSingleType t                -> rmw_nonnum   t addr (op t r')
+                    NumSingleType (IntegralNumType t) -> rmw_integral t addr (op t r)
+                    NumSingleType (FloatingNumType t) -> rmw_floating t addr (op t r)
           --
-          _ -> $internalError "mkPermute_rmw" "unexpected transition"
+          _ -> internalError "unexpected transition"
 
     return_
 
@@ -222,40 +215,132 @@ mkPermute_rmw ptx@(deviceProperties . ptxContext -> dev) aenv rmw update project
 -- a mutex before updating the value at that location.
 --
 mkPermute_mutex
-    :: forall aenv sh sh' e. (Shape sh, Shape sh', Elt e)
-    => PTX
-    -> Gamma aenv
-    -> IRFun2    PTX aenv (e -> e -> e)
-    -> IRFun1    PTX aenv (sh -> sh')
-    -> IRDelayed PTX aenv (Array sh e)
-    -> CodeGen (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex ptx aenv combine project IRDelayed{..} =
+    :: Gamma          aenv
+    -> ArrayR (Array sh e)
+    -> ShapeR sh'
+    -> IRFun2     PTX aenv (e -> e -> e)
+    -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
+    -> MIRDelayed PTX aenv (Array sh e)
+    -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
+mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
   let
-      (start, end, paramGang)   = gangParam
-      (arrOut, paramOut)        = mutableArray ("out"  :: Name (Array sh' e))
-      (arrLock, paramLock)      = mutableArray ("lock" :: Name (Vector Word32))
-      paramEnv                  = envParam aenv
+      outR                  = ArrayR shr' tp
+      lockR                 = ArrayR (ShapeRsnoc ShapeRz) (TupRsingle scalarTypeWord32)
+      (arrOut,  paramOut)   = mutableArray outR "out"
+      (arrLock, paramLock)  = mutableArray lockR "lock"
+      (arrIn,   paramIn)    = delayedArray "in" marr
+      paramEnv              = envParam aenv
+      start                 = liftInt 0
   in
-  makeOpenAcc ptx "permute_mutex" (paramGang ++ paramOut ++ paramLock ++ paramEnv) $ do
+  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
-    sh <- delayedExtent
+    shIn  <- delayedExtent arrIn
+    end   <- shapeSize shr shIn
 
     imapFromTo start end $ \i -> do
 
-      ix  <- indexOfInt sh i
+      ix  <- indexOfInt shr shIn i
       ix' <- app1 project ix
 
       -- project element onto the destination array and (atomically) update
-      unless (ignore ix') $ do
-        j <- intOfIndex (irArrayShape arrOut) ix'
-        x <- app1 delayedLinearIndex i
+      when (isJust ix') $ do
+        j <- intOfIndex shr' (irArrayShape arrOut) =<< fromJust ix'
+        x <- app1 (delayedLinearIndex arrIn) i
 
         atomically arrLock j $ do
-          y <- readArray arrOut j
+          y <- readArray TypeInt arrOut j
           r <- app2 combine x y
-          writeArray arrOut j r
+          writeArray TypeInt arrOut j r
 
     return_
+
+
+-- Atomically execute the critical section only when the lock at the given
+-- array indexed is obtained.
+--
+atomically
+    :: IRArray (Vector Word32)
+    -> Operands Int
+    -> CodeGen PTX a
+    -> CodeGen PTX a
+atomically barriers i action = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+  if computeCapability dev >= Compute 7 0
+     then atomically_thread barriers i action
+     else atomically_warp   barriers i action
+
+
+-- Atomically execute the critical section only when the lock at the given
+-- array index is obtained. The thread spins waiting for the lock to be
+-- released with exponential backoff on failure in case the lock is
+-- contended.
+--
+-- > uint32_t ns = 8;
+-- > while ( atomic_exchange(&lock[i], 1) == 1 ) {
+-- >     __nanosleep(ns);
+-- >     if ( ns < 256 ) {
+-- >         ns *= 2;
+-- >     }
+-- > }
+--
+-- Requires independent thread scheduling features of SM7+.
+--
+atomically_thread
+    :: IRArray (Vector Word32)
+    -> Operands Int
+    -> CodeGen PTX a
+    -> CodeGen PTX a
+atomically_thread barriers i action = do
+  let
+      lock    = integral integralType 1
+      unlock  = integral integralType 0
+      unlock' = ir TypeWord32 unlock
+      i32     = TupRsingle scalarTypeInt32
+  --
+  entry <- newBlock "spinlock.entry"
+  sleep <- newBlock "spinlock.backoff"
+  moar  <- newBlock "spinlock.backoff-moar"
+  start <- newBlock "spinlock.critical-start"
+  end   <- newBlock "spinlock.critical-end"
+  exit  <- newBlock "spinlock.exit"
+  ns    <- fresh i32
+
+  addr  <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+  top   <- br entry
+
+  -- Loop until this thread has completed its critical section. If the slot
+  -- was unlocked we just acquired the lock and the thread can perform its
+  -- critical section, otherwise sleep the thread and try again later.
+  setBlock entry
+  old   <- instr $ AtomicRMW numType NonVolatile Exchange addr lock (CrossThread, Acquire)
+  ok    <- A.eq singleType old unlock'
+  _     <- cbr ok start sleep
+
+  -- We did not acquire the lock. Sleep the thread for a small amount of
+  -- time and (possibly) increase the sleep duration for the next round
+  setBlock sleep
+  _     <- nanosleep ns
+  p     <- A.lt singleType ns (ir TypeInt32 (integral integralType 256))
+  _     <- cbr p moar entry
+
+  setBlock moar
+  ns'   <- A.mul numType ns (ir TypeInt32 (integral integralType 2))
+  _     <- phi' i32 entry ns [(ir TypeInt32 (integral (integralType) 8), top), (ns, sleep), (ns', moar)]
+  _     <- br entry
+
+  -- If we just acquired the lock, execute the critical section, then
+  -- release the lock and continue with your day.
+  setBlock start
+  r     <- action
+  _     <- br end
+
+  setBlock end
+  _     <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
+  _     <- __threadfence_grid   -- TODO: why is this required?
+  _     <- br exit
+
+  setBlock exit
+  return r
 
 
 -- Atomically execute the critical section only when the lock at the given array
@@ -302,68 +387,50 @@ mkPermute_mutex ptx aenv combine project IRDelayed{..} =
 -- >   }
 -- > } while ( done == 0 );
 --
-atomically
+atomically_warp
     :: IRArray (Vector Word32)
-    -> IR Int
-    -> CodeGen a
-    -> CodeGen a
-atomically barriers i action = do
+    -> Operands Int
+    -> CodeGen PTX a
+    -> CodeGen PTX a
+atomically_warp barriers i action = do
   let
       lock    = integral integralType 1
       unlock  = integral integralType 0
-      unlock' = lift 0
+      unlock' = ir TypeWord32 unlock
   --
-  spin <- newBlock "spinlock.entry"
-  crit <- newBlock "spinlock.critical-start"
-  skip <- newBlock "spinlock.critical-end"
-  exit <- newBlock "spinlock.exit"
+  entry <- newBlock "spinlock.entry"
+  start <- newBlock "spinlock.critical-start"
+  end   <- newBlock "spinlock.critical-end"
+  exit  <- newBlock "spinlock.exit"
 
   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
-  _    <- br spin
+  _    <- br entry
 
   -- Loop until this thread has completed its critical section. If the slot was
   -- unlocked then we just acquired the lock and the thread can perform the
   -- critical section, otherwise skip to the bottom of the critical section.
-  setBlock spin
-  old  <- instr $ AtomicRMW integralType NonVolatile Exchange addr lock   (CrossThread, Acquire)
+  setBlock entry
+  old  <- instr $ AtomicRMW numType NonVolatile Exchange addr lock   (CrossThread, Acquire)
   ok   <- A.eq singleType old unlock'
-  no   <- cbr ok crit skip
+  no   <- cbr ok start end
 
   -- If we just acquired the lock, execute the critical section
-  setBlock crit
+  setBlock start
   r    <- action
-  _    <- instr $ AtomicRMW integralType NonVolatile Exchange addr unlock (CrossThread, Release)
-  yes  <- br skip
+  _    <- instr $ AtomicRMW numType NonVolatile Exchange addr unlock (CrossThread, AcquireRelease)
+  yes  <- br end
 
   -- At the base of the critical section, threads participate in a memory fence
   -- to ensure the lock state is committed to memory. Depending on which
   -- incoming edge the thread arrived at this block from determines whether they
   -- have completed their critical section.
-  setBlock skip
-  done <- phi [(lift True, yes), (lift False, no)]
+  setBlock end
+  res  <- freshName
+  done <- phi1 end res [(boolean True, yes), (boolean False, no)]
 
   __syncthreads
-  _    <- cbr done exit spin
+  _    <- cbr (OP_Bool done) exit entry
 
   setBlock exit
   return r
-
-
--- Helper functions
--- ----------------
-
--- Test whether the given index is the magic value 'ignore'. This operates
--- strictly rather than performing short-circuit (&&).
---
-ignore :: forall ix. Shape ix => IR ix -> CodeGen (IR Bool)
-ignore (IR ix) = go (S.eltType (undefined::ix)) (S.fromElt (S.ignore::ix)) ix
-  where
-    go :: TupleType t -> t -> Operands t -> CodeGen (IR Bool)
-    go TypeRunit           ()          OP_Unit        = return (lift True)
-    go (TypeRpair tsh tsz) (ish, isz) (OP_Pair sh sz) = do x <- go tsh ish sh
-                                                           y <- go tsz isz sz
-                                                           land' x y
-    go (TypeRscalar s)     ig         sz              = case s of
-                                                          SingleScalarType t -> A.eq t (ir t (single t ig)) (ir t (op' t sz))
-                                                          VectorScalarType{} -> $internalError "ignore" "unexpected shape type"
 

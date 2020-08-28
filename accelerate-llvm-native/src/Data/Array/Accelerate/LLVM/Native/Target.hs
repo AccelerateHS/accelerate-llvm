@@ -1,10 +1,9 @@
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Target
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -16,7 +15,7 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 
 ) where
 
--- llvm-general
+-- llvm-hs
 import LLVM.Target                                                  hiding ( Target )
 import LLVM.AST.DataLayout                                          ( DataLayout )
 import qualified LLVM.Relocation                                    as RelocationModel
@@ -25,8 +24,8 @@ import qualified LLVM.CodeGenOpt                                    as CodeOptim
 
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
+import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler          ( Workers )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
-import Control.Parallel.Meta                                        ( Executable )
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
@@ -37,16 +36,13 @@ import System.IO.Unsafe
 -- | Native machine code JIT execution target
 --
 data Native = Native
-  { gangSize      :: {-# UNPACK #-} !Int
-  , linkCache     :: {-# UNPACK #-} !LinkCache
-  , fillS         :: {-# UNPACK #-} !Executable
-  , fillP         :: {-# UNPACK #-} !Executable
-  , segmentOffset :: !Bool
+  { linkCache     :: !LinkCache
+  , workers       :: !Workers
   }
 
 instance Target Native where
-  targetTriple     _ = Just nativeTargetTriple
-  targetDataLayout _ = Just nativeDataLayout
+  targetTriple     = Just nativeTargetTriple
+  targetDataLayout = Just nativeDataLayout
 
 
 -- | String that describes the native target
@@ -90,7 +86,7 @@ withNativeTargetMachine k = do
         nativeCPUName
         nativeCPUFeatures
         targetOptions
-        RelocationModel.DynamicNoPIC
+        RelocationModel.PIC
         CodeModel.Default
         CodeOptimisation.Default
         k

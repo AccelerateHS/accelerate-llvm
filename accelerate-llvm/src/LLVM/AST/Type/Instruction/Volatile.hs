@@ -1,16 +1,20 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Instruction.Volatile
--- Copyright   : [2016..2017] Trevor L. McDonell
+-- Copyright   : [2016..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
 
 module LLVM.AST.Type.Instruction.Volatile
   where
+
+import LLVM.AST.Type.Downcast
+
 
 -- | Loads and stores may be marked as 'volatile'. The LLVM optimiser will not
 -- change the number of volatile operations or their order with respect to other
@@ -23,4 +27,8 @@ module LLVM.AST.Type.Instruction.Volatile
 -- <http://llvm.org/docs/LangRef.html#volatile-memory-accesses>
 --
 data Volatility = Volatile | NonVolatile
+
+instance Downcast Volatility Bool where
+  downcast Volatile    = True
+  downcast NonVolatile = False
 

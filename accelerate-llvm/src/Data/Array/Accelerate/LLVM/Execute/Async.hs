@@ -1,12 +1,16 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Execute.Async
--- Copyright   : [2014..2017] Trevor L. McDonell
---               [2014..2014] Vinod Grover (NVIDIA Corporation)
+-- Copyright   : [2014..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -14,74 +18,96 @@
 module Data.Array.Accelerate.LLVM.Execute.Async
   where
 
-import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.Representation.Array
+import Data.Array.Accelerate.Representation.Type
+
+import GHC.Stack
 
 
--- Asynchronous operations
--- -----------------------
+class Monad (Par arch) => Async arch where
 
--- | The result of a potentially parallel computation which will be available at
--- some point (presumably, in the future). This is essentially a write-once
--- IVar.
+  -- | The monad parallel computations will be executed in. Presumably a stack
+  -- with the LLVM monad at the base.
+  --
+  data Par arch :: * -> *
+
+  -- | Parallel computations can communicate via futures.
+  --
+  type FutureR arch :: * -> *
+
+  -- | Create a new (empty) promise, to be fulfilled at some future point.
+  --
+  new :: HasCallStack => Par arch (FutureR arch a)
+
+  -- | The future is here. Multiple 'put's to the same future are not allowed
+  -- and (presumably) result in a runtime error.
+  --
+  put :: HasCallStack => FutureR arch a -> a -> Par arch ()
+
+  -- | Read the value stored in a future, once it is available. It is _not_
+  -- required that this is a blocking operation on the host, only that it is
+  -- blocking with respect to computations on the remote device.
+  --
+  get :: HasCallStack => FutureR arch a -> Par arch a
+
+  -- | Fork a computation to happen in parallel. The forked computation may
+  -- exchange values with other computations using Futures.
+  --
+  fork :: HasCallStack => Par arch () -> Par arch ()
+
+  -- | Lift an operation from the base LLVM monad into the Par monad
+  --
+  liftPar :: HasCallStack => LLVM arch a -> Par arch a
+
+  -- | Read a value stored in a future, once it is available. This is blocking
+  -- with respect to both the host and remote device.
+  --
+  {-# INLINEABLE block #-}
+  block :: HasCallStack => FutureR arch a -> Par arch a
+  block = get
+
+  -- | Evaluate a computation in a new thread/context. This might be implemented
+  -- more efficiently than the default implementation.
+  --
+  {-# INLINEABLE spawn #-}
+  spawn :: HasCallStack => Par arch a -> Par arch a
+  spawn m = do
+    r <- new
+    fork $ put r =<< m
+    get r
+
+  -- | Create a new "future" where the value is available immediately. This
+  -- might be implemented more efficiently than the default implementation.
+  --
+  {-# INLINEABLE newFull #-}
+  newFull :: HasCallStack => a -> Par arch (FutureR arch a)
+  newFull a = do
+    r <- new
+    put r a
+    return r
+
+type family FutureArraysR arch arrs where
+  FutureArraysR arch ()           = ()
+  FutureArraysR arch (a, b)       = (FutureArraysR arch a, FutureArraysR arch b)
+  FutureArraysR arch (Array sh e) = FutureR arch (Array sh e)
+
+getArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
+getArrays (TupRsingle ArrayR{}) a        = get a
+getArrays TupRunit              _        = return ()
+getArrays (TupRpair r1 r2)      (a1, a2) = (,) <$> getArrays r1 a1 <*> getArrays r2 a2
+
+blockArrays :: Async arch => ArraysR a -> FutureArraysR arch a -> Par arch a
+blockArrays (TupRsingle ArrayR{}) a        = block a
+blockArrays TupRunit              _        = return ()
+blockArrays (TupRpair r1 r2)      (a1, a2) = (,) <$> blockArrays r1 a1 <*> blockArrays r2 a2
+
+-- | Create new (empty) promises for a structure of arrays, to be fulfilled
+-- at some future point. Note that the promises in the structure may all be
+-- fullfilled at different moments.
 --
-data AsyncR arch a = AsyncR !(EventR arch) !a
-
-class Async arch where
-  -- | Streams (i.e. threads) can execute concurrently with other streams, but
-  -- operations within the same stream proceed sequentially.
-  --
-  type StreamR arch
-
-  -- | An Event marks a point in the execution stream, possibly in the future.
-  -- Since execution within a stream is sequential, events can be used to test
-  -- the progress of a computation and synchronise between different streams.
-  --
-  type EventR arch
-
-  -- | Create a new execution stream that can be used to track (potentially
-  -- parallel) computations
-  --
-  fork        :: LLVM arch (StreamR arch)
-
-  -- | Mark the given execution stream as closed. The stream may still be
-  -- executing in the background, but no new work may be submitted to it.
-  --
-  join        :: StreamR arch -> LLVM arch ()
-
-  -- | Generate a new event at the end of the given execution stream. It will be
-  -- filled once all prior work submitted to the stream has completed.
-  --
-  checkpoint  :: StreamR arch -> LLVM arch (EventR arch)
-
-  -- | Make all future work submitted to the given execution stream wait until
-  -- the given event has passed. Typically the event is from a different
-  -- execution stream, therefore this function is intended to enable
-  -- non-blocking cross-stream coordination.
-  --
-  after       :: StreamR arch -> EventR arch -> LLVM arch ()
-
-  -- | Block execution of the calling thread until the given event has been
-  -- recorded.
-  --
-  block       :: EventR arch -> LLVM arch ()
-
-
--- | Wait for an asynchronous operation to complete, then return it.
---
-{-# INLINEABLE get #-}
-get :: Async arch => AsyncR arch a -> LLVM arch a
-get (AsyncR e a) = block e >> return a
-
--- | Execute the given operation asynchronously in a new execution stream.
---
-{-# INLINEABLE async #-}
-async :: Async arch
-      => (StreamR arch -> LLVM arch a)
-      -> LLVM arch (AsyncR arch a)
-async f = do
-  s <- fork
-  r <- f s
-  e <- checkpoint s
-  join s
-  return $ AsyncR e r
+newArrays :: Async arch => ArraysR a -> Par arch (FutureArraysR arch a)
+newArrays TupRunit               = return ()
+newArrays (TupRsingle ArrayR{})  = new
+newArrays (TupRpair repr1 repr2) = (,) <$> newArrays repr1 <*> newArrays repr2
 

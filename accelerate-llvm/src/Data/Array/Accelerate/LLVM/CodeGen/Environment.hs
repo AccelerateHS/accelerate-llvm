@@ -1,13 +1,11 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE GADTs           #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
--- Copyright   : [2015..2017] Trevor L. McDonell
+-- Copyright   : [2015..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -20,13 +18,17 @@ import Data.String
 import Text.Printf
 import qualified Data.IntMap                                    as IM
 
-import Data.Array.Accelerate.AST                                ( Idx(..), idxToInt )
+import Data.Array.Accelerate.AST                                ( ArrayVar )
+import Data.Array.Accelerate.AST.Idx                            ( Idx(..), idxToInt )
+import Data.Array.Accelerate.AST.Var                            ( Var(..) )
 import Data.Array.Accelerate.Error                              ( internalError )
-import Data.Array.Accelerate.Array.Sugar                        ( Array, Shape, Elt )
+import Data.Array.Accelerate.Representation.Array               ( Array, ArrayR(..) )
 
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 
 import LLVM.AST.Type.Name
+
+import GHC.Stack
 
 
 -- Scalar environment
@@ -36,18 +38,15 @@ import LLVM.AST.Type.Name
 -- level as a heterogenous snoc list, and on the type level as nested tuples.
 --
 data Val env where
-  Empty ::                    Val ()
-  Push  :: Val env -> IR t -> Val (env, t)
+  Empty ::                          Val ()
+  Push  :: Val env -> Operands t -> Val (env, t)
 
 -- | Projection of a value from the valuation environment using a de Bruijn
 -- index.
 --
-prj :: Idx env t -> Val env -> IR t
+prj :: Idx env t -> Val env -> Operands t
 prj ZeroIdx      (Push _   v) = v
 prj (SuccIdx ix) (Push val _) = prj ix val
-#if __GLASGOW_HASKELL__ < 800
-prj _            _            = $internalError "prj" "inconsistent valuation"
-#endif
 
 
 -- Array environment
@@ -64,16 +63,16 @@ prj _            _            = $internalError "prj" "inconsistent valuation"
 type Gamma aenv = IntMap (Label, Idx' aenv)
 
 data Idx' aenv where
-  Idx' :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> Idx' aenv
+  Idx' :: ArrayR (Array sh e) -> Idx aenv (Array sh e) -> Idx' aenv
 
 -- Projection of a value from the array environment using a de Bruijn index.
 -- This returns a pair of operands to access the shape and array data
 -- respectively.
 --
-aprj :: Idx aenv t -> Gamma aenv -> Name t
+aprj :: HasCallStack => Idx aenv t -> Gamma aenv -> Name t
 aprj ix aenv =
   case IM.lookup (idxToInt ix) aenv of
-    Nothing             -> $internalError "aprj" "free variable not registered"
+    Nothing             -> internalError "free variable not registered"
     Just (Label n,_)    -> Name n
 
 
@@ -88,6 +87,6 @@ makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
 
 -- | A free variable
 --
-freevar :: (Shape sh, Elt e) => Idx aenv (Array sh e) -> IntMap (Idx' aenv)
-freevar ix = IM.singleton (idxToInt ix) (Idx' ix)
+freevar :: ArrayVar aenv a -> IntMap (Idx' aenv)
+freevar (Var repr@ArrayR{} ix) = IM.singleton (idxToInt ix) (Idx' repr ix)
 

@@ -5,10 +5,10 @@
 {-# LANGUAGE TemplateHaskell          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link.MachO
--- Copyright   : [2017] Trevor L. McDonell
+-- Copyright   : [2017..2020] The Accelerate Team
 -- License     : BSD3
 --
--- Maintainer  : Trevor L. McDonell <tmcdonell@cse.unsw.edu.au>
+-- Maintainer  : Trevor L. McDonell <trevor.mcdonell@gmail.com>
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
@@ -74,17 +74,17 @@ import Prelude                                            as P
 -- specified in the object file, and are ready to be executed on the target
 -- architecture.
 --
-loadObject :: ByteString -> IO (FunctionTable, ObjectCode)
+loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err            -> $internalError "loadObject" err
+    Left err            -> internalError err
     Right (symtab, lcs) -> loadSegments obj symtab lcs
 
 
 -- Execute the load segment commands and return function pointers to the
 -- executable code in the target memory space.
 --
-loadSegments :: ByteString -> Vector Symbol -> Vector LoadSegment -> IO (FunctionTable, ObjectCode)
+loadSegments :: HasCallStack => ByteString -> Vector Symbol -> Vector LoadSegment -> IO (FunctionTable, ObjectCode)
 loadSegments obj symtab lcs = do
   -- Load the segments into executable memory.
   --
@@ -136,7 +136,7 @@ loadSegments obj symtab lcs = do
 -- be. These would need to live in different pages in order to be mprotect-ed
 -- properly.
 --
-loadSegment :: ByteString -> Vector Symbol -> LoadSegment -> IO Segment
+loadSegment :: HasCallStack => ByteString -> Vector Symbol -> LoadSegment -> IO Segment
 loadSegment obj symtab seg@LoadSegment{..} = do
   let
       pagesize    = fromIntegral c_getpagesize
@@ -184,7 +184,7 @@ makeJumpIsland jump_p symbolnum Symbol{..} = do
 -- Load a section at the correct offset into the given segment, and apply
 -- relocations.
 --
-loadSection :: ByteString -> Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> IO ()
+loadSection :: HasCallStack => ByteString -> Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> IO ()
 loadSection obj symtab seg seg_p jump_p sec@LoadSection{..} = do
   let (obj_fp, obj_offset, _) = B.toForeignPtr obj
   --
@@ -201,14 +201,14 @@ loadSection obj symtab seg seg_p jump_p sec@LoadSection{..} = do
 -- necessary since we load all sections into the same memory segment at the
 -- correct offsets.
 --
-processRelocation :: Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> RelocationInfo -> IO ()
+processRelocation :: HasCallStack => Vector Symbol -> LoadSegment -> Ptr Word8 -> Ptr Word8 -> LoadSection -> RelocationInfo -> IO ()
 #ifdef x86_64_HOST_ARCH
-processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
+processRelocation symtab LoadSegment{} seg_p jump_p sec RelocationInfo{..}
   -- Relocation through global offset table
   --
   | ri_type == X86_64_RELOC_GOT ||
     ri_type == X86_64_RELOC_GOT_LOAD
-  = $internalError "processRelocation" "Global offset table relocations not handled yet"
+  = internalError "Global offset table relocations not handled yet"
 
   -- External symbols, both those defined in the sections of this object, and
   -- undefined externals. For the latter, the symbol might be outside of the
@@ -257,11 +257,11 @@ processRelocation symtab LoadSegment{..} seg_p jump_p sec RelocationInfo{..}
         0 -> let p' = castPtr pc :: Ptr Word8  in poke p' =<< addend p' x
         1 -> let p' = castPtr pc :: Ptr Word16 in poke p' =<< addend p' x
         2 -> let p' = castPtr pc :: Ptr Word32 in poke p' =<< addend p' x
-        _ -> $internalError "processRelocation" "unhandled relocation size"
+        _ -> internalError "unhandled relocation size"
 
 #else
 precessRelocation =
-  $internalError "processRelocation" "not defined for non-x86_64 architectures yet"
+  internalError "not defined for non-x86_64 architectures yet"
 #endif
 
 
@@ -718,17 +718,6 @@ foreign import ccall unsafe "mprotect"
 
 foreign import ccall unsafe "getpagesize"
   c_getpagesize :: CInt
-
-#if __GLASGOW_HASKELL__ <= 708
--- Fill a given number of bytes in memory. Added in base-4.8.0.0.
---
-fillBytes :: Ptr a -> Word8 -> Int -> IO ()
-fillBytes dest char size = do
-  _ <- memset dest (fromIntegral char) (fromIntegral size)
-  return ()
-
-foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO (Ptr a)
-#endif
 
 
 -- Debug
