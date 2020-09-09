@@ -22,6 +22,37 @@
 -- NVPTX for execution on NVIDIA GPUs. Expressions are on-line translated into
 -- LLVM code, which is just-in-time executed in parallel on the GPU.
 --
+-- * Concurrent kernel execution
+--
+-- Accelerate enables copies to and from device memory to occur concurrently
+-- with kernel execution. However, in order for kernels to be executed
+-- concurrently, you must create your own 'PTX' execution target and pass it to
+-- the 'runWith'-style functions. For example:
+--
+-- > import Data.Array.Accelerate                    as A
+-- > import qualified Data.Array.Accelerate.LLVM.PTX as PTX
+-- > import qualified Foreign.CUDA.Driver            as C
+-- >
+-- > dotp :: Acc (Vector Float) -> Acc (Vector Float) -> Acc (Scalar Float)
+-- > dotp xs ys = A.fold (+) 0 (A.zipWith (*) xs ys)
+-- >
+-- > runDotP = do
+-- >     C.initialise []
+-- >     -- Assuming just one CUDA device
+-- >     dev0 <- C.device 0
+-- >     dev0Props <- C.props dev0
+-- >     ptx <- PTX.createTargetForDevice dev0 dev0Props []
+-- >     -- Using runAsyncWith
+-- >     let xs = fromList (Z:.10) [0..]   :: Vector Float
+-- >         ys = fromList (Z:.10) [1,3..] :: Vector Float
+-- >     asyncDotP <- PTX.runAsyncWith ptx (dotp (use
+-- >     ...
+-- >     dotP <- PTX.wait asyncDotP
+--
+-- The CUDA scheduler will only execute kernels concurrently if there are
+-- sufficient resources available. Concurrency is limited by the number of
+-- available threads, blocks, warps and registers; a kernel occupancy of \(n\)
+-- does not always imply that \(1-n\) device resources are available.
 
 module Data.Array.Accelerate.LLVM.PTX (
 
@@ -530,4 +561,3 @@ dumpStats x = liftIO dumpSimplStats >> return x
 
 phase :: MonadIO m => String -> m a -> m a
 phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go
-
