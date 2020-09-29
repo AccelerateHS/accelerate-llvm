@@ -41,6 +41,9 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   dynamicSharedMem,
   sharedMemAddrSpace,
 
+  -- Shuffles
+  shfl_up, shfl_down,
+
   -- Kernel definitions
   (+++),
   makeOpenAcc, makeOpenAccWith,
@@ -331,34 +334,47 @@ atomicAdd_f t addr val =
 -- CUDA has generic shuffles, but LLVM only provides i32 and f32 versions.
 -- To shuffle bigger types, we'll need to cast them into 32 bit segments,
 -- shuffle those, and then reassemble them. TODO
+shfl_up :: TypeR a
+        -> Operands a
+        -> Operands Word32
+        -> CodeGen PTX (Operands a)
+shfl_up = undefined
 
-shfl_up_i32 :: Operand Int32                -- give up
-            -> Operand Word32               -- offset
+shfl_down :: TypeR a
+          -> Operands a
+          -> Operands Word32
+          -> CodeGen PTX (Operands a)
+shfl_down = undefined
+
+
+shfl_up_i32 :: Operands Int32                -- give up
+            -> Operands Word32               -- offset
             -> CodeGen PTX (Operands Int32) -- received from down
 shfl_up_i32   = mk_shfl "up" "i32" (ScalarPrimType scalarType)
 
-shfl_up_float :: Operand Float                -- give up
-              -> Operand Word32               -- offset
+shfl_up_float :: Operands Float                -- give up
+              -> Operands Word32               -- offset
               -> CodeGen PTX (Operands Float) -- received from down
 shfl_up_float = mk_shfl "up" "f32" (ScalarPrimType scalarType)
 
-shfl_down_i32 :: Operand Int32                -- give up
-              -> Operand Word32               -- offset
+shfl_down_i32 :: Operands Int32                -- give up
+              -> Operands Word32               -- offset
               -> CodeGen PTX (Operands Int32) -- received from down
 shfl_down_i32   = mk_shfl "down" "i32" (ScalarPrimType scalarType)
 
-shfl_down_float :: Operand Float                -- give up
-                -> Operand Word32               -- offset
+shfl_down_float :: Operands Float                -- give up
+                -> Operands Word32               -- offset
                 -> CodeGen PTX (Operands Float) -- received from down
 shfl_down_float = mk_shfl "down" "f32" (ScalarPrimType scalarType)
 
 
--- figure out whether this should use 'Operand' or 'Operands'
-mk_shfl :: Label -- direction ("up","down","bfly","idx") (the latter two probably represent the "xor" and "get from an index" variants)
+-- Only works for 32-bit int or floats!
+mk_shfl :: (IsPrim a)
+        => Label -- direction ("up","down","bfly","idx") (the latter two probably represent the "xor" and "get from an index" variants)
         -> Label -- the type, "i32" or "f32"
         -> PrimType a
-        -> Operand a                  -- value to give
-        -> Operand Word32             -- delta
+        -> Operands a                  -- value to give
+        -> Operands Word32             -- delta
         -> CodeGen PTX (Operands a)   -- value received
 mk_shfl mode typ pt val delta = call (
   -- starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
@@ -368,8 +384,8 @@ mk_shfl mode typ pt val delta = call (
 #if MIN_VERSION_cuda(0,9,0)
     Lam (ScalarPrimType scalarTypeWord32) (op primType $ liftWord32 0xffffffff) $
 #endif
-      Lam pt val $
-        Lam (ScalarPrimType scalarTypeWord32) delta $
+      Lam pt (op primType val) $
+        Lam (ScalarPrimType scalarTypeWord32) (op primType delta) $
           Body (PrimType pt)
                (Just Tail) -- no idea
 #if MIN_VERSION_cuda(0,9,0)

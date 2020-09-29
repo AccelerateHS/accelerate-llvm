@@ -16,6 +16,8 @@
 -- Portability : non-portable (GHC extensions)
 --
 
+-- TODO: fix this module for the smem -> shfl change (look through algorithms, reduce smem sizes)
+
 module Data.Array.Accelerate.LLVM.PTX.CodeGen.FoldSeg
   where
 
@@ -37,7 +39,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, reduceWarpSMem, imapFromTo )
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockShfl, reduceWarpShfl, imapFromTo )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.Representation
@@ -205,8 +207,8 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
             r0  <- if (tp, A.gte singleType v0 bd)
-                     then reduceBlockSMem dev tp combine Nothing    x0
-                     else reduceBlockSMem dev tp combine (Just v0') x0
+                     then reduceBlockShfl dev tp combine Nothing    x0
+                     else reduceBlockShfl dev tp combine (Just v0') x0
 
             -- Step 2: keep walking over the input
             nxt <- A.add numType inf bd
@@ -222,7 +224,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                              -- can avoid bounds checks.
                              then do
                                x <- app1 (delayedLinearIndex arrIn) i'
-                               y <- reduceBlockSMem dev tp combine Nothing x
+                               y <- reduceBlockShfl dev tp combine Nothing x
                                return y
 
                              -- Not all threads are valid. Note that we still
@@ -241,7 +243,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                            return $ go tp
 
                                z <- i32 v'
-                               y <- reduceBlockSMem dev tp combine (Just z) x
+                               y <- reduceBlockShfl dev tp combine (Just z) x
                                return y
 
                      -- first thread incorporates the result from the previous
@@ -429,8 +431,8 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
             r0  <- if (tp, A.gte singleType v0 (liftInt ws))
-                     then reduceWarpSMem dev tp combine smem Nothing    x0
-                     else reduceWarpSMem dev tp combine smem (Just v0') x0
+                     then reduceWarpShfl dev tp combine Nothing    x0
+                     else reduceWarpShfl dev tp combine (Just v0') x0
 
             -- Step 2: Keep walking over the rest of the segment
             nx  <- A.add numType inf (liftInt ws)
@@ -445,7 +447,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
                               x <- app1 (delayedLinearIndex arrIn) i'
-                              y <- reduceWarpSMem dev tp combine smem Nothing x
+                              y <- reduceWarpShfl dev tp combine Nothing x
                               return y
 
                             else do
@@ -460,7 +462,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                           return $ go tp
 
                               z <- i32 v'
-                              y <- reduceWarpSMem dev tp combine smem (Just z) x
+                              y <- reduceWarpShfl dev tp combine (Just z) x
                               return y
 
                     -- The first lane incorporates the result from the previous
