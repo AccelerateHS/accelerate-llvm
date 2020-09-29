@@ -418,41 +418,41 @@ mkFoldFill aenv repr seed =
 -- Efficient threadblock-wide reduction using the specified operator. The
 -- aggregate reduction value is stored in thread zero. Supports non-commutative
 -- operators.
---
+
 -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
---
+
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_reduce_warp_reductions.cuh
+
+reduceBlockSMem
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target device
+    -> TypeR e
+    -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
+    -> Maybe (Operands Int32)                         -- ^ number of valid elements (may be less than block size)
+    -> Operands e                                     -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
+reduceBlockSMem = error "removed in favour of reduceBlockShfl"
+
+
+-- Efficient warp-wide reduction using shared memory. The aggregate reduction
+-- value for the warp is stored in thread lane zero.
 --
--- reduceBlockSMem
---     :: forall aenv e.
---        DeviceProperties                         -- ^ properties of the target device
---     -> TypeR e
---     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
---     -> Maybe (Operands Int32)                         -- ^ number of valid elements (may be less than block size)
---     -> Operands e                                     -- ^ calling thread's input element
---     -> CodeGen PTX (Operands e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
--- reduceBlockSMem = error "removed in favour of reduceBlockShfl"
-
-
--- -- Efficient warp-wide reduction using shared memory. The aggregate reduction
--- -- value for the warp is stored in thread lane zero.
--- --
--- -- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
--- -- routine assumes that is is allocated individually per-warp (i.e. can be
--- -- indexed in the range [0,warp size)).
--- --
--- -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
--- --
--- reduceWarpSMem
---     :: forall aenv e.
---        DeviceProperties                         -- ^ properties of the target device
---     -> TypeR e
---     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
---     -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
---     -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
---     -> Operands e                                     -- ^ calling thread's input element
---     -> CodeGen PTX (Operands e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
--- reduceWarpSMem = error "removed in favour of reduceWarpShfl"
+-- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
+-- routine assumes that is is allocated individually per-warp (i.e. can be
+-- indexed in the range [0,warp size)).
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/warp/specializations/warp_reduce_smem.cuh#L128
+--
+reduceWarpSMem
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target device
+    -> TypeR e
+    -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
+    -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
+    -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
+    -> Operands e                                     -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
+reduceWarpSMem = error "removed in favour of reduceWarpShfl"
 
 
 -- equivalent to `reduceBlockSMem`, but more efficient

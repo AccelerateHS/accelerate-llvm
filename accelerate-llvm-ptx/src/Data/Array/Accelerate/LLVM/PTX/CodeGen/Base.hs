@@ -340,11 +340,38 @@ shfl_up :: TypeR a
         -> CodeGen PTX (Operands a)
 shfl_up = undefined
 
-shfl_down :: TypeR a
+shfl_down :: forall a. TypeR a
           -> Operands a
           -> Operands Word32
           -> CodeGen PTX (Operands a)
-shfl_down = undefined
+shfl_down typer a delta = case typer of
+  TupRunit -> return OP_Unit
+  TupRpair _ _ -> error "Acc.LLVM.PTX.CG.Base - I thought AoS->SoA conversion would prevent this"
+  TupRsingle sctyp -> case sctyp of
+    SingleScalarType (NumSingleType x) -> case x of
+      IntegralNumType TypeInt    -> cast_shfl_cast_i -- hope that Int isn't bigger than 32 bits! TODO
+      IntegralNumType TypeInt8   -> cast_shfl_cast_i
+      IntegralNumType TypeInt16  -> cast_shfl_cast_i
+      IntegralNumType TypeInt32  -> shfl_down_i32 a delta   -- no cast needed
+      IntegralNumType TypeWord   -> cast_shfl_cast_i
+      IntegralNumType TypeWord8  -> cast_shfl_cast_i
+      IntegralNumType TypeWord16 -> cast_shfl_cast_i
+      IntegralNumType TypeWord32 -> cast_shfl_cast_i
+
+      FloatingNumType TypeHalf  -> cast_shfl_cast_f
+      FloatingNumType TypeFloat -> shfl_down_float a delta -- no cast needed
+
+      -- TODO: split 64-bit primitives into two 32-bit integers somehow
+      IntegralNumType TypeInt64  -> undefined
+      IntegralNumType TypeWord64 -> undefined
+      FloatingNumType TypeDouble -> undefined
+    VectorScalarType _ -> error "is this a thing? VectorScalarType"
+  where
+    cast_shfl_cast_i :: (IsIntegral a, IsNum a) => CodeGen PTX (Operands a)
+    cast_shfl_cast_i = A.fromIntegral integralType numType a >>= \a' -> shfl_down_i32 a' delta >>= A.fromIntegral integralType numType
+
+    cast_shfl_cast_f :: (IsFloating a, IsNum a) => CodeGen PTX (Operands a)
+    cast_shfl_cast_f = A.toFloating numType floatingType a >>= \a' -> shfl_down_float a' delta >>= A.toFloating numType floatingType
 
 
 shfl_up_i32 :: Operands Int32                -- give up
