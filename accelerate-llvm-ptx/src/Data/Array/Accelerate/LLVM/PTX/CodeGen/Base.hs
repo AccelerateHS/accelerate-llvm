@@ -349,11 +349,9 @@ shfl_down typer a delta = case typer of
   TupRpair _ _ -> error "Acc.LLVM.PTX.CG.Base - I thought AoS->SoA conversion would prevent this"
   TupRsingle sctyp -> case sctyp of
     SingleScalarType (NumSingleType x) -> case x of
-      IntegralNumType TypeInt    -> cast_shfl_cast_i -- hope that Int isn't bigger than 32 bits! TODO
       IntegralNumType TypeInt8   -> cast_shfl_cast_i
       IntegralNumType TypeInt16  -> cast_shfl_cast_i
       IntegralNumType TypeInt32  -> shfl_down_i32 a delta   -- no cast needed
-      IntegralNumType TypeWord   -> cast_shfl_cast_i
       IntegralNumType TypeWord8  -> cast_shfl_cast_i
       IntegralNumType TypeWord16 -> cast_shfl_cast_i
       IntegralNumType TypeWord32 -> cast_shfl_cast_i
@@ -362,6 +360,8 @@ shfl_down typer a delta = case typer of
       FloatingNumType TypeFloat -> shfl_down_float a delta -- no cast needed
 
       -- TODO: split 64-bit primitives into two 32-bit integers somehow
+      IntegralNumType TypeInt    -> undefined
+      IntegralNumType TypeWord   -> cast_shfl_cast_i
       IntegralNumType TypeInt64  -> undefined
       IntegralNumType TypeWord64 -> undefined
       FloatingNumType TypeDouble -> undefined
@@ -416,7 +416,7 @@ mk_shfl mode typ pt val delta = call (
           Body (PrimType pt)
                (Just Tail) -- no idea
 #if MIN_VERSION_cuda(0,9,0)
-               ("llvm.nvvm.shfl.sync." <> mode <> "." <> typ))
+               ("llvm.nvvm.shfl." <> mode <> ".sync." <> typ))
 #else
                ("llvm.nvvm.shfl." <> mode <> "." <> typ))
 #endif
