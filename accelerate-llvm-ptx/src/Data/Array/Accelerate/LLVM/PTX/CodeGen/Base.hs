@@ -325,6 +325,61 @@ atomicAdd_f t addr val =
 #endif
 
 
+-- Shuffles
+-- ---------
+
+-- CUDA has generic shuffles, but LLVM only provides i32 and f32 versions.
+-- To shuffle bigger types, we'll need to cast them into 32 bit segments,
+-- shuffle those, and then reassemble them. TODO
+
+shfl_up_i32 :: Operand Int32                -- give up
+            -> Operand Word32               -- offset
+            -> CodeGen PTX (Operands Int32) -- received from down
+shfl_up_i32   = mk_shfl "up" "i32" (ScalarPrimType scalarType)
+
+shfl_up_float :: Operand Float                -- give up
+              -> Operand Word32               -- offset
+              -> CodeGen PTX (Operands Float) -- received from down
+shfl_up_float = mk_shfl "up" "f32" (ScalarPrimType scalarType)
+
+shfl_down_i32 :: Operand Int32                -- give up
+              -> Operand Word32               -- offset
+              -> CodeGen PTX (Operands Int32) -- received from down
+shfl_down_i32   = mk_shfl "down" "i32" (ScalarPrimType scalarType)
+
+shfl_down_float :: Operand Float                -- give up
+                -> Operand Word32               -- offset
+                -> CodeGen PTX (Operands Float) -- received from down
+shfl_down_float = mk_shfl "down" "f32" (ScalarPrimType scalarType)
+
+
+-- figure out whether this should use 'Operand' or 'Operands'
+mk_shfl :: Label -- direction ("up","down","bfly","idx") (the latter two probably represent the "xor" and "get from an index" variants)
+        -> Label -- the type, "i32" or "f32"
+        -> PrimType a
+        -> Operand a                  -- value to give
+        -> Operand Word32             -- delta
+        -> CodeGen PTX (Operands a)   -- value received
+mk_shfl mode typ pt val delta = call (
+  -- starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
+  -- they behave the same, except they start with a 'mask' argument specifying which threads participate in the shuffle.
+  -- Arguably, it'd be better to branch on the minimum requirements for `shfl_sync`, or maybe even to branch
+  -- (in real Haskell code) on the compute version of the gpu, but I couldn't find exact version numbers for these.
+#if MIN_VERSION_cuda(0,9,0)
+    Lam (ScalarPrimType scalarTypeWord32) (op primType $ liftWord32 0xffffffff) $
+#endif
+      Lam pt val $
+        Lam (ScalarPrimType scalarTypeWord32) delta $
+          Body (PrimType pt)
+               (Just Tail) -- no idea
+#if MIN_VERSION_cuda(0,9,0)
+               ("llvm.nvvm.shfl.sync." <> mode <> "." <> typ))
+#else
+               ("llvm.nvvm.shfl." <> mode <> "." <> typ))
+#endif
+    [NoUnwind, NoDuplicate, Convergent]
+
+
 -- Shared memory
 -- -------------
 
