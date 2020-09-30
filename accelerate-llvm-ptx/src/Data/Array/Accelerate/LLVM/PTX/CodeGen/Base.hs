@@ -90,6 +90,7 @@ import Control.Applicative
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
 import Prelude                                                      as P
+import qualified Foreign.CUDA.Driver.Utils
 
 #if MIN_VERSION_llvm_hs(10,0,0)
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
@@ -361,7 +362,7 @@ shfl_down typer a delta = case typer of
 
       -- TODO: split 64-bit primitives into two 32-bit integers somehow
       IntegralNumType TypeInt    -> undefined
-      IntegralNumType TypeWord   -> cast_shfl_cast_i
+      IntegralNumType TypeWord   -> undefined
       IntegralNumType TypeInt64  -> undefined
       IntegralNumType TypeWord64 -> undefined
       FloatingNumType TypeDouble -> undefined
@@ -403,25 +404,23 @@ mk_shfl :: (IsPrim a)
         -> Operands a                  -- value to give
         -> Operands Word32             -- delta
         -> CodeGen PTX (Operands a)   -- value received
-mk_shfl mode typ pt val delta = call (
+mk_shfl mode typ pt val delta =
+  let sync = Foreign.CUDA.Driver.Utils.libraryVersion >= 9000 in
   -- starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
   -- they behave the same, except they start with a 'mask' argument specifying which threads participate in the shuffle.
   -- Arguably, it'd be better to branch on the minimum requirements for `shfl_sync`, or maybe even to branch
   -- (in real Haskell code) on the compute version of the gpu, but I couldn't find exact version numbers for these.
-#if MIN_VERSION_cuda(0,9,0)
-    Lam (ScalarPrimType scalarTypeWord32) (op primType $ liftWord32 0xffffffff) $
-#endif
-      Lam pt (op primType val) $
+  (if sync
+    then call . (Lam (ScalarPrimType scalarTypeWord32) (op primType $ liftWord32 0xffffffff))
+    else call)
+      (Lam pt (op primType val) $
         Lam (ScalarPrimType scalarTypeWord32) (op primType delta) $
           Body (PrimType pt)
                (Just Tail) -- no idea
-#if MIN_VERSION_cuda(0,9,0)
-               ("llvm.nvvm.shfl." <> mode <> ".sync." <> typ))
-#else
-               ("llvm.nvvm.shfl." <> mode <> "." <> typ))
-#endif
-    [NoUnwind, NoDuplicate, Convergent]
-
+               ("llvm.nvvm.shfl." <>
+                  (if (sync) then "sync." else "") <>
+                  mode <> "." <> typ))
+    [Convergent, InaccessibleMemOnly, NoUnwind]
 
 -- Shared memory
 -- -------------

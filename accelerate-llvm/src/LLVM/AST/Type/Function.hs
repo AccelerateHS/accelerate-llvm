@@ -37,6 +37,7 @@ data FunctionAttribute
   | AlwaysInline
   | NoDuplicate
   | Convergent
+  | InaccessibleMemOnly
 
 -- | Tail call kind for function call instruction
 --
@@ -70,13 +71,14 @@ data HList (l :: [*]) where
 
 
 instance Downcast FunctionAttribute LLVM.FunctionAttribute where
-  downcast NoReturn     = LLVM.NoReturn
-  downcast NoUnwind     = LLVM.NoUnwind
-  downcast ReadOnly     = LLVM.ReadOnly
-  downcast ReadNone     = LLVM.ReadNone
-  downcast AlwaysInline = LLVM.AlwaysInline
-  downcast NoDuplicate  = LLVM.NoDuplicate
-  downcast Convergent   = LLVM.Convergent
+  downcast NoReturn            = LLVM.NoReturn
+  downcast NoUnwind            = LLVM.NoUnwind
+  downcast ReadOnly            = LLVM.ReadOnly
+  downcast ReadNone            = LLVM.ReadNone
+  downcast AlwaysInline        = LLVM.AlwaysInline
+  downcast NoDuplicate         = LLVM.NoDuplicate
+  downcast Convergent          = LLVM.Convergent
+  downcast InaccessibleMemOnly = LLVM.InaccessibleMemOnly
 
 instance Downcast (Parameter a) LLVM.Parameter where
   downcast (Parameter t n) = LLVM.Parameter (downcast t) (downcast n) attrs
