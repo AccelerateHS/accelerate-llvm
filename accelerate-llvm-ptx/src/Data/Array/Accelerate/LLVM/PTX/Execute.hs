@@ -396,9 +396,10 @@ scan1Op
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par PTX (Future (Array (sh, Int) e))
-scan1Op repr exe gamma aenv input@(delayedShape -> (_, n))
-  = boundsCheck "empty array" (n > 0)
-  $ scanCore repr exe gamma aenv n input
+scan1Op repr exe gamma aenv input@(delayedShape -> sh@(_, n)) =
+  case n of
+    0 -> newFull =<< allocateRemote repr sh
+    _ -> scanCore repr exe gamma aenv n input
 
 {-# INLINE scanCore #-}
 scanCore

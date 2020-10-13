@@ -409,9 +409,10 @@ scan1Op
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e))
-scan1Op repr exe gamma aenv arr@(delayedShape -> (_, n))
-  = boundsCheck "empty array" (n > 0)
-  $ scanCore repr exe gamma aenv n arr
+scan1Op repr exe gamma aenv arr@(delayedShape -> sh@(_, n)) =
+  case n of
+    0 -> newFull =<< allocateRemote repr sh
+    _ -> scanCore repr exe gamma aenv n arr
 
 {-# INLINE scanCore #-}
 scanCore
