@@ -43,19 +43,6 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-    ( (+++),
-      __syncthreads,
-      __syncwarp,
-      blockDim,
-      blockIdx,
-      dynamicSharedMem,
-      gridDim,
-      laneId,
-      makeOpenAccWith,
-      shfl_up,
-      staticSharedMem,
-      threadIdx,
-      warpId )
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
 import Data.Array.Accelerate.LLVM.PTX.Target
 
@@ -169,8 +156,8 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -289,8 +276,8 @@ mkScanAllP2 dir aenv tp combine = do
       config               = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
       grid _ _             = 1
       gridQ                = [|| \_ _ -> 1 ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -481,8 +468,8 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -595,8 +582,8 @@ mkScan'AllP2 dir aenv tp combine = do
       config               = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
       grid _ _             = 1
       gridQ                = [|| \_ _ -> 1 ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -786,8 +773,8 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -985,8 +972,8 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -1189,8 +1176,8 @@ scanBlock
     -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
 scanBlock dir dev
-  | useSMem dev = scanBlockSMem dir dev -- shfl instruction available in compute >= 3.0
-  | otherwise   = scanBlockShfl dir dev -- equivalent, slightly slower version
+  | useShfl dev = scanBlockShfl dir dev -- shfl instruction available in compute >= 3.0
+  | otherwise   = scanBlockSMem dir dev -- equivalent, slightly slower version
 
 
 -- Efficient block-wide (inclusive) scan using the specified operator.
@@ -1450,13 +1437,6 @@ scanWarpShfl dir dev tp combine = scan 0
 
 -- Utilities
 -- ---------
-
--- Determine whether we use the shfl or the smem version. Shfl instructions are available for compute >= 3.0
-useSMem :: DeviceProperties -> Bool
-useSMem dev
-  | CUDA.Compute x _ <- CUDA.computeCapability dev
-  , x >= 3    = False
-  | otherwise = True
 
 i32 :: Operands Int -> CodeGen PTX (Operands Int32)
 i32 = A.fromIntegral integralType numType

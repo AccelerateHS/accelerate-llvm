@@ -129,8 +129,8 @@ mkFoldAllS dev aenv tp combine mseed marr =
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -188,8 +188,8 @@ mkFoldAllM1 dev aenv tp combine marr =
       start                = liftInt 0
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -245,8 +245,8 @@ mkFoldAllM2 dev aenv tp combine mseed =
       start                = liftInt 0
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -314,8 +314,8 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
       paramEnv             = envParam aenv
       --
       config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useSMem dev = warps * (1 + per_warp) * bytes
-             | otherwise   = warps * bytes
+      smem n | useShfl dev = warps * bytes
+             | otherwise   = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -432,8 +432,8 @@ reduceBlock
     -> Operands e                               -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)                 -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
 reduceBlock dev
-  | useSMem dev = reduceBlockSMem dev
-  | otherwise   = reduceBlockShfl dev
+  | useShfl dev = reduceBlockShfl dev
+  | otherwise   = reduceBlockSMem dev
 
 -- Efficient threadblock-wide reduction using the specified operator. The
 -- aggregate reduction value is stored in thread zero. Supports non-commutative
@@ -743,13 +743,6 @@ reduceFromTo dev tp from to combine get set = do
 
 -- Utilities
 -- ---------
-
--- Determine whether we use the shfl or the smem version. Shfl instructions are available for compute >= 3.0
-useSMem :: DeviceProperties -> Bool
-useSMem dev
-  | CUDA.Compute x _ <- CUDA.computeCapability dev
-  , x >= 3    = False
-  | otherwise = True
 
 
 i32 :: Operands Int -> CodeGen PTX (Operands Int32)

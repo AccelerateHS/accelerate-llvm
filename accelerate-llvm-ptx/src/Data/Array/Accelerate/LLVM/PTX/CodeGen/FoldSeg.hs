@@ -39,7 +39,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlock, reduceWarpShfl, reduceWarpSMem, useSMem, imapFromTo )
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlock, reduceWarpShfl, reduceWarpSMem, imapFromTo )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.Representation
@@ -97,8 +97,8 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       paramEnv              = envParam aenv
       --
       config                = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
-      dsmem n | useSMem dev = warps * (1 + per_warp) * bytes
-              | otherwise   = warps * bytes
+      dsmem n | useShfl dev = warps * bytes
+             | otherwise    = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -302,8 +302,8 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       gridQ              = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
       per_warp_bytes -- segment smem is aliassed with the smem to communicate values
-        | True           = (4 * 2) `P.max` (bytesElt tp * per_warp_elems)
-        --  otherwise      =  4 * 2 -- in case of 'useSMem == False' this sounds right, but crashes..
+    --  | useShfl dev    =  4 * 2 -- this sounds right, but crashes..
+        | otherwise      = (4 * 2) `P.max` (bytesElt tp * per_warp_elems)
       per_warp_elems     = ws + (ws `P.quot` 2)
       ws                 = CUDA.warpSize dev
 
@@ -351,9 +351,9 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     --
     smem  <- do
       a <- A.mul numType wid (int32 per_warp_bytes)
-      b <- case useSMem dev of
-        True  -> dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
-        False -> dynamicSharedMem tp TypeInt32 (liftInt32 0)          (liftInt32 0)
+      b <- case useShfl dev of
+        False -> dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
+        True  -> dynamicSharedMem tp TypeInt32 (liftInt32 0)          (liftInt32 0)
       return b
 
     -- Compute the number of segments and size of the innermost dimension. These
@@ -506,5 +506,5 @@ reduceWarp
     -> Operands e                                     -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
 reduceWarp dev t c smem
-  | useSMem dev = reduceWarpSMem dev t c smem
-  | otherwise   = reduceWarpShfl dev t c
+  | useShfl dev = reduceWarpShfl dev t c
+  | otherwise   = reduceWarpSMem dev t c smem

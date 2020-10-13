@@ -44,7 +44,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   sharedMemAddrSpace,
 
   -- Shuffles
-  shfl_up, shfl_down,
+  shfl_up, shfl_down, useShfl,
 
   -- Kernel definitions
   (+++),
@@ -94,6 +94,7 @@ import Control.Monad.State                                          ( gets )
 import Prelude                                                      as P
 import qualified Foreign.CUDA.Driver.Utils
 import Data.Array.Accelerate (Vec)
+import qualified Foreign.Storable
 
 #if MIN_VERSION_llvm_hs(10,0,0)
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
@@ -351,27 +352,24 @@ shfl_down :: forall a. TypeR a
           -> CodeGen PTX (Operands a)
 shfl_down  = shfl "down"
 
+-- Determine whether we can use shfl. Shfl instructions are available for compute >= 3.0
+useShfl :: DeviceProperties -> Bool
+useShfl dev
+  | CUDA.Compute x _ <- CUDA.computeCapability dev
+  , x >= 3    = True
+  | otherwise = False
+
 ---------Unused options-------
 -- Each of the shfl primitives also exists in ".p" form. This version returns, alongside the normal value,
 -- a boolean. This could be used to check whether the source lane was within range, for example. We currently
 -- do manual bounds-arithmetic to do this. Using the ".p" version might be faster in some cases, saving one or two instructions.
 
 -- These two primitives are currently not used in the backend, but are available now.
+
 -- shfl_xor takes a lane mask as argument. It XOR's that mask with the target lane index to get their source lane index.
 -- note: I'm not 100% sure that 'bfly' is indeed the XOR version, it's more of a process of elimination :)
-
--- shfl_xor :: forall a. TypeR a
---          -> Operands a
---          -> Operands Word32
---          -> CodeGen PTX (Operands a)
 -- shfl_xor = shfl "bfly"
-
 -- shfl_idx takes an argument representing the source lane index.
-
--- shfl_idx :: forall a. TypeR a
---          -> Operands a
---          -> Operands Word32
---          -> CodeGen PTX (Operands a)
 -- shfl_idx = shfl "idx"
 ----------------------------------
 
@@ -402,8 +400,14 @@ shfl mode typer a delta = case typer of
       FloatingNumType TypeHalf   -> cast_shfl_cast_f16 a
       FloatingNumType TypeFloat  -> shfl_f32         a
 
-      IntegralNumType TypeInt    -> shfl_64_bit a
-      IntegralNumType TypeWord   -> shfl_64_bit a
+      IntegralNumType TypeInt    -> case Foreign.Storable.sizeOf (0 :: Int) of
+                                      8 -> shfl_64_bit a
+                                      4 -> cast_shfl_cast_i a -- casting i32 to i32 should get optimised away later
+                                      n -> internalError $ "Didn't expect a " <> show (n*8) <> "-bit architecture"
+      IntegralNumType TypeWord   -> case Foreign.Storable.sizeOf (0 :: Word) of
+                                      8 -> shfl_64_bit a
+                                      4 -> cast_shfl_cast_i a -- casting i32 to i32 should get optimised away later
+                                      n -> internalError $ "Didn't expect a " <> show (n*8) <> "-bit architecture"
       IntegralNumType TypeInt64  -> shfl_64_bit a
       IntegralNumType TypeWord64 -> shfl_64_bit a
       FloatingNumType TypeDouble -> shfl_64_bit a
