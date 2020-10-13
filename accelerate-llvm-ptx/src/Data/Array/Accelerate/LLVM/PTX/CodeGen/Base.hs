@@ -461,19 +461,19 @@ mk_shfl :: (IsPrim a)
 mk_shfl mode typ val delta = do
 
   -- In CUDA, the default for the final parameter, width, is warpsize.
-  -- Behind the scenes, all these instructions happen with the width parameter
-  -- before they get passed into the actual shfl instruction, so we have to
-  -- perform them here too. Alternatively, just passing '31' would maybe work
-  -- and be slightly faster. I haven't tested yet how it would behave with '31'
-  -- in small warps, nor what '0xffffffff' would do.
+  -- Setting the width lower (always power of 2) emulates the shfl behaviour with a smaller warpsize.
+  -- Behind the scenes, a bunch of instructions happen with this width parameter
+  -- before they get passed into the actual shfl instruction. Here, we have to
+  -- directly set them to the 'actual' width parameter. Below, the formula that
+  -- clang compiles to is in the comments, but we just use a constant rather
+  -- than recompute these every time a shfl is invoked (which is what clang-cuda does).
+  --
   -- -DB
-  warpsize <- warpSize
-  subOf32  <- sub         numType (liftInt32 32) warpsize
-  shiftl8  <- shiftL integralType subOf32        (liftInt 8)
-  width    <- case mode of
-    "up"   -> return shiftl8
-    "down" -> bor    integralType shiftl8        (liftInt32 31)
-    _ -> error "find out what quirks other modes have by compiling them with LLVM"
+
+  let width = case mode of
+        "up"   -> liftInt32 0          -- ((32 - warpsize) `shiftL` 8)
+        "down" -> liftInt32 0x000000ff -- ((32 - warpsize) `shiftL` 8) `or` ff
+        _ -> error "find out what quirks other modes have by compiling them with LLVM"
 
   -- Starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
   -- They behave the same, except they start with a 'mask' argument specifying which threads participate in the shuffle.
