@@ -176,7 +176,7 @@ loadSegment obj strtab secs symtab relocs = do
               let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
                   extern Symbol{..}   = sym_binding == Global && sym_type == Func
                   resolve Symbol{..}  =
-                    let name  = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
+                    let name  = BS.toShort (B8.take (B8.length sym_name - 0) sym_name)
                         addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
                     in
                     (name, addr)

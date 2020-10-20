@@ -62,6 +62,8 @@ import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
 import System.CPUTime                                               ( getCPUTime )
 import Text.Printf                                                  ( printf )
+import qualified Data.ByteString.Char8                              as B8
+import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Data.DList                                         as DL
@@ -788,7 +790,8 @@ aforeignOp name _ _ asm arr = do
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
-  find (\(n,_) -> n == name) (functionTable (unsafeGetValue nativeExecutable))
+  let shorten n = BS.toShort (B8.take (BS.length n - 65) (BS.fromShort n))
+  find (\(n,_) -> shorten n == name) (functionTable (unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
