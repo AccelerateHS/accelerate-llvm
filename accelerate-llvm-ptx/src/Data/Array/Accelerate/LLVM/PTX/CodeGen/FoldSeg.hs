@@ -34,6 +34,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache                     ( UID )
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -55,7 +56,8 @@ import Prelude                                                      as P
 --
 mkFoldSeg
     :: forall aenv sh i e.
-       Gamma            aenv
+       UID
+    -> Gamma            aenv
     -> ArrayR (Array (sh, Int) e)
     -> IntegralType i
     -> IRFun2       PTX aenv (e -> e -> e)
@@ -63,9 +65,9 @@ mkFoldSeg
     -> MIRDelayed   PTX aenv (Array (sh, Int) e)
     -> MIRDelayed   PTX aenv (Segments i)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkFoldSeg aenv repr intTp combine seed arr seg =
-  (+++) <$> mkFoldSegP_block aenv repr intTp combine seed arr seg
-        <*> mkFoldSegP_warp  aenv repr intTp combine seed arr seg
+mkFoldSeg uid aenv repr intTp combine seed arr seg =
+  (+++) <$> mkFoldSegP_block uid aenv repr intTp combine seed arr seg
+        <*> mkFoldSegP_warp  uid aenv repr intTp combine seed arr seg
 
 
 -- This implementation assumes that the segments array represents the offset
@@ -77,7 +79,8 @@ mkFoldSeg aenv repr intTp combine seed arr seg =
 --
 mkFoldSegP_block
     :: forall aenv sh i e.
-       Gamma          aenv
+       UID
+    -> Gamma          aenv
     -> ArrayR (Array (sh, Int) e)
     -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
@@ -85,7 +88,7 @@ mkFoldSegP_block
     -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
+mkFoldSegP_block uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -102,7 +105,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "foldSeg_block" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
+  makeOpenAccWith config uid "foldSeg_block" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
     -- We use a dynamically scheduled work queue in order to evenly distribute
     -- the uneven workload, due to the variable length of each segment, over the
@@ -273,7 +276,8 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
 --
 mkFoldSegP_warp
     :: forall aenv sh i e.
-       Gamma          aenv
+       UID
+    -> Gamma          aenv
     -> ArrayR (Array (sh, Int) e)
     -> IntegralType i
     -> IRFun2     PTX aenv (e -> e -> e)
@@ -281,7 +285,7 @@ mkFoldSegP_warp
     -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> MIRDelayed PTX aenv (Segments i)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
+mkFoldSegP_warp uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -305,7 +309,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       int32 :: Integral a => a -> Operands Int32
       int32 = liftInt32 . P.fromIntegral
   --
-  makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
+  makeOpenAccWith config uid "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
     -- Each warp works independently.
     -- Determine the ID of this warp within the thread block.

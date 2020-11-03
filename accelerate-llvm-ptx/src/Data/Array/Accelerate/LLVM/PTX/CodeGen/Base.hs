@@ -48,6 +48,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 ) where
 
 import Data.Array.Accelerate.Error
+import Data.Array.Accelerate.LLVM.Compile.Cache                     ( UID )
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -462,23 +463,25 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 -- | Create a single kernel program with the default launch configuration.
 --
 makeOpenAcc
-    :: Label
+    :: UID
+    -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAcc name param kernel = do
+makeOpenAcc uid name param kernel = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  makeOpenAccWith (simpleLaunchConfig dev) name param kernel
+  makeOpenAccWith (simpleLaunchConfig dev) uid name param kernel
 
 -- | Create a single kernel program with the given launch analysis information.
 --
 makeOpenAccWith
     :: LaunchConfig
+    -> UID
     -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAccWith config name param kernel = do
+makeOpenAccWith config _uid name param kernel = do
   body  <- makeKernel config name param kernel
   return $ IROpenAcc [body]
 

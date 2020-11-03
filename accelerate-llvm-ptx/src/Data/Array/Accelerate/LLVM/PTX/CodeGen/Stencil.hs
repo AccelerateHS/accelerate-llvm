@@ -35,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Stencil
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache                     ( UID )
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
@@ -56,24 +57,26 @@ import Control.Monad
 --  * stencil_border: applies boundary condition check to each array access
 --
 mkStencil1
-    :: Gamma           aenv
+    :: UID
+    -> Gamma           aenv
     -> StencilR sh a stencil
     -> TypeR b
     -> IRFun1      PTX aenv (stencil -> b)
     -> IRBoundary  PTX aenv (Array sh a)
     -> MIRDelayed  PTX aenv (Array sh a)
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh b))
-mkStencil1 aenv stencil tp fun bnd marr =
+mkStencil1 uid aenv stencil tp fun bnd marr =
   let repr             = ArrayR shr tp
       (shr, halo)      = stencilHalo stencil
       (arrIn, paramIn) = delayedArray "in" marr
   in
-  (+++) <$> mkInside aenv repr halo (IRFun1 $ app1 fun <=< stencilAccess stencil Nothing    arrIn) paramIn
-        <*> mkBorder aenv repr      (IRFun1 $ app1 fun <=< stencilAccess stencil (Just bnd) arrIn) paramIn
+  (+++) <$> mkInside uid aenv repr halo (IRFun1 $ app1 fun <=< stencilAccess stencil Nothing    arrIn) paramIn
+        <*> mkBorder uid aenv repr      (IRFun1 $ app1 fun <=< stencilAccess stencil (Just bnd) arrIn) paramIn
 
 
 mkStencil2
-    :: Gamma           aenv
+    :: UID
+    -> Gamma           aenv
     -> StencilR sh a stencil1
     -> StencilR sh b stencil2
     -> TypeR c
@@ -83,7 +86,7 @@ mkStencil2
     -> IRBoundary  PTX aenv (Array sh b)
     -> MIRDelayed  PTX aenv (Array sh b)
     -> CodeGen     PTX      (IROpenAcc PTX aenv (Array sh c))
-mkStencil2 aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
+mkStencil2 uid aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
   let
       repr = ArrayR shr tp
       (arrIn1, paramIn1)  = delayedArray "in1" marr1
@@ -103,18 +106,19 @@ mkStencil2 aenv stencil1 stencil2 tp f bnd1 marr1 bnd2 marr2 =
       (_,   halo2) = stencilHalo stencil2
       halo         = union shr halo1 halo2
   in
-  (+++) <$> mkInside aenv repr halo inside (paramIn1 ++ paramIn2)
-        <*> mkBorder aenv repr      border (paramIn1 ++ paramIn2)
+  (+++) <$> mkInside uid aenv repr halo inside (paramIn1 ++ paramIn2)
+        <*> mkBorder uid aenv repr      border (paramIn1 ++ paramIn2)
 
 
 mkInside
-    :: Gamma aenv
+    :: UID
+    -> Gamma aenv
     -> ArrayR (Array sh e)
     -> sh
     -> IRFun1  PTX aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkInside aenv repr@(ArrayR shr _) halo apply paramIn =
+mkInside uid aenv repr@(ArrayR shr _) halo apply paramIn =
   let
       (arrOut, paramOut)  = mutableArray repr "out"
       paramInside         = parameter    (shapeType shr) "shInside"
@@ -123,7 +127,7 @@ mkInside aenv repr@(ArrayR shr _) halo apply paramIn =
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc "stencil_inside" (paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "stencil_inside" (paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (liftInt 0)
     end   <- shapeSize shr shInside
@@ -142,12 +146,13 @@ mkInside aenv repr@(ArrayR shr _) halo apply paramIn =
 
 
 mkBorder
-    :: Gamma aenv
+    :: UID
+    -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRFun1  PTX aenv (sh -> e)
     -> [LLVM.Parameter]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkBorder aenv repr@(ArrayR shr _) apply paramIn =
+mkBorder uid aenv repr@(ArrayR shr _) apply paramIn =
   let
       (arrOut, paramOut)  = mutableArray repr "out"
       paramFrom           = parameter    (shapeType shr) "shFrom"
@@ -158,7 +163,7 @@ mkBorder aenv repr@(ArrayR shr _) apply paramIn =
       paramEnv            = envParam aenv
       --
   in
-  makeOpenAcc "stencil_border" (paramFrom ++ paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "stencil_border" (paramFrom ++ paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (liftInt 0)
     end   <- shapeSize shr shInside
