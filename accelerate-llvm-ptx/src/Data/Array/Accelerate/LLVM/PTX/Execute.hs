@@ -61,6 +61,7 @@ import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
 import Text.Printf                                              ( printf )
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
+import qualified Prelude
 
 
 {-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (FutureArraysR PTX a) #-}
@@ -636,7 +637,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
         let paramsR = paramR' `TupRpair` TupRsingle (ParamRfuture $ ParamRarray reprLock) `TupRpair` paramR
         executeOp kernel gamma aenv dim1 ((), n) paramsR ((result, barrier), manifest input)
 
-      _               -> internalError "unexpected kernel image"
+      _               -> internalError ("unexpected kernel image: " ++ B8.unpack (BS.fromShort (kernelName kernel)))
     --
     put future result
     return future
@@ -795,7 +796,7 @@ aforeignOp name _ _ asm arr = do
 --
 (!#) :: HasCallStack => FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " ++ unpack name))
+  = fromMaybe (internalError ("function not found: " ++ unpack name ++ " (" ++ show (Prelude.map kernelName (functionTable exe)) ++ ")"))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
