@@ -53,6 +53,8 @@ import qualified Foreign.CUDA.Driver                            as CUDA
 import Control.Monad                                            ( when, forM_ )
 import Control.Monad.Reader                                     ( asks, local )
 import Control.Monad.State                                      ( liftIO )
+import qualified Data.ByteString.Char8                          as B8
+import qualified Data.ByteString.Short                          as BS
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
 import qualified Data.DList                                     as DL
 import Data.List                                                ( find )
@@ -618,7 +620,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
                  then Debug.trace Debug.dump_exec "exec: permute/inplace" $ return defaults
                  else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync repr' defaults
     --
-    case kernelName kernel of
+    case stripHash (kernelName kernel) of
       -- execute directly using atomic operations
       "permute_rmw"   ->
         let paramsR = paramR' `TupRpair` paramR
@@ -798,7 +800,10 @@ aforeignOp name _ _ asm arr = do
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
-  find (\k -> kernelName k == name) (functionTable ptxExecutable)
+  find (\k -> stripHash (kernelName k) == name) (functionTable ptxExecutable)
+
+stripHash :: ShortByteString -> ShortByteString
+stripHash name = BS.toShort (B8.take (BS.length name - 65) (BS.fromShort name))
 
 delayedShape :: Delayed (Array sh e) -> sh
 delayedShape (Delayed sh) = sh

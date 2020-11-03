@@ -92,10 +92,9 @@ import Prelude                                                      as P
 #if MIN_VERSION_llvm_hs(10,0,0)
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
 import LLVM.AST.Type.Instruction.Atomic
-#elif !MIN_VERSION_llvm_hs(9,0,0)
+#endif
 import Data.String
 import Text.Printf
-#endif
 
 
 -- Thread identifiers
@@ -481,8 +480,8 @@ makeOpenAccWith
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAccWith config _uid name param kernel = do
-  body  <- makeKernel config name param kernel
+makeOpenAccWith config uid name param kernel = do
+  body  <- makeKernel config (name <> fromString (printf "_%s" (show uid))) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process
