@@ -42,7 +42,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   sharedMemAddrSpace,
 
   -- Shuffles
-  shfl_up, shfl_down, useShfl,
+  shfl_up, shfl_down, shfl_idx, broadcast, useShfl,
 
   -- Kernel definitions
   (+++),
@@ -344,7 +344,7 @@ shfl_up = shfl "up"
 
 -- | Each thread gets the value provided by higher threads
 --
-shfl_down :: forall a. TypeR a
+shfl_down :: TypeR a
           -> Operands a
           -> Operands Word32
           -> CodeGen PTX (Operands a)
@@ -357,18 +357,28 @@ useShfl dev
   , x >= 3    = True
   | otherwise = False
 
+-- shfl_idx takes an argument representing the source lane index.
+shfl_idx :: TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
+shfl_idx = shfl "idx"
+
+-- Distribute the value from lane 0 across the warp
+broadcast :: TypeR a -> Operands a -> CodeGen PTX (Operands a)
+broadcast typr a = shfl_idx typr a (liftWord32 0)
+
+
 ---------Unused options-------
 -- Each of the shfl primitives also exists in ".p" form. This version returns, alongside the normal value,
 -- a boolean. This could be used to check whether the source lane was within range, for example. We currently
--- do manual bounds-arithmetic to do this. Using the ".p" version might be faster in some cases, saving one or two instructions.
+-- do manual bounds-arithmetic to do this in folds/scans. Using the ".p" version might be faster in some cases,
+-- saving one or two instructions.
 
--- These two primitives are currently not used in the backend, but are available now.
 
--- shfl_xor takes a lane mask as argument. It XOR's that mask with the target lane index to get their source lane index.
+-- The following primitive is currently not used, but is available now:
+
+-- shfl_xor takes a lane mask as argument. It XOR's that mask with the target lane index to get the source lane index.
 -- note: I'm not 100% sure that 'bfly' is indeed the XOR version, it's more of a process of elimination :)
 -- shfl_xor = shfl "bfly"
--- shfl_idx takes an argument representing the source lane index.
--- shfl_idx = shfl "idx"
+
 ----------------------------------
 
 -------unexported shfl internals---------
@@ -472,7 +482,8 @@ mk_shfl mode typ val delta = do
 
   let width = case mode of
         "up"   -> liftInt32 0          -- ((32 - warpsize) `shiftL` 8)
-        "down" -> liftInt32 0x000000ff -- ((32 - warpsize) `shiftL` 8) `or` ff
+        "down" -> liftInt32 0x0000001f -- ((32 - warpsize) `shiftL` 8) `or` 31
+        "idx"  -> liftInt32 0x0000001f -- ((32 - warpsize) `shiftL` 8) `or` 31
         _ -> error "find out what quirks other modes have by compiling them with LLVM"
 
   -- Starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
