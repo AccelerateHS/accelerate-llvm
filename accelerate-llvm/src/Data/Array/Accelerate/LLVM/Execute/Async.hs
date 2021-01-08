@@ -22,10 +22,11 @@ import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Type
 
+import Control.Monad.Trans                                          ( MonadIO )
 import GHC.Stack
 
 
-class Monad (Par arch) => Async arch where
+class (Monad (Par arch), MonadIO (Par arch)) => Async arch where
 
   -- | The monad parallel computations will be executed in. Presumably a stack
   -- with the LLVM monad at the base.

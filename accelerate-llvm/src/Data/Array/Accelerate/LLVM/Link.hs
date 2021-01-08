@@ -122,6 +122,7 @@ linkOpenAcc = travA
         Awhile p f a            -> Awhile          <$> travAF p <*> travAF f <*> travA a
         Acond p t e             -> Acond p         <$> travA t  <*> travA e
         Apair a1 a2             -> Apair           <$> travA a1 <*> travA a2
+        Atrace msg a1 a2        -> Atrace msg      <$> travA a1 <*> travA a2
         Anil                    -> return Anil
         Reshape shr s ix        -> Reshape shr s   <$> pure ix
         Aforeign s r f a        -> Aforeign s r f  <$> travA a

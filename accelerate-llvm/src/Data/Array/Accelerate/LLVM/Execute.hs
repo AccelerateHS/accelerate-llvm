@@ -31,7 +31,7 @@ import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalCoerceScalar )
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalCoerceScalar, atraceOp )
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Shape
@@ -51,6 +51,7 @@ import Data.Array.Accelerate.LLVM.Link
 import qualified Data.Array.Accelerate.LLVM.AST                 as AST
 
 import Control.Monad
+import Control.Monad.Trans                                      ( liftIO )
 import System.IO.Unsafe
 import Prelude                                                  hiding ( exp, map, unzip, scanl, scanr, scanl1, scanr1 )
 
@@ -279,6 +280,12 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Anil                   -> return ()
         Alloc repr sh          -> allocate repr sh
         Apply _ f a            -> travAF f =<< spawn (travA a)
+        Atrace msg a1 a2       -> do
+          let repr = arraysR a1
+          a1' <- travA a1 >>= blockArrays repr >>= copyToHost repr
+          liftIO $ atraceOp msg repr a1'
+          travA a2
+
         -- We need quite some type applications in the rules for acond and awhile, and cannot use do notation.
         -- For some unknown reason, GHC will "simplify" 'FutureArraysR arch a' to 'FutureR arch a', which is not sound.
         -- It then complains that 'FutureR arch a' isn't assignable to 'FutureArraysR arch a'. By adding explicit
