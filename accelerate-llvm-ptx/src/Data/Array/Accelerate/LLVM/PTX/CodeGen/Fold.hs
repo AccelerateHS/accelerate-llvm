@@ -124,13 +124,14 @@ mkFoldAllS
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllS dev aenv tp combine mseed marr =
   let
-      (arrOut, paramOut)   = mutableArray (ArrayR dim0 tp) "out"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      paramEnv             = envParam aenv
+      (arrOut, paramOut)  = mutableArray (ArrayR dim0 tp) "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -182,14 +183,15 @@ mkFoldAllM1
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM1 dev aenv tp combine marr =
   let
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      paramEnv             = envParam aenv
-      start                = liftInt 0
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
+      start               = liftInt 0
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -239,14 +241,15 @@ mkFoldAllM2
     -> CodeGen PTX      (IROpenAcc PTX aenv (Scalar e))
 mkFoldAllM2 dev aenv tp combine mseed =
   let
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      (arrOut, paramOut)   = mutableArray (ArrayR dim1 tp) "out"
-      paramEnv             = envParam aenv
-      start                = liftInt 0
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
+      paramEnv            = envParam aenv
+      start               = liftInt 0
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -309,13 +312,14 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)   = mutableArray repr "out"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      paramEnv             = envParam aenv
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -432,25 +436,26 @@ reduceBlock
     -> Operands e                               -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)                 -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
 reduceBlock dev
-  | useShfl dev = reduceBlockShfl dev
+  | canShfl dev = reduceBlockShfl dev
   | otherwise   = reduceBlockSMem dev
+
 
 -- Efficient threadblock-wide reduction using the specified operator. The
 -- aggregate reduction value is stored in thread zero. Supports non-commutative
 -- operators.
-
+--
 -- Requires dynamically allocated memory: (#warps * (1 + 1.5 * warp size)).
-
+--
 -- Example: https://github.com/NVlabs/cub/blob/1.5.2/cub/block/specializations/block_reduce_warp_reductions.cuh
-
+--
 reduceBlockSMem
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target device
     -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
-    -> Maybe (Operands Int32)                         -- ^ number of valid elements (may be less than block size)
-    -> Operands e                                     -- ^ calling thread's input element
-    -> CodeGen PTX (Operands e)                       -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
+    -> Maybe (Operands Int32)                   -- ^ number of valid elements (may be less than block size)
+    -> Operands e                               -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                 -- ^ thread-block-wide reduction using the specified operator (lane 0 only)
 reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
   where
     int32 :: Integral a => a -> Operands Int32
@@ -537,9 +542,9 @@ reduceWarpSMem
     -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
-    -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
-    -> Operands e                                     -- ^ calling thread's input element
-    -> CodeGen PTX (Operands e)                       -- ^ warp-wide reduction using the specified operator (lane 0 only)
+    -> Maybe (Operands Int32)                   -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
+    -> Operands e                               -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                 -- ^ warp-wide reduction using the specified operator (lane 0 only)
 reduceWarpSMem dev tp combine smem size = reduce 0
   where
     log2 :: Double -> Double
@@ -580,7 +585,8 @@ reduceWarpSMem dev tp combine smem size = reduce 0
 
 
 
--- equivalent to `reduceBlockSMem`, but more efficient
+-- Equivalent to `reduceBlockSMem` but using warp shuffle instructions
+--
 reduceBlockShfl
     :: forall aenv e.
        DeviceProperties                         -- ^ properties of the target device
@@ -602,8 +608,8 @@ reduceBlockShfl dev tp combine size = warpReduce >=> warpAggregate
       -- Are we doing bounds checking for this warp?
       case size of
         -- The entire thread block is valid, so skip bounds checks.
-        Nothing ->
-          reduceWarpShfl dev tp combine Nothing input
+        Nothing -> reduceWarpShfl dev tp combine Nothing input
+
         -- Otherwise check how many elements are valid for this warp. If it is
         -- full then we can still skip bounds checks for it.
         Just n -> do
@@ -642,6 +648,7 @@ reduceBlockShfl dev tp combine size = warpReduce >=> warpAggregate
       -- Update the total aggregate. Thread 0 just does this sequentially (as is
       -- done in CUB), but we could also do this cooperatively (better for
       -- larger thread blocks?)
+      --
       tid   <- threadIdx
       if (tp, A.eq singleType tid (liftInt32 0))
         then do
@@ -657,15 +664,15 @@ reduceBlockShfl dev tp combine size = warpReduce >=> warpAggregate
           return input
 
 
-
--- equivalent to 'reduceWarpSmem', but more efficient
+-- Equivalent to 'reduceWarpSmem' but using warp shuffle instructions
+--
 reduceWarpShfl
     :: forall e aenv. DeviceProperties
     -> TypeR e
-    -> IRFun2 PTX aenv (e -> e -> e)                            -- ^ combination function
+    -> IRFun2 PTX aenv (e -> e -> e)                  -- ^ combination function
     -> Maybe (Operands Int32)                         -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
-    -> Operands e                                                     -- ^ this thread's input value
-    -> CodeGen PTX (Operands e)                                           -- ^ final result
+    -> Operands e                                     -- ^ this thread's input value
+    -> CodeGen PTX (Operands e)                       -- ^ final result
 reduceWarpShfl dev typer combine size = reduce 0
   where
     log2 :: Double -> Double
@@ -675,13 +682,10 @@ reduceWarpShfl dev typer combine size = reduce 0
     steps = P.floor . log2 . P.fromIntegral . CUDA.warpSize $ dev
 
     valid offset = do
-      lane <- laneId
-      warpsize <- warpSize
-      -- typeconversion to do bounds check
-      offset' <- A.fromIntegral integralType numType offset
-      i <- A.add numType lane offset'
+      lane  <- laneId
+      i     <- A.add numType lane (liftInt32 offset)
       case size of
-        Nothing -> A.lt singleType i warpsize
+        Nothing -> A.lt singleType i (liftInt32 (P.fromIntegral (CUDA.warpSize dev)))
         Just n  -> A.lt singleType i n
 
     -- Unfold the reduction as a recursive code generation function.
@@ -689,8 +693,11 @@ reduceWarpShfl dev typer combine size = reduce 0
     reduce step x
       | step > steps = return x
       | otherwise     = do
-          let offset = liftWord32 (1 `P.shiftL` step)
-          y  <- shfl_down typer x offset
+          let
+              offset :: (Bits i, Integral i) => i
+              offset = 1 `P.shiftL` step
+
+          y  <- __shfl_down typer x (liftWord32 offset)
           x' <- if (typer, valid offset)
                   then app2 combine x y
                   else return x
@@ -706,8 +713,8 @@ reduceFromTo
     -> TypeR a
     -> Operands Int                                   -- ^ starting index
     -> Operands Int                                   -- ^ final index (exclusive)
-    -> (IRFun2 PTX aenv (a -> a -> a))          -- ^ combination function
-    -> (Operands Int -> CodeGen PTX (Operands a))           -- ^ function to retrieve element at index
+    -> (IRFun2 PTX aenv (a -> a -> a))                -- ^ combination function
+    -> (Operands Int -> CodeGen PTX (Operands a))     -- ^ function to retrieve element at index
     -> (Operands a -> CodeGen PTX ())                 -- ^ what to do with the value
     -> CodeGen PTX ()
 reduceFromTo dev tp from to combine get set = do

@@ -1,7 +1,8 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
@@ -36,13 +37,14 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
   __syncwarp, __syncwarp_mask,
   __threadfence_block, __threadfence_grid,
 
+  -- Warp shuffle instructions
+  __shfl_up, __shfl_down, __shfl_idx, __broadcast,
+  canShfl,
+
   -- Shared memory
   staticSharedMem,
   dynamicSharedMem,
-  sharedMemAddrSpace,
-
-  -- Shuffles
-  shfl_up, shfl_down, shfl_idx, broadcast, useShfl,
+  sharedMemAddrSpace, sharedMemVolatility,
 
   -- Kernel definitions
   (+++),
@@ -50,10 +52,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
 ) where
 
+import Data.Primitive.Vec
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.Arithmetic                as A
 import Data.Array.Accelerate.LLVM.CodeGen.Base
-import Data.Array.Accelerate.LLVM.CodeGen.Constant
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -65,9 +67,11 @@ import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Type
+import qualified Data.Array.Accelerate.LLVM.CodeGen.Constant        as A
 
 import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
 import qualified Foreign.CUDA.Analysis                              as CUDA
+import qualified Foreign.CUDA.Driver.Utils                          as CUDA
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
@@ -87,12 +91,14 @@ import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
 import Control.Applicative
-import Control.Monad                                                ( void, (>=>) )
+import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
+import Data.Bits
+import Data.Proxy
+import Foreign.Storable
 import Prelude                                                      as P
-import qualified Foreign.CUDA.Driver.Utils
-import Data.Array.Accelerate (Vec)
-import qualified Foreign.Storable
+
+import GHC.TypeLits
 
 #if MIN_VERSION_llvm_hs(10,0,0)
 import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
@@ -331,179 +337,234 @@ atomicAdd_f t addr val =
 #endif
 
 
--- Shuffles
--- ---------
+-- Warp shuffle functions
+-- ----------------------
+--
+-- Exchange a variable between threads within a warp. Requires compute
+-- capability 3.0 or higher.
+--
+-- <https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#warp-shuffle-functions>
+--
+-- Each of the shfl primitives also exists in ".p" form. This version
+-- returns, alongside the normal value, a boolean that returns whether the
+-- source lane was in range. This could be useful when doing bounds checks
+-- in folds and scans.
+--
+
+data ShuffleOp
+  = Idx     -- ^ Direct copy from indexed lane
+  | Up      -- ^ Copy from a lane with lower ID relative to the caller
+  | Down    -- ^ Copy from a lane with higher ID relative to the caller
+  | XOR     -- ^ Copy from a lane based on bitwise XOR of own lane ID
 
 -- | Each thread gets the value provided by lower threads
 --
-shfl_up :: TypeR a
-        -> Operands a
-        -> Operands Word32
-        -> CodeGen PTX (Operands a)
-shfl_up = shfl "up"
+__shfl_up :: TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
+__shfl_up = shfl Up
 
 -- | Each thread gets the value provided by higher threads
 --
-shfl_down :: TypeR a
-          -> Operands a
-          -> Operands Word32
-          -> CodeGen PTX (Operands a)
-shfl_down  = shfl "down"
+__shfl_down :: TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
+__shfl_down  = shfl Down
 
--- Determine whether we can use shfl. Shfl instructions are available for compute >= 3.0
-useShfl :: DeviceProperties -> Bool
-useShfl dev
-  | CUDA.Compute x _ <- CUDA.computeCapability dev
-  , x >= 3    = True
-  | otherwise = False
+-- | shfl_idx takes an argument representing the source lane index.
+--
+__shfl_idx :: TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
+__shfl_idx = shfl Idx
 
--- shfl_idx takes an argument representing the source lane index.
-shfl_idx :: TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
-shfl_idx = shfl "idx"
+-- | Distribute the value from lane 0 across the warp
+--
+__broadcast :: TypeR a -> Operands a -> CodeGen PTX (Operands a)
+__broadcast aR a = __shfl_idx aR a (liftWord32 0)
 
--- Distribute the value from lane 0 across the warp
-broadcast :: TypeR a -> Operands a -> CodeGen PTX (Operands a)
-broadcast typr a = shfl_idx typr a (liftWord32 0)
+-- Warp shuffle instructions are available for compute capability >= 3.0
+--
+canShfl :: DeviceProperties -> Bool
+canShfl dev = CUDA.computeCapability dev >= Compute 3 0
 
 
----------Unused options-------
--- Each of the shfl primitives also exists in ".p" form. This version returns, alongside the normal value,
--- a boolean. This could be used to check whether the source lane was within range, for example. We currently
--- do manual bounds-arithmetic to do this in folds/scans. Using the ".p" version might be faster in some cases,
--- saving one or two instructions.
-
-
--- The following primitive is currently not used, but is available now:
-
--- shfl_xor takes a lane mask as argument. It XOR's that mask with the target lane index to get the source lane index.
--- note: I'm not 100% sure that 'bfly' is indeed the XOR version, it's more of a process of elimination :)
--- shfl_xor = shfl "bfly"
-
-----------------------------------
-
--------unexported shfl internals---------
-
-shfl :: Label -> TypeR a -> Operands a -> Operands Word32 -> CodeGen PTX (Operands a)
-shfl mode typer a delta = case typer of
-  TupRunit -> return OP_Unit
-
-  -- Shuffle both sides and rebuild.
-  -- Note: this could be slightly inefficient, (Int16, Int16) can be done in 1 shuffle and this takes 2.
-  TupRpair leftR rightR -> do
-    let OP_Pair left right = a
-    left' <- shfl mode leftR left delta
-    right' <- shfl mode rightR right delta
-    return (OP_Pair left' right')
-
-  -- Cast types with =< 32 bits into one shuffle, and types with more into multiple shuffles
-  TupRsingle sctyp -> case sctyp of
-    SingleScalarType (NumSingleType x) -> case x of
-      IntegralNumType TypeInt8   -> cast_shfl_cast_i a
-      IntegralNumType TypeInt16  -> cast_shfl_cast_i a
-      IntegralNumType TypeInt32  -> shfl_i32         a
-      IntegralNumType TypeWord8  -> cast_shfl_cast_i a
-      IntegralNumType TypeWord16 -> cast_shfl_cast_i a
-      IntegralNumType TypeWord32 -> cast_shfl_cast_i a
-
-      FloatingNumType TypeHalf   -> cast_shfl_cast_f16 a
-      FloatingNumType TypeFloat  -> shfl_f32         a
-
-      IntegralNumType TypeInt    -> case Foreign.Storable.sizeOf (0 :: Int) of
-                                      8 -> shfl_64_bit a
-                                      4 -> cast_shfl_cast_i a -- casting i32 to i32 should get optimised away later
-                                      n -> internalError $ "Didn't expect a " <> show (n*8) <> "-bit architecture"
-      IntegralNumType TypeWord   -> case Foreign.Storable.sizeOf (0 :: Word) of
-                                      8 -> shfl_64_bit a
-                                      4 -> cast_shfl_cast_i a -- casting i32 to i32 should get optimised away later
-                                      n -> internalError $ "Didn't expect a " <> show (n*8) <> "-bit architecture"
-      IntegralNumType TypeInt64  -> shfl_64_bit a
-      IntegralNumType TypeWord64 -> shfl_64_bit a
-      FloatingNumType TypeDouble -> shfl_64_bit a
-
-    VectorScalarType vectyp -> shfl_vec vectyp a
+shfl :: ShuffleOp
+     -> TypeR a
+     -> Operands a
+     -> Operands Word32
+     -> CodeGen PTX (Operands a)
+shfl sop tR val delta = go tR val
   where
-    shfl_i32 :: Operands Int32 -> CodeGen PTX (Operands Int32)
-    shfl_i32 x = mk_shfl mode "i32" x delta
+    delta' :: Operand Word32
+    delta' = op integralType delta
 
-    shfl_f32 :: Operands Float -> CodeGen PTX (Operands Float)
-    shfl_f32 x = mk_shfl mode "f32" x delta
+    go :: TypeR s -> Operands s -> CodeGen PTX (Operands s)
+    go TupRunit         OP_Unit       = return OP_Unit
+    go (TupRpair aR bR) (OP_Pair a b) = OP_Pair <$> go aR a <*> go bR b
+    go (TupRsingle t)   a             = scalar t a
 
-    -- Shuffle a (<32) bit integral
-    cast_shfl_cast_i :: (IsIntegral a, IsNum a) => Operands a -> CodeGen PTX (Operands a)
-    cast_shfl_cast_i = A.fromIntegral integralType numType
-                    >=> shfl_i32
-                    >=> A.fromIntegral integralType numType
+    scalar :: ScalarType s -> Operands s -> CodeGen PTX (Operands s)
+    scalar (SingleScalarType t) = single t
+    scalar (VectorScalarType t) = vector t
 
-    -- Shuffle a 16 bit floating point number
-    cast_shfl_cast_f16 :: Operands Half -> CodeGen PTX (Operands Half)
-    cast_shfl_cast_f16 = bitcast scalarType scalarType
-                      >=> cast_shfl_cast_i @Int16
-                      >=> bitcast scalarType scalarType
+    single :: SingleType s -> Operands s -> CodeGen PTX (Operands s)
+    single (NumSingleType t) = num t
 
-    -- Shuffle a 64 bit thing
-    shfl_64_bit :: IsScalar a => Operands a -> CodeGen PTX (Operands a)
-    shfl_64_bit x = do
-      let vectype = VectorScalarType (VectorType 2 (NumSingleType (IntegralNumType TypeInt32))) :: ScalarType (Vec 2 Int32)
-      x' <- bitcast scalarType vectype x
-      x'' <- shfl mode (TupRsingle vectype) x' delta
-      bitcast vectype scalarType x''
+    vector :: forall n s. VectorType (Vec n s) -> Operands (Vec n s) -> CodeGen PTX (Operands (Vec n s))
+    vector v@(VectorType w t) a
+      | SingleDict <- singleDict t
+      = let bytes = sizeOf (undefined::s)
+            (m,r) = P.quotRem (w * bytes) 4
+         in
+         if r == 0
+            -- bitcast into a <m x i32> vector
+            -- special case for a single element vector
+            then
+              if m == 1
+                 then do
+                   b <- A.bitcast (VectorScalarType v) (scalarType @Int32) a
+                   c <- integral (integralType @Int32) b
+                   d <- A.bitcast scalarType (VectorScalarType v) c
+                   return d
 
-    shfl_vec :: VectorType a -> Operands a -> CodeGen PTX (Operands a)
-    shfl_vec (VectorType 0 _) x = return x
-    shfl_vec (VectorType n t) x = go (P.fromIntegral n) x (VectorType n t)
+                 else
+                   let withSomeNat :: Int -> (forall m. KnownNat m => Proxy m -> b) -> b
+                       withSomeNat n k =
+                         case someNatVal (toInteger n) of
+                           Nothing          -> error "Welcome to overthinkers club. The first rule of overthinkers club is: yet to be decided."
+                           Just (SomeNat p) -> k p
 
-    go :: Int32 -> Operands (Vec n a) -> VectorType (Vec n a) -> CodeGen PTX (Operands (Vec n a))
-    go 0 x _ = return x
-    go n x vt@(VectorType _ t) = do
-      e <- instr $ ExtractElement (n-1) (op vt x)
-      e' <- shfl mode (TupRsingle (SingleScalarType t)) e delta
-      x' <- instr $ InsertElement (n-1) (op vt x) (op (SingleScalarType t) e')
-      go (n-1) x' vt
+                       vec :: forall m. KnownNat m => Proxy m -> CodeGen PTX (Operands (Vec n s))
+                       vec _ = do
+                         let v' = VectorType m (singleType @Int32)
+
+                         b <- A.bitcast (VectorScalarType v) (VectorScalarType v') a
+
+                         let c = op v' b
+
+                             repack :: Int32 -> CodeGen PTX (Operands (Vec m Int32))
+                             repack 0 = return $ ir v' (A.undef (VectorScalarType v'))
+                             repack i = do
+                               d <- instr $ ExtractElement (i-1) c
+                               e <- integral integralType d
+                               f <- repack (i-1)
+                               g <- instr $ InsertElement (i-1) (op v' f) (op integralType e)
+                               return g
+
+                         h <- repack (P.fromIntegral m)
+                         i <- A.bitcast (VectorScalarType v') (VectorScalarType v) h
+                         return i
+                   in
+                   withSomeNat m vec
+
+            -- not easily divisible into 32-bit chunks, so just treat each
+            -- component of the vector individually
+            else
+              let c = op v a
+
+                  repack :: Int32 -> CodeGen PTX (Operands (Vec n s))
+                  repack 0 = return $ ir v (A.undef (VectorScalarType v))
+                  repack i = do
+                    d <- instr $ ExtractElement (i-1) c
+                    e <- single t d
+                    f <- repack (i-1)
+                    g <- instr $ InsertElement (i-1) (op v f) (op t e)
+                    return g
+              in
+              repack (P.fromIntegral w)
+
+    num :: NumType s -> Operands s -> CodeGen PTX (Operands s)
+    num (IntegralNumType t) = integral t
+    num (FloatingNumType t) = floating t
+
+    integral :: forall s. IntegralType s -> Operands s -> CodeGen PTX (Operands s)
+    integral TypeInt32 a = shfl_op sop ShuffleInt32 delta' a
+    integral t         a
+      | IntegralDict <- integralDict t
+      = case finiteBitSize (undefined::s) of
+          64 -> do
+            let ta = SingleScalarType (NumSingleType (IntegralNumType t))
+                tb = scalarType @(Vec 2 Int32)
+            --
+            b <- A.bitcast ta tb a
+            c <- vector (VectorType 2 singleType) b
+            d <- A.bitcast tb ta c
+            return d
+
+          _  -> do
+            b <- A.fromIntegral t (numType @Int32) a
+            c <- integral integralType b
+            d <- A.fromIntegral integralType (IntegralNumType t) c
+            return d
+
+    floating :: FloatingType s -> Operands s -> CodeGen PTX (Operands s)
+    floating TypeFloat  a = shfl_op sop ShuffleFloat delta' a
+    floating TypeDouble a = do
+      b <- A.bitcast scalarType (scalarType @(Vec 2 Int32)) a
+      c <- vector (VectorType 2 singleType) b
+      d <- A.bitcast scalarType (scalarType @Double) c
+      return d
+    floating TypeHalf   a = do
+      b <- A.bitcast scalarType (scalarType @Int16) a
+      c <- integral integralType b
+      d <- A.bitcast scalarType (scalarType @Half) c
+      return d
 
 
--- Only works for 32-bit int or floats!!
-mk_shfl :: (IsPrim a)
-        => Label -- direction: ["up","down","bfly","idx"] (the latter two probably represent the "xor" and "get from an index" variants)
-        -> Label -- the type, "i32" or "f32"
-        -> Operands a                  -- value to give
-        -> Operands Word32             -- delta
-        -> CodeGen PTX (Operands a)   -- value received
-mk_shfl mode typ val delta = do
+data ShuffleType a where
+  ShuffleInt32 :: ShuffleType Int32
+  ShuffleFloat :: ShuffleType Float
 
-  -- In CUDA, the default for the final parameter, width, is warpsize.
-  -- Setting the width lower (always power of 2) emulates the shfl behaviour with a smaller warpsize.
-  -- Behind the scenes, a bunch of instructions happen with this width parameter
-  -- before they get passed into the actual shfl instruction. Here, we have to
-  -- directly set them to the 'actual' width parameter. Below, the formula that
-  -- clang compiles to is in the comments, but we just use a constant rather
-  -- than recompute these every time a shfl is invoked (which is what clang-cuda does).
-  --
-  -- -DB
+shfl_op
+    :: forall a.
+       ShuffleOp
+    -> ShuffleType a
+    -> Operand Word32               -- delta
+    -> Operands a                   -- value to give
+    -> CodeGen PTX (Operands a)     -- value received
+shfl_op sop t delta val =
+  let
+      -- The CUDA __shfl* instruction take an optional final parameter
+      -- which is the warp size. Setting this value to something (always
+      -- a power-of-two) other than 32 emulates the shfl behaviour at that
+      -- warp size. Behind the scenes, a bunch of instructions happen with
+      -- this width parameter before they get passed into the actual shfl
+      -- instruction. Here, we have to directly set them to the 'actual'
+      -- width parameter. The formula that clang compiles to is in the
+      -- comments
+      --
+      width :: Operand Int32
+      width = case sop of
+        Up   -> A.integral integralType 0  -- ((32 - warpSize) `shiftL` 8)
+        Down -> A.integral integralType 31 -- ((32 - warpSize) `shiftL` 8) `or` 31
+        Idx  -> A.integral integralType 31 -- ((32 - warpSize) `shiftL` 8) `or` 31
+        XOR  -> A.integral integralType 31 -- ((32 - warpSize) `shiftL` 8) `or` 31
 
-  let width = case mode of
-        "up"   -> liftInt32 0          -- ((32 - warpsize) `shiftL` 8)
-        "down" -> liftInt32 0x0000001f -- ((32 - warpsize) `shiftL` 8) `or` 31
-        "idx"  -> liftInt32 0x0000001f -- ((32 - warpsize) `shiftL` 8) `or` 31
-        _ -> error "find out what quirks other modes have by compiling them with LLVM"
+      -- Starting CUDA 9.0, the normal `shfl` primitives are deprecated in
+      -- favour of the newer `shfl_sync` primitives. They behave the same
+      -- way, except they start with a 'mask' argument specifying which
+      -- threads participate in the shuffle.
+      --
+      mask :: Operand Int32
+      mask  = A.integral integralType (-1) -- all threads participate
 
-  -- Starting CUDA 9.0, the normal `shfl` primitives are removed in favour of the newer `shfl_sync` ones:
-  -- They behave the same, except they start with a 'mask' argument specifying which threads participate in the shuffle.
-  -- Arguably, it might be better to branch on the minimum requirements for `shfl_sync`, or maybe even to branch
-  -- on the compute version of the gpu, but I couldn't find exact version numbers for these. Clang also branches on CUDA 9.0.
-  let sync = Foreign.CUDA.Driver.Utils.libraryVersion >= 9000
+      call' = if CUDA.libraryVersion >= 9000
+                 then call . Lam primType mask
+                 else call
 
-  (if sync
-    then call . Lam primType (op primType $ liftWord32 0xffffffff) -- mask, 32 1s means all threads should participate in this shfl
-    else call)
-      (Lam    primType (op primType val)   $                       -- value to provide to other lanes
-        Lam   primType (op primType delta) $                       -- offset in shfl_up/shfl_down, source lane, or mask to XOR
-          Lam primType (op primType width) $                       -- width, see ~10 lines up. Optional in CUDA, required in LLVM
-            Body (PrimType primType)
-                  (Just Tail)
-                  ("llvm.nvvm.shfl."                               -- name of the function, e.g. "llvm.nvvm.shfl.sync.up.i32"
-                    <> (if sync then "sync." else "")              --                         or "llvm.nvvm.shfl.down.f32"
-                    <> mode <> "." <> typ))
-    [Convergent, InaccessibleMemOnly, NoUnwind]
+      sync  = if CUDA.libraryVersion >= 9000 then "sync." else ""
+      asm   = "llvm.nvvm.shfl."
+           <> sync
+           <> case sop of
+                Idx  -> "idx."
+                Up   -> "up."
+                Down -> "down."
+                XOR  -> "bfly."
+           <> case t of
+                ShuffleInt32 -> "i32"
+                ShuffleFloat -> "f32"
+
+      t_val = case t of
+                ShuffleInt32 -> primType :: PrimType Int32
+                ShuffleFloat -> primType :: PrimType Float
+  in
+  call' (Lam t_val (op t_val val) (Lam primType delta (Lam primType width (Body (PrimType t_val) (Just Tail) asm)))) [Convergent, NoUnwind, InaccessibleMemOnly]
+
 
 -- Shared memory
 -- -------------
@@ -525,7 +586,7 @@ staticSharedMem
 staticSharedMem tp n = do
   ad    <- go tp
   return $ IRArray { irArrayRepr       = ArrayR dim1 tp
-                   , irArrayShape      = OP_Pair OP_Unit $ OP_Int $ integral integralType $ P.fromIntegral n
+                   , irArrayShape      = OP_Pair OP_Unit $ OP_Int $ A.integral integralType $ P.fromIntegral n
                    , irArrayData       = ad
                    , irArrayAddrSpace  = sharedMemAddrSpace
                    , irArrayVolatility = sharedMemVolatility
@@ -550,7 +611,7 @@ staticSharedMem tp n = do
       -- Return a pointer to the first element of the __shared__ memory array.
       -- We do this rather than just returning the global reference directly due
       -- to how __shared__ memory needs to be indexed with the GEP instruction.
-      p <- instr' $ GetElementPtr sm [num numType 0, num numType 0 :: Operand Int32]
+      p <- instr' $ GetElementPtr sm [A.num numType 0, A.num numType 0 :: Operand Int32]
       q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
 
       return $ ir t (unPtr q)
@@ -597,9 +658,9 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
-          p <- instr' $ GetElementPtr smem [num numTp 0, i] -- TLM: note initial zero index!!
+          p <- instr' $ GetElementPtr smem [A.num numTp 0, i] -- TLM: note initial zero index!!
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-          a <- instr' $ Mul numTp m (integral int (P.fromIntegral (bytesElt (TupRsingle t))))
+          a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
           b <- instr' $ Add numTp i a
           return (b, ir t (unPtr q))
     --

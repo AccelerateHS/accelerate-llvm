@@ -156,7 +156,7 @@ withPTXTargetMachine dev go =
 --
 -- See table NVPTX supported processors:
 --
---   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td
+--   https://github.com/llvm/llvm-project/blob/master/lib/Target/NVPTX/NVPTX.td
 --
 -- PTX ISA verison history:
 --

@@ -149,15 +149,16 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)   = mutableArray (ArrayR dim1 tp) "out"
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      end                  = indexHead (irArrayShape arrTmp)
-      paramEnv             = envParam aenv
+      (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      end                 = indexHead (irArrayShape arrTmp)
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -268,16 +269,17 @@ mkScanAllP2 dir aenv tp combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      paramEnv             = envParam aenv
-      start                = liftInt 0
-      end                  = indexHead (irArrayShape arrTmp)
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      paramEnv            = envParam aenv
+      start               = liftInt 0
+      end                 = indexHead (irArrayShape arrTmp)
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
-      grid _ _             = 1
-      gridQ                = [|| \_ _ -> 1 ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      grid _ _            = 1
+      gridQ               = [|| \_ _ -> 1 ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -461,15 +463,16 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)   = mutableArray (ArrayR dim1 tp) "out"
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      end                  = indexHead (irArrayShape arrTmp)
-      paramEnv             = envParam aenv
+      (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      end                 = indexHead (irArrayShape arrTmp)
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -573,17 +576,18 @@ mkScan'AllP2 dir aenv tp combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrTmp, paramTmp)   = mutableArray (ArrayR dim1 tp) "tmp"
-      (arrSum, paramSum)   = mutableArray (ArrayR dim0 tp) "sum"
-      paramEnv             = envParam aenv
-      start                = liftInt 0
-      end                  = indexHead (irArrayShape arrTmp)
+      (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
+      (arrSum, paramSum)  = mutableArray (ArrayR dim0 tp) "sum"
+      paramEnv            = envParam aenv
+      start               = liftInt 0
+      end                 = indexHead (irArrayShape arrTmp)
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
-      grid _ _             = 1
-      gridQ                = [|| \_ _ -> 1 ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      grid _ _            = 1
+      gridQ               = [|| \_ _ -> 1 ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -768,13 +772,14 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrOut, paramOut)   = mutableArray repr "out"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      paramEnv             = envParam aenv
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -966,14 +971,15 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
-      (arrSum, paramSum)   = mutableArray (reduceRank repr) "sum"
-      (arrOut, paramOut)   = mutableArray repr "out"
-      (arrIn,  paramIn)    = delayedArray "in" marr
-      paramEnv             = envParam aenv
+      (arrSum, paramSum)  = mutableArray (reduceRank repr) "sum"
+      (arrOut, paramOut)  = mutableArray repr "out"
+      (arrIn,  paramIn)   = delayedArray "in" marr
+      paramEnv            = envParam aenv
       --
-      config               = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n | useShfl dev = warps * bytes
-             | otherwise   = warps * (1 + per_warp) * bytes
+      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
+      smem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -1176,7 +1182,7 @@ scanBlock
     -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
 scanBlock dir dev
-  | useShfl dev = scanBlockShfl dir dev -- shfl instruction available in compute >= 3.0
+  | canShfl dev = scanBlockShfl dir dev -- shfl instruction available in compute >= 3.0
   | otherwise   = scanBlockSMem dir dev -- equivalent, slightly slower version
 
 
@@ -1360,7 +1366,6 @@ scanBlockShfl dir dev tp combine nelem = warpScan >=> warpPrefix
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
       warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
-      -- skip  <- A.mul numType warps (int32 warp_smem_bytes)
       smem  <- dynamicSharedMem tp TypeInt32 warps (liftInt32 0)
 
       -- Share warp aggregates
@@ -1410,7 +1415,7 @@ scanWarpShfl dir dev tp combine = scan 0
     log2 = P.logBase 2
 
     -- Number of steps required to scan warp
-    steps     = P.floor (log2 (P.fromIntegral (CUDA.warpSize dev)))
+    steps = P.floor (log2 (P.fromIntegral (CUDA.warpSize dev)))
 
     -- Unfold the scan as a recursive code generation function
     scan :: Int -> Operands e -> CodeGen PTX (Operands e)
@@ -1420,7 +1425,7 @@ scanWarpShfl dir dev tp combine = scan 0
           let offset = 1 `P.shiftL` step
 
           -- share partial result through shared memory buffer
-          y <- shfl_up tp x (liftWord32 offset)
+          y    <- __shfl_up tp x (liftWord32 offset)
           lane <- laneId
 
           -- update partial result if in range
