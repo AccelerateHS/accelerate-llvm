@@ -37,7 +37,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
-import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlockSMem, reduceWarpSMem, imapFromTo )
+import Data.Array.Accelerate.LLVM.PTX.CodeGen.Fold                  ( reduceBlock, reduceWarpShfl, reduceWarpSMem, imapFromTo )
 import Data.Array.Accelerate.LLVM.PTX.Target
 
 import LLVM.AST.Type.Representation
@@ -47,6 +47,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
 import Data.String                                                  ( fromString )
+import Foreign.Storable                                             ( sizeOf )
 import Prelude                                                      as P
 
 
@@ -95,7 +96,9 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       paramEnv            = envParam aenv
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
-      dsmem n             = warps * (1 + per_warp) * bytes
+      dsmem n
+        | canShfl dev     = warps * bytes
+        | otherwise       = warps * (1 + per_warp) * bytes
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -205,8 +208,8 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
             r0  <- if (tp, A.gte singleType v0 bd)
-                     then reduceBlockSMem dev tp combine Nothing    x0
-                     else reduceBlockSMem dev tp combine (Just v0') x0
+                     then reduceBlock dev tp combine Nothing    x0
+                     else reduceBlock dev tp combine (Just v0') x0
 
             -- Step 2: keep walking over the input
             nxt <- A.add numType inf bd
@@ -222,7 +225,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                              -- can avoid bounds checks.
                              then do
                                x <- app1 (delayedLinearIndex arrIn) i'
-                               y <- reduceBlockSMem dev tp combine Nothing x
+                               y <- reduceBlock dev tp combine Nothing x
                                return y
 
                              -- Not all threads are valid. Note that we still
@@ -241,7 +244,7 @@ mkFoldSegP_block aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                            return $ go tp
 
                                z <- i32 v'
-                               y <- reduceBlockSMem dev tp combine (Just z) x
+                               y <- reduceBlock dev tp combine (Just z) x
                                return y
 
                      -- first thread incorporates the result from the previous
@@ -298,12 +301,27 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       grid n m            = multipleOf n (m `P.quot` ws)
       gridQ               = [|| \n m -> $$multipleOfQ n (m `P.quot` ws) ||]
       --
-      per_warp_bytes      = (per_warp_elems * bytesElt tp) `P.max` (2 * bytesElt tp)
+      per_warp_bytes
+        | canShfl dev     = 0
+        | otherwise       = (2 * sizeOf (undefined::Int)) `P.max` (bytesElt tp * per_warp_elems)
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
       int32 :: Integral a => a -> Operands Int32
       int32 = liftInt32 . P.fromIntegral
+
+      unsmem :: TypeR a -> IRArray (Vector a)
+      unsmem aR =
+        let go :: TypeR s -> Operands s
+            go TupRunit         = OP_Unit
+            go (TupRpair t1 t2) = OP_Pair (go t1) (go t2)
+            go (TupRsingle t)   = ir t (undef t)
+        in
+        IRArray (ArrayR dim1 aR)
+                (OP_Pair OP_Unit (ir integralType (integral integralType 0)))
+                (go aR)
+                sharedMemAddrSpace
+                sharedMemVolatility
   --
   makeOpenAccWith config "foldSeg_warp" (paramOut ++ paramIn ++ paramSeg ++ paramEnv) $ do
 
@@ -333,21 +351,25 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     -- Note that this is aliased with the memory used to communicate reduction
     -- values within the warp.
     --
-    lim   <- do
-      a <- A.mul numType wid (int32 per_warp_bytes)
-      b <- dynamicSharedMem (TupRsingle scalarTypeInt) TypeInt32 (liftInt32 2) a
-      return b
+    lim   <- case canShfl dev of
+      True  -> return (unsmem (TupRsingle scalarTypeInt))
+      False -> do
+        a <- A.mul numType wid (int32 per_warp_bytes)
+        b <- dynamicSharedMem (TupRsingle scalarTypeInt) TypeInt32 (liftInt32 0) a
+        return b
 
     -- Allocate (1.5 * warpSize) elements of shared memory for each warp to
-    -- communicate reduction values.
+    -- communicate reduction values in the SMem kernel.
     --
     -- Note that this is aliased with the memory used to communicate the start
     -- and end indices of this segment.
     --
-    smem  <- do
-      a <- A.mul numType wid (int32 per_warp_bytes)
-      b <- dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
-      return b
+    smem  <- case canShfl dev of
+      True  -> return (unsmem tp)
+      False -> do
+        a <- A.mul numType wid (int32 per_warp_bytes)
+        b <- dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
+        return b
 
     -- Compute the number of segments and size of the innermost dimension. These
     -- are required if we are reducing a rank-2 or higher array, to properly
@@ -374,21 +396,33 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       -- array that we will reduce between and distribute those values to the
       -- other threads in the warp
       lane <- laneId
-      when (A.lt singleType lane (liftInt32 2)) $ do
-        a <- case shr of
-               ShapeRsnoc ShapeRz -> return s
-               _ -> A.rem integralType s ss
-        b <- A.add numType a =<< int lane
-        c <- app1 (delayedLinearIndex arrSeg) b
-        writeArray TypeInt32 lim lane =<< A.fromIntegral intTp numType c
+      idx  <- if (TupRsingle scalarTypeInt, A.lt singleType lane (liftInt32 2))
+                 then do
+                   a <- case shr of
+                          ShapeRsnoc ShapeRz -> return s
+                          _                  -> A.rem integralType s ss
+                   b <- A.add numType a =<< int lane
+                   c <- app1 (delayedLinearIndex arrSeg) b
+                   d <- A.fromIntegral intTp numType c
+                   case canShfl dev of
+                     True  -> return ()
+                     False -> writeArray TypeInt32 lim lane d
+                   return d
+                 else
+                   return (ir integralType (undef scalarType))
 
       __syncwarp
 
       -- Determine the index range of the input array we will reduce over.
       -- Necessary for multidimensional segmented reduction.
       (inf,sup) <- do
-        u <- readArray TypeInt32 lim (liftInt32 0)
-        v <- readArray TypeInt32 lim (liftInt32 1)
+        u <- case canShfl dev of
+               True  -> __shfl_idx (TupRsingle scalarTypeInt) idx (liftWord32 0)
+               False -> readArray TypeInt32 lim (liftInt32 0)
+
+        v <- case canShfl dev of
+               True  -> __shfl_idx (TupRsingle scalarTypeInt) idx (liftWord32 1)
+               False -> readArray TypeInt32 lim (liftInt32 1)
         A.unpair <$> case shr of
                        ShapeRsnoc ShapeRz -> return (A.pair u v)
                        _ -> do q <- A.quot integralType s ss
@@ -429,8 +463,8 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
             v0  <- A.sub numType sup inf
             v0' <- i32 v0
             r0  <- if (tp, A.gte singleType v0 (liftInt ws))
-                     then reduceWarpSMem dev tp combine smem Nothing    x0
-                     else reduceWarpSMem dev tp combine smem (Just v0') x0
+                     then reduceWarp dev tp combine smem Nothing    x0
+                     else reduceWarp dev tp combine smem (Just v0') x0
 
             -- Step 2: Keep walking over the rest of the segment
             nx  <- A.add numType inf (liftInt ws)
@@ -445,7 +479,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                             then do
                               -- All lanes are in bounds, so avoid bounds checks
                               x <- app1 (delayedLinearIndex arrIn) i'
-                              y <- reduceWarpSMem dev tp combine smem Nothing x
+                              y <- reduceWarp dev tp combine smem Nothing x
                               return y
 
                             else do
@@ -460,7 +494,7 @@ mkFoldSegP_warp aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
                                           return $ go tp
 
                               z <- i32 v'
-                              y <- reduceWarpSMem dev tp combine smem (Just z) x
+                              y <- reduceWarp dev tp combine smem (Just z) x
                               return y
 
                     -- The first lane incorporates the result from the previous
@@ -488,4 +522,17 @@ i32 = A.fromIntegral integralType numType
 
 int :: IsIntegral i => Operands i -> CodeGen PTX (Operands Int)
 int = A.fromIntegral integralType numType
+
+reduceWarp
+    :: forall aenv e.
+       DeviceProperties                         -- ^ properties of the target device
+    -> TypeR e
+    -> IRFun2 PTX aenv (e -> e -> e)            -- ^ combination function
+    -> IRArray (Vector e)                       -- ^ temporary storage array in shared memory (1.5 warp size elements)
+    -> Maybe (Operands Int32)                   -- ^ number of items that will be reduced by this warp, otherwise all lanes are valid
+    -> Operands e                               -- ^ calling thread's input element
+    -> CodeGen PTX (Operands e)                 -- ^ warp-wide reduction using the specified operator (lane 0 only)
+reduceWarp dev t c smem
+  | canShfl dev = reduceWarpShfl dev t c
+  | otherwise   = reduceWarpSMem dev t c smem
 

@@ -58,7 +58,7 @@ instance NVVMReflect (ShortByteString, ByteString) where
 -- Compatible version of libdevice for a given compute capability should be
 -- listed here:
 --
---   https://github.com/llvm-mirror/llvm/blob/master/lib/Target/NVPTX/NVPTX.td#L72
+--   https://github.com/llvm/llvm-project/blob/master/lib/Target/NVPTX/NVPTX.td
 --
 class Libdevice a where
   libdevice :: Compute -> a
