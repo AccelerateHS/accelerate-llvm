@@ -454,6 +454,15 @@ shfl sop tR val delta = go tR val
 
             -- not easily divisible into 32-bit chunks, so just treat each
             -- component of the vector individually
+            --
+            -- A better method (save a few instructions?) could be to instead:
+            --
+            --   1. bitcast to an integer of the same number of bits: e.g. bitcast <3 x i16> i48
+            --   2. extend that to the next multiple of 32: e.g. zext i48 i64
+            --   3. bitcast to <m+1 x i32>: e.g. bitcast i64 <2 x i32>
+            --
+            -- But currently our type representations are too restrictive
+            -- to allow this.
             else
               let c = op v a
 
