@@ -84,10 +84,12 @@ import LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
-import qualified LLVM.AST.Constant                                  as LLVM hiding ( type' )
+import qualified LLVM.AST.Constant                                  as LLVM ( Constant(GlobalReference, Int) )
 import qualified LLVM.AST.Global                                    as LLVM
+import qualified LLVM.AST.Instruction                               as LLVM hiding ( type', alignment )
 import qualified LLVM.AST.Linkage                                   as LLVM
 import qualified LLVM.AST.Name                                      as LLVM
+import qualified LLVM.AST.Operand                                   as LLVM ( Operand(..) )
 import qualified LLVM.AST.Type                                      as LLVM
 
 import Control.Applicative
@@ -96,6 +98,7 @@ import Control.Monad.State                                          ( gets )
 import Data.Bits
 import Data.Proxy
 import Foreign.Storable
+import Text.Printf
 import Prelude                                                      as P
 
 import GHC.TypeLits
@@ -410,6 +413,12 @@ shfl sop tR val delta = go tR val
       | SingleDict <- singleDict t
       = let bytes = sizeOf (undefined::s)
             (m,r) = P.quotRem (w * bytes) 4
+
+            withSomeNat :: Int -> (forall m. KnownNat m => Proxy m -> b) -> b
+            withSomeNat n k =
+              case someNatVal (toInteger n) of
+                Nothing          -> error "Welcome to overthinkers club. The first rule of overthinkers club is: yet to be decided."
+                Just (SomeNat p) -> k p
          in
          if r == 0
             -- bitcast into a <m x i32> vector
@@ -423,12 +432,7 @@ shfl sop tR val delta = go tR val
                    return d
 
                  else
-                   let withSomeNat :: Int -> (forall m. KnownNat m => Proxy m -> b) -> b
-                       withSomeNat n k =
-                         case someNatVal (toInteger n) of
-                           Nothing          -> error "Welcome to overthinkers club. The first rule of overthinkers club is: yet to be decided."
-                           Just (SomeNat p) -> k p
-
+                   let
                        vec :: forall m. KnownNat m => Proxy m -> CodeGen PTX (Operands (Vec n s))
                        vec _ = do
                          let v' = VectorType m (singleType @Int32)
@@ -452,30 +456,50 @@ shfl sop tR val delta = go tR val
                    in
                    withSomeNat m vec
 
-            -- not easily divisible into 32-bit chunks, so just treat each
-            -- component of the vector individually
-            --
-            -- A better method (save a few instructions?) could be to instead:
+            -- Round up to the next multiple of 32:
             --
             --   1. bitcast to an integer of the same number of bits: e.g. bitcast <3 x i16> i48
             --   2. extend that to the next multiple of 32: e.g. zext i48 i64
             --   3. bitcast to <m+1 x i32>: e.g. bitcast i64 <2 x i32>
             --
-            -- But currently our type representations are too restrictive
-            -- to allow this.
             else
-              let c = op v a
+              let raw :: LLVM.Type -> LLVM.Instruction -> CodeGen PTX LLVM.Operand
+                  raw ty ins = do
+                    name <- downcast <$> freshName
+                    instr_ (name LLVM.:= ins)
+                    return (LLVM.LocalReference ty name)
 
-                  repack :: Int32 -> CodeGen PTX (Operands (Vec n s))
-                  repack 0 = return $ ir v (A.undef (VectorScalarType v))
-                  repack i = do
-                    d <- instr $ ExtractElement (i-1) c
-                    e <- single t d
-                    f <- repack (i-1)
-                    g <- instr $ InsertElement (i-1) (op v f) (op t e)
-                    return g
-              in
-              repack (P.fromIntegral w)
+                  md :: LLVM.InstructionMetadata
+                  md = []
+
+                  t0 = LLVM.VectorType { LLVM.nVectorElements = P.fromIntegral w, LLVM.elementType = downcast t }
+                  t1 = LLVM.IntegerType { LLVM.typeBits = P.fromIntegral ((w*bytes) * 8) }
+                  t2 = LLVM.IntegerType { LLVM.typeBits = P.fromIntegral ((m+1) * 4 * 8) }
+                  t3 = LLVM.VectorType { LLVM.nVectorElements = P.fromIntegral (m+1), LLVM.elementType = LLVM.i32 }
+
+                  vec :: forall m. KnownNat m => Proxy m -> CodeGen PTX (Operands (Vec n s))
+                  vec _ = do
+                    let
+                        v' :: VectorType (Vec m Int32)
+                        v' = VectorType (m+1) (singleType @Int32)
+
+                        upcast :: Type u -> LLVM.Operand -> Operand u
+                        upcast s (LLVM.LocalReference s' (LLVM.UnName x))
+                          = internalCheck (printf "couldn't match expected type `%s' with actual type `%s'" (show s) (show s')) (s' == downcast s)
+                          $ LocalReference s (UnName x)
+                        upcast _ _
+                          = internalError "expected local reference"
+
+                    b <- raw t1 (LLVM.BitCast (downcast (op v a)) t1 md)
+                    c <- raw t2 (LLVM.ZExt b t2 md)
+                    d <- raw t3 (LLVM.BitCast c t3 md)
+                    e <- vector v' (ir v' (upcast (PrimType (ScalarPrimType (VectorScalarType v'))) d))
+                    f <- raw t2 (LLVM.BitCast (downcast (op v' e)) t2 md)
+                    g <- raw t1 (LLVM.Trunc f t1 md)
+                    h <- raw t0 (LLVM.BitCast g t0 md)
+                    return (ir v (upcast (PrimType (ScalarPrimType (VectorScalarType v))) h))
+               in
+               withSomeNat (m+1) vec
 
     num :: NumType s -> Operands s -> CodeGen PTX (Operands s)
     num (IntegralNumType t) = integral t
