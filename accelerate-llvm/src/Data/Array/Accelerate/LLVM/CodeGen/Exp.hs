@@ -224,7 +224,7 @@ llvmOfOpenExp top env aenv = cvtE top
 
     foreignE :: A.Foreign asm
              => TypeR b
-             -> asm           (a -> b)
+             -> asm    (a -> b)
              -> Fun () (a -> b)
              -> Operands a
              -> IRExp arch () b
