@@ -88,8 +88,9 @@ mkScan aenv repr dir combine seed arr
       _                              -> [ mkScanDim   dir aenv repr combine seed arr
                                         ]
     codeFill = case seed of
-      Just s -> [ mkScanFill aenv repr s ]
+      Just s  -> [ mkScanFill aenv repr s ]
       Nothing -> []
+
 
 -- Variant of 'scanl' where the final result is returned in a separate array.
 --
