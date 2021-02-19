@@ -11,12 +11,12 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Debug (
 
-  module Data.Array.Accelerate.Debug,
+  module Data.Array.Accelerate.Debug.Internal,
   module Data.Array.Accelerate.LLVM.PTX.Debug,
 
 ) where
 
-import Data.Array.Accelerate.Debug                      hiding ( timed, elapsed )
+import Data.Array.Accelerate.Debug.Internal             hiding ( timed, elapsed )
 
 import Foreign.CUDA.Driver.Stream                       ( Stream )
 import qualified Foreign.CUDA.Driver.Event              as Event

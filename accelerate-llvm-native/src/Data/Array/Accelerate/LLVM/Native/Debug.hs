@@ -12,13 +12,13 @@
 
 module Data.Array.Accelerate.LLVM.Native.Debug (
 
-  module Data.Array.Accelerate.Debug,
+  module Data.Array.Accelerate.Debug.Internal,
   module Data.Array.Accelerate.LLVM.Native.Debug,
 
 ) where
 
-import Data.Array.Accelerate.Debug                                  hiding ( elapsed )
-import qualified Data.Array.Accelerate.Debug                        as Debug
+import Data.Array.Accelerate.Debug.Internal                         hiding ( elapsed )
+import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
 import Text.Printf
 

@@ -40,7 +40,7 @@ import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Representation.Vec
 import Data.Array.Accelerate.Type
-import qualified Data.Array.Accelerate.Debug                    as Debug
+import qualified Data.Array.Accelerate.Debug.Internal           as Debug
 
 import Data.Array.Accelerate.LLVM.AST                           hiding ( Delayed, Manifest )
 import Data.Array.Accelerate.LLVM.Array.Data
@@ -283,7 +283,7 @@ executeOpenAcc !topAcc !aenv = travA topAcc
         Atrace msg a1 a2       -> do
           let repr = arraysR a1
           a1' <- travA a1 >>= blockArrays repr >>= copyToHost repr
-          liftIO $ atraceOp msg repr a1'
+          liftIO $ atraceOp msg a1'
           travA a2
 
         -- We need quite some type applications in the rules for acond and awhile, and cannot use do notation.

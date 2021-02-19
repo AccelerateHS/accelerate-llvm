@@ -26,7 +26,7 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), ArrayVar, Direction(..), Exp, liftALeftHandSide, liftOpenExp, arrayR )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), ArrayVar, Direction(..), Exp, liftALeftHandSide, liftOpenExp, liftMessage, arraysR, arrayR )
 import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Error
@@ -164,7 +164,7 @@ liftPreOpenAccCommand arch pacc =
     Unit tp e         -> [|| Unit $$(liftTypeR tp) $$(liftE e) ||]
     Apair a1 a2       -> [|| Apair $$(liftA a1) $$(liftA a2) ||]
     Anil              -> [|| Anil ||]
-    Atrace msg a1 a2  -> [|| Atrace $$(TH.unsafeTExpCoerce $ return $ TH.LitE $ TH.StringL msg) $$(liftA a1) $$(liftA a2) ||]
+    Atrace msg a1 a2  -> [|| Atrace $$(liftMessage (arraysR a1) msg) $$(liftA a1) $$(liftA a2) ||]
     Apply repr f a    -> [|| Apply $$(liftArraysR repr) $$(liftAF f) $$(liftA a) ||]
     Acond p t e       -> [|| Acond $$(liftE p) $$(liftA t) $$(liftA e) ||]
     Awhile p f a      -> [|| Awhile $$(liftAF p) $$(liftAF f) $$(liftA a) ||]

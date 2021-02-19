@@ -29,7 +29,7 @@ import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.LeftHandSide
 import Data.Array.Accelerate.AST.Var
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Trafo.Substitution

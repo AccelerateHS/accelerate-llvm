@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.Native.Link.MachO (
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.Lifetime
-import qualified Data.Array.Accelerate.Debug              as Debug
+import qualified Data.Array.Accelerate.Debug.Internal     as Debug
 
 import Control.Applicative
 import Control.Monad

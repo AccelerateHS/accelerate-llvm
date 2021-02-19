@@ -25,7 +25,7 @@ module Data.Array.Accelerate.LLVM.AST (
 
 import Data.Array.Accelerate.LLVM.Execute.Async
 
-import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), HasArraysR(..), ArrayVar, ALeftHandSide, Exp, Direction, PrimBool, arrayR )
+import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), HasArraysR(..), ArrayVar, ALeftHandSide, Exp, Direction, Message, PrimBool, arrayR )
 import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Representation.Array
@@ -65,7 +65,7 @@ data PreOpenAccCommand acc arch aenv a where
 
   Anil        :: PreOpenAccCommand acc arch aenv ()
 
-  Atrace      :: String
+  Atrace      :: Message                         arrs1
               -> acc                   arch aenv arrs1
               -> acc                   arch aenv arrs2
               -> PreOpenAccCommand acc arch aenv arrs2

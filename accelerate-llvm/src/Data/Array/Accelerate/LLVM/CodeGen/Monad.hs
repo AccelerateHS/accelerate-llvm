@@ -49,7 +49,7 @@ import Data.Array.Accelerate.LLVM.State                             ( LLVM )
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
-import qualified Data.Array.Accelerate.Debug                        as Debug
+import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast

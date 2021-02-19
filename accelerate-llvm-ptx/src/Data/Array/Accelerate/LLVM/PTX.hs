@@ -89,7 +89,7 @@ import Data.Array.Accelerate.AST                                    ( PreOpenAfu
 import Data.Array.Accelerate.AST.LeftHandSide                       ( lhsToTupR )
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Array                   ( liftArraysR )
 import Data.Array.Accelerate.Smart                                  ( Acc )

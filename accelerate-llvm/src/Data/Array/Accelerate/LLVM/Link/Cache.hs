@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Link.Cache (
 
 ) where
 
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.Compile.Cache
 

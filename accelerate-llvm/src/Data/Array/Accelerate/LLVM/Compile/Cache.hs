@@ -20,7 +20,7 @@ module Data.Array.Accelerate.LLVM.Compile.Cache (
 
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.Analysis.Hash
-import Data.Array.Accelerate.Debug
+import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.State
