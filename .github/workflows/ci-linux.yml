@@ -9,9 +9,9 @@ on:
       - '.github/workflows/ci-linux.yml'
       - 'stack*.yaml'
       - '*.cabal'
-      - 'src/**'
-      - 'test/**'
-      - 'cbits/**'
+      - '*/src/**'
+      - '*/test/**'
+      - '*/cbits/**'
 
 jobs:
   build:
