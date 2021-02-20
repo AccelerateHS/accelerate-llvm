@@ -107,7 +107,7 @@ jobs:
 
       - name: Test accelerate-llvm-native
         run: |
-          stack test accelerate-llvm-native $STACK_FLAGS  --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=60s'
+          stack test accelerate-llvm-native $STACK_FLAGS  --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
 
       - name: Test haddock generation
         run: |
