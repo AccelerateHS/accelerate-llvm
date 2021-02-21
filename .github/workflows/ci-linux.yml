@@ -91,7 +91,7 @@ jobs:
 
       - name: Build dependencies
         run: |
-          stack build $STACK_FLAGS --test --no-run-tests --only-dependencies
+          stack build accelerate $STACK_FLAGS --test --no-run-tests --only-dependencies
 
       - name: Build accelerate-llvm
         run: |
