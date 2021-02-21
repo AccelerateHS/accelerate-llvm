@@ -89,9 +89,9 @@ jobs:
           echo "LD_LIBRARY_PATH=/usr/local/cuda-${MATRIX_CUDA}/lib64:$(stack exec ghc -- --print-libdir)/rts:/usr/local/cuda-${MATRIX_CUDA}/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
           echo "/usr/local/cuda-${MATRIX_CUDA}/bin" >> $GITHUB_PATH
 
-      - name: Build dependencies
+      - name: Build accelerate
         run: |
-          stack build accelerate $STACK_FLAGS --test --no-run-tests --only-dependencies
+          stack build accelerate $STACK_FLAGS
 
       - name: Build accelerate-llvm
         run: |
