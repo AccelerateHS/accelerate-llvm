@@ -70,10 +70,6 @@ jobs:
           brew install pkg-config libffi llvm-${{ matrix.llvm }}
           echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
-      - name: Build dependencies
-        run: |
-          stack build $STACK_FLAGS --test --no-run-tests --only-dependencies
-
       - name: Build accelerate
         run: |
           stack build accelerate $STACK_FLAGS
