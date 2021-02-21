@@ -18,7 +18,6 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-      matrix:
         include:
           - ghc: "8.10"
             llvm: "9"
