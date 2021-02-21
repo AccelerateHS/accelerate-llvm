@@ -1,4 +1,4 @@
-name: ci-linux
+name: ci-macos
 
 # Trigger the workflow on push or pull request
 on:
@@ -6,7 +6,7 @@ on:
     # branches: [master]
   push:
     paths:
-      - '.github/workflows/ci-linux.yml'
+      - '.github/workflows/ci-macos.yml'
       - 'stack*.yaml'
       - '*/*.cabal'
       - '*/src/**'
@@ -15,21 +15,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     strategy:
+      matrix:
       matrix:
         include:
           - ghc: "8.10"
             llvm: "9"
-            cuda: "10.2"
-
-          - ghc: "8.8"
-            llvm: "9"
-            cuda: "10.2"
-
-          - ghc: "8.6"
-            llvm: "8"
-            cuda: "10.1"
 
     env:
       STACK_FLAGS: "--fast --flag accelerate:nofib"
@@ -62,7 +54,8 @@ jobs:
         run: |
           mkdir -p ~/.local/bin
           if [[ ! -x ~/.local/bin/stack ]]; then
-            curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+            brew install gnu-tar
+            curl -sL https://get.haskellstack.org/stable/osx-x86_64.tar.gz | gtar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
             chmod a+x ~/.local/bin/stack
           fi
           echo "~/.local/bin" >> $GITHUB_PATH
@@ -74,20 +67,13 @@ jobs:
 
       - name: Install LLVM
         run: |
-          sudo apt-get -y install llvm-${{ matrix.llvm }}-dev
+          brew tap llvm-hs/homebrew-llvm
+          brew install pkg-config libffi llvm-${{ matrix.llvm }}
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
-      - name: Install CUDA
+      - name: Build dependencies
         run: |
-          MATRIX_CUDA=${{ matrix.cuda }}
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
-          sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
-          sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
-          sudo add-apt-repository "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
-          sudo apt-get update
-          sudo apt-get -y install cuda-${MATRIX_CUDA/./-}
-          echo "CUDA_HOME=/usr/local/cuda-${MATRIX_CUDA}" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=/usr/local/cuda-${MATRIX_CUDA}/lib64:$(stack exec ghc -- --print-libdir)/rts:/usr/local/cuda-${MATRIX_CUDA}/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
-          echo "/usr/local/cuda-${MATRIX_CUDA}/bin" >> $GITHUB_PATH
+          stack build $STACK_FLAGS --test --no-run-tests --only-dependencies
 
       - name: Build dependencies
         run: |
@@ -101,9 +87,9 @@ jobs:
         run: |
           stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
 
-      - name: Build accelerate-llvm-ptx
-        run: |
-          stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+      # - name: Build accelerate-llvm-ptx
+      #   run: |
+      #     stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
 
       - name: Test accelerate-llvm-native
         run: |
