@@ -72,15 +72,15 @@ jobs:
 
       - name: Build accelerate
         run: |
-          stack build accelerate $STACK_FLAGS
+          stack build $STACK_FLAGS accelerate
 
       - name: Build accelerate-llvm
         run: |
-          stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
+          stack build $STACK_FLAGS --test --no-run-tests accelerate-llvm
 
       - name: Build accelerate-llvm-native
         run: |
-          stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+          stack build $STACK_FLAGS --test --no-run-tests accelerate-llvm-native
 
       # We can't install CUDA because the root volume is read only
       # - name: Build accelerate-llvm-ptx
@@ -89,9 +89,9 @@ jobs:
 
       - name: Test accelerate-llvm-native
         run: |
-          stack test accelerate-llvm-native $STACK_FLAGS  --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
+          stack test $STACK_FLAGS accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
 
       - name: Test haddock generation
         run: |
-          stack haddock accelerate-llvm accelerate-llvm-native --haddock --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs" $STACK_FLAGS
+          stack haddock $STACK_FLAGS accelerate-llvm accelerate-llvm-native --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
 
