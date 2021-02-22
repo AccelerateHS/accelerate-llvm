@@ -37,7 +37,9 @@ jobs:
 
       - uses: actions/cache@v2
         with:
-          path: ~/.stack
+          path:
+            ~/.stack
+            !~/.stack/setup-exe-cache
           key: ${{ runner.os }}-stack-global-${{ matrix.ghc }}-${{ hashFiles('**.yaml') }}
           restore-keys: |
             ${{ runner.os }}-stack-global-${{ matrix.ghc }}
