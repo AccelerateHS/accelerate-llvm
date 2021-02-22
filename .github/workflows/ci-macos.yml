@@ -82,6 +82,7 @@ jobs:
         run: |
           stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
 
+      # We can't install CUDA because the root volume is read only
       # - name: Build accelerate-llvm-ptx
       #   run: |
       #     stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
@@ -92,5 +93,5 @@ jobs:
 
       - name: Test haddock generation
         run: |
-          stack haddock --haddock --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs" $STACK_FLAGS
+          stack haddock accelerate-llvm accelerate-llvm-native --haddock --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs" $STACK_FLAGS
 
