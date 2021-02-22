@@ -49,6 +49,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-stack-local-${{ matrix.ghc }}
 
+      - name: env
+        run: |
+          env
+
       - name: Install stack
         run: |
           mkdir -p ~/.local/bin
