@@ -92,25 +92,25 @@ jobs:
           echo "LD_LIBRARY_PATH=/usr/local/cuda-${MATRIX_CUDA}/lib64:$(stack exec ghc -- --print-libdir)/rts:/usr/local/cuda-${MATRIX_CUDA}/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
           echo "/usr/local/cuda-${MATRIX_CUDA}/bin" >> $GITHUB_PATH
 
-      - name: Build accelerate
+      - name: Build dependencies
         run: |
-          stack build $STACK_FLAGS accelerate
+          stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
 
       - name: Build accelerate-llvm
         run: |
-          stack build $STACK_FLAGS --test --no-run-tests accelerate-llvm
+          stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
 
       - name: Build accelerate-llvm-native
         run: |
-          stack build $STACK_FLAGS --test --no-run-tests accelerate-llvm-native
+          stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
 
       - name: Build accelerate-llvm-ptx
         run: |
-          stack build $STACK_FLAGS --test --no-run-tests accelerate-llvm-ptx
+          stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
 
       - name: Test accelerate-llvm-native
         run: |
-          stack test $STACK_FLAGS accelerate-llvm-native --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
+          stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
 
       - name: Test haddock generation
         run: |
