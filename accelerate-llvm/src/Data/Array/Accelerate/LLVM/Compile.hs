@@ -150,6 +150,7 @@ compileOpenAcc = traverseAcc
         Apair a1 a2                 -> plain =<< liftA2 AST.Apair     <$> travA a1 <*> travA a2
         Anil                        -> plain $ pure AST.Anil
         Atrace msg a1 a2            -> plain =<< liftA2 (AST.Atrace msg) <$> travA a1 <*> travA a2
+        Aerror repr msg a           -> plain =<< liftA (AST.Aerror repr msg) <$> travA a
 
         -- Foreign arrays operations
         Aforeign repr ff afun a     -> foreignA repr ff afun a
