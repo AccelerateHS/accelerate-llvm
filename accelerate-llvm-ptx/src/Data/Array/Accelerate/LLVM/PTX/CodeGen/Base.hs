@@ -578,11 +578,13 @@ shfl_op sop t delta val = do
       mask :: Operand Int32
       mask  = A.integral integralType (-1) -- all threads participate
 
-      call' = if CUDA.libraryVersion >= 9000
+      useSyncShfl = CUDA.computeCapability dev >= Compute 7 0
+
+      call' = if useSyncShfl
                  then call . Lam primType mask
                  else call
 
-      sync  = if CUDA.computeCapability dev >= Compute 7 0 then "sync." else ""
+      sync  = if useSyncShfl then "sync." else ""
       asm   = "llvm.nvvm.shfl."
            <> sync
            <> case sop of
