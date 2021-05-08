@@ -550,7 +550,9 @@ shfl_op
     -> Operand Word32               -- delta
     -> Operands a                   -- value to give
     -> CodeGen PTX (Operands a)     -- value received
-shfl_op sop t delta val =
+shfl_op sop t delta val = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+
   let
       -- The CUDA __shfl* instruction take an optional final parameter
       -- which is the warp size. Setting this value to something (always
@@ -580,7 +582,7 @@ shfl_op sop t delta val =
                  then call . Lam primType mask
                  else call
 
-      sync  = if CUDA.libraryVersion >= 9000 then "sync." else ""
+      sync  = if CUDA.computeCapability dev >= Compute 7 0 then "sync." else ""
       asm   = "llvm.nvvm.shfl."
            <> sync
            <> case sop of
@@ -595,7 +597,7 @@ shfl_op sop t delta val =
       t_val = case t of
                 ShuffleInt32 -> primType :: PrimType Int32
                 ShuffleFloat -> primType :: PrimType Float
-  in
+
   call' (Lam t_val (op t_val val) (Lam primType delta (Lam primType width (Body (PrimType t_val) (Just Tail) asm)))) [Convergent, NoUnwind, InaccessibleMemOnly]
 
 
