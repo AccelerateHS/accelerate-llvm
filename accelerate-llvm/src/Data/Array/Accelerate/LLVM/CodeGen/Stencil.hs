@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -34,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 
 import Control.Applicative
+import Data.String
 import Prelude
 
 

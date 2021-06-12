@@ -1,8 +1,9 @@
-{-# LANGUAGE GADTs         #-}
-{-# LANGUAGE LambdaCase    #-}
-{-# LANGUAGE RankNTypes    #-}
-{-# LANGUAGE TypeFamilies  #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE TypeOperators     #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.IR
@@ -27,6 +28,7 @@ import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
 import Data.Primitive.Vec
+import Data.Text.Format
 
 import qualified Data.ByteString.Short                              as B
 
@@ -72,10 +74,10 @@ instance IROP Type where
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
   op BoolPrimType       = \case OP_Bool x -> x
-  op t                  = internalError ("unhandled type: " ++ show t)
+  op t                  = internalError $ build "unhandled type: {}" (Only t)
   ir (ScalarPrimType t) = ir t
   ir BoolPrimType       = OP_Bool
-  ir t                  = internalError ("unhandled type: " ++ show t)
+  ir t                  = internalError $ build "unhandled type: {}" (Only t)
 
 instance IROP ScalarType where
   op (SingleScalarType t) = op t

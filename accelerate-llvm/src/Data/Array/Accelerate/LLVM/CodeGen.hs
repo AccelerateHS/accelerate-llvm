@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -123,6 +124,6 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
 
     -- sadness
     fusionError, unexpectedError :: error
-    fusionError      = internalError $ "unexpected fusible material: " ++ showPreAccOp pacc
-    unexpectedError  = internalError $ "unexpected array primitive: "  ++ showPreAccOp pacc
+    fusionError      = internalError $ "unexpected fusible material: " <> showPreAccOp pacc
+    unexpectedError  = internalError $ "unexpected array primitive: "  <> showPreAccOp pacc
 

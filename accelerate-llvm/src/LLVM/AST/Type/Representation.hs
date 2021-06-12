@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Representation
@@ -32,6 +33,8 @@ import qualified LLVM.AST.Type                                      as LLVM
 
 import Foreign.Ptr
 import Text.Printf
+import Data.Text.Buildable
+import qualified Data.Text.Format                                   as F
 
 
 -- Witnesses to observe the LLVM type hierarchy:
@@ -263,10 +266,23 @@ instance Show (PrimType a) where
     where
       p             = show t
       a | n == 0    = ""
-        | otherwise = printf "[addrspace %d]" n
+        | otherwise = printf "[addrspace %d]" n :: String
       -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
       --   | otherwise           = show t
 
+instance Buildable (Type a) where
+  build VoidType     = "()"
+  build (PrimType t) = build t
+
+instance Buildable (PrimType a) where
+  build BoolPrimType                  = "Bool"
+  build (ScalarPrimType t)            = build t
+  build (StructPrimType t)            = build t
+  build (ArrayPrimType n t)           = F.build "[{} x {}]" (n, t)
+  build (PtrPrimType t (AddrSpace n)) = F.build "Ptr{} {}" (a, t)
+    where
+      a | n == 0    = ""
+        | otherwise = F.build "[addrspace {}]" (F.Only n)
 
 -- | Does the concrete type represent signed or unsigned values?
 --

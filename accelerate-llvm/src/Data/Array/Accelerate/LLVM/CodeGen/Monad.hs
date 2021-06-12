@@ -70,8 +70,9 @@ import Data.HashMap.Strict                                          ( HashMap )
 import Data.Map                                                     ( Map )
 import Data.Sequence                                                ( Seq )
 import Data.String
+import Data.Text.Format
+import Data.Text.Lazy.Builder                                       ( Builder )
 import Prelude
-import Text.Printf
 import qualified Data.Foldable                                      as F
 import qualified Data.HashMap.Strict                                as HashMap
 import qualified Data.Map                                           as Map
@@ -189,7 +190,7 @@ newBlock nm =
     let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (fromString label) Seq.empty err
-        err     = internalError (printf "block `%s' has no terminator" label)
+        err     = internalError (build "block `{}' has no terminator" (Only label))
     in
     ( next, s )
 
@@ -224,7 +225,7 @@ createBlocks
               m      = Seq.length (blockChain s)
               n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
           in
-          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( F.toList blocks , s' )
+          trace (build "generated {} instructions in %d blocks" (n+m, m)) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
       LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)
@@ -403,15 +404,15 @@ addMetadata key val =
 -- definition.
 --
 createMetadata :: HashMap ShortByteString (Seq [Maybe Metadata]) -> [LLVM.Definition]
-createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
+createMetadata md = go (HashMap.toList md) (Seq.empty, Seq.empty)
   where
-    build :: [(ShortByteString, Seq [Maybe Metadata])]
-          -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
-          -> [LLVM.Definition]
-    build []     (k,d) = F.toList (k Seq.>< d)
-    build (x:xs) (k,d) =
+    go :: [(ShortByteString, Seq [Maybe Metadata])]
+       -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
+       -> [LLVM.Definition]
+    go []     (k,d) = F.toList (k Seq.>< d)
+    go (x:xs) (k,d) =
       let (k',d') = meta (Seq.length d) x
-      in  build xs (k Seq.|> k', d Seq.>< d')
+      in  go xs (k Seq.|> k', d Seq.>< d')
 
     meta :: Int                                         -- number of metadata node definitions so far
          -> (ShortByteString, Seq [Maybe Metadata])     -- current assoc of the metadata map
@@ -428,6 +429,6 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
 -- =====
 
 {-# INLINE trace #-}
-trace :: String -> a -> a
-trace msg = Debug.trace Debug.dump_cc ("llvm: " ++ msg)
+trace :: Builder -> a -> a
+trace msg = Debug.trace Debug.dump_cc ("llvm: " <> msg)
 
