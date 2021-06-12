@@ -1,5 +1,6 @@
-{-# LANGUAGE CPP           #-}
-{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Debug
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -20,22 +21,23 @@ module Data.Array.Accelerate.LLVM.Native.Debug (
 import Data.Array.Accelerate.Debug.Internal                         hiding ( elapsed )
 import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
-import Text.Printf
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 
 
 -- | Display elapsed wall and CPU time, together with speedup fraction
 --
 {-# INLINEABLE elapsedP #-}
-elapsedP :: Double -> Double -> String
+elapsedP :: Double -> Double -> Builder
 elapsedP wallTime cpuTime =
-  printf "%s (wall), %s (cpu), %.2f x speedup"
-    (showFFloatSIBase (Just 3) 1000 wallTime "s")
-    (showFFloatSIBase (Just 3) 1000 cpuTime  "s")
-    (cpuTime / wallTime)
+  build "{} (wall), {} (cpu), {} x speedup"
+    ( showFFloatSIBase (Just 3) 1000 wallTime "s"
+    , showFFloatSIBase (Just 3) 1000 cpuTime  "s"
+    , fixed 2 (cpuTime / wallTime) )
 
 -- | Display elapsed wall and CPU time
 --
 {-# INLINEABLE elapsedS #-}
-elapsedS :: Double -> Double -> String
+elapsedS :: Double -> Double -> Builder
 elapsedS = Debug.elapsed
 

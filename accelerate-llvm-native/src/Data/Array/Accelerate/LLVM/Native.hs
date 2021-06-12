@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP                  #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RankNTypes           #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell      #-}
@@ -79,8 +80,9 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Control.Monad.Trans
+import Data.Text.Lazy.Builder
 import System.IO.Unsafe
-import Text.Printf
+import qualified Data.Text.Format                                   as F
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
@@ -422,6 +424,6 @@ runQ' using target f = do
 dumpStats :: MonadIO m => a -> m a
 dumpStats x = liftIO dumpSimplStats >> return x
 
-phase :: MonadIO m => String -> (Double -> Double -> String) -> m a -> m a
-phase n fmt go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (fmt wall cpu)) go
+phase :: MonadIO m => Builder -> (Double -> Double -> Builder) -> m a -> m a
+phase n fmt go = timed dump_phases (\wall cpu -> F.build "phase {}: {}" (n, fmt wall cpu)) go
 

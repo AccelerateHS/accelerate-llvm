@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.State
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -27,7 +28,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 import Data.Maybe
 import System.Environment
 import System.IO.Unsafe
-import Text.Printf
+import Data.Text.Format
 import Text.Read
 import Prelude                                                  as P
 
@@ -128,7 +129,7 @@ defaultTarget = unsafePerformIO $ do
   --
   setNumCapabilities (max ncaps nthreads)
 
-  Debug.traceIO Debug.dump_gc (printf "gc: initialise native target with %d worker threads" nthreads)
+  Debug.traceIO Debug.dump_gc (build "gc: initialise native target with {} worker threads" (Only nthreads))
   createTarget [0 .. nthreads-1]
 
 

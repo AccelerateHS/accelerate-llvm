@@ -127,6 +127,8 @@ Library
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
         , template-haskell
+        , text                          >= 1.2
+        , text-format                   >= 0.3
         , unique
         , vector                        >= 0.11
 

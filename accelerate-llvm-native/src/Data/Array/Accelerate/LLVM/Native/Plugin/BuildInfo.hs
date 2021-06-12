@@ -17,6 +17,7 @@ import Module
 
 import Data.Map                                                     ( Map )
 import Data.Serialize
+import Data.Text.Lazy.Builder
 import System.Directory
 import System.FilePath
 import qualified Data.ByteString                                    as B
@@ -36,7 +37,7 @@ readBuildInfo path = do
     else do
       f <- B.readFile path
       case decode f of
-        Left err -> internalError err
+        Left err -> internalError (fromString err)
         Right m  -> return m
 
 writeBuildInfo :: FilePath -> Map Module [FilePath] -> IO ()

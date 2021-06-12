@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE TemplateHaskell          #-}
 -- |
@@ -30,6 +31,9 @@ import Data.Bits
 import Data.ByteString                                    ( ByteString )
 import Data.Maybe                                         ( catMaybes )
 import Data.Serialize.Get
+import Data.Text.Format
+import Data.Text.Encoding
+import Data.Text.Lazy.Builder                             ( Builder, fromString )
 import Data.Vector                                        ( Vector )
 import Data.Word
 import Foreign.C
@@ -50,6 +54,7 @@ import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
 import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
+import qualified Data.Text.Buildable                      as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
 
@@ -77,7 +82,7 @@ import Prelude                                            as P
 loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err            -> internalError err
+    Left err            -> internalError (fromString err)
     Right (symtab, lcs) -> loadSegments obj symtab lcs
 
 
@@ -101,7 +106,7 @@ loadSegments obj symtab lcs = do
   let extern Symbol{..}   = sym_extern && sym_segment > 0
       resolve Symbol{..}  =
         let Segment _ fp  = segs V.! (fromIntegral (sym_segment-1))
-            name          = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
+            name          = BS.toShort sym_name
             addr          = castPtrToFunPtr (unsafeForeignPtrToPtr fp `plusPtr` fromIntegral sym_value)
         in
         (name, addr)
@@ -115,7 +120,7 @@ loadSegments obj symtab lcs = do
   --
   objectcode' <- newLifetime objectcode
   addFinalizer objectcode' $ do
-    Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show funtab)
+    Debug.traceIO Debug.dump_gc ("gc: unload module: " <> B.build (Shown funtab))
     forM_ objectcode $ \(Segment vmsize oc_fp) -> do
       withForeignPtr oc_fp $ \oc_p -> do
         mprotect oc_p vmsize ({#const PROT_READ#} .|. {#const PROT_WRITE#})
@@ -227,7 +232,7 @@ processRelocation symtab LoadSegment{} seg_p jump_p sec RelocationInfo{..}
                    let value'     = castPtrToWord64 (jump_p `plusPtr` (ri_symbolnum * 16 + 8))
                        value'_rel = value' - pc' - 2 ^ ri_length
                    --
-                   -- message (printf "relocating %s via jump table" (B8.unpack (sym_name (symtab V.! ri_symbolnum))))
+                   -- message (build "relocating {} via jump table" (Only (decodeUtf8 (sym_name (symtab V.! ri_symbolnum)))))
                    relocate value'_rel
 
   -- Internal relocation (to constant sections, for example). Since the sections
@@ -440,7 +445,7 @@ readLoadCommand p@Peek{..} obj = do
     {#const LC_LOAD_DYLIB#} -> fail "unhandled LC_LOAD_DYLIB"
     this                    -> do if required
                                     then fail    (printf "unknown load command required for execution: 0x%x" this)
-                                    else message (printf "skipping load command: 0x%x" this)
+                                    else message (build  "skipping load command: 0x{}" (Only (hex this)))
                                   skip (cmdsize - 8)
                                   return Nothing
 
@@ -464,7 +469,7 @@ readLoadSegment32 p@Peek{..} obj = do
   nsect     <- fromIntegral <$> getWord32
   skip 4    -- flags
   --
-  message (printf "LC_SEGMENT:            Mem: 0x%09x-0x09%x" vmaddr (vmaddr + vmsize))
+  message (build "LC_SEGMENT:            Mem: 0x{}-0x{}" (left 9 '0' (hex vmaddr), left 9 '0' (hex (vmaddr + vmsize))))
   secs      <- V.replicateM nsect (readLoadSection32 p obj)
   --
   return LoadSegment
@@ -487,7 +492,7 @@ readLoadSegment64 p@Peek{..} obj = do
   nsect     <- fromIntegral <$> getWord32
   skip 4    -- flags
   --
-  message (printf "LC_SEGMENT_64:         Mem: 0x%09x-0x%09x" vmaddr (vmaddr + vmsize))
+  message (build "LC_SEGMENT_64:         Mem: 0x{}-0x{}" (left 9 '0' (hex vmaddr), left 9 '0' (hex (vmaddr + vmsize))))
   secs      <- V.replicateM nsect (readLoadSection64 p obj)
   --
   return LoadSegment
@@ -511,7 +516,7 @@ readLoadSection32 p@Peek{..} obj = do
   nreloc    <- fromIntegral <$> getWord32
   skip 12   -- flags, reserved1, reserved2
   --
-  message (printf "  Mem: 0x%09x-0x%09x         %s.%s" addr (addr+size) (B8.unpack segname) (B8.unpack secname))
+  message (build "  Mem: 0x{}-0x{}         {}.{}" (left 9 '0' (hex addr), left 9 '0' (hex (addr+size)), decodeUtf8 segname, decodeUtf8 secname))
   relocs    <- either fail return $ runGet (V.replicateM nreloc (loadRelocation p)) (B.drop reloff obj)
   --
   return LoadSection
@@ -535,7 +540,7 @@ readLoadSection64 p@Peek{..} obj = do
   reloff    <- fromIntegral <$> getWord32
   nreloc    <- fromIntegral <$> getWord32
   skip 16   -- flags, reserved1, reserved2, reserved3
-  message (printf "  Mem: 0x%09x-0x%09x         %s.%s" addr (addr+size) (B8.unpack segname) (B8.unpack secname))
+  message (build "  Mem: 0x{}-0x{}         {}.{}" (left 9 '0' (hex addr), left 9 '0' (hex (addr+size)), decodeUtf8 segname, decodeUtf8 secname))
   relocs    <- either fail return $ runGet (V.replicateM nreloc (loadRelocation p)) (B.drop reloff obj)
   --
   return LoadSection
@@ -560,7 +565,7 @@ loadRelocation Peek{..} = do
       rtype'  = toEnum (fromIntegral rtype)
   --
   when (toBool $ addr .&. {#const R_SCATTERED#}) $ fail "unhandled scatted relocation info"
-  message (printf "    Reloc: 0x%04x to %s %d: length=%d, pcrel=%s, type=%s" addr (if extern then "symbol" else "section") symbol len (show pcrel) (show rtype'))
+  message (build "    Reloc: 0x{} to {} {}: length={}, pcrel={}, type={}" ( left 4 '0' (hex addr), if extern then "symbol" else "section" :: Builder, symbol, len, pcrel, Shown rtype'))
   --
   return RelocationInfo
           { ri_address   = addr
@@ -579,8 +584,8 @@ readLoadSymbolTable p@Peek{..} obj = do
   stroff  <- fromIntegral <$> getWord32
   strsize <- getWord32
   message "LC_SYMTAB"
-  message (printf "  symbol table is at offset 0x%x (%d), %d entries" symoff symoff nsyms)
-  message (printf "  string table is at offset 0x%x (%d), %d bytes" stroff stroff strsize)
+  message (build "  symbol table is at offset 0x{} ({}), {} entries" (hex symoff, symoff, nsyms))
+  message (build "  string table is at offset 0x{} ({}), {} bytes"   (hex stroff, stroff, strsize))
   --
   let symbols = B.drop symoff obj
       strtab  = B.drop stroff obj
@@ -609,23 +614,23 @@ readDynamicSymbolTable Peek{..} _obj = do
       message "LC_DYSYMTAB:"
       --
       if nlocalsym > 0
-        then message (printf "  %d local symbols at index %d" nlocalsym ilocalsym)
-        else message (printf "  No local symbols")
+        then message (build "  {} local symbols at index {}" (nlocalsym, ilocalsym))
+        else message        "  No local symbols"
       if nextdefsym > 0
-        then message (printf "  %d external symbols at index %d" nextdefsym iextdefsym)
-        else message (printf "  No external symbols")
+        then message (build "  {} external symbols at index {}" (nextdefsym, iextdefsym))
+        else message        "  No external symbols"
       if nundefsym > 0
-        then message (printf "  %d undefined symbols at index %d" nundefsym iundefsym)
-        else message (printf "  No undefined symbols")
+        then message (build "  {} undefined symbols at index {}" (nundefsym, iundefsym))
+        else message        "  No undefined symbols"
       if ntoc > 0
-        then message (printf "  %d table of contents entries" ntoc)
-        else message (printf "  No table of contents")
+        then message (build "  {} table of contents entries" (Only ntoc))
+        else message        "  No table of contents"
       if nmodtab > 0
-        then message (printf "  %d module table entries" nmodtab)
-        else message (printf "  No module table")
+        then message (build "  {} module table entries" (Only nmodtab))
+        else message        "  No module table"
       if nindirectsyms > 0
-        then message (printf "  %d indirect symbols" nindirectsyms)
-        else message (printf "  No indirect symbols")
+        then message (build "  {} indirect symbols" (Only nindirectsyms))
+        else message        "  No indirect symbols"
 
 loadSymbol :: Peek -> ByteString -> Get Symbol
 loadSymbol Peek{..} strtab = do
@@ -656,7 +661,7 @@ loadSymbol Peek{..} strtab = do
   case n_type of
     {#const N_UNDF#} -> do
         funptr <- resolveSymbol name
-        message (printf "    %s: external symbol found at %s" (B8.unpack name) (show funptr))
+        message (build "    {}: external symbol found at {}" (decodeUtf8 name, Shown funptr))
         return Symbol
                 { sym_name    = name
                 , sym_extern  = toBool n_ext
@@ -665,7 +670,7 @@ loadSymbol Peek{..} strtab = do
                 }
 
     {#const N_SECT#} -> do
-        message (printf "    %s: local symbol in section %d at 0x%02x" (B8.unpack name) n_sect n_value)
+        message (build "    {}: local symbol in section {} at 0x{}" (decodeUtf8 name, n_sect, left 2 '0' (hex n_value)))
         return Symbol
                 { sym_name    = name
                 , sym_extern  = toBool n_ext
@@ -724,10 +729,10 @@ foreign import ccall unsafe "getpagesize"
 -- -----
 
 {-# INLINE trace #-}
-trace :: String -> a -> a
-trace msg = Debug.trace Debug.dump_ld ("ld: " ++ msg)
+trace :: Builder -> a -> a
+trace msg = Debug.trace Debug.dump_ld ("ld: " <> msg)
 
 {-# INLINE message #-}
-message :: Monad m => String -> m ()
+message :: Monad m => Builder -> m ()
 message msg = trace msg (return ())
 

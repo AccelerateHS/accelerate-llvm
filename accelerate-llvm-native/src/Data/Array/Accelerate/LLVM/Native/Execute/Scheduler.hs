@@ -1,10 +1,12 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE UnboxedTuples       #-}
+{-# LANGUAGE UnliftedFFITypes    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 -- Copyright   : [2018..2020] The Accelerate Team
@@ -34,10 +36,13 @@ import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
 import Data.Int
 import Data.Sequence                                                ( Seq )
-import Text.Printf
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import qualified Data.Sequence                                      as Seq
 
-import GHC.Base
+import Foreign.C.Types
+import GHC.Base                                                     hiding ( build )
+import GHC.Conc
 
 #include "MachDeps.h"
 
@@ -135,7 +140,7 @@ runWorker tid ref queue = loop 0
                          --
                          -- When some other thread pushes new work, it will also write to that MVar
                          -- and this thread will wake up.
-                         message $ printf "sched: %s sleeping" (show tid)
+                         message $ build "sched: Thread {} sleeping" (Only (getThreadId tid))
 
                          -- blocking, wake-up when new work is available
                          () <- readMVar var
@@ -143,7 +148,7 @@ runWorker tid ref queue = loop 0
         --
         Just task -> case task of
                        Work io -> io >> loop 0
-                       Retire  -> message $ printf "sched: %s shutting down" (show tid)
+                       Retire  -> message $ build "sched: Thread {} shutting down" (Only (getThreadId tid))
 
 
 -- Spawn a new worker thread for each capability
@@ -169,7 +174,7 @@ hireWorkersOn caps = do
                                   (restore $ runWorker tid workerActive workerTaskQueue)
                                   (appendMVar workerException . (tid,))
                        --
-                       message $ printf "sched: fork %s on capability %d" (show tid) cpu
+                       message $ build "sched: fork Thread {} on capability {}" (getThreadId tid, cpu)
                        return tid
   --
   workerThreadIds `deepseq` return Workers { workerCount = length workerThreadIds, ..}
@@ -253,6 +258,13 @@ appendMVar mvar a =
 -- Debug
 -- -----
 
-message :: String -> IO ()
+message :: Builder -> IO ()
 message = D.traceIO D.dump_sched
+
+getThreadId :: ThreadId -> Int32
+getThreadId (ThreadId t#) =
+  case getThreadId# t# of
+    CInt i -> i
+
+foreign import ccall unsafe "rts_getThreadId" getThreadId# :: ThreadId# -> CInt
 
