@@ -6,7 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE UnboxedTuples       #-}
-{-# LANGUAGE UnliftedFFITypes    #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 -- Copyright   : [2018..2020] The Accelerate Team
@@ -29,6 +28,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as D
 
 import Control.Concurrent
+import Control.Concurrent.Extra
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad
@@ -40,9 +40,7 @@ import Data.Text.Format
 import Data.Text.Lazy.Builder
 import qualified Data.Sequence                                      as Seq
 
-import Foreign.C.Types
 import GHC.Base                                                     hiding ( build )
-import GHC.Conc
 
 #include "MachDeps.h"
 
@@ -260,11 +258,4 @@ appendMVar mvar a =
 
 message :: Builder -> IO ()
 message = D.traceIO D.dump_sched
-
-getThreadId :: ThreadId -> Int32
-getThreadId (ThreadId t#) =
-  case getThreadId# t# of
-    CInt i -> i
-
-foreign import ccall unsafe "rts_getThreadId" getThreadId# :: ThreadId# -> CInt
 

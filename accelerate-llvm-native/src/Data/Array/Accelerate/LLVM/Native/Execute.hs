@@ -3,14 +3,12 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GADTs                    #-}
 {-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE MagicHash                #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TemplateHaskell          #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeOperators            #-}
-{-# LANGUAGE UnliftedFFITypes         #-}
 {-# LANGUAGE ViewPatterns             #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
@@ -54,6 +52,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Control.Concurrent                                           ( myThreadId )
+import Control.Concurrent.Extra                                     ( getThreadId )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -72,9 +71,6 @@ import Prelude                                                      hiding ( map
 
 import Foreign.LibFFI
 import Foreign.Ptr
-
-import GHC.Conc                                                     ( ThreadId(..) )
-import GHC.Exts                                                     ( ThreadId# )
 
 {-# SPECIALISE INLINE executeAcc     :: ExecAcc     Native      a ->             Par Native (FutureArraysR Native a) #-}
 {-# SPECIALISE INLINE executeOpenAcc :: ExecOpenAcc Native aenv a -> Val aenv -> Par Native (FutureArraysR Native a) #-}
@@ -1013,11 +1009,4 @@ sched msg
   $ Debug.when Debug.dump_sched
   $ do tid <- myThreadId
        Debug.putTraceMsg $ build "sched: Thread {} {}" (getThreadId tid, msg)
-
-getThreadId :: ThreadId -> Int32
-getThreadId (ThreadId t#) =
-  case getThreadId# t# of
-    CInt i -> i
-
-foreign import ccall unsafe "rts_getThreadId" getThreadId# :: ThreadId# -> CInt
 

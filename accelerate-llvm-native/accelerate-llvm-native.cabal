@@ -106,6 +106,8 @@ Library
     Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
     Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
+    Control.Concurrent.Extra
+
     Paths_accelerate_llvm_native
 
   build-depends:
