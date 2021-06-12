@@ -971,7 +971,8 @@ timed name job =
   case Debug.debuggingIsEnabled of
     False -> return job
     True  -> do
-      yes <- Debug.getFlag Debug.dump_exec
+      yes     <- Debug.getFlag Debug.dump_exec
+      verbose <- Debug.getFlag Debug.verbose
       if yes
         then do
           ref1 <- newIORef 0
@@ -988,8 +989,10 @@ timed name job =
                          --
                          let wallTime = wall1 - wall0
                              cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+                             name' | verbose   = S8.unpack name
+                                   | otherwise = takeWhile (/= '_') (S8.unpack name)
                          --
-                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (S8.unpack name, Debug.elapsedP wallTime cpuTime)
+                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (name', Debug.elapsedP wallTime cpuTime)
               --
           return $ Job { jobTasks = start Seq.<| jobTasks job
                        , jobDone  = case jobDone job of
