@@ -21,9 +21,11 @@ module Data.Array.Accelerate.LLVM.Native.Link.MachO (
 ) where
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Debug.Internal     as Debug
+
+import Data.Array.Accelerate.LLVM.Native.Link.Object
+import qualified Data.Array.Accelerate.LLVM.Link.Tracy    as Tracy
 
 import Control.Applicative
 import Control.Monad
@@ -31,8 +33,8 @@ import Data.Bits
 import Data.ByteString                                    ( ByteString )
 import Data.Maybe                                         ( catMaybes )
 import Data.Serialize.Get
-import Data.Text.Format
 import Data.Text.Encoding
+import Data.Text.Format
 import Data.Text.Lazy.Builder                             ( Builder, fromString )
 import Data.Vector                                        ( Vector )
 import Data.Word
@@ -54,6 +56,7 @@ import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
 import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
+import qualified Data.HashMap.Strict                      as HashMap
 import qualified Data.Text.Buildable                      as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
@@ -688,6 +691,15 @@ loadSymbol Peek{..} strtab = do
 --
 resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
+  -- static addresses of profiling hooks
+  | Debug.profilingIsEnabled
+  , "___tracy" `B8.isPrefixOf` name
+  = case HashMap.lookup name Tracy.symtab of
+      Nothing   -> fail $ printf "failed to resolve symbol %s" (B8.unpack name)
+      Just addr -> return addr
+
+  -- dynamic addresses from shared libraries
+  | otherwise
   = unsafePerformIO
   $ B.unsafeUseAsCString name $ \c_name -> do
       addr <- c_dlsym (packDL Default) c_name
