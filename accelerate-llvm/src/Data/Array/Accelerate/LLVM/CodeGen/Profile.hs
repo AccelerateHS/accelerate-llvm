@@ -50,7 +50,7 @@ zone line src fun f = do
   l <- alloc_srcloc line src fun
   z <- zone_begin l
   r <- f z
-  zone_end l
+  zone_end z
   return r
 
 -- zone_name
