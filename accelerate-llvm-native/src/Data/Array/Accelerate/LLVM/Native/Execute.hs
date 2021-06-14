@@ -773,6 +773,7 @@ aforeignOp
     -> as
     -> Par Native (Future bs)
 aforeignOp name _ _ asm arr = do
+  -- TODO: add tracy marks
   Debug.timed Debug.dump_exec (\wall cpu -> build "exec: {} {}" (name, Debug.elapsedP wall cpu)) (asm arr)
 
 
