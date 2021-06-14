@@ -25,7 +25,7 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
 
 ) where
 
-import qualified Data.Array.Accelerate.LLVM.Native.Debug            as D
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Control.Concurrent
 import Control.Concurrent.Extra
@@ -38,6 +38,8 @@ import Data.Int
 import Data.Sequence                                                ( Seq )
 import Data.Text.Format
 import Data.Text.Lazy.Builder
+import Foreign.C.String
+import Text.Printf
 import qualified Data.Sequence                                      as Seq
 
 import GHC.Base                                                     hiding ( build )
@@ -168,6 +170,8 @@ hireWorkersOn caps = do
   workerThreadIds <- forM caps $ \cpu -> do
                        tid <- mask_ $ forkOnWithUnmask cpu $ \restore -> do
                                 tid <- myThreadId
+                                Debug.init_thread
+                                withCString (printf "Thread %d" cpu) Debug.set_thread_name
                                 catch
                                   (restore $ runWorker tid workerActive workerTaskQueue)
                                   (appendMVar workerException . (tid,))
@@ -257,5 +261,5 @@ appendMVar mvar a =
 -- -----
 
 message :: Builder -> IO ()
-message = D.traceIO D.dump_sched
+message = Debug.traceIO Debug.dump_sched
 
