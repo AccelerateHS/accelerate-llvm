@@ -65,8 +65,9 @@ call' f = call f [NoUnwind]
 
 global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
 global_string cs = do
-  nm <- freshName
-  l  <- return (fromIntegral (length cs))
+  let l  = fromIntegral (length cs)
+  --
+  nm <- freshGlobalName
   _  <- declare $ LLVM.globalVariableDefaults
     { LLVM.name        = downcast nm
     , LLVM.isConstant  = True

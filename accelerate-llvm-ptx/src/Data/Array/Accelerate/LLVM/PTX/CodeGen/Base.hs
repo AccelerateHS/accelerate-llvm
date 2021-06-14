@@ -465,7 +465,7 @@ shfl sop tR val delta = go tR val
             else
               let raw :: LLVM.Type -> LLVM.Instruction -> CodeGen PTX LLVM.Operand
                   raw ty ins = do
-                    name <- downcast <$> freshName
+                    name <- downcast <$> freshLocalName
                     instr_ (name LLVM.:= ins)
                     return (LLVM.LocalReference ty name)
 
@@ -631,7 +631,7 @@ staticSharedMem tp n = do
     go tt@(TupRsingle t) = do
       -- Declare a new global reference for the statically allocated array
       -- located in the __shared__ memory space.
-      nm <- freshName
+      nm <- freshGlobalName
       sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType n t) sharedMemAddrSpace)) nm
       declare $ LLVM.globalVariableDefaults
         { LLVM.addrSpace = sharedMemAddrSpace

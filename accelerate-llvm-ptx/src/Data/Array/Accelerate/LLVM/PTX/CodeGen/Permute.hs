@@ -425,7 +425,7 @@ atomically_warp barriers i action = do
   -- incoming edge the thread arrived at this block from determines whether they
   -- have completed their critical section.
   setBlock end
-  res  <- freshName
+  res  <- freshLocalName
   done <- phi1 end res [(boolean True, yes), (boolean False, no)]
 
   __syncthreads

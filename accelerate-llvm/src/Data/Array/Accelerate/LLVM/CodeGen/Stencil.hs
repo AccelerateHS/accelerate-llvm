@@ -272,7 +272,7 @@ bounded bndy IRDelayed{..} ix = do
            nb <- br ifExit
 
            setBlock ifExit
-           crit <- freshName
+           crit <- freshLocalName
            r    <- phi1 ifExit crit [(boolean False, eb), (A.unbool nv, nb)]
 
            return (OP_Bool r)

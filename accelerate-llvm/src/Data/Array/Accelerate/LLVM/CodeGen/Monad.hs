@@ -23,7 +23,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   liftCodeGen,
 
   -- declarations
-  fresh, freshName,
+  fresh, freshLocalName, freshGlobalName,
   declare,
   intrinsic,
 
@@ -93,7 +93,8 @@ data CodeGenState = CodeGenState
   , symbolTable         :: Map Label LLVM.Global                          -- global (external) function declarations
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
-  , next                :: {-# UNPACK #-} !Word                           -- a name supply
+  , local               :: {-# UNPACK #-} !Word                           -- a name supply
+  , global              :: {-# UNPACK #-} !Word                           -- a name supply for global variables
   }
 
 data Block = Block
@@ -121,7 +122,8 @@ evalCodeGen ll = do
                             , symbolTable       = Map.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget @arch
-                            , next              = 0
+                            , local             = 0
+                            , global            = 0
                             }
 
   let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
@@ -220,7 +222,7 @@ beginBlock nm = do
 createBlocks :: HasCallStack => CodeGen arch [LLVM.BasicBlock]
 createBlocks
   = state
-  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+  $ \s -> let s'     = s { blockChain = initBlockChain, local = 0 }
               blocks = makeBlock `fmap` blockChain s
               m      = Seq.length (blockChain s)
               n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
@@ -239,12 +241,17 @@ createBlocks
 fresh :: TypeR a -> CodeGen arch (Operands a)
 fresh TupRunit         = return OP_Unit
 fresh (TupRpair t2 t1) = OP_Pair <$> fresh t2 <*> fresh t1
-fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
+fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshLocalName
 
--- | Generate a fresh (un)name.
+-- | Generate a fresh local (un)name
 --
-freshName :: CodeGen arch (Name a)
-freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
+freshLocalName :: CodeGen arch (Name a)
+freshLocalName = state $ \s@CodeGenState{..} -> ( UnName local, s { local = local + 1 } )
+
+-- | Generate a fresh global (un)name
+--
+freshGlobalName :: CodeGen arch (Name a)
+freshGlobalName = state $ \s@CodeGenState{..} -> ( UnName global, s { global = global + 1 } )
 
 
 -- | Add an instruction to the state of the currently active block so that it is
@@ -263,7 +270,7 @@ instr' ins =
       return $ LocalReference VoidType (Name B.empty)
     --
     ty -> do
-      name <- freshName
+      name <- freshLocalName
       instr_ $ downcast (name := ins)
       return $ LocalReference ty name
 
