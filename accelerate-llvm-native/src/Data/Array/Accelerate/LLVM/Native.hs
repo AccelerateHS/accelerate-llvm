@@ -80,9 +80,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Control.Monad.Trans
-import Data.Text.Lazy.Builder
 import System.IO.Unsafe
-import qualified Data.Text.Format                                   as F
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
@@ -121,9 +119,9 @@ runWithIO target a = execute
     execute = do
       dumpGraph acc
       evalNative target $ do
-        build <- phase "compile" elapsedS (compileAcc acc) >>= dumpStats
-        exec  <- phase "link"    elapsedS (linkAcc build)
-        res   <- phase "execute" elapsedP (evalPar (executeAcc exec >>= getArrays (arraysR exec)))
+        build <- phase Compile elapsedS (compileAcc acc) >>= dumpStats
+        exec  <- phase Link    elapsedS (linkAcc build)
+        res   <- phase Execute elapsedP (evalPar (executeAcc exec >>= getArrays (arraysR exec)))
         return $ toArr res
 
 
@@ -191,8 +189,8 @@ runNWith target f = go (afunctionRepr @f) afun (return Empty)
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
-                build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
-                link  <- phase "link"    elapsedS (linkAfun build)
+                build <- phase Compile elapsedS (compileAfun acc) >>= dumpStats
+                link  <- phase Link    elapsedS (linkAfun build)
                 return link
 
     go :: AfunctionRepr t (AfunctionR t) (ArraysFunctionR t)
@@ -204,7 +202,7 @@ runNWith target f = go (afunctionRepr @f) afun (return Empty)
                   a     <- useRemoteAsync (Sugar.arraysR @a) $ fromArr arrs
                   return (aenv `push` (lhs, a))
       in go repr l k'
-    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" elapsedP . evalNative target . evalPar $ do
+    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase Execute elapsedP . evalNative target . evalPar $ do
       aenv <- k
       res  <- executeOpenAcc b aenv
       arrs <- getArrays (arraysR b) res
@@ -237,8 +235,8 @@ runNAsyncWith target f = exec
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalNative target $ do
-                build <- phase "compile" elapsedS (compileAfun acc) >>= dumpStats
-                link  <- phase "link"    elapsedS (linkAfun build)
+                build <- phase Compile elapsedS (compileAfun acc) >>= dumpStats
+                link  <- phase Link    elapsedS (linkAfun build)
                 return link
     !exec = runAsync' target afun (return Empty)
 
@@ -258,7 +256,7 @@ instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
 instance Arrays b => RunAsync (IO (Async b)) where
   type RunAsyncR  (IO (Async b)) = ArraysR b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
-  runAsync' target (Abody b) k = async . phase "execute" elapsedP . evalNative target . evalPar $ do
+  runAsync' target (Abody b) k = async . phase Execute elapsedP . evalNative target . evalPar $ do
     aenv  <- k
     ans   <- executeOpenAcc b aenv
     arrs  <- getArrays (arraysR b) ans
@@ -382,7 +380,7 @@ runQ' using target f = do
             in TH.runIO $ do
                  dumpGraph acc
                  evalNative defaultTarget $
-                  phase "compile" elapsedS (compileAfun acc) >>= dumpStats
+                  phase Compile elapsedS (compileAfun acc) >>= dumpStats
 
   -- generate a lambda function with the correct number of arguments and
   -- apply directly to the body expression.
@@ -407,7 +405,7 @@ runQ' using target f = do
             body  = embedOpenAcc defaultTarget b
         --
         TH.lamE (reverse xs)
-                [| $using . phase "execute" elapsedP . evalNative $target . evalPar $
+                [| $using . phase Execute elapsedP . evalNative $target . evalPar $
                       $(TH.doE ( reverse stmts ++
                                [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
                                , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
@@ -423,7 +421,4 @@ runQ' using target f = do
 
 dumpStats :: MonadIO m => a -> m a
 dumpStats x = liftIO dumpSimplStats >> return x
-
-phase :: MonadIO m => Builder -> (Double -> Double -> Builder) -> m a -> m a
-phase n fmt go = timed dump_phases (\wall cpu -> F.build "phase {}: {}" (n, fmt wall cpu)) go
 
