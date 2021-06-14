@@ -13,7 +13,11 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.Profile (
 
-  zone,
+  with_zone,
+  with_zone_name,
+
+  alloc_srcloc, alloc_srcloc_name,
+  zone_begin, zone_end,
 
 ) where
 
@@ -39,29 +43,32 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.Sugar.Elt
 import Data.Array.Accelerate.Debug.Internal                         ( profilingIsEnabled, SrcLoc, Zone )
 
-import Data.Char
 import Control.Monad
+import Data.Char
 
 
--- Add profiling zone around the given code
---
-zone :: Int -> String -> String -> (Operands Zone -> CodeGen arch a) -> CodeGen arch a
-zone line src fun f = do
+with_zone :: Int -> String -> String -> (Operands Zone -> CodeGen arch a) -> CodeGen arch a
+with_zone line src fun k = do
   l <- alloc_srcloc line src fun
   z <- zone_begin l
-  r <- f z
+  r <- k z
   zone_end z
   return r
 
--- zone_name
--- zone_name_colour
+with_zone_name :: Int -> String -> String -> String -> (Operands Zone -> CodeGen arch a) -> CodeGen arch a
+with_zone_name line src fun name k = do
+  l <- alloc_srcloc_name line src fun name
+  z <- zone_begin l
+  r <- k z
+  zone_end z
+  return r
 
 
 -- Internals
 -- ---------
 
 call' :: GlobalFunction args t -> CodeGen arch (Operands t)
-call' f = call f [NoUnwind, NoDuplicate]
+call' f = call f [NoDuplicate]
 
 global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
 global_string cs = do
@@ -105,6 +112,42 @@ alloc_srcloc l src fun
             $ Lam primType pf
             $ Lam primType functionSz
             $ Body (type' :: Type Word64) (Just Tail) "___tracy_alloc_srcloc"
+
+alloc_srcloc_name
+    :: Int      -- line
+    -> String   -- source file
+    -> String   -- function
+    -> String   -- name
+    -> CodeGen arch (Operands SrcLoc)
+alloc_srcloc_name l src fun nm
+  | not profilingIsEnabled = return (constant (eltR @SrcLoc) 0)
+  | otherwise              = do
+      (s, sl) <- global_string src
+      (f, fl) <- global_string fun
+      (n, nl) <- global_string nm
+      let
+          st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
+          ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
+          nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
+          line       = ConstantOperand $ ScalarConstant scalarType (fromIntegral l :: Word32)
+          source     = ConstantOperand $ GlobalReference (PrimType st) s
+          function   = ConstantOperand $ GlobalReference (PrimType ft) f
+          name       = ConstantOperand $ GlobalReference (PrimType nt) n
+          sourceSz   = ConstantOperand $ ScalarConstant scalarType sl
+          functionSz = ConstantOperand $ ScalarConstant scalarType fl
+          nameSz     = ConstantOperand $ ScalarConstant scalarType nl
+      --
+      ps   <- instr' $ GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32]
+      pf   <- instr' $ GetElementPtr function [num numType 0, num numType 0 :: Operand Int32]
+      pn   <- instr' $ GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32]
+      call' $ Lam primType line
+            $ Lam primType ps
+            $ Lam primType sourceSz
+            $ Lam primType pf
+            $ Lam primType functionSz
+            $ Lam primType pn
+            $ Lam primType nameSz
+            $ Body (type' :: Type Word64) (Just Tail) "___tracy_alloc_srcloc_name"
 
 zone_begin
     :: Operands SrcLoc

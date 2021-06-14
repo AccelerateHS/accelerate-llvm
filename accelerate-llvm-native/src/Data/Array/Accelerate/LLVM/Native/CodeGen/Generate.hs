@@ -24,7 +24,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
@@ -50,6 +50,4 @@ mkGenerate uid aenv repr apply =
     imapNestFromTo (arrayRshape repr) start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
       writeArray TypeInt arrOut i r             -- store result
-
-    return_
 

@@ -27,11 +27,6 @@ import Data.Text.Lazy.Builder
 import qualified Data.Text.Buildable                                as B
 
 import Control.Monad.Trans
-import Data.Char
-import Foreign.C.Types
-import Foreign.C.String
-import GHC.Ptr
-import Language.Haskell.TH
 
 
 -- | Display elapsed wall and CPU time, together with speedup fraction
@@ -58,23 +53,30 @@ instance B.Buildable Phase where
   build Link    = "link"
   build Execute = "execute"
 
-runQ $
-  [d|
-      ___run :: CString
-      ___run = Ptr $(litE (stringPrimL (map (fromIntegral . ord) "run\0")))
-
-      cstring_of_phase :: Phase -> (CString, CSize)
-      cstring_of_phase Compile = (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "compile\0"))), 7)
-      cstring_of_phase Link    = (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "link\0"))), 4)
-      cstring_of_phase Execute = (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "execute\0"))), 7)
-    |]
-
 phase :: MonadIO m => Phase -> (Double -> Double -> Builder) -> m a -> m a
+phase p fmt go = timed dump_phases (\wall cpu -> build "phase {}: {}" (p, fmt wall cpu)) go
+
+{--
+phase :: (MonadIO m, HasCallStack) => Phase -> (Double -> Double -> Builder) -> m a -> m a
 phase p fmt go = do
-  let (cp, cpsz) = cstring_of_phase p
-  srcloc <- liftIO $ alloc_srcloc_name 0 nullPtr 0 nullPtr 0 cp cpsz
-  zone   <- liftIO $ emit_zone_begin srcloc 1
+  let (p_phase, sz_phase) = case p of
+                              Compile -> (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "compile\0"))), 7)
+                              Link    -> (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "link\0"))),    4)
+                              Execute -> (Ptr $(litE (stringPrimL (map (fromIntegral . ord) "execute\0"))), 7)
+      (line, file, fun)   = case getCallStack callStack of
+                              []        -> (0, [], [])
+                              ((f,l):_) -> (srcLocStartLine l, srcLocFile l, f)
+  --
+  zone   <- liftIO $
+    withCStringLen file $ \(p_file, sz_file) ->
+    withCStringLen fun  $ \(p_fun,  sz_fun)  -> do
+      srcloc <- alloc_srcloc_name (fromIntegral line) p_file (fromIntegral sz_file) p_fun (fromIntegral sz_fun) p_phase sz_phase
+      zone   <- emit_zone_begin srcloc 1
+      return zone
+
   result <- timed dump_phases (\wall cpu -> build "phase {}: {}" (p, fmt wall cpu)) go
   _      <- liftIO $ emit_zone_end zone
+
   return result
+--}
 

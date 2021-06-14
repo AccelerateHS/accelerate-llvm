@@ -84,6 +84,8 @@ import System.IO.Unsafe
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
+import GHC.Stack
+
 
 -- Accelerate: LLVM backend for multicore CPUs
 -- -------------------------------------------
@@ -92,27 +94,33 @@ import qualified Language.Haskell.TH.Syntax                         as TH
 --
 -- /NOTE:/ it is recommended to use 'runN' or 'runQ' whenever possible.
 --
-run :: Arrays a => Acc a -> a
-run = runWith defaultTarget
+run :: (Arrays a, HasCallStack) => Acc a -> a
+run a = withFrozenCallStack $ runWith defaultTarget a
 
 -- | As 'run', but execute using the specified target (thread gang).
 --
-runWith :: Arrays a => Native -> Acc a -> a
-runWith target a = unsafePerformIO (runWithIO target a)
+runWith :: (Arrays a, HasCallStack) => Native -> Acc a -> a
+runWith target a
+  = withFrozenCallStack
+  $ unsafePerformIO (runWithIO target a)
 
 -- | As 'run', but allow the computation to run asynchronously and return
 -- immediately without waiting for the result. The status of the computation can
 -- be queried using 'wait', 'poll', and 'cancel'.
 --
-runAsync :: Arrays a => Acc a -> IO (Async a)
-runAsync = runAsyncWith defaultTarget
+runAsync :: (Arrays a, HasCallStack) => Acc a -> IO (Async a)
+runAsync a
+  = withFrozenCallStack
+  $ runAsyncWith defaultTarget a
 
 -- | As 'runAsync', but execute using the specified target (thread gang).
 --
-runAsyncWith :: Arrays a => Native -> Acc a -> IO (Async a)
-runAsyncWith target a = async (runWithIO target a)
+runAsyncWith :: (Arrays a, HasCallStack) => Native -> Acc a -> IO (Async a)
+runAsyncWith target a
+  = withFrozenCallStack
+  $ async (runWithIO target a)
 
-runWithIO :: Arrays a => Native -> Acc a -> IO a
+runWithIO :: (Arrays a, HasCallStack) => Native -> Acc a -> IO a
 runWithIO target a = execute
   where
     !acc    = convertAcc a
@@ -127,13 +135,13 @@ runWithIO target a = execute
 
 -- | This is 'runN', specialised to an array program of one argument.
 --
-run1 :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> b
-run1 = run1With defaultTarget
+run1 :: (Arrays a, Arrays b, HasCallStack) => (Acc a -> Acc b) -> a -> b
+run1 = withFrozenCallStack $ run1With defaultTarget
 
 -- | As 'run1', but execute using the specified target (thread gang).
 --
-run1With :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> b
-run1With = runNWith
+run1With :: (Arrays a, Arrays b, HasCallStack) => Native -> (Acc a -> Acc b) -> a -> b
+run1With = withFrozenCallStack $ runNWith
 
 
 -- | Prepare and execute an embedded array program.
@@ -177,13 +185,15 @@ run1With = runNWith
 -- See also 'runQ', which compiles the Accelerate program at _Haskell_ compile
 -- time, thus eliminating the runtime overhead altogether.
 --
-runN :: Afunction f => f -> AfunctionR f
-runN = runNWith defaultTarget
+runN :: (Afunction f, HasCallStack) => f -> AfunctionR f
+runN = withFrozenCallStack $ runNWith defaultTarget
 
 -- | As 'runN', but execute using the specified target (thread gang).
 --
-runNWith :: forall f. Afunction f => Native -> f -> AfunctionR f
-runNWith target f = go (afunctionRepr @f) afun (return Empty)
+runNWith :: forall f. (Afunction f, HasCallStack) => Native -> f -> AfunctionR f
+runNWith target f
+  = withFrozenCallStack
+  $ go (afunctionRepr @f) afun (return Empty)
   where
     !acc  = convertAfun f
     !afun = unsafePerformIO $ do
@@ -212,24 +222,24 @@ runNWith target f = go (afunctionRepr @f) afun (return Empty)
 
 -- | As 'run1', but execute asynchronously.
 --
-run1Async :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> a -> IO (Async b)
-run1Async = run1AsyncWith defaultTarget
+run1Async :: (Arrays a, Arrays b, HasCallStack) => (Acc a -> Acc b) -> a -> IO (Async b)
+run1Async = withFrozenCallStack $ run1AsyncWith defaultTarget
 
 -- | As 'run1Async', but execute using the specified target (thread gang).
 --
-run1AsyncWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> a -> IO (Async b)
-run1AsyncWith = runNAsyncWith
+run1AsyncWith :: (Arrays a, Arrays b, HasCallStack) => Native -> (Acc a -> Acc b) -> a -> IO (Async b)
+run1AsyncWith = withFrozenCallStack runNAsyncWith
 
 
 -- | As 'runN', but execute asynchronously.
 --
-runNAsync :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => f -> r
-runNAsync = runNAsyncWith defaultTarget
+runNAsync :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r, HasCallStack) => f -> r
+runNAsync = withFrozenCallStack $ runNAsyncWith defaultTarget
 
 -- | As 'runNWith', but execute asynchronously.
 --
-runNAsyncWith :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r) => Native -> f -> r
-runNAsyncWith target f = exec
+runNAsyncWith :: (Afunction f, RunAsync r, ArraysFunctionR f ~ RunAsyncR r, HasCallStack) => Native -> f -> r
+runNAsyncWith target f = withFrozenCallStack exec
   where
     !acc  = convertAfun f
     !afun = unsafePerformIO $ do
@@ -266,13 +276,13 @@ instance Arrays b => RunAsync (IO (Async b)) where
 -- | Stream a lazily read list of input arrays through the given program,
 -- collecting results as we go.
 --
-stream :: (Arrays a, Arrays b) => (Acc a -> Acc b) -> [a] -> [b]
-stream = streamWith defaultTarget
+stream :: (Arrays a, Arrays b, HasCallStack) => (Acc a -> Acc b) -> [a] -> [b]
+stream = withFrozenCallStack $ streamWith defaultTarget
 
 -- | As 'stream', but execute using the specified target (thread gang).
 --
-streamWith :: (Arrays a, Arrays b) => Native -> (Acc a -> Acc b) -> [a] -> [b]
-streamWith target f arrs = map go arrs
+streamWith :: (Arrays a, Arrays b, HasCallStack) => Native -> (Acc a -> Acc b) -> [a] -> [b]
+streamWith target f arrs = withFrozenCallStack $ map go arrs
   where
     !go = run1With target f
 
@@ -327,8 +337,10 @@ streamWith target f arrs = map go arrs
 --
 -- @since 1.1.0.0
 --
-runQ :: Afunction f => f -> TH.ExpQ
-runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
+runQ :: (Afunction f, HasCallStack) => f -> TH.ExpQ
+runQ
+  = withFrozenCallStack
+  $ runQ' [| unsafePerformIO |] [| defaultTarget |]
 
 -- | Ahead-of-time analogue of 'runNWith'. See 'runQ' for more information.
 --
@@ -338,10 +350,11 @@ runQ = runQ' [| unsafePerformIO |] [| defaultTarget |]
 --
 -- @since 1.1.0.0
 --
-runQWith :: Afunction f => f -> TH.ExpQ
-runQWith f = do
-  target <- TH.newName "target"
-  TH.lamE [TH.varP target] (runQ' [| unsafePerformIO |] (TH.varE target) f)
+runQWith :: (Afunction f, HasCallStack) => f -> TH.ExpQ
+runQWith f =
+  withFrozenCallStack $ do
+    target <- TH.newName "target"
+    TH.lamE [TH.varP target] (runQ' [| unsafePerformIO |] (TH.varE target) f)
 
 
 -- | Ahead-of-time analogue of 'runNAsync'. See 'runQ' for more information.
@@ -352,8 +365,10 @@ runQWith f = do
 --
 -- @since 1.1.0.0
 --
-runQAsync :: Afunction f => f -> TH.ExpQ
-runQAsync = runQ' [| async |] [| defaultTarget |]
+runQAsync :: (Afunction f, HasCallStack) => f -> TH.ExpQ
+runQAsync
+  = withFrozenCallStack
+  $ runQ' [| async |] [| defaultTarget |]
 
 -- | Ahead-of-time analogue of 'runNAsyncWith'. See 'runQ' for more information.
 --
@@ -363,13 +378,14 @@ runQAsync = runQ' [| async |] [| defaultTarget |]
 --
 -- @since 1.1.0.0
 --
-runQAsyncWith :: Afunction f => f -> TH.ExpQ
-runQAsyncWith f = do
-  target <- TH.newName "target"
-  TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
+runQAsyncWith :: (Afunction f, HasCallStack) => f -> TH.ExpQ
+runQAsyncWith f =
+  withFrozenCallStack $ do
+    target <- TH.newName "target"
+    TH.lamE [TH.varP target] (runQ' [| async |] (TH.varE target) f)
 
 
-runQ' :: forall f. Afunction f => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
+runQ' :: forall f. (Afunction f, HasCallStack) => TH.ExpQ -> TH.ExpQ -> f -> TH.ExpQ
 runQ' using target f = do
 #if MIN_VERSION_template_haskell(2,13,0)
   -- The plugin ensures that objects are loaded correctly into GHCi

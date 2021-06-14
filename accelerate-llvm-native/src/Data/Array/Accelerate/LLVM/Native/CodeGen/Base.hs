@@ -20,6 +20,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Profile
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
@@ -32,10 +33,8 @@ import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
-import Control.Monad
-import Data.Monoid
 import Data.String
-import Prelude                                                      as P
+import qualified Data.ByteString.Short.Char8                        as S8
 
 
 -- | Generate function parameters that will specify the first and last (linear)
@@ -79,10 +78,14 @@ makeOpenAcc uid name param kernel = do
 -- specified in the final parameter.
 --
 makeKernel :: Label -> [LLVM.Parameter] -> CodeGen Native () -> CodeGen Native (Kernel Native aenv a)
-makeKernel name param kernel = do
-  _    <- kernel
-  code <- createBlocks
-  return $ Kernel
+makeKernel name@(Label sbs) param kernel = do
+  srcloc <- alloc_srcloc 0 [] (S8.unpack sbs)
+  zone   <- zone_begin srcloc
+  _      <- kernel
+  _      <- zone_end zone
+  return_
+  code   <- createBlocks
+  return  $ Kernel
     { kernelMetadata = KM_Native ()
     , unKernel       = LLVM.functionDefaults
                      { LLVM.returnType  = LLVM.VoidType

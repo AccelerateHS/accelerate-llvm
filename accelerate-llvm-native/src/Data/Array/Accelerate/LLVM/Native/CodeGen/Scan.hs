@@ -209,8 +209,6 @@ mkScanS dir uid aenv aR combine mseed marr =
                        A.trip <$> next i <*> next j <*> pure w)
                    (A.trip i1 j1 v0)
 
-    return_
-
 
 mkScan'S
     :: Direction
@@ -270,8 +268,6 @@ mkScan'S dir uid aenv aR combine seed marr =
                   (A.pair i0 v0)
 
       writeArray TypeInt arrSum ii (A.snd r)
-
-    return_
 
 
 mkScanP
@@ -384,8 +380,6 @@ mkScanP1 dir uid aenv eR combine mseed marr =
     -- Final reduction result of this piece
     writeArray TypeInt arrTmp piece (A.thd3 r)
 
-    return_
-
 
 -- Parallel scan, step 2.
 --
@@ -434,8 +428,6 @@ mkScanP2 dir uid aenv eR combine =
                     writeArray TypeInt arrTmp i v'
                     return $ A.pair i' v')
                  (A.pair i1 v0)
-
-    return_
 
 
 -- Parallel scan, step 3.
@@ -497,8 +489,6 @@ mkScanP3 dir uid aenv eR combine mseed =
                LeftToRight -> app2 combine c x
                RightToLeft -> app2 combine x c
         writeArray TypeInt arrOut i y
-
-    return_
 
 
 mkScan'P
@@ -596,8 +586,6 @@ mkScan'P1 dir uid aenv eR combine seed marr =
     -- Write the final reduction result of this piece
     writeArray TypeInt arrTmp piece (A.thd3 r)
 
-    return_
-
 
 -- Parallel scan', step 2
 --
@@ -648,8 +636,6 @@ mkScan'P2 dir uid aenv eR combine =
                 (A.pair i1 v0)
 
     writeArray TypeInt arrSum (liftInt 0) (A.snd r)
-
-    return_
 
 
 -- Parallel scan', step 3
@@ -709,6 +695,4 @@ mkScan'P3 dir uid aenv eR combine =
                LeftToRight -> app2 combine c x
                RightToLeft -> app2 combine x c
         writeArray TypeInt arrOut i y
-
-    return_
 

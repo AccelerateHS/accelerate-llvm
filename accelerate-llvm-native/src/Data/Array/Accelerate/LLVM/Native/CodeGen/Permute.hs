@@ -118,8 +118,6 @@ mkPermuteS uid aenv repr shr IRPermuteFun{..} project marr =
 
         writeArray TypeInt arrOut j r
 
-    return_
-
 
 -- Parallel forward permutation has to take special care because different
 -- threads could concurrently try to update the same memory location. Where
@@ -206,8 +204,6 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
           --
           _ -> internalError "unexpected transition"
 
-    return_
-
 
 -- Parallel forward permutation function which uses a spinlock to acquire
 -- a mutex before updating the value at that location.
@@ -247,8 +243,6 @@ mkPermuteP_mutex uid aenv repr shr combine project marr =
           y <- readArray TypeInt arrOut j
           r <- app2 combine x y
           writeArray TypeInt arrOut j r
-
-    return_
 
 
 -- Atomically execute the critical section only when the lock at the given array

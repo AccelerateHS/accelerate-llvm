@@ -59,5 +59,3 @@ mkTransform uid aenv reprIn reprOut p f =
       b   <- app1 f a
       writeArray TypeInt arrOut i' b
 
-    return_
-
