@@ -225,7 +225,7 @@ createBlocks
               m      = Seq.length (blockChain s)
               n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
           in
-          trace (build "generated {} instructions in %d blocks" (n+m, m)) ( F.toList blocks , s' )
+          trace (build "generated {} instructions in {} blocks" (n+m, m)) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
       LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)
