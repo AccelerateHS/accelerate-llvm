@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile.Cache
@@ -29,7 +30,14 @@ import Control.Monad.Trans
 import Data.Version
 import System.Directory
 import System.FilePath
+import System.Environment
 import Text.Printf
+
+#ifdef WIN32
+import System.Win32.Process
+#else
+import System.Posix.Process
+#endif
 
 import Paths_accelerate_llvm
 
@@ -76,7 +84,16 @@ cacheOfUID
     -> LLVM arch FilePath
 cacheOfUID uid = do
   dbg       <- liftIO $ if debuggingIsEnabled then getFlag debug else return False
-  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
+  appdir    <- liftIO $ if profilingIsEnabled
+                          then do
+                            -- XXX: This isn't correct, we should consider
+                            -- the embedded (e.g. file and line) info
+                            tmp <- getTemporaryDirectory
+                            pid <- getProcessID
+                            exe <- getProgName
+                            return $ tmp </> printf "%s%d" exe (fromIntegral pid :: Int)
+                          else
+                            getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
   let
       (base, file)  = splitFileName template
@@ -88,6 +105,10 @@ cacheOfUID uid = do
   liftIO $ createDirectoryIfMissing True cachepath
   return cachefile
 
+#ifdef WIN32
+getProcessID :: IO ProcessId
+getProcessID = getProcessId =<< getCurrentProcess
+#endif
 
 -- | Remove the cache directory
 --

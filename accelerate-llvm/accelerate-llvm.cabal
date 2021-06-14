@@ -169,6 +169,13 @@ Library
         -caf-all
         -auto-all
 
+  if os(windows)
+    cpp-options:        -DWIN32
+    build-depends:      Win32
+  else
+    cpp-options:        -DUNIX
+    build-depends:      unix
+
   if impl(ghc >= 8.0)
     ghc-options:
         -Wmissed-specialisations
