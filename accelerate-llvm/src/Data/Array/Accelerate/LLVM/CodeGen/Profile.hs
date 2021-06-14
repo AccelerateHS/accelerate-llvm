@@ -61,7 +61,7 @@ zone line src fun f = do
 -- ---------
 
 call' :: GlobalFunction args t -> CodeGen arch (Operands t)
-call' f = call f [NoUnwind]
+call' f = call f [NoUnwind, NoDuplicate]
 
 global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
 global_string cs = do
