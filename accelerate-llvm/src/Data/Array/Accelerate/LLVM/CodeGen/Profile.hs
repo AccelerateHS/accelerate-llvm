@@ -104,8 +104,8 @@ alloc_srcloc l src fun
           sourceSz   = ConstantOperand $ ScalarConstant scalarType sl
           functionSz = ConstantOperand $ ScalarConstant scalarType fl
       --
-      ps   <- instr' $ GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32]
-      pf   <- instr' $ GetElementPtr function [num numType 0, num numType 0 :: Operand Int32]
+      ps   <- src `null_or` instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
+      pf   <- fun `null_or` instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
       call' $ Lam primType line
             $ Lam primType ps
             $ Lam primType sourceSz
@@ -137,9 +137,9 @@ alloc_srcloc_name l src fun nm
           functionSz = ConstantOperand $ ScalarConstant scalarType fl
           nameSz     = ConstantOperand $ ScalarConstant scalarType nl
       --
-      ps   <- instr' $ GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32]
-      pf   <- instr' $ GetElementPtr function [num numType 0, num numType 0 :: Operand Int32]
-      pn   <- instr' $ GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32]
+      ps   <- src `null_or` instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
+      pf   <- fun `null_or` instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
+      pn   <- nm  `null_or` instr' (GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
       call' $ Lam primType line
             $ Lam primType ps
             $ Lam primType sourceSz
@@ -166,4 +166,8 @@ zone_end
 zone_end srcloc
   | not profilingIsEnabled = return ()
   | otherwise              = void $ call' (Lam primType (op primType srcloc) (Body VoidType (Just Tail) "___tracy_emit_zone_end"))
+
+null_or :: String -> CodeGen arch (Operand (Ptr Word8)) -> CodeGen arch (Operand (Ptr Word8))
+null_or [] _ = return $ ConstantOperand $ NullPtrConstant type'
+null_or _  x = x
 

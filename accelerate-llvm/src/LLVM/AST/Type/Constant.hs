@@ -53,6 +53,9 @@ data Constant a where
   UndefConstant         :: Type a
                         -> Constant a
 
+  NullPtrConstant       :: Type (Ptr a)
+                        -> Constant (Ptr a)
+
   GlobalReference       :: Type a
                         -> Name a
                         -> Constant a
@@ -65,6 +68,7 @@ instance Downcast (Constant a) LLVM.Constant where
     UndefConstant t       -> LLVM.Undef (downcast t)
     GlobalReference t n   -> LLVM.GlobalReference (downcast t) (downcast n)
     BooleanConstant x     -> LLVM.Int 1 (toInteger (fromEnum x))
+    NullPtrConstant t     -> LLVM.Null (downcast t)
     ScalarConstant t x    -> scalar t x
     where
       scalar :: ScalarType s -> s -> LLVM.Constant
@@ -120,5 +124,6 @@ instance TypeOf Constant where
   typeOf (BooleanConstant _)   = type'
   typeOf (ScalarConstant t _)  = PrimType (ScalarPrimType t)
   typeOf (UndefConstant t)     = t
+  typeOf (NullPtrConstant t)   = t
   typeOf (GlobalReference t _) = t
 
