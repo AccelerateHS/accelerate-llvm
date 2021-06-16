@@ -20,9 +20,11 @@ module Data.Array.Accelerate.LLVM.Native.Link.ELF (
 ) where
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Debug.Internal     as Debug
+
+import Data.Array.Accelerate.LLVM.Native.Link.Object
+import qualified Data.Array.Accelerate.LLVM.Link.Tracy    as Tracy
 
 import Control.Applicative
 import Control.Monad
@@ -54,6 +56,7 @@ import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
 import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
+import qualified Data.HashMap.Strict                      as HashMap
 import qualified Data.Text.Buildable                      as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
@@ -384,17 +387,18 @@ data SectionHeader = SectionHeader
     deriving Show
 
 {#enum define SectionType
-    { SHT_NULL      as NullSection
-    , SHT_PROGBITS  as ProgBits
-    , SHT_SYMTAB    as SymTab
-    , SHT_STRTAB    as StrTab
-    , SHT_RELA      as RelA
-    , SHT_HASH      as Hash
-    , SHT_DYNAMIC   as Dynamic
-    , SHT_NOTE      as Note
-    , SHT_NOBITS    as NoBits
-    , SHT_REL       as Rel
-    , SHT_DYNSYM    as DynSym
+    { SHT_NULL          as NullSection
+    , SHT_PROGBITS      as ProgBits
+    , SHT_SYMTAB        as SymTab
+    , SHT_STRTAB        as StrTab
+    , SHT_RELA          as RelA
+    , SHT_HASH          as Hash
+    , SHT_DYNAMIC       as Dynamic
+    , SHT_NOTE          as Note
+    , SHT_NOBITS        as NoBits
+    , SHT_REL           as Rel
+    , SHT_DYNSYM        as DynSym
+    , SHT_X86_64_UNWIND as Unwind
     }
     deriving (Eq, Show)
 #}
@@ -683,6 +687,15 @@ readSymbol64 Peek{..} secs strtab = do
 --
 resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
+  -- static addresses of profiling hooks
+  | Debug.profilingIsEnabled
+  , "___tracy" `B8.isPrefixOf` name
+  = case HashMap.lookup name Tracy.symtab of
+      Nothing   -> fail $ printf "failed to resolve symbol %s" (B8.unpack name)
+      Just addr -> return addr
+
+  -- dynamic addresses from shared libraries
+  | otherwise
   = unsafePerformIO
   $ B.unsafeUseAsCString name $ \c_name -> do
       addr <- c_dlsym (packDL Default) c_name
