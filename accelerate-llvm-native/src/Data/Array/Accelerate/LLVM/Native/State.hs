@@ -1,4 +1,6 @@
+{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.State
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -16,33 +18,42 @@ module Data.Array.Accelerate.LLVM.Native.State (
 
 ) where
 
+import Data.Array.Accelerate.Debug.Internal
+
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
 import qualified Data.Array.Accelerate.LLVM.Native.Link.Cache   as LC
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
+import Data.Char
 import Data.Maybe
 import Data.Text.Format
+import Language.Haskell.TH
 import System.Environment
 import System.IO.Unsafe
 import Text.Read
 
 import GHC.Conc
+import GHC.Ptr
 
 
 -- | Execute a computation in the Native backend
 --
 evalNative :: Native -> LLVM Native a -> IO a
-evalNative = evalLLVM
+-- evalNative = evalLLVM
 
--- evalNative target acc = do
---   let label = Ptr $(litE (stringPrimL (map (fromIntegral . ord) "Native.run\0")))
---   init_thread
---   emit_frame_mark_start label
---   result <- evalLLVM target acc
---   emit_frame_mark_end label
---   return result
+-- XXX: This is correct for run, but for runN we'll use this operation to
+-- do the compilation separately from execution, thus there will be an
+-- empty "frame" with no (execution) trace
+--
+evalNative target acc = do
+  let label = Ptr $(litE (stringPrimL (map (fromIntegral . ord) "Native.run\0")))
+  init_thread
+  emit_frame_mark_start label
+  !result <- evalLLVM target acc
+  emit_frame_mark_end label
+  return result
 
 
 -- | Create a Native execution target by spawning a worker thread on each of the
