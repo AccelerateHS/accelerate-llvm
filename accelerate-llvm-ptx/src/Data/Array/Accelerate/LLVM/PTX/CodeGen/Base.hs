@@ -61,6 +61,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.Representation.Array
@@ -97,8 +98,9 @@ import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
 import Data.Bits
 import Data.Proxy
-import Foreign.Storable
+import Data.String
 import Data.Text.Format
+import Foreign.Storable
 import Prelude                                                      as P
 
 import GHC.TypeLits
@@ -736,24 +738,26 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 -- | Create a single kernel program with the default launch configuration.
 --
 makeOpenAcc
-    :: Label
+    :: UID
+    -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAcc name param kernel = do
+makeOpenAcc uid name param kernel = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  makeOpenAccWith (simpleLaunchConfig dev) name param kernel
+  makeOpenAccWith (simpleLaunchConfig dev) uid name param kernel
 
 -- | Create a single kernel program with the given launch analysis information.
 --
 makeOpenAccWith
     :: LaunchConfig
+    -> UID
     -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAccWith config name param kernel = do
-  body  <- makeKernel config name param kernel
+makeOpenAccWith config uid name param kernel = do
+  body  <- makeKernel config (name <> fromString ('_' : show uid)) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process

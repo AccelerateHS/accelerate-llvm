@@ -110,6 +110,5 @@ instance B.Buildable Phase where
   build Execute = "execute"
 
 phase :: MonadIO m => Phase -> m a -> m a
-phase Execute go =    timed dump_phases (\wall cpu gpu -> build "phase {}: {}" (Execute, elapsed wall cpu gpu)) Nothing go
-phase p       go = DI.timed dump_phases (\wall cpu     -> build "phase {}: {}" (p,    DI.elapsed wall cpu    ))         go
+phase p go = DI.timed dump_phases (\wall cpu -> build "phase {}: {}" (p, DI.elapsed wall cpu)) go
 

@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Generate
@@ -69,26 +70,27 @@ import Prelude                                                      as P hiding 
 --
 mkScan
     :: forall aenv sh e.
-       Gamma            aenv
+       UID
+    -> Gamma            aenv
     -> ArrayR (Array (sh, Int) e)
     -> Direction
     -> IRFun2       PTX aenv (e -> e -> e)
     -> Maybe (IRExp PTX aenv e)
     -> MIRDelayed   PTX aenv (Array (sh, Int) e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScan aenv repr dir combine seed arr
+mkScan uid aenv repr dir combine seed arr
   = foldr1 (+++) <$> sequence (codeScan ++ codeFill)
 
   where
     codeScan = case repr of
-      ArrayR (ShapeRsnoc ShapeRz) tp -> [ mkScanAllP1 dir aenv tp   combine seed arr
-                                        , mkScanAllP2 dir aenv tp   combine
-                                        , mkScanAllP3 dir aenv tp   combine seed
+      ArrayR (ShapeRsnoc ShapeRz) tp -> [ mkScanAllP1 dir uid aenv tp   combine seed arr
+                                        , mkScanAllP2 dir uid aenv tp   combine
+                                        , mkScanAllP3 dir uid aenv tp   combine seed
                                         ]
-      _                              -> [ mkScanDim   dir aenv repr combine seed arr
+      _                              -> [ mkScanDim   dir uid aenv repr combine seed arr
                                         ]
     codeFill = case seed of
-      Just s  -> [ mkScanFill aenv repr s ]
+      Just s  -> [ mkScanFill uid aenv repr s ]
       Nothing -> []
 
 
@@ -102,24 +104,25 @@ mkScan aenv repr dir combine seed arr
 --
 mkScan'
     :: forall aenv sh e.
-       Gamma          aenv
+       UID
+    -> Gamma          aenv
     -> ArrayR (Array (sh, Int) e)
     -> Direction
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Array (sh, Int) e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
-mkScan' aenv repr dir combine seed arr
+mkScan' uid aenv repr dir combine seed arr
   | ArrayR (ShapeRsnoc ShapeRz) tp <- repr
-  = foldr1 (+++) <$> sequence [ mkScan'AllP1 dir aenv tp combine seed arr
-                              , mkScan'AllP2 dir aenv tp combine
-                              , mkScan'AllP3 dir aenv tp combine
-                              , mkScan'Fill aenv repr seed
+  = foldr1 (+++) <$> sequence [ mkScan'AllP1 dir uid aenv tp combine seed arr
+                              , mkScan'AllP2 dir uid aenv tp combine
+                              , mkScan'AllP3 dir uid aenv tp combine
+                              , mkScan'Fill      uid aenv repr seed
                               ]
   --
   | otherwise
-  = (+++) <$> mkScan'Dim dir aenv repr combine seed arr
-          <*> mkScan'Fill  aenv repr seed
+  = (+++) <$> mkScan'Dim dir uid aenv repr combine seed arr
+          <*> mkScan'Fill    uid aenv repr seed
 
 
 -- Device wide scans
@@ -139,13 +142,14 @@ mkScan' aenv repr dir combine seed arr
 mkScanAllP1
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma          aenv                      -- ^ array environment
     -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ seed element, if this is an exclusive scan
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX (IROpenAcc PTX aenv (Vector e))
-mkScanAllP1 dir aenv tp combine mseed marr = do
+mkScanAllP1 dir uid aenv tp combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -165,7 +169,7 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     -- Size of the input array
     sz  <- indexHead <$> delayedExtent arrIn
@@ -261,11 +265,12 @@ mkScanAllP1 dir aenv tp combine mseed marr = do
 mkScanAllP2
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma       aenv                         -- ^ array environment
     -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)           -- ^ combination function
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
-mkScanAllP2 dir aenv tp combine = do
+mkScanAllP2 dir uid aenv tp combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -286,7 +291,7 @@ mkScanAllP2 dir aenv tp combine = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scanP2" (paramTmp ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP2" (paramTmp ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -356,12 +361,13 @@ mkScanAllP2 dir aenv tp combine = do
 mkScanAllP3
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma       aenv                         -- ^ array environment
     -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)           -- ^ combination function
     -> MIRExp  PTX aenv e                       -- ^ seed element, if this is an exclusive scan
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
-mkScanAllP3 dir aenv tp combine mseed = do
+mkScanAllP3 dir uid aenv tp combine mseed = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -374,7 +380,7 @@ mkScanAllP3 dir aenv tp combine mseed = do
       --
       config              = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   --
-  makeOpenAccWith config "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
@@ -453,13 +459,14 @@ mkScanAllP3 dir aenv tp combine mseed = do
 mkScan'AllP1
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma          aenv
     -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRExp      PTX aenv e
     -> MIRDelayed PTX aenv (Vector e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Vector e, Scalar e))
-mkScan'AllP1 dir aenv tp combine seed marr = do
+mkScan'AllP1 dir uid aenv tp combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -479,7 +486,7 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
     -- Size of the input array
     sz  <- indexHead <$> delayedExtent arrIn
@@ -568,11 +575,12 @@ mkScan'AllP1 dir aenv tp combine seed marr = do
 mkScan'AllP2
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma aenv
     -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
-mkScan'AllP2 dir aenv tp combine = do
+mkScan'AllP2 dir uid aenv tp combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -594,7 +602,7 @@ mkScan'AllP2 dir aenv tp combine = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -677,11 +685,12 @@ mkScan'AllP2 dir aenv tp combine = do
 mkScan'AllP3
     :: forall aenv e.
        Direction
+    -> UID
     -> Gamma aenv                                   -- ^ array environment
     -> TypeR e
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
-mkScan'AllP3 dir aenv tp combine = do
+mkScan'AllP3 dir uid aenv tp combine = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -694,7 +703,7 @@ mkScan'AllP3 dir aenv tp combine = do
       --
       config              = launchConfig dev (CUDA.incWarp dev) (const 0) const [|| const ||]
   --
-  makeOpenAccWith config "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
+  makeOpenAccWith config uid "scanP3" (paramTmp ++ paramOut ++ paramStride ++ paramEnv) $ do
 
     sz  <- return $ indexHead (irArrayShape arrOut)
     tid <- int =<< threadIdx
@@ -762,13 +771,14 @@ mkScan'AllP3 dir aenv tp combine = do
 mkScanDim
     :: forall aenv sh e.
        Direction
+    -> UID
     -> Gamma          aenv                          -- ^ array environment
     -> ArrayR (Array (sh, Int) e)
     -> IRFun2     PTX aenv (e -> e -> e)            -- ^ combination function
     -> MIRExp     PTX aenv e                        -- ^ seed element, if this is an exclusive scan
     -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
     -> CodeGen    PTX (IROpenAcc PTX aenv (Array (sh, Int) e))
-mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
+mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -786,7 +796,7 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scan" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "scan" (paramOut ++ paramIn ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -961,13 +971,14 @@ mkScanDim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
 mkScan'Dim
     :: forall aenv sh e.
        Direction
+    -> UID
     -> Gamma          aenv                          -- ^ array environment
     -> ArrayR (Array (sh, Int) e)
     -> IRFun2     PTX aenv (e -> e -> e)            -- ^ combination function
     -> IRExp      PTX aenv e                        -- ^ seed element
     -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
-mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
+mkScan'Dim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -986,7 +997,7 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "scan" (paramOut ++ paramSum ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "scan" (paramOut ++ paramSum ++ paramIn ++ paramEnv) $ do
 
     -- The first and last threads of the block need to communicate the
     -- block-wide aggregate as a carry-in value across iterations.
@@ -1153,20 +1164,22 @@ mkScan'Dim dir aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
 -- the seed element.
 --
 mkScanFill
-    :: Gamma aenv
+    :: UID
+    -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRExp PTX aenv e
     -> CodeGen PTX (IROpenAcc PTX aenv (Array sh e))
-mkScanFill aenv repr seed =
-  mkGenerate aenv repr (IRFun1 (const seed))
+mkScanFill uid aenv repr seed =
+  mkGenerate uid aenv repr (IRFun1 (const seed))
 
 mkScan'Fill
-    :: Gamma aenv
+    :: UID
+    -> Gamma aenv
     -> ArrayR (Array (sh, Int) e)
     -> IRExp PTX aenv e
     -> CodeGen PTX (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
-mkScan'Fill aenv repr seed =
-  Safe.coerce <$> mkGenerate aenv (reduceRank repr) (IRFun1 (const seed))
+mkScan'Fill uid aenv repr seed =
+  Safe.coerce <$> mkGenerate uid aenv (reduceRank repr) (IRFun1 (const seed))
 
 
 -- Block wide scan

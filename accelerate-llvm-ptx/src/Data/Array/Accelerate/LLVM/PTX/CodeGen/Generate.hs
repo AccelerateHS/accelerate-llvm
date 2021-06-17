@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
@@ -37,16 +38,17 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- processes multiple adjacent elements.
 --
 mkGenerate
-    :: Gamma aenv
+    :: UID
+    -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRFun1  PTX aenv (sh -> e)
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkGenerate aenv repr@(ArrayR shr _) apply =
+mkGenerate uid aenv repr@(ArrayR shr _) apply =
   let
       (arrOut, paramOut)  = mutableArray repr "out"
       paramEnv            = envParam aenv
   in
-  makeOpenAcc "generate" (paramOut ++ paramEnv) $ do
+  makeOpenAcc uid "generate" (paramOut ++ paramEnv) $ do
 
     start <- return (liftInt 0)
     end   <- shapeSize shr (irArrayShape arrOut)

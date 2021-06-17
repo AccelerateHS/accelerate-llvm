@@ -35,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Loop                      as Loop
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
@@ -61,19 +62,20 @@ import Prelude                                                      as P
 --
 mkFold
     :: forall aenv sh e.
-       Gamma            aenv
+       UID
+    -> Gamma            aenv
     -> ArrayR (Array sh e)
     -> IRFun2       PTX aenv (e -> e -> e)
     -> Maybe (IRExp PTX aenv e)
     -> MIRDelayed   PTX aenv (Array (sh, Int) e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFold aenv repr f z acc = case z of
-  Just z' -> (+++) <$> codeFold <*> mkFoldFill aenv repr z'
+mkFold uid aenv repr f z acc = case z of
+  Just z' -> (+++) <$> codeFold <*> mkFoldFill uid aenv repr z'
   Nothing -> codeFold
   where
     codeFold = case repr of
-      ArrayR ShapeRz tp -> mkFoldAll aenv tp   f z acc
-      _                 -> mkFoldDim aenv repr f z acc
+      ArrayR ShapeRz tp -> mkFoldAll uid aenv tp   f z acc
+      _                 -> mkFoldDim uid aenv repr f z acc
 
 
 -- Reduce an array to a single element.
@@ -96,17 +98,18 @@ mkFold aenv repr f z acc = case z of
 --
 mkFoldAll
     :: forall aenv e.
-       Gamma          aenv                      -- ^ array environment
+       UID
+    -> Gamma          aenv                      -- ^ array environment
     -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAll aenv tp combine mseed macc = do
+mkFoldAll uid aenv tp combine mseed macc = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  foldr1 (+++) <$> sequence [ mkFoldAllS  dev aenv tp combine mseed macc
-                            , mkFoldAllM1 dev aenv tp combine       macc
-                            , mkFoldAllM2 dev aenv tp combine mseed
+  foldr1 (+++) <$> sequence [ mkFoldAllS  uid dev aenv tp combine mseed macc
+                            , mkFoldAllM1 uid dev aenv tp combine       macc
+                            , mkFoldAllM2 uid dev aenv tp combine mseed
                             ]
 
 
@@ -115,14 +118,15 @@ mkFoldAll aenv tp combine mseed macc = do
 --
 mkFoldAllS
     :: forall aenv e.
-       DeviceProperties                         -- ^ properties of the target GPU
+       UID
+    -> DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
     -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRExp     PTX aenv e                    -- ^ (optional) initial element for exclusive reductions
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllS dev aenv tp combine mseed marr =
+mkFoldAllS uid dev aenv tp combine mseed marr =
   let
       (arrOut, paramOut)  = mutableArray (ArrayR dim0 tp) "out"
       (arrIn,  paramIn)   = delayedArray "in" marr
@@ -138,7 +142,7 @@ mkFoldAllS dev aenv tp combine mseed marr =
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   in
-  makeOpenAccWith config "foldAllS" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "foldAllS" (paramOut ++ paramIn ++ paramEnv) $ do
 
     tid     <- threadIdx
     bd      <- blockDim
@@ -175,13 +179,14 @@ mkFoldAllS dev aenv tp combine mseed marr =
 --
 mkFoldAllM1
     :: forall aenv e.
-       DeviceProperties                         -- ^ properties of the target GPU
+       UID
+    -> DeviceProperties                         -- ^ properties of the target GPU
     -> Gamma          aenv                      -- ^ array environment
     -> TypeR e
     -> IRFun2     PTX aenv (e -> e -> e)        -- ^ combination function
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllM1 dev aenv tp combine marr =
+mkFoldAllM1 uid dev aenv tp combine marr =
   let
       (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
       (arrIn,  paramIn)   = delayedArray "in" marr
@@ -198,7 +203,7 @@ mkFoldAllM1 dev aenv tp combine marr =
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   in
-  makeOpenAccWith config "foldAllM1" (paramTmp ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "foldAllM1" (paramTmp ++ paramIn ++ paramEnv) $ do
 
     -- Each thread block cooperatively reduces a stripe of the input and stores
     -- that value into a temporary array at a corresponding index. Since the
@@ -233,13 +238,14 @@ mkFoldAllM1 dev aenv tp combine marr =
 --
 mkFoldAllM2
     :: forall aenv e.
-       DeviceProperties
+       UID
+    -> DeviceProperties
     -> Gamma       aenv
     -> TypeR e
     -> IRFun2  PTX aenv (e -> e -> e)
     -> MIRExp  PTX aenv e
     -> CodeGen PTX      (IROpenAcc PTX aenv (Scalar e))
-mkFoldAllM2 dev aenv tp combine mseed =
+mkFoldAllM2 uid dev aenv tp combine mseed =
   let
       (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
       (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
@@ -256,7 +262,7 @@ mkFoldAllM2 dev aenv tp combine mseed =
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   in
-  makeOpenAccWith config "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
+  makeOpenAccWith config uid "foldAllM2" (paramTmp ++ paramOut ++ paramEnv) $ do
 
     -- Threads cooperatively reduce a stripe of the input (temporary) array
     -- output from the first phase, storing the results into another temporary.
@@ -302,13 +308,14 @@ mkFoldAllM2 dev aenv tp combine mseed =
 --
 mkFoldDim
     :: forall aenv sh e.
-       Gamma aenv                                     -- ^ array environment
+       UID
+    -> Gamma aenv                                     -- ^ array environment
     -> ArrayR (Array sh e)
     -> IRFun2     PTX aenv (e -> e -> e)              -- ^ combination function
     -> MIRExp     PTX aenv e                          -- ^ (optional) seed element, if this is an exclusive reduction
     -> MIRDelayed PTX aenv (Array (sh, Int) e)        -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
+mkFoldDim uid aenv repr@(ArrayR shr tp) combine mseed marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -326,7 +333,7 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
           per_warp  = ws + ws `P.quot` 2
           bytes     = bytesElt tp
   --
-  makeOpenAccWith config "fold" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAccWith config uid "fold" (paramOut ++ paramIn ++ paramEnv) $ do
 
     -- If the innermost dimension is smaller than the number of threads in the
     -- block, those threads will never contribute to the output.
@@ -419,12 +426,13 @@ mkFoldDim aenv repr@(ArrayR shr tp) combine mseed marr = do
 -- dimensions with the initial element.
 --
 mkFoldFill
-    :: Gamma       aenv
+    :: UID
+    -> Gamma       aenv
     -> ArrayR (Array sh e)
     -> IRExp   PTX aenv e
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
-mkFoldFill aenv repr seed =
-  mkGenerate aenv repr (IRFun1 (const seed))
+mkFoldFill uid aenv repr seed =
+  mkGenerate uid aenv repr (IRFun1 (const seed))
 
 
 reduceBlock

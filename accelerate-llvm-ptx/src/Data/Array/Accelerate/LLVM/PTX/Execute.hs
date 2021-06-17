@@ -36,30 +36,31 @@ import Data.Array.Accelerate.Type
 
 import Data.Array.Accelerate.LLVM.Execute
 
-import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch           ( multipleOf )
+import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch               ( multipleOf )
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
-import Data.Array.Accelerate.LLVM.PTX.Array.Prim                ( memsetArrayAsync )
+import Data.Array.Accelerate.LLVM.PTX.Array.Prim                    ( memsetArrayAsync )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Environment
 import Data.Array.Accelerate.LLVM.PTX.Execute.Marshal
-import Data.Array.Accelerate.LLVM.PTX.Execute.Stream            ( Stream )
+import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( Stream )
 import Data.Array.Accelerate.LLVM.PTX.Link
 import Data.Array.Accelerate.LLVM.PTX.Target
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
-import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event   as Event
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 
-import qualified Foreign.CUDA.Driver                            as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Control.Monad                                            ( when, forM_ )
-import Control.Monad.Reader                                     ( asks, local )
-import Control.Monad.State                                      ( liftIO )
-import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
-import Data.List                                                ( find )
-import Data.Maybe                                               ( fromMaybe )
+import Control.Monad                                                ( when, forM_ )
+import Control.Monad.Reader                                         ( asks, local )
+import Control.Monad.State                                          ( liftIO )
+import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
+import Data.List                                                    ( find )
+import Data.Maybe                                                   ( fromMaybe )
 import Data.Text.Format
 import Data.Text.Lazy.Builder
-import qualified Data.DList                                     as DL
-import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
+import Prelude                                                      hiding ( exp, map, sum, scanl, scanr )
+import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.DList                                         as DL
 
 
 {-# SPECIALISE INLINE executeAcc     :: ExecAcc     PTX      a ->             Par PTX (FutureArraysR PTX a) #-}
@@ -798,7 +799,7 @@ aforeignOp name _ _ asm arr = do
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
-  find (\k -> kernelName k == name) (functionTable ptxExecutable)
+  find (\k -> S8.takeWhile (/= '_') (kernelName k) == name) (functionTable ptxExecutable)
 
 delayedShape :: Delayed (Array sh e) -> sh
 delayedShape (Delayed sh) = sh
@@ -856,9 +857,13 @@ launch Kernel{..} stream n args =
               then return True
               else Debug.getFlag Debug.dump_exec
 
+    longIf True  = id
+    longIf False = takeWhile (/= '_')
+
     fst3 (x,_,_)      = x
     msg wall cpu gpu  = do
+      verbose <- Debug.getFlag Debug.verbose
       Debug.traceIO Debug.dump_exec $
         build "exec: {} <<< {}, {}, {} >>> {}"
-              (unpack kernelName, fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
+              (longIf verbose (unpack kernelName), fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
 
