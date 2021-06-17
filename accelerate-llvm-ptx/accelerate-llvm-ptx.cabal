@@ -159,9 +159,6 @@ Library
           ghc
         , ghci
 
-    cpp-options:
-        -DUNBOXED_TUPLES=1
-
   hs-source-dirs:
         src
 
