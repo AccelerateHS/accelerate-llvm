@@ -36,18 +36,21 @@ import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.Target
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Table                   ( MemoryTable )
-import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties )
+import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, deviceProperties, deviceName )
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir )
 import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
-import Foreign.CUDA.Analysis.Device
+import Foreign.CUDA.Analysis.Device                                 ( DeviceProperties, Compute(..), computeCapability )
 
 -- standard library
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.Primitive.ByteArray
 import Data.String
 import Debug.Trace
+import Foreign.C.String
+import Foreign.Ptr
 import System.IO.Unsafe
 import Text.Printf
 import qualified Data.Map                                           as Map
@@ -84,6 +87,11 @@ instance Target PTX where
 --
 ptxDeviceProperties :: PTX -> DeviceProperties
 ptxDeviceProperties = deviceProperties . ptxContext
+
+-- | Extract the name of the device of the current execution context
+--
+ptxDeviceName :: PTX -> CString
+ptxDeviceName = castPtr . byteArrayContents . deviceName . ptxContext
 
 
 -- | A description of the various data layout properties that may be used during

@@ -54,10 +54,11 @@ import Control.Monad                                            ( when, forM_ )
 import Control.Monad.Reader                                     ( asks, local )
 import Control.Monad.State                                      ( liftIO )
 import Data.ByteString.Short.Char8                              ( ShortByteString, unpack )
-import qualified Data.DList                                     as DL
 import Data.List                                                ( find )
 import Data.Maybe                                               ( fromMaybe )
-import Text.Printf                                              ( printf )
+import Data.Text.Format
+import Data.Text.Lazy.Builder
+import qualified Data.DList                                     as DL
 import Prelude                                                  hiding ( exp, map, sum, scanl, scanr )
 
 
@@ -776,14 +777,13 @@ aforeignOp name _ _ asm arr = do
   stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
-    query = if Debug.monitoringIsEnabled
+    query = if Debug.profilingIsEnabled
               then return True
               else liftIO $ Debug.getFlag Debug.dump_exec
 
     msg wall cpu gpu = do
-      Debug.addProcessorTime Debug.PTX gpu
       Debug.traceIO Debug.dump_exec $
-        printf "exec: %s %s" name (Debug.elapsed wall cpu gpu)
+        build "exec: {} {}" (name, Debug.elapsed wall cpu gpu)
 
 
 -- Skeleton execution
@@ -793,7 +793,7 @@ aforeignOp name _ _ asm arr = do
 --
 (!#) :: HasCallStack => FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " ++ unpack name))
+  = fromMaybe (internalError ("function not found: " <> fromString (unpack name)))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
@@ -852,14 +852,13 @@ launch Kernel{..} stream n args =
     smem  = kernelSharedMemBytes
 
     -- Debugging/monitoring support
-    query = if Debug.monitoringIsEnabled
+    query = if Debug.profilingIsEnabled
               then return True
               else Debug.getFlag Debug.dump_exec
 
     fst3 (x,_,_)      = x
     msg wall cpu gpu  = do
-      Debug.addProcessorTime Debug.PTX gpu
       Debug.traceIO Debug.dump_exec $
-        printf "exec: %s <<< %d, %d, %d >>> %s"
-               (unpack kernelName) (fst3 grid) (fst3 cta) smem (Debug.elapsed wall cpu gpu)
+        build "exec: {} <<< {}, {}, {} >>> {}"
+              (unpack kernelName, fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
 

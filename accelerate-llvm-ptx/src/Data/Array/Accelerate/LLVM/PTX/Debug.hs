@@ -1,4 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE OverloadedStrings        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Debug
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -16,15 +17,18 @@ module Data.Array.Accelerate.LLVM.PTX.Debug (
 
 ) where
 
-import Data.Array.Accelerate.Debug.Internal             hiding ( timed, elapsed )
+import Data.Array.Accelerate.Debug.Internal                         hiding ( timed, elapsed )
+import qualified Data.Array.Accelerate.Debug.Internal               as DI
 
-import Foreign.CUDA.Driver.Stream                       ( Stream )
-import qualified Foreign.CUDA.Driver.Event              as Event
+import Foreign.CUDA.Driver.Stream                                   ( Stream )
+import qualified Foreign.CUDA.Driver.Event                          as Event
 
-import Control.Monad.Trans
 import Control.Concurrent
+import Control.Monad.Trans
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import System.CPUTime
-import Text.Printf
+import qualified Data.Text.Buildable                                as B
 
 import GHC.Float
 
@@ -33,11 +37,12 @@ import GHC.Float
 -- to format the output string given elapsed GPU and CPU time respectively
 --
 timed
-    :: Flag
-    -> (Double -> Double -> Double -> String)
+    :: MonadIO m
+    => Flag
+    -> (Double -> Double -> Double -> Builder)
     -> Maybe Stream
-    -> IO ()
-    -> IO ()
+    -> m a
+    -> m a
 {-# INLINE timed #-}
 timed f msg =
   monitorProcTime (getFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
@@ -87,13 +92,24 @@ monitorProcTime enabled display stream action = do
 
 
 {-# INLINE elapsed #-}
-elapsed :: Double -> Double -> Double -> String
+elapsed :: Double -> Double -> Double -> Builder
 elapsed wallTime cpuTime gpuTime =
-  printf "%s (wall), %s (cpu), %s (gpu)"
-    (showFFloatSIBase (Just 3) 1000 wallTime "s")
-    (showFFloatSIBase (Just 3) 1000 cpuTime "s")
-    (showFFloatSIBase (Just 3) 1000 gpuTime "s")
+  build "{} (wall), {} (cpu), {} (gpu)"
+    ( showFFloatSIBase (Just 3) 1000 wallTime "s"
+    , showFFloatSIBase (Just 3) 1000 cpuTime "s"
+    , showFFloatSIBase (Just 3) 1000 gpuTime "s" )
 
 -- accelerate/cbits/clock.c
 foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
+
+data Phase = Compile | Link | Execute
+
+instance B.Buildable Phase where
+  build Compile = "compile"
+  build Link    = "link"
+  build Execute = "execute"
+
+phase :: MonadIO m => Phase -> m a -> m a
+phase Execute go =    timed dump_phases (\wall cpu gpu -> build "phase {}: {}" (Execute, elapsed wall cpu gpu)) Nothing go
+phase p       go = DI.timed dump_phases (\wall cpu     -> build "phase {}: {}" (p,    DI.elapsed wall cpu    ))         go
 

@@ -45,6 +45,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.FileEmbed
 import Data.List
 import Data.Maybe
+import Data.Text.Format
 import Language.Haskell.TH.Syntax                                   ( Q, TExp )
 import System.Directory
 import System.FilePath
@@ -122,7 +123,7 @@ libdeviceBitcode compute = do
         , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
         | otherwise                  = "libdevice"
       --
-      err     = internalError (printf "not found: %s.YY.bc" basename)
+      err     = internalError (build "not found: {}.YY.bc" (Only basename))
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
 #if MIN_VERSION_nvvm(0,10,0)
       base    = nvvmDeviceLibraryPath
