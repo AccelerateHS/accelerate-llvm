@@ -265,7 +265,8 @@ processRelocation symtab LoadSegment{} seg_p jump_p sec RelocationInfo{..}
         0 -> let p' = castPtr pc :: Ptr Word8  in poke p' =<< addend p' x
         1 -> let p' = castPtr pc :: Ptr Word16 in poke p' =<< addend p' x
         2 -> let p' = castPtr pc :: Ptr Word32 in poke p' =<< addend p' x
-        _ -> internalError "unhandled relocation size"
+        3 -> let p' = castPtr pc :: Ptr Word64 in poke p' =<< addend p' x
+        _ -> internalError (build "unhandled relocation size ({})" (Only ri_length))
 
 #else
 precessRelocation =

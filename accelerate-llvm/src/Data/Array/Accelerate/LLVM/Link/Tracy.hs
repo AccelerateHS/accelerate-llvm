@@ -31,6 +31,7 @@ runQ $ do
   let funs = [ "___tracy_alloc_srcloc"
              , "___tracy_alloc_srcloc_name"
              , "___tracy_emit_zone_begin_alloc"
+             , "___tracy_emit_zone_begin"
              , "___tracy_emit_zone_end"
              , "___tracy_emit_zone_text"
              , "___tracy_emit_zone_name"

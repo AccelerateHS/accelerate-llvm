@@ -29,8 +29,8 @@ import qualified LLVM.AST.Operand                                   as LLVM
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'
 --
 data Operand a where
-  LocalReference        :: Type a -> Name a -> Operand a
-  ConstantOperand       :: Constant a -> Operand a
+  LocalReference  :: Type a -> Name a -> Operand a
+  ConstantOperand :: Constant a -> Operand a
 
 
 -- | Convert to llvm-hs

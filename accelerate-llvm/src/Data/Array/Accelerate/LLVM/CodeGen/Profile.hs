@@ -13,11 +13,12 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.Profile (
 
-  with_zone,
-  with_zone_name,
+  zone_begin,
+  zone_end,
 
-  alloc_srcloc, alloc_srcloc_name,
-  zone_begin, zone_end,
+  alloc_srcloc,
+  alloc_srcloc_name,
+  zone_begin_alloc,
 
 ) where
 
@@ -47,28 +48,8 @@ import Control.Monad
 import Data.Char
 
 
-with_zone :: Int -> String -> String -> (Operands Zone -> CodeGen arch a) -> CodeGen arch a
-with_zone line src fun k = do
-  l <- alloc_srcloc line src fun
-  z <- zone_begin l
-  r <- k z
-  zone_end z
-  return r
-
-with_zone_name :: Int -> String -> String -> String -> (Operands Zone -> CodeGen arch a) -> CodeGen arch a
-with_zone_name line src fun name k = do
-  l <- alloc_srcloc_name line src fun name
-  z <- zone_begin l
-  r <- k z
-  zone_end z
-  return r
-
-
--- Internals
--- ---------
-
 call' :: GlobalFunction args t -> CodeGen arch (Operands t)
-call' f = call f [NoDuplicate]
+call' f = call f [NoUnwind, NoDuplicate]
 
 global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
 global_string cs = do
@@ -85,33 +66,57 @@ global_string cs = do
     }
   return (nm, l)
 
+
+-- struct ___tracy_source_location_data
+-- {
+--     const char* name;
+--     const char* function;
+--     const char* file;
+--     uint32_t line;
+--     uint32_t color;
+-- };
+--
+source_location_data :: String -> String -> String -> Int -> Word32 -> CodeGen arch (Name a)
+source_location_data n f s line colour = do
+  _               <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.i32, LLVM.i32 ]
+  (name, name_sz) <- global_string n
+  (fun, fun_sz)   <- global_string f
+  (src, src_sz)   <- global_string s
+  let
+      name_c  = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType name_sz LLVM.i8)) (downcast name)
+      fun_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType fun_sz LLVM.i8)) (downcast fun)
+      src_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType src_sz LLVM.i8)) (downcast src)
+  --
+  nm <- freshGlobalName
+  _  <- declare $ LLVM.globalVariableDefaults
+    { LLVM.name        = downcast nm
+    , LLVM.isConstant  = True
+    , LLVM.linkage     = LLVM.Internal
+    , LLVM.type'       = LLVM.NamedTypeReference "___tracy_source_location_data"
+    , LLVM.alignment   = 8
+    , LLVM.initializer = Just $
+        Constant.Struct
+          { Constant.structName   = Just "___tracy_source_location_data"
+          , Constant.isPacked     = False
+          , Constant.memberValues =
+              [ if null n then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True name_c [ Constant.Int 32 0, Constant.Int 32 0 ]
+              , if null f then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True fun_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
+              , if null s then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True src_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
+              , Constant.Int 32 (toInteger line)
+              , Constant.Int 32 (toInteger colour)
+              ]
+          }
+    }
+  return nm
+
+
 alloc_srcloc
     :: Int      -- line
     -> String   -- source file
     -> String   -- function
     -> CodeGen arch (Operands SrcLoc)
 alloc_srcloc l src fun
-  | not profilingIsEnabled = return (constant (eltR @SrcLoc) 0)
-  | otherwise              = do
-      (s, sl) <- global_string src
-      (f, fl) <- global_string fun
-      let
-          st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
-          ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
-          line       = ConstantOperand $ ScalarConstant scalarType (fromIntegral l :: Word32)
-          source     = ConstantOperand $ GlobalReference (PrimType st) s
-          function   = ConstantOperand $ GlobalReference (PrimType ft) f
-          sourceSz   = ConstantOperand $ ScalarConstant scalarType sl
-          functionSz = ConstantOperand $ ScalarConstant scalarType fl
-      --
-      ps   <- src `null_or` instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
-      pf   <- fun `null_or` instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
-      call' $ Lam primType line
-            $ Lam primType ps
-            $ Lam primType sourceSz
-            $ Lam primType pf
-            $ Lam primType functionSz
-            $ Body (type' :: Type Word64) (Just Tail) "___tracy_alloc_srcloc"
+  = alloc_srcloc_name l src fun []
 
 alloc_srcloc_name
     :: Int      -- line
@@ -137,9 +142,9 @@ alloc_srcloc_name l src fun nm
           functionSz = ConstantOperand $ ScalarConstant scalarType fl
           nameSz     = ConstantOperand $ ScalarConstant scalarType nl
       --
-      ps   <- src `null_or` instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
-      pf   <- fun `null_or` instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
-      pn   <- nm  `null_or` instr' (GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
+      ps   <- if null src then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
+      pf   <- if null fun then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
+      pn   <- if null nm  then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
       call' $ Lam primType line
             $ Lam primType ps
             $ Lam primType sourceSz
@@ -150,9 +155,27 @@ alloc_srcloc_name l src fun nm
             $ Body (type' :: Type Word64) (Just Tail) "___tracy_alloc_srcloc_name"
 
 zone_begin
+    :: Int      -- line
+    -> String   -- source file
+    -> String   -- function
+    -> String   -- name
+    -> Word32   -- colour
+    -> CodeGen arch (Operands Zone)
+zone_begin line src fun name colour
+  | not profilingIsEnabled = return (constant (eltR @SrcLoc) 0)
+  | otherwise              = do
+      srcloc <- source_location_data name fun src line colour
+      let active    = ConstantOperand $ ScalarConstant scalarType (1 :: Int32)
+          srcloc_ty = PtrPrimType (NamedPrimType "___tracy_source_location_data") defaultAddrSpace
+
+      call' $ Lam srcloc_ty (ConstantOperand (GlobalReference (PrimType srcloc_ty) srcloc))
+            $ Lam primType active
+            $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin"
+
+zone_begin_alloc
     :: Operands SrcLoc
     -> CodeGen arch (Operands Zone)
-zone_begin srcloc
+zone_begin_alloc srcloc
   | not profilingIsEnabled = return (constant (eltR @Zone) 0)
   | otherwise              = do
       let active = ConstantOperand $ ScalarConstant scalarType (1 :: Int32)
@@ -166,8 +189,4 @@ zone_end
 zone_end srcloc
   | not profilingIsEnabled = return ()
   | otherwise              = void $ call' (Lam primType (op primType srcloc) (Body VoidType (Just Tail) "___tracy_emit_zone_end"))
-
-null_or :: String -> CodeGen arch (Operand (Ptr Word8)) -> CodeGen arch (Operand (Ptr Word8))
-null_or [] _ = return $ ConstantOperand $ NullPtrConstant type'
-null_or _  x = x
 

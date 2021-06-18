@@ -79,12 +79,11 @@ makeOpenAcc uid name param kernel = do
 --
 makeKernel :: Label -> [LLVM.Parameter] -> CodeGen Native () -> CodeGen Native (Kernel Native aenv a)
 makeKernel name@(Label sbs) param kernel = do
-  srcloc <- alloc_srcloc 0 [] (S8.unpack sbs)
-  zone   <- zone_begin srcloc
-  _      <- kernel
-  _      <- zone_end zone
+  zone <- zone_begin 0 [] (S8.unpack sbs) [] 0
+  _    <- kernel
+  _    <- zone_end zone
   return_
-  code   <- createBlocks
+  code <- createBlocks
   return  $ Kernel
     { kernelMetadata = KM_Native ()
     , unKernel       = LLVM.functionDefaults

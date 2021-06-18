@@ -601,7 +601,7 @@ instance TypeOf Instruction where
     Store{}               -> VoidType
     GetElementPtr x _     -> typeOf x
     Fence{}               -> VoidType
-    CmpXchg t _ _ _ _ _ _ -> PrimType . StructPrimType $ SingleScalarType (NumSingleType (IntegralNumType t)) `pair` scalarType
+    CmpXchg t _ _ _ _ _ _ -> PrimType . StructPrimType False $ ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t))) `pair` primType
     AtomicRMW _ _ _ _ x _ -> typeOf x
     FTrunc _ t _          -> floating t
     FExt _ t _            -> floating t
@@ -643,7 +643,7 @@ instance TypeOf Instruction where
       integral :: IntegralType a -> Type a
       integral = single . NumSingleType . IntegralNumType
 
-      pair :: ScalarType a -> ScalarType b -> TypeR (a, b)
+      pair :: PrimType a -> PrimType b -> TupR PrimType (a, b)
       pair a b = TupRsingle a `TupRpair` TupRsingle b
 
       bounded :: BoundedType a -> Type a

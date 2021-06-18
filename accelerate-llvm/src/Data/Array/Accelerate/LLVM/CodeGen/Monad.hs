@@ -25,6 +25,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   -- declarations
   fresh, freshLocalName, freshGlobalName,
   declare,
+  typedef,
   intrinsic,
 
   -- basic blocks
@@ -90,6 +91,7 @@ import qualified Data.ByteString.Short                              as B
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                                      -- blocks for this function
   , symbolTable         :: HashMap Label LLVM.Global                      -- global (external) function declarations
+  , typedefTable        :: HashMap Label (Maybe LLVM.Type)                -- global type definitions
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
   , local               :: {-# UNPACK #-} !Word                           -- a name supply
@@ -119,6 +121,7 @@ evalCodeGen ll = do
                         $ CodeGenState
                             { blockChain        = initBlockChain
                             , symbolTable       = HashMap.empty
+                            , typedefTable      = HashMap.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget @arch
                             , local             = 0
@@ -128,7 +131,10 @@ evalCodeGen ll = do
   let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
                           in  (fs, HashMap.fromList as)
 
-      definitions       = map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
+      createTypedefs    = map (\(n,t) -> LLVM.TypeDefinition (downcast n) t) . HashMap.toList
+
+      definitions       = createTypedefs (typedefTable st)
+                       ++ map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
@@ -380,6 +386,17 @@ declare g =
                LLVM.UnName n    -> Label (fromString (show n))
   in
   modify (\s -> s { symbolTable = HashMap.alter unique name (symbolTable s) })
+
+
+-- | Add a global type definition
+--
+typedef :: HasCallStack => Label -> Maybe LLVM.Type -> CodeGen arch ()
+typedef name t =
+  let unique (Just s) | t /= s    = internalError "duplicate typedef"
+                      | otherwise = Just t
+      unique _                    = Just t
+  in
+  modify (\s -> s { typedefTable = HashMap.alter unique name (typedefTable s) })
 
 
 -- | Get name of the corresponding intrinsic function implementing a given C
