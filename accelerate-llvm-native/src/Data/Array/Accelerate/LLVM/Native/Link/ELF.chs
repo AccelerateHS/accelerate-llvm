@@ -231,7 +231,7 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 processRelocation :: HasCallStack => Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
-  message (build "relocation: 0x{} to symbol {} in section {}, type={} value={}{}" (left 4 '0' (hex r_offset), r_symbol, r_section, left 14 ' ' (Shown r_type), decodeUtf8 sym_name, signed r_addend))
+  message (build "relocation: 0x{} to symbol {} in section {}, type={} value={}{}" (left 4 '0' (hex r_offset), r_symbol, r_section, right 14 ' ' (Shown r_type), decodeUtf8 sym_name, signed r_addend))
   case r_type of
     R_X86_64_None -> return ()
     R_X86_64_64   -> relocate value
