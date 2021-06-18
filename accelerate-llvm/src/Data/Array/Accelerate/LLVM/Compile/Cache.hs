@@ -91,7 +91,7 @@ cacheOfUID uid = do
                             tmp <- getTemporaryDirectory
                             pid <- getProcessID
                             exe <- getProgName
-                            return $ tmp </> printf "%s%d" exe (fromIntegral pid :: Int)
+                            return $ tmp </> printf "%s-%d" exe (fromIntegral pid :: Int)
                           else
                             getXdgDirectory XdgCache "accelerate"
   template  <- targetCacheTemplate
