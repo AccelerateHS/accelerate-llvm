@@ -78,7 +78,7 @@ import System.Process.Extra
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Internal                           as B
-import qualified Data.Map                                           as Map
+import qualified Data.HashMap.Strict                                as HashMap
 import Prelude                                                      as P
 
 
@@ -103,7 +103,7 @@ compile pacc aenv = do
   dev               <- gets ptxDeviceProperties
   (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
   Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
-  let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- Map.toList md ]
+  let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- HashMap.toList md ]
 
   -- Lower the generated LLVM into a CUBIN object code.
   --
