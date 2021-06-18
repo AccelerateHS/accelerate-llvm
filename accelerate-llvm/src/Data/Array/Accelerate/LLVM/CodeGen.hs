@@ -84,6 +84,7 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     Apair{}     -> unexpectedError
     Anil        -> unexpectedError
     Atrace{}    -> unexpectedError
+    Aerror{}    -> unexpectedError
     Use{}       -> unexpectedError
     Unit{}      -> unexpectedError
     Aforeign{}  -> unexpectedError
