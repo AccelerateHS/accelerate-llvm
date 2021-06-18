@@ -51,6 +51,7 @@ import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
+import LLVM.AST.Orphans                                             ()
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Instruction
@@ -67,7 +68,6 @@ import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Function
 import Data.HashMap.Strict                                          ( HashMap )
-import Data.Map                                                     ( Map )
 import Data.Sequence                                                ( Seq )
 import Data.String
 import Data.Text.Format
@@ -75,7 +75,6 @@ import Data.Text.Lazy.Builder                                       ( Builder )
 import Prelude
 import qualified Data.Foldable                                      as F
 import qualified Data.HashMap.Strict                                as HashMap
-import qualified Data.Map                                           as Map
 import qualified Data.Sequence                                      as Seq
 import qualified Data.ByteString.Short                              as B
 
@@ -90,7 +89,7 @@ import qualified Data.ByteString.Short                              as B
 --
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                                      -- blocks for this function
-  , symbolTable         :: Map Label LLVM.Global                          -- global (external) function declarations
+  , symbolTable         :: HashMap Label LLVM.Global                      -- global (external) function declarations
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
   , local               :: {-# UNPACK #-} !Word                           -- a name supply
@@ -119,7 +118,7 @@ evalCodeGen ll = do
   (IROpenAcc ks, st)   <- runStateT (runCodeGen ll)
                         $ CodeGenState
                             { blockChain        = initBlockChain
-                            , symbolTable       = Map.empty
+                            , symbolTable       = HashMap.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget @arch
                             , local             = 0
@@ -127,9 +126,9 @@ evalCodeGen ll = do
                             }
 
   let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
-                          in  (fs, Map.fromList as)
+                          in  (fs, HashMap.fromList as)
 
-      definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+      definitions       = map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
@@ -380,7 +379,7 @@ declare g =
                LLVM.Name n      -> Label n
                LLVM.UnName n    -> Label (fromString (show n))
   in
-  modify (\s -> s { symbolTable = Map.alter unique name (symbolTable s) })
+  modify (\s -> s { symbolTable = HashMap.alter unique name (symbolTable s) })
 
 
 -- | Get name of the corresponding intrinsic function implementing a given C

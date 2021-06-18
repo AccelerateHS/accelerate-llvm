@@ -129,6 +129,8 @@ Library
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
 
+    LLVM.AST.Orphans
+
   other-modules:
     Paths_accelerate_llvm
 
@@ -144,6 +146,7 @@ Library
         , dlist                         >= 0.6
         , exceptions                    >= 0.6
         , filepath                      >= 1.0
+        , hashable                      >= 1.1
         , llvm-hs                       >= 4.1 && < 9.1
         , llvm-hs-pure                  >= 4.1 && < 9.1
         , mtl                           >= 2.0

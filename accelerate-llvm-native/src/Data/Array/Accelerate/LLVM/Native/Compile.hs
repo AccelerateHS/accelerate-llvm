@@ -51,7 +51,7 @@ import System.Directory
 import System.IO.Unsafe
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Short                              as BS
-import qualified Data.Map                                           as Map
+import qualified Data.HashMap.Strict                                as HashMap
 
 
 instance Compile Native where
@@ -80,7 +80,7 @@ compile pacc aenv = do
 
   let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
-      nms           = [ f | Name f <- Map.keys md ]
+      nms           = [ f | Name f <- HashMap.keys md ]
 
   -- Lower the generated LLVM and produce an object file.
   --
