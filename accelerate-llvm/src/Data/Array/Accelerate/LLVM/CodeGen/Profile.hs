@@ -53,8 +53,9 @@ call' :: GlobalFunction args t -> CodeGen arch (Operands t)
 call' f = call f [NoUnwind, NoDuplicate]
 
 global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
-global_string cs = do
-  let l  = fromIntegral (length cs)
+global_string str = do
+  let str0  = str ++ "\0"
+      l     = fromIntegral (length str0)
   --
   nm <- freshGlobalName
   _  <- declare $ LLVM.globalVariableDefaults
@@ -63,7 +64,7 @@ global_string cs = do
     , LLVM.linkage     = LLVM.Private
     , LLVM.type'       = LLVM.ArrayType l LLVM.i8
     , LLVM.unnamedAddr = Just LLVM.GlobalAddr
-    , LLVM.initializer = Just $ Constant.Array LLVM.i8 [ Constant.Int 8 (toInteger (ord c)) | c <- cs ]
+    , LLVM.initializer = Just $ Constant.Array LLVM.i8 [ Constant.Int 8 (toInteger (ord c)) | c <- str0 ]
     }
   return (nm, l)
 
@@ -139,9 +140,9 @@ alloc_srcloc_name l src fun nm
           source     = ConstantOperand $ GlobalReference (PrimType st) s
           function   = ConstantOperand $ GlobalReference (PrimType ft) f
           name       = ConstantOperand $ GlobalReference (PrimType nt) n
-          sourceSz   = ConstantOperand $ ScalarConstant scalarType sl
-          functionSz = ConstantOperand $ ScalarConstant scalarType fl
-          nameSz     = ConstantOperand $ ScalarConstant scalarType nl
+          sourceSz   = ConstantOperand $ ScalarConstant scalarType (sl-1) -- null
+          functionSz = ConstantOperand $ ScalarConstant scalarType (fl-1) -- null
+          nameSz     = ConstantOperand $ ScalarConstant scalarType (nl-1) -- null
       --
       ps   <- if null src then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
       pf   <- if null fun then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
