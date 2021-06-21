@@ -24,8 +24,8 @@ import Data.Array.Accelerate.Debug.Internal
 
 
 -- Symbol table for static tracy profiler functions. Using TH because these
--- addresses are only available when accelerate is compiled in profiling
--- mode.
+-- addresses are only available when accelerate is compiled in debugging
+-- mode
 --
 runQ $ do
   let funs = [ "___tracy_alloc_srcloc"
@@ -43,12 +43,12 @@ runQ $ do
 
       symtab = [d|
           symtab :: HashMap ByteString (FunPtr ())
-          symtab = $( if profilingIsEnabled
+          symtab = $( if debuggingIsEnabled
                          then [| HashMap.fromList $(listE [tupE [litE (stringL f), varE (mkName f)] | f <- funs]) |]
                          else [| HashMap.empty |] )
         |]
 
-  if profilingIsEnabled
+  if debuggingIsEnabled
     then concat <$> sequence [ symtab, mapM foreignD funs ]
     else symtab
 

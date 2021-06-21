@@ -11,7 +11,7 @@ packages:
 
 extra-deps:
 - github: tmcdonell/accelerate
-  commit: be05f784462e39603a8a553193b00e80361d2153
+  commit: e60f28f9d68f0e714707c91c0f8c0c6d13ca6b62
 
 - cuda-0.10.2.0
 - nvvm-0.10.0.0

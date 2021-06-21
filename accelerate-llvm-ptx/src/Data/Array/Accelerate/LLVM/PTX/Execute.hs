@@ -778,7 +778,7 @@ aforeignOp name _ _ asm arr = do
   stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
-    query = if Debug.profilingIsEnabled
+    query = if Debug.debuggingIsEnabled
               then return True
               else liftIO $ Debug.getFlag Debug.dump_exec
 
@@ -853,7 +853,7 @@ launch Kernel{..} stream n args =
     smem  = kernelSharedMemBytes
 
     -- Debugging/monitoring support
-    query = if Debug.profilingIsEnabled
+    query = if Debug.debuggingIsEnabled
               then return True
               else Debug.getFlag Debug.dump_exec
 
