@@ -79,7 +79,7 @@ makeOpenAcc uid name param kernel = do
 --
 makeKernel :: Label -> [LLVM.Parameter] -> CodeGen Native () -> CodeGen Native (Kernel Native aenv a)
 makeKernel name@(Label sbs) param kernel = do
-  zone <- zone_begin 0 [] (S8.unpack sbs) [] 0
+  zone <- zone_begin_alloc 0 [] (S8.unpack sbs) [] 0
   _    <- kernel
   _    <- zone_end zone
   return_

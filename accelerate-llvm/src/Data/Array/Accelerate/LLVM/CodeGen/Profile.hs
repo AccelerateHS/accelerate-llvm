@@ -14,12 +14,8 @@
 
 module Data.Array.Accelerate.LLVM.CodeGen.Profile (
 
-  zone_begin,
+  zone_begin, zone_begin_alloc,
   zone_end,
-
-  alloc_srcloc,
-  alloc_srcloc_name,
-  zone_begin_alloc,
 
 ) where
 
@@ -112,14 +108,6 @@ source_location_data n f s line colour = do
   return nm
 
 
-alloc_srcloc
-    :: Int      -- line
-    -> String   -- source file
-    -> String   -- function
-    -> CodeGen arch (Operands SrcLoc)
-alloc_srcloc l src fun
-  = alloc_srcloc_name l src fun []
-
 alloc_srcloc_name
     :: Int      -- line
     -> String   -- source file
@@ -167,28 +155,36 @@ zone_begin line src fun name colour
   | not debuggingIsEnabled = return (constant (eltR @SrcLoc) 0)
   | otherwise              = do
       srcloc <- source_location_data name fun src line colour
-      let active    = ConstantOperand $ ScalarConstant scalarType (1 :: Int32)
-          srcloc_ty = PtrPrimType (NamedPrimType "___tracy_source_location_data") defaultAddrSpace
-
+      let srcloc_ty = PtrPrimType (NamedPrimType "___tracy_source_location_data") defaultAddrSpace
+      --
       call' $ Lam srcloc_ty (ConstantOperand (GlobalReference (PrimType srcloc_ty) srcloc))
-            $ Lam primType active
+            $ Lam primType (ConstantOperand (ScalarConstant scalarType (1 :: Int32)))
             $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin"
 
 zone_begin_alloc
-    :: Operands SrcLoc
+    :: Int      -- line
+    -> String   -- source file
+    -> String   -- function
+    -> String   -- name
+    -> Word32   -- colour
     -> CodeGen arch (Operands Zone)
-zone_begin_alloc srcloc
+zone_begin_alloc line src fun name colour
   | not debuggingIsEnabled = return (constant (eltR @Zone) 0)
   | otherwise              = do
-      let active = ConstantOperand $ ScalarConstant scalarType (1 :: Int32)
-      call' $ Lam primType (op primType srcloc)
-            $ Lam primType active
-            $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin_alloc"
+      srcloc <- alloc_srcloc_name line src fun name
+      zone   <- call' $ Lam primType (op primType srcloc)
+                      $ Lam primType (ConstantOperand (ScalarConstant scalarType (1 :: Int32)))
+                      $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin_alloc"
+      when (colour /= 0) $
+        void . call' $ Lam primType (op primType zone)
+                     $ Lam primType (ConstantOperand (ScalarConstant scalarType colour))
+                     $ Body (type' :: Type ()) (Just Tail) "___tracy_emit_zone_color"
+      return zone
 
 zone_end
-    :: Operands SrcLoc
+    :: Operands Zone
     -> CodeGen arch ()
-zone_end srcloc
+zone_end zone
   | not debuggingIsEnabled = return ()
-  | otherwise              = void $ call' (Lam primType (op primType srcloc) (Body VoidType (Just Tail) "___tracy_emit_zone_end"))
+  | otherwise              = void $ call' (Lam primType (op primType zone) (Body VoidType (Just Tail) "___tracy_emit_zone_end"))
 
