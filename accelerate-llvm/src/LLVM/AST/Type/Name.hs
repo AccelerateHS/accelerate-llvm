@@ -18,6 +18,7 @@ module LLVM.AST.Type.Name
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Data
 import Data.Semigroup
+import Data.Hashable
 import Data.String
 import Data.Word
 import Prelude
@@ -82,6 +83,9 @@ instance Semigroup Label where
 
 instance Monoid Label where
   mempty = Label mempty
+
+instance Hashable Label where
+  hashWithSalt salt (Label sbs) = hashWithSalt salt sbs
 
 
 -- | Convert to llvm-hs

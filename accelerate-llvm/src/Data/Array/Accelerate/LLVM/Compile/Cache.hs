@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Compile.Cache
@@ -75,19 +76,17 @@ cacheOfUID
     => UID
     -> LLVM arch FilePath
 cacheOfUID uid = do
-  dbg       <- liftIO $ if debuggingIsEnabled then getFlag debug else return False
-  appdir    <- liftIO $ getXdgDirectory XdgCache "accelerate"
-  template  <- targetCacheTemplate
+  appdir   <- liftIO $ getXdgDirectory XdgCache "accelerate"
+  template <- targetCacheTemplate
   let
       (base, file)  = splitFileName template
       (name, ext)   = splitExtensions file
       --
-      cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base </> if dbg then "dbg" else "rel"
+      cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base </> if debuggingIsEnabled then "dbg" else "rel"
       cachefile     = cachepath </> printf "%s%s" name (show uid) <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
   return cachefile
-
 
 -- | Remove the cache directory
 --

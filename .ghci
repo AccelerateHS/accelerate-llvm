@@ -2,5 +2,3 @@
 :set -iaccelerate-llvm
 :set -iaccelerate-llvm-native
 :set -iaccelerate-llvm-ptx
-:set -UUNBOXED_TUPLES
-:set -DUNBOXED_TUPLES=0

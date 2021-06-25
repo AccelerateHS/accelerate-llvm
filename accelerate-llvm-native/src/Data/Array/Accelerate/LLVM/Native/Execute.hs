@@ -52,6 +52,7 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Control.Concurrent                                           ( myThreadId )
+import Control.Concurrent.Extra                                     ( getThreadId )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -60,8 +61,9 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
+import Data.Text.Format                                             ( build )
+import Data.Text.Lazy.Builder                                       ( Builder, fromString )
 import System.CPUTime                                               ( getCPUTime )
-import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Data.DList                                         as DL
@@ -609,7 +611,7 @@ permuteOp inplace repr shr' NativeR{..} gamma aenv defaults@(shape -> shOut) inp
   future      <- new
   result      <- if inplace
                    then Debug.trace Debug.dump_exec               "exec: permute/inplace"                            $ return defaults
-                   else Debug.timed Debug.dump_exec (\wall cpu -> "exec: permute/clone " ++ Debug.elapsedS wall cpu) $ liftPar (cloneArray repr' defaults)
+                   else Debug.timed Debug.dump_exec (\wall cpu -> "exec: permute/clone " <> Debug.elapsedS wall cpu) $ liftPar (cloneArray repr' defaults)
   let
       splits  = numWorkers workers
       minsize = case shr of
@@ -771,11 +773,8 @@ aforeignOp
     -> as
     -> Par Native (Future bs)
 aforeignOp name _ _ asm arr = do
-  wallBegin <- liftIO getMonotonicTime
-  result    <- Debug.timed Debug.dump_exec (\wall cpu -> printf "exec: %s %s" name (Debug.elapsedP wall cpu)) (asm arr)
-  wallEnd   <- liftIO getMonotonicTime
-  liftIO $ Debug.addProcessorTime Debug.Native (wallEnd - wallBegin)
-  return result
+  -- TODO: add tracy marks
+  Debug.timed Debug.dump_exec (\wall cpu -> build "exec: {} {}" (name, Debug.elapsedP wall cpu)) (asm arr)
 
 
 -- Skeleton execution
@@ -783,12 +782,12 @@ aforeignOp name _ _ asm arr = do
 
 (!#) :: HasCallStack => Lifetime FunctionTable -> ShortByteString -> Function
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " ++ S8.unpack name))
+  = fromMaybe (internalError ("function not found: " <> fromString (S8.unpack name)))
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
-  find (\(n,_) -> n == name) (functionTable (unsafeGetValue nativeExecutable))
+  find (\(n,_) -> S8.takeWhile (/= '_') n == name) (functionTable (unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
@@ -921,7 +920,7 @@ mkTasksUsing
 mkTasksUsing ranges (name, f) gamma aenv shr paramsR params = do
   arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(_,u,v) -> do
-    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape shr u) (showShape shr v)
+    sched $ build "{} ({}) -> ({})" (S8.unpack name, showShape shr u, showShape shr v)
     let argU = marshalShape' @Native shr u
     let argV = marshalShape' @Native shr v
     callFFI f retVoid $ DL.toList $ argU `DL.append` argV `DL.append` arg
@@ -939,7 +938,7 @@ mkTasksUsingIndex
 mkTasksUsingIndex ranges (name, f) gamma aenv shr paramsR params = do
   arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(i,u,v) -> do
-    sched $ printf "%s (%s) -> (%s)" (S8.unpack name) (showShape shr u) (showShape shr v)
+    sched $ build "{} ({}) -> ({})" (S8.unpack name, showShape shr u, showShape shr v)
     let argU = marshalShape' @Native shr u
     let argV = marshalShape' @Native shr v
     let argI = DL.singleton $ marshalInt @Native i
@@ -973,10 +972,8 @@ timed name job =
   case Debug.debuggingIsEnabled of
     False -> return job
     True  -> do
-      yes <- if Debug.monitoringIsEnabled
-               then return True
-               else Debug.getFlag Debug.dump_exec
-      --
+      yes     <- Debug.getFlag Debug.dump_exec
+      verbose <- Debug.getFlag Debug.verbose
       if yes
         then do
           ref1 <- newIORef 0
@@ -993,9 +990,10 @@ timed name job =
                          --
                          let wallTime = wall1 - wall0
                              cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+                             name' | verbose   = S8.unpack name
+                                   | otherwise = takeWhile (/= '_') (S8.unpack name)
                          --
-                         Debug.addProcessorTime Debug.Native cpuTime
-                         Debug.traceIO Debug.dump_exec $ printf "exec: %s %s" (S8.unpack name) (Debug.elapsedP wallTime cpuTime)
+                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (name', Debug.elapsedP wallTime cpuTime)
               --
           return $ Job { jobTasks = start Seq.<| jobTasks job
                        , jobDone  = case jobDone job of
@@ -1009,10 +1007,10 @@ timed name job =
 foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
 
 
-sched :: String -> IO ()
+sched :: Builder -> IO ()
 sched msg
   = Debug.when Debug.verbose
   $ Debug.when Debug.dump_sched
   $ do tid <- myThreadId
-       Debug.putTraceMsg $ printf "sched: %s %s" (show tid) msg
+       Debug.putTraceMsg $ build "sched: Thread {} {}" (getThreadId tid, msg)
 

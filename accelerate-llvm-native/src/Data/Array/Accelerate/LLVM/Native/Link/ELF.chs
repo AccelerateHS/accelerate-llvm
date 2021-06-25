@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE MagicHash                #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link.ELF
@@ -19,9 +20,11 @@ module Data.Array.Accelerate.LLVM.Native.Link.ELF (
 ) where
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Debug.Internal     as Debug
+
+import Data.Array.Accelerate.LLVM.Native.Link.Object
+import qualified Data.Array.Accelerate.LLVM.Link.Tracy    as Tracy
 
 import Control.Applicative
 import Control.Monad
@@ -31,6 +34,9 @@ import Data.Char
 import Data.Int
 import Data.List
 import Data.Serialize.Get
+import Data.Text.Encoding
+import Data.Text.Format
+import Data.Text.Lazy.Builder                             ( Builder, fromString )
 import Data.Vector                                        ( Vector )
 import Data.Word
 import Foreign.C
@@ -50,6 +56,8 @@ import qualified Data.ByteString.Char8                    as B8
 import qualified Data.ByteString.Internal                 as B
 import qualified Data.ByteString.Short                    as BS
 import qualified Data.ByteString.Unsafe                   as B
+import qualified Data.HashMap.Strict                      as HashMap
+import qualified Data.Text.Buildable                      as B
 import qualified Data.Vector                              as V
 import Prelude                                            as P
 
@@ -68,7 +76,7 @@ import Prelude                                            as P
 loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err                              -> internalError err
+    Left err                              -> internalError (fromString err)
     Right (secs, symbols, relocs, strtab) -> do
       -- Load the sections into executable memory
       --
@@ -80,7 +88,7 @@ loadObject obj =
       --
       objectcode <- newLifetime [oc]
       addFinalizer objectcode $ do
-        Debug.traceIO Debug.dump_gc ("gc: unload module: " ++ show funtab)
+        Debug.traceIO Debug.dump_gc ("gc: unload module: " <> B.build (Shown funtab))
         case oc of
           Segment vmsize oc_fp ->
             withForeignPtr oc_fp $ \oc_p ->
@@ -176,7 +184,7 @@ loadSegment obj strtab secs symtab relocs = do
               let funtab              = FunctionTable $ V.toList (V.map resolve (V.filter extern symtab))
                   extern Symbol{..}   = sym_binding == Global && sym_type == Func
                   resolve Symbol{..}  =
-                    let name  = BS.toShort (B8.take (B8.length sym_name - 65) sym_name)
+                    let name  = BS.toShort sym_name
                         addr  = castPtrToFunPtr (seg_p `plusPtr` (fromIntegral sym_value + offsets V.! sym_section))
                     in
                     (name, addr)
@@ -207,7 +215,7 @@ makeJumpIsland jump_p symbolnum Symbol{..} = do
 loadSection :: HasCallStack => ByteString -> ByteString -> Ptr Word8 -> Int -> Int -> SectionHeader -> IO ()
 loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
   when (sh_type == ProgBits && sh_size > 0) $ do
-    message (printf "section %d: Mem: 0x%09x-0x%09x         %s" sec_num sec_addr (sec_addr+sh_size) (B8.unpack (indexStringTable strtab sh_name)))
+    message (build "section {}: Mem: 0x{}-0x{}         {}" (sec_num, left 9 '0' (hex sec_addr), left 9 '0' (hex (sec_addr+sh_size)), (decodeUtf8 (indexStringTable strtab sh_name))))
     let (obj_fp, obj_offset, _) = B.toForeignPtr obj
     --
     withForeignPtr obj_fp $ \obj_p -> do
@@ -223,7 +231,7 @@ loadSection obj strtab seg_p sec_num sec_addr SectionHeader{..} =
 processRelocation :: HasCallStack => Vector Symbol -> Vector Int -> Ptr Word8 -> Ptr Word8 -> Relocation -> IO ()
 #ifdef x86_64_HOST_ARCH
 processRelocation symtab sec_offset seg_p jump_p Relocation{..} = do
-  message (printf "relocation: 0x%04x to symbol %d in section %d, type=%-14s value=%s%+d" r_offset r_symbol r_section (show r_type) (B8.unpack sym_name) r_addend)
+  message (build "relocation: 0x{} to symbol {} in section {}, type={} value={}{}" (left 4 '0' (hex r_offset), r_symbol, r_section, right 14 ' ' (Shown r_type), decodeUtf8 sym_name, signed r_addend))
   case r_type of
     R_X86_64_None -> return ()
     R_X86_64_64   -> relocate value
@@ -379,17 +387,18 @@ data SectionHeader = SectionHeader
     deriving Show
 
 {#enum define SectionType
-    { SHT_NULL      as NullSection
-    , SHT_PROGBITS  as ProgBits
-    , SHT_SYMTAB    as SymTab
-    , SHT_STRTAB    as StrTab
-    , SHT_RELA      as RelA
-    , SHT_HASH      as Hash
-    , SHT_DYNAMIC   as Dynamic
-    , SHT_NOTE      as Note
-    , SHT_NOBITS    as NoBits
-    , SHT_REL       as Rel
-    , SHT_DYNSYM    as DynSym
+    { SHT_NULL          as NullSection
+    , SHT_PROGBITS      as ProgBits
+    , SHT_SYMTAB        as SymTab
+    , SHT_STRTAB        as StrTab
+    , SHT_RELA          as RelA
+    , SHT_HASH          as Hash
+    , SHT_DYNAMIC       as Dynamic
+    , SHT_NOTE          as Note
+    , SHT_NOBITS        as NoBits
+    , SHT_REL           as Rel
+    , SHT_DYNSYM        as DynSym
+    , SHT_X86_64_UNWIND as Unwind
     }
     deriving (Eq, Show)
 #}
@@ -661,12 +670,12 @@ readSymbol64 Peek{..} secs strtab = do
     -- External symbol; lookup value
     {#const SHN_UNDEF#} | not (B.null sym_name) -> do
         funptr <- resolveSymbol sym_name
-        message (printf "%s: external symbol found at %s" (B8.unpack sym_name) (show funptr))
+        message (build "{}: external symbol found at {}" (decodeUtf8 sym_name, Shown funptr))
         return Symbol { sym_value = castPtrToWord64 (castFunPtrToPtr funptr), .. }
 
     -- Internally defined symbol
     n | n < {#const SHN_LORESERVE#} -> do
-        message (printf "%s: local symbol in section %d at 0x%02x" (B8.unpack sym_name) sym_section sym_value)
+        message (build "{}: local symbol in section {} at 0x{}" (decodeUtf8 sym_name, sym_section, left 2 '0' (hex sym_value)))
         return Symbol {..}
 
     {#const SHN_ABS#} | sym_type == File -> return Symbol {..}
@@ -678,6 +687,15 @@ readSymbol64 Peek{..} secs strtab = do
 --
 resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
+  -- static addresses of profiling hooks
+  | Debug.debuggingIsEnabled
+  , "___tracy" `B8.isPrefixOf` name
+  = case HashMap.lookup name Tracy.symtab of
+      Nothing   -> fail $ printf "failed to resolve symbol %s" (B8.unpack name)
+      Just addr -> return addr
+
+  -- dynamic addresses from shared libraries
+  | otherwise
   = unsafePerformIO
   $ B.unsafeUseAsCString name $ \c_name -> do
       addr <- c_dlsym (packDL Default) c_name
@@ -730,10 +748,16 @@ foreign import ccall unsafe "string.h" memset  :: Ptr a -> CInt  -> CSize -> IO 
 -- -----
 
 {-# INLINE trace #-}
-trace :: String -> a -> a
-trace msg = Debug.trace Debug.dump_ld ("ld: " ++ msg)
+trace :: Builder -> a -> a
+trace msg = Debug.trace Debug.dump_ld ("ld: " <> msg)
 
 {-# INLINE message #-}
-message :: Monad m => String -> m ()
+message :: Monad m => Builder -> m ()
 message msg = trace msg (return ())
+
+{-# INLINE signed #-}
+signed :: Int64 -> Builder
+signed x
+  | x < 0     =                B.build x
+  | otherwise = B.build '+' <> B.build x
 

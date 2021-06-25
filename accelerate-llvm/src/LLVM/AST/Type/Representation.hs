@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Representation
@@ -27,11 +28,17 @@ import Data.Array.Accelerate.Representation.Type
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Downcast
+import LLVM.AST.Type.Name
 
 import qualified LLVM.AST.Type                                      as LLVM
 
+import Data.List
+import Data.Text.Buildable
+import Data.Text.Lazy.Builder
 import Foreign.Ptr
 import Text.Printf
+import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.Text.Format                                   as F
 
 
 -- Witnesses to observe the LLVM type hierarchy:
@@ -72,8 +79,10 @@ data PrimType a where
   BoolPrimType    ::                            PrimType Bool
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
-  StructPrimType  :: TypeR a                 -> PrimType a          -- opaque structures (required for CmpXchg)
   ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
+  StructPrimType  :: Bool -> TupR PrimType l -> PrimType l          -- aggregate structures
+  NamedPrimType   :: Label                   -> PrimType a          -- typedef
+
 
 -- | All types
 --
@@ -251,22 +260,49 @@ instance IsPrim Bool where
   primType = BoolPrimType
 
 instance Show (Type a) where
-  show VoidType        = "()"
-  show (PrimType t)    = show t
+  show VoidType     = "()"
+  show (PrimType t) = show t
 
 instance Show (PrimType a) where
-  show BoolPrimType                   = "Bool"
-  show (ScalarPrimType t)             = show t
-  show (StructPrimType t)             = show t
-  show (ArrayPrimType n t)            = printf "[%d x %s]" n (show t)
-  show (PtrPrimType t (AddrSpace n))  = printf "Ptr%s %s" a p
+  show BoolPrimType              = "Bool"
+  show (ScalarPrimType t)        = show t
+  show (NamedPrimType (Label l)) = S8.unpack l
+  show (ArrayPrimType n t)       = printf "[%d x %s]" n (show t)
+  show (StructPrimType _ t)      = printf "{ %s }" (intercalate ", " (go t))
+    where
+      go :: TupR PrimType t -> [String]
+      go TupRunit         = []
+      go (TupRsingle s)   = [show s]
+      go (TupRpair ta tb) = go ta ++ go tb
+
+  show (PtrPrimType t (AddrSpace n)) = printf "Ptr%s %s" a p
     where
       p             = show t
       a | n == 0    = ""
-        | otherwise = printf "[addrspace %d]" n
+        | otherwise = printf "[addrspace %d]" n :: String
       -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
       --   | otherwise           = show t
 
+instance Buildable (Type a) where
+  build VoidType     = "()"
+  build (PrimType t) = build t
+
+instance Buildable (PrimType a) where
+  build BoolPrimType              = "Bool"
+  build (ScalarPrimType t)        = build t
+  build (NamedPrimType (Label t)) = fromString (S8.unpack t)
+  build (ArrayPrimType n t)       = F.build "[{} x {}]" (n, t)
+  build (StructPrimType _ t)      = "{ " <> (foldr (<>) mempty (intersperse ", " (go t))) <> " }"
+    where
+      go :: TupR PrimType t -> [Builder]
+      go TupRunit         = []
+      go (TupRsingle s)   = [build s]
+      go (TupRpair ta tb) = go ta ++ go tb
+
+  build (PtrPrimType t (AddrSpace n)) = F.build "Ptr{} {}" (a, t)
+    where
+      a | n == 0    = ""
+        | otherwise = F.build "[addrspace {}]" (F.Only n)
 
 -- | Does the concrete type represent signed or unsigned values?
 --
@@ -321,12 +357,13 @@ instance Downcast (Type a) LLVM.Type where
 
 instance Downcast (PrimType a) LLVM.Type where
   downcast BoolPrimType         = LLVM.IntegerType 1
+  downcast (NamedPrimType t)    = LLVM.NamedTypeReference (downcast t)
   downcast (ScalarPrimType t)   = downcast t
   downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
   downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)
-  downcast (StructPrimType t)   = LLVM.StructureType False (go t)
+  downcast (StructPrimType p t) = LLVM.StructureType p (go t)
     where
-      go :: TypeR t -> [LLVM.Type]
+      go :: TupR PrimType t -> [LLVM.Type]
       go TupRunit         = []
       go (TupRsingle s)   = [downcast s]
       go (TupRpair ta tb) = go ta ++ go tb

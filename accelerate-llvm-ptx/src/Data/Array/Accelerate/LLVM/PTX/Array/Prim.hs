@@ -3,6 +3,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators       #-}
@@ -34,7 +35,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Prim (
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Array.Unique
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.Lifetime                           hiding ( withLifetime )
+import Data.Array.Accelerate.Lifetime                               hiding ( withLifetime )
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
@@ -45,18 +46,20 @@ import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream
-import Data.Array.Accelerate.LLVM.PTX.Array.Remote              as Remote
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import Data.Array.Accelerate.LLVM.PTX.Array.Remote                  as Remote
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
-import qualified Foreign.CUDA.Driver                            as CUDA
-import qualified Foreign.CUDA.Driver.Stream                     as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
+import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 
 import Control.Monad
 import Control.Monad.Reader
 import Data.IORef
-import GHC.Base
-import Text.Printf
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import Prelude
+
+import GHC.Base                                                     ( IO(..), touch# )
 
 
 -- | Allocate a device-side array associated with the given host array. If the
@@ -71,7 +74,7 @@ mallocArray
     -> ArrayData e
     -> LLVM PTX ()
 mallocArray !t !n !ad = do
-  message ("mallocArray: " ++ showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  message ("mallocArray: " <> showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
   void $ Remote.malloc t ad n False
 
 
@@ -88,7 +91,7 @@ useArrayAsync
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
 useArrayAsync !t !n !ad = do
-  message ("useArrayAsync: " ++ showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  message ("useArrayAsync: " <> showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
   alloc <- liftPar $ Remote.malloc t ad n True
   if alloc
     then pokeArrayAsync t n ad
@@ -118,7 +121,7 @@ pokeArrayAsync !t !n !ad
           nonblocking stream $ do
             transfer "pokeArray" bytes (Just st) $ do
               CUDA.pokeArrayAsync n src dst (Just st)
-              Debug.didCopyBytesToRemote (fromIntegral bytes)
+              Debug.memcpy_to_remote bytes
             return ad
     --
     return result
@@ -152,7 +155,7 @@ indexArrayAsync !n !t !ad_src !i
         nonblocking stream $ do
           transfer "indexArray" bytes (Just st) $ do
             CUDA.peekArrayAsync n (src `CUDA.advanceDevPtr` (i*n)) dst (Just st)
-            Debug.didCopyBytesFromRemote (fromIntegral bytes)
+            Debug.memcpy_from_remote bytes
           return ad_dst
     --
     return result
@@ -181,7 +184,7 @@ peekArrayAsync !t !n !ad
           nonblocking stream $ do
             transfer "peekArray" bytes (Just st) $ do
               CUDA.peekArrayAsync n src dst (Just st)
-              Debug.didCopyBytesFromRemote (fromIntegral bytes)
+              Debug.memcpy_from_remote bytes
             return ad
     --
     return result
@@ -364,26 +367,26 @@ touchIORef r = IO $ \s -> case touch# r s of s' -> (# s', () #)
 -- -----
 
 {-# INLINE showBytes #-}
-showBytes :: Int -> String
+showBytes :: Int -> Builder
 showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B"
 
 {-# INLINE trace #-}
-trace :: MonadIO m => String -> m a -> m a
-trace msg next = liftIO (Debug.traceIO Debug.dump_gc ("gc: " ++ msg)) >> next
+trace :: MonadIO m => Builder -> m a -> m a
+trace msg next = liftIO (Debug.traceIO Debug.dump_gc ("gc: " <> msg)) >> next
 
 {-# INLINE message #-}
-message :: MonadIO m => String -> m ()
+message :: MonadIO m => Builder -> m ()
 message s = s `trace` return ()
 
 {-# INLINE transfer #-}
-transfer :: MonadIO m => String -> Int -> Maybe CUDA.Stream -> IO () -> m ()
+transfer :: MonadIO m => Builder -> Int -> Maybe CUDA.Stream -> IO () -> m ()
 transfer name bytes stream action =
   let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-      msg wall cpu gpu  = printf "gc: %s: %s @ %s, %s"
-                            name
-                            (showBytes bytes)
-                            (showRate bytes wall)
-                            (Debug.elapsed wall cpu gpu)
+      msg wall cpu gpu  = build "gc: {}: {} @ {}, {}"
+                            ( name
+                            , showBytes bytes
+                            , showRate bytes wall
+                            , Debug.elapsed wall cpu gpu )
   in
   liftIO (Debug.timed Debug.dump_gc msg stream action)
 

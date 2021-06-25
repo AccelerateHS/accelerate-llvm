@@ -29,7 +29,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 
-import Data.Array.Accelerate.LLVM.Native.Target                 ( Native )
+import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
@@ -97,6 +97,4 @@ mkMap uid aenv (ArrayR shR aR) bR apply =
       xs <- readArray TypeInt arrIn i
       ys <- app1 apply xs
       writeArray TypeInt arrOut i ys
-
-    return_
 

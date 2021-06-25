@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -14,17 +15,14 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Optimise (
 
 ) where
 
--- llvm-hs
 import LLVM.AST.DataLayout
 import LLVM.Module
 import LLVM.PassManager
 import LLVM.Target
 
--- accelerate
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
--- standard library
-import Text.Printf
+import Data.Text.Format
 
 
 -- | Run the standard optimisations on the given module when targeting a
@@ -51,7 +49,7 @@ optimiseModule datalayout machine libinfo mdl = do
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
   Debug.traceIO Debug.dump_cc $
-    printf "llvm: optimisation did work? %s" (show b1)
+    build "llvm: optimisation did work? {}" (Only b1)
 
 {--
 -- The first gentle optimisation pass. I think this is usually done when loading

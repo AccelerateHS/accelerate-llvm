@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Link.Cache
@@ -23,8 +24,8 @@ import Data.Array.Accelerate.LLVM.Compile.Cache
 import Control.Monad
 import Control.Concurrent.MVar
 import Data.Map.Strict                                              ( Map )
+import Data.Text.Format
 import Prelude                                                      hiding ( lookup )
-import Text.Printf
 import qualified Data.Map.Strict                                    as Map
 
 
@@ -106,7 +107,7 @@ issue key fun (LinkCache var) = do
   ticket <- newLifetime fun
   addFinalizer ticket $
     let refcount (Entry c f o)
-          | c <= 1    = trace dump_ld (printf "ld: remove object code %s" (show key)) Nothing
+          | c <= 1    = trace dump_ld (build "ld: remove object code {}" (Only (Shown key))) Nothing
           | otherwise = Just (Entry (c-1) f o)
     in
     modifyMVar_ var $ \m -> return $! Map.update refcount key m

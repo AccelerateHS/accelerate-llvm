@@ -1,6 +1,7 @@
-{-# LANGUAGE BangPatterns    #-}
-{-# LANGUAGE MagicHash       #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE MagicHash         #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -37,6 +38,7 @@ import qualified Foreign.CUDA.Driver.Stream                         as Stream
 -- standard library
 import Control.Exception
 import Control.Monad.State
+import Data.Text.Lazy.Builder
 
 
 -- | A 'Stream' represents an independent sequence of computations executed on
@@ -140,7 +142,7 @@ create' = do
                                     ExitCode OutOfMemory -> return Nothing
                                     _                    -> throwIO e
 
-    attempt :: MonadIO m => String -> m (Maybe a) -> m (Maybe a)
+    attempt :: MonadIO m => Builder -> m (Maybe a) -> m (Maybe a)
     attempt msg ea = do
       ma <- ea
       case ma of
@@ -168,12 +170,12 @@ destroy = finalize
 -- -----
 
 {-# INLINE trace #-}
-trace :: String -> IO a -> IO a
+trace :: Builder -> IO a -> IO a
 trace msg next = do
-  Debug.traceIO Debug.dump_sched ("stream: " ++ msg)
+  Debug.traceIO Debug.dump_sched ("stream: " <> msg)
   next
 
 {-# INLINE message #-}
-message :: String -> IO ()
+message :: Builder -> IO ()
 message s = s `trace` return ()
 

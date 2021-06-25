@@ -63,7 +63,7 @@ type WorkQueue = (Operand (Ptr Int32), Operand (Ptr Int32))
 --
 globalWorkQueue :: CodeGen WorkQueue
 globalWorkQueue = do
-  sn <- freshName
+  sn <- freshGlobalName
   declare $ LLVM.globalVariableDefaults
     { LLVM.name         = LLVM.Name "__queue__"
     , LLVM.type'        = LLVM.IntegerType 32

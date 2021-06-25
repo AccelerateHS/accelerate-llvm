@@ -1,4 +1,5 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NamedFieldPuns    #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Execute.Event
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -31,6 +32,7 @@ import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver.Event                          as Event
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
+import Data.Text.Lazy.Builder
 import Control.Exception
 import Control.Monad.State
 
@@ -49,7 +51,7 @@ create :: LLVM PTX Event
 create = do
   e     <- create'
   event <- liftIO $ newLifetime e
-  liftIO $ addFinalizer event $ do message $ "destroy " ++ showEvent e
+  liftIO $ addFinalizer event $ do message $ "destroy " <> showEvent e
                                    Event.destroy e
   return event
 
@@ -75,7 +77,7 @@ create' = do
                                     ExitCode OutOfMemory -> return Nothing
                                     _                    -> throwIO e
 
-    attempt :: MonadIO m => String -> m (Maybe a) -> m (Maybe a)
+    attempt :: MonadIO m => Builder -> m (Maybe a) -> m (Maybe a)
     attempt msg ea = do
       ma <- ea
       case ma of
@@ -107,7 +109,7 @@ waypoint stream = do
   liftIO $
     withLifetime stream  $ \s -> do
       withLifetime event $ \e -> do
-        message $ "add waypoint " ++ showEvent e ++ " in stream " ++ showStream s
+        message $ "add waypoint " <> showEvent e <> " in stream " <> showStream s
         Event.record e (Just s)
         return event
 
@@ -119,7 +121,7 @@ after :: Event -> Stream -> IO ()
 after event stream =
   withLifetime stream $ \s ->
   withLifetime event  $ \e -> do
-    message $ "after " ++ showEvent e ++ " in stream " ++ showStream s
+    message $ "after " <> showEvent e <> " in stream " <> showStream s
     Event.wait e (Just s) []
 
 -- | Block the calling thread until the event is recorded
@@ -128,7 +130,7 @@ after event stream =
 block :: Event -> IO ()
 block event =
   withLifetime event $ \e -> do
-    message $ "blocked on event " ++ showEvent e
+    message $ "blocked on event " <> showEvent e
     Event.block e
 
 -- | Test whether an event has completed
@@ -142,20 +144,20 @@ query event = withLifetime event Event.query
 -- -----
 
 {-# INLINE trace #-}
-trace :: String -> IO a -> IO a
+trace :: Builder -> IO a -> IO a
 trace msg next = do
-  Debug.traceIO Debug.dump_sched ("event: " ++ msg)
+  Debug.traceIO Debug.dump_sched ("event: " <> msg)
   next
 
 {-# INLINE message #-}
-message :: String -> IO ()
+message :: Builder -> IO ()
 message s = s `trace` return ()
 
 {-# INLINE showEvent #-}
-showEvent :: Event.Event -> String
-showEvent (Event.Event e) = show e
+showEvent :: Event.Event -> Builder
+showEvent (Event.Event e) = fromString (show e)
 
 {-# INLINE showStream #-}
-showStream :: Stream.Stream -> String
-showStream (Stream.Stream s) = show s
+showStream :: Stream.Stream -> Builder
+showStream (Stream.Stream s) = fromString (show s)
 

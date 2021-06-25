@@ -23,8 +23,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   liftCodeGen,
 
   -- declarations
-  fresh, freshName,
+  fresh, freshLocalName, freshGlobalName,
   declare,
+  typedef,
   intrinsic,
 
   -- basic blocks
@@ -51,6 +52,7 @@ import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
+import LLVM.AST.Orphans                                             ()
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Instruction
@@ -67,14 +69,13 @@ import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Function
 import Data.HashMap.Strict                                          ( HashMap )
-import Data.Map                                                     ( Map )
 import Data.Sequence                                                ( Seq )
 import Data.String
+import Data.Text.Format
+import Data.Text.Lazy.Builder                                       ( Builder )
 import Prelude
-import Text.Printf
 import qualified Data.Foldable                                      as F
 import qualified Data.HashMap.Strict                                as HashMap
-import qualified Data.Map                                           as Map
 import qualified Data.Sequence                                      as Seq
 import qualified Data.ByteString.Short                              as B
 
@@ -89,10 +90,12 @@ import qualified Data.ByteString.Short                              as B
 --
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                                      -- blocks for this function
-  , symbolTable         :: Map Label LLVM.Global                          -- global (external) function declarations
+  , symbolTable         :: HashMap Label LLVM.Global                      -- global (external) function declarations
+  , typedefTable        :: HashMap Label (Maybe LLVM.Type)                -- global type definitions
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
-  , next                :: {-# UNPACK #-} !Word                           -- a name supply
+  , local               :: {-# UNPACK #-} !Word                           -- a name supply
+  , global              :: {-# UNPACK #-} !Word                           -- a name supply for global variables
   }
 
 data Block = Block
@@ -117,16 +120,21 @@ evalCodeGen ll = do
   (IROpenAcc ks, st)   <- runStateT (runCodeGen ll)
                         $ CodeGenState
                             { blockChain        = initBlockChain
-                            , symbolTable       = Map.empty
+                            , symbolTable       = HashMap.empty
+                            , typedefTable      = HashMap.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget @arch
-                            , next              = 0
+                            , local             = 0
+                            , global            = 0
                             }
 
   let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
-                          in  (fs, Map.fromList as)
+                          in  (fs, HashMap.fromList as)
 
-      definitions       = map LLVM.GlobalDefinition (kernels ++ Map.elems (symbolTable st))
+      createTypedefs    = map (\(n,t) -> LLVM.TypeDefinition (downcast n) t) . HashMap.toList
+
+      definitions       = createTypedefs (typedefTable st)
+                       ++ map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
                        ++ createMetadata (metadataTable st)
 
       name | x:_               <- kernels
@@ -189,7 +197,7 @@ newBlock nm =
     let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (fromString label) Seq.empty err
-        err     = internalError (printf "block `%s' has no terminator" label)
+        err     = internalError (build "block `{}' has no terminator" (Only label))
     in
     ( next, s )
 
@@ -219,12 +227,12 @@ beginBlock nm = do
 createBlocks :: HasCallStack => CodeGen arch [LLVM.BasicBlock]
 createBlocks
   = state
-  $ \s -> let s'     = s { blockChain = initBlockChain, next = 0 }
+  $ \s -> let s'     = s { blockChain = initBlockChain, local = 0 }
               blocks = makeBlock `fmap` blockChain s
               m      = Seq.length (blockChain s)
               n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
           in
-          trace (printf "generated %d instructions in %d blocks" (n+m) m) ( F.toList blocks , s' )
+          trace (build "generated {} instructions in {} blocks" (n+m, m)) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
       LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)
@@ -238,12 +246,17 @@ createBlocks
 fresh :: TypeR a -> CodeGen arch (Operands a)
 fresh TupRunit         = return OP_Unit
 fresh (TupRpair t2 t1) = OP_Pair <$> fresh t2 <*> fresh t1
-fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshName
+fresh (TupRsingle t)   = ir t . LocalReference (PrimType (ScalarPrimType t)) <$> freshLocalName
 
--- | Generate a fresh (un)name.
+-- | Generate a fresh local (un)name
 --
-freshName :: CodeGen arch (Name a)
-freshName = state $ \s@CodeGenState{..} -> ( UnName next, s { next = next + 1 } )
+freshLocalName :: CodeGen arch (Name a)
+freshLocalName = state $ \s@CodeGenState{..} -> ( UnName local, s { local = local + 1 } )
+
+-- | Generate a fresh global (un)name
+--
+freshGlobalName :: CodeGen arch (Name a)
+freshGlobalName = state $ \s@CodeGenState{..} -> ( UnName global, s { global = global + 1 } )
 
 
 -- | Add an instruction to the state of the currently active block so that it is
@@ -262,7 +275,7 @@ instr' ins =
       return $ LocalReference VoidType (Name B.empty)
     --
     ty -> do
-      name <- freshName
+      name <- freshLocalName
       instr_ $ downcast (name := ins)
       return $ LocalReference ty name
 
@@ -372,7 +385,18 @@ declare g =
                LLVM.Name n      -> Label n
                LLVM.UnName n    -> Label (fromString (show n))
   in
-  modify (\s -> s { symbolTable = Map.alter unique name (symbolTable s) })
+  modify (\s -> s { symbolTable = HashMap.alter unique name (symbolTable s) })
+
+
+-- | Add a global type definition
+--
+typedef :: HasCallStack => Label -> Maybe LLVM.Type -> CodeGen arch ()
+typedef name t =
+  let unique (Just s) | t /= s    = internalError "duplicate typedef"
+                      | otherwise = Just t
+      unique _                    = Just t
+  in
+  modify (\s -> s { typedefTable = HashMap.alter unique name (typedefTable s) })
 
 
 -- | Get name of the corresponding intrinsic function implementing a given C
@@ -403,15 +427,15 @@ addMetadata key val =
 -- definition.
 --
 createMetadata :: HashMap ShortByteString (Seq [Maybe Metadata]) -> [LLVM.Definition]
-createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
+createMetadata md = go (HashMap.toList md) (Seq.empty, Seq.empty)
   where
-    build :: [(ShortByteString, Seq [Maybe Metadata])]
-          -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
-          -> [LLVM.Definition]
-    build []     (k,d) = F.toList (k Seq.>< d)
-    build (x:xs) (k,d) =
+    go :: [(ShortByteString, Seq [Maybe Metadata])]
+       -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
+       -> [LLVM.Definition]
+    go []     (k,d) = F.toList (k Seq.>< d)
+    go (x:xs) (k,d) =
       let (k',d') = meta (Seq.length d) x
-      in  build xs (k Seq.|> k', d Seq.>< d')
+      in  go xs (k Seq.|> k', d Seq.>< d')
 
     meta :: Int                                         -- number of metadata node definitions so far
          -> (ShortByteString, Seq [Maybe Metadata])     -- current assoc of the metadata map
@@ -428,6 +452,6 @@ createMetadata md = build (HashMap.toList md) (Seq.empty, Seq.empty)
 -- =====
 
 {-# INLINE trace #-}
-trace :: String -> a -> a
-trace msg = Debug.trace Debug.dump_cc ("llvm: " ++ msg)
+trace :: Builder -> a -> a
+trace msg = Debug.trace Debug.dump_cc ("llvm: " <> msg)
 

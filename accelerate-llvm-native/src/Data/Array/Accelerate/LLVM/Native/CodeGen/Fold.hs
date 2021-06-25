@@ -99,8 +99,6 @@ mkFoldDim uid aenv aR@(ArrayR shR eR) combine mseed mdelayed =
 
       writeArray TypeInt arrOut i r
 
-    return_
-
 
 -- Reduce an array to single element.
 --
@@ -164,7 +162,7 @@ mkFoldAllS uid aenv eR combine mseed mdelayed  =
                            reduceFromTo  eR (indexHead start) (indexHead end) (app2 combine) z (app1 (delayedLinearIndex arrIn))
            Nothing   ->    reduce1FromTo eR (indexHead start) (indexHead end) (app2 combine)   (app1 (delayedLinearIndex arrIn))
     writeArray TypeInt arrOut zero r
-    return_
+
 
 -- Parallel reduction of an entire array to a single element, step 1.
 --
@@ -197,7 +195,6 @@ mkFoldAllP1 uid aenv eR combine mdelayed =
     r <- reduce1FromTo eR (indexHead start) (indexHead end) (app2 combine) (app1 (delayedLinearIndex arrIn))
     writeArray TypeInt arrTmp piece r
 
-    return_
 
 -- Parallel reduction of an entire array to a single element, step 2.
 --
@@ -229,7 +226,6 @@ mkFoldAllP2 uid aenv eR combine mseed =
                            reduceFromTo  eR (indexHead start) (indexHead end) (app2 combine) z (readArray TypeInt arrTmp)
            Nothing   ->    reduce1FromTo eR (indexHead start) (indexHead end) (app2 combine)   (readArray TypeInt arrTmp)
     writeArray TypeInt arrOut zero r
-    return_
 
 
 -- Exclusive reductions over empty arrays (of any dimension) fill the lower

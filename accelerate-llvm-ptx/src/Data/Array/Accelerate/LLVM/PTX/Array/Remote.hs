@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -33,20 +34,20 @@ import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Type
 import Data.Array.Accelerate.Type
-import qualified Data.Array.Accelerate.Array.Remote                     as Remote
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug                   as Debug
+import qualified Data.Array.Accelerate.Array.Remote                 as Remote
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 import Foreign.CUDA.Driver.Error
-import qualified Foreign.CUDA.Ptr                                       as CUDA
-import qualified Foreign.CUDA.Driver                                    as CUDA
-import qualified Foreign.CUDA.Driver.Stream                             as CUDA
+import qualified Foreign.CUDA.Ptr                                   as CUDA
+import qualified Foreign.CUDA.Driver                                as CUDA
+import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 
 import Control.Exception
 import Control.Monad.State
-import Text.Printf
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 
-import GHC.Base
-import GHC.Int
+import GHC.Base                                                     ( Int(..), Double(..), int2Double# )
 
 
 -- Events signal once a computation has completed
@@ -60,14 +61,16 @@ instance Remote.RemoteMemory (LLVM PTX) where
   --
   mallocRemote n
     | n <= 0    = return (Just CUDA.nullDevPtr)
-    | otherwise = liftIO $ do
-        ep <- try (CUDA.mallocArray n)
-        case ep of
-          Right p                     -> do liftIO (Debug.didAllocateBytesRemote (i64 n))
-                                            return (Just p)
-          Left (ExitCode OutOfMemory) -> do return Nothing
-          Left e                      -> do message ("malloc failed with error: " ++ show e)
-                                            throwIO e
+    | otherwise = do
+        name <- gets ptxDeviceName
+        liftIO $ do
+          ep <- try (CUDA.mallocArray n)
+          case ep of
+            Right p                     -> do Debug.remote_memory_alloc name (CUDA.useDevicePtr p) n
+                                              return (Just p)
+            Left (ExitCode OutOfMemory) -> do return Nothing
+            Left e                      -> do message ("malloc failed with error: " <> fromString (show e))
+                                              throwIO e
 
   peekRemote t n src ad
     | SingleArrayDict <- singleArrayDict t
@@ -77,7 +80,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
       in
       blocking            $ \stream ->
       withLifetime stream $ \st     -> do
-        Debug.didCopyBytesFromRemote (i64 bytes)
+        Debug.memcpy_from_remote bytes
         transfer "peekRemote" bytes (Just st) $ CUDA.peekArrayAsync n src dst (Just st)
 
   pokeRemote t n dst ad
@@ -88,7 +91,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
       in
       blocking            $ \stream ->
       withLifetime stream $ \st     -> do
-        Debug.didCopyBytesToRemote (i64 bytes)
+        Debug.memcpy_to_remote bytes
         transfer "pokeRemote" bytes (Just st) $ CUDA.pokeArrayAsync n src dst (Just st)
 
   castRemotePtr        = CUDA.castDevPtr
@@ -140,10 +143,6 @@ blocking !fun =
     liftIO $ block e
     return r
 
-{-# INLINE i64 #-}
-i64 :: Int -> Int64
-i64 (I# i#) = I64# i#
-
 {-# INLINE double #-}
 double :: Int -> Double
 double (I# i#) = D# (int2Double# i#)
@@ -153,26 +152,26 @@ double (I# i#) = D# (int2Double# i#)
 -- ---------
 
 {-# INLINE showBytes #-}
-showBytes :: Int -> String
+showBytes :: Int -> Builder
 showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (double x) "B"
 
 {-# INLINE trace #-}
-trace :: String -> IO a -> IO a
-trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
+trace :: Builder -> IO a -> IO a
+trace msg next = Debug.traceIO Debug.dump_gc ("gc: " <> msg) >> next
 
 {-# INLINE message #-}
-message :: String -> IO ()
+message :: Builder -> IO ()
 message s = s `trace` return ()
 
 {-# INLINE transfer #-}
-transfer :: String -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
+transfer :: Builder -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
 transfer name bytes stream action
   = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (double x / t) "B/s"
-        msg wall cpu gpu  = printf "gc: %s: %s bytes @ %s, %s"
-                              name
-                              (showBytes bytes)
-                              (showRate bytes wall)
-                              (Debug.elapsed wall cpu gpu)
+        msg wall cpu gpu  = build "gc: {}: {} bytes @ {}, {}"
+                              ( name
+                              , showBytes bytes
+                              , showRate bytes wall
+                              , Debug.elapsed wall cpu gpu )
     in
     Debug.timed Debug.dump_gc msg stream action
 

@@ -123,9 +123,8 @@ mkInside uid aenv repr apply paramIn =
 
     imapNestFromToTile (arrayRshape repr) 4 start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
-      writeArray TypeInt arrOut i r                     -- store result
+      writeArray TypeInt arrOut i r             -- store result
 
-    return_
 
 mkBorder
     :: UID
@@ -146,8 +145,6 @@ mkBorder uid aenv repr apply paramIn =
     imapNestFromTo (arrayRshape repr) start end shOut $ \ix i -> do
       r <- app1 apply ix                        -- apply generator function
       writeArray TypeInt arrOut i r             -- store result
-
-    return_
 
 
 imapNestFromToTile

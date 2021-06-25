@@ -41,7 +41,8 @@ import Data.ByteString.Short.Char8                                  ( ShortByteS
 import Data.HashSet                                                 ( HashSet )
 import Data.List
 import Data.Maybe
-import Text.Printf
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.ByteString.Short.Extra                        as BS
 import qualified Data.HashSet                                       as Set
@@ -97,9 +98,11 @@ withLibdeviceNVPTX dev ctx ast next =
     externs     = analyse ast
     arch        = computeCapability dev
 
-    msg         = printf "cc: linking with libdevice: %s"
-                $ intercalate ", "
-                $ map S8.unpack
+    msg         = build "cc: linking with libdevice: {}"
+                $ Only
+                $ foldr (<>) mempty
+                $ intersperse ", "
+                $ map (fromString . S8.unpack)
                 $ Set.toList externs
 
 
@@ -132,9 +135,11 @@ withLibdeviceNVVM dev ctx ast next =
 
     arch        = computeCapability dev
 
-    msg         = printf "cc: linking with libdevice: %s"
-                $ intercalate ", "
-                $ map S8.unpack
+    msg         = build "cc: linking with libdevice: {}"
+                $ Only
+                $ foldr (<>) mempty
+                $ intersperse ", "
+                $ map (fromString . S8.unpack)
                 $ Set.toList externs
 
 

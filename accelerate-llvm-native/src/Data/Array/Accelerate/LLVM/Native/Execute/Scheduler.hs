@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -24,9 +25,10 @@ module Data.Array.Accelerate.LLVM.Native.Execute.Scheduler (
 
 ) where
 
-import qualified Data.Array.Accelerate.LLVM.Native.Debug            as D
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Control.Concurrent
+import Control.Concurrent.Extra
 import Control.DeepSeq
 import Control.Exception
 import Control.Monad
@@ -34,10 +36,13 @@ import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
 import Data.Int
 import Data.Sequence                                                ( Seq )
+import Data.Text.Format
+import Data.Text.Lazy.Builder
+import Foreign.C.String
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
 
-import GHC.Base
+import GHC.Base                                                     hiding ( build )
 
 #include "MachDeps.h"
 
@@ -135,7 +140,7 @@ runWorker tid ref queue = loop 0
                          --
                          -- When some other thread pushes new work, it will also write to that MVar
                          -- and this thread will wake up.
-                         message $ printf "sched: %s sleeping" (show tid)
+                         message $ build "sched: Thread {} sleeping" (Only (getThreadId tid))
 
                          -- blocking, wake-up when new work is available
                          () <- readMVar var
@@ -143,7 +148,7 @@ runWorker tid ref queue = loop 0
         --
         Just task -> case task of
                        Work io -> io >> loop 0
-                       Retire  -> message $ printf "sched: %s shutting down" (show tid)
+                       Retire  -> message $ build "sched: Thread {} shutting down" (Only (getThreadId tid))
 
 
 -- Spawn a new worker thread for each capability
@@ -165,11 +170,13 @@ hireWorkersOn caps = do
   workerThreadIds <- forM caps $ \cpu -> do
                        tid <- mask_ $ forkOnWithUnmask cpu $ \restore -> do
                                 tid <- myThreadId
+                                Debug.init_thread
+                                withCString (printf "Thread %d" cpu) Debug.set_thread_name
                                 catch
                                   (restore $ runWorker tid workerActive workerTaskQueue)
                                   (appendMVar workerException . (tid,))
                        --
-                       message $ printf "sched: fork %s on capability %d" (show tid) cpu
+                       message $ build "sched: fork Thread {} on capability {}" (getThreadId tid, cpu)
                        return tid
   --
   workerThreadIds `deepseq` return Workers { workerCount = length workerThreadIds, ..}
@@ -253,6 +260,6 @@ appendMVar mvar a =
 -- Debug
 -- -----
 
-message :: String -> IO ()
-message = D.traceIO D.dump_sched
+message :: Builder -> IO ()
+message = Debug.traceIO Debug.dump_sched
 
