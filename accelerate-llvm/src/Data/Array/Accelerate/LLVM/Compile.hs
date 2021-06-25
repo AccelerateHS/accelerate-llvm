@@ -324,7 +324,7 @@ compileOpenAcc = traverseAcc
             go TupRunit                = AST.UnzipUnit
             go (TupRpair v1 v2)        = AST.UnzipPair (go v1) (go v2)
             go (TupRsingle (Var _ ix)) = case lookupVar lhs ix of
-              Right u -> u
+              Right u  -> u
               Left ix' -> case ix' of {}
               -- Left branch is unreachable, as `Idx () y` is an empty type
 
@@ -336,7 +336,7 @@ compileOpenAcc = traverseAcc
             lookupVar (LeftHandSidePair l1 l2) ix = case lookupVar l2 ix of
               Right u -> Right $ AST.UnzipPrj PairIdxRight u
               Left ix' -> case lookupVar l1 ix' of
-                Right u -> Right $ AST.UnzipPrj PairIdxLeft u
+                Right u   -> Right $ AST.UnzipPrj PairIdxLeft u
                 Left ix'' -> Left ix''
 
         -- Is there a foreign version available for this backend? If so, take
