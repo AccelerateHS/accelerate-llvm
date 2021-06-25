@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RebindableSyntax    #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -34,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import qualified Data.Array.Accelerate.LLVM.CodeGen.Arithmetic      as A
 
 import Control.Applicative
+import Data.String
 import Prelude
 
 
@@ -270,7 +272,7 @@ bounded bndy IRDelayed{..} ix = do
            nb <- br ifExit
 
            setBlock ifExit
-           crit <- freshName
+           crit <- freshLocalName
            r    <- phi1 ifExit crit [(boolean False, eb), (A.unbool nv, nb)]
 
            return (OP_Bool r)

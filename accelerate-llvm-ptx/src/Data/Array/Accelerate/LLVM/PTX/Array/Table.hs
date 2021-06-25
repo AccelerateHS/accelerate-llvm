@@ -1,4 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Array.Table
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -24,7 +25,7 @@ import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import qualified Foreign.CUDA.Ptr                                   as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Text.Printf
+import Data.Text.Lazy.Builder
 
 
 -- Remote memory tables. This builds upon the LRU-cached memory tables provided
@@ -42,7 +43,7 @@ new !ctx = Remote.new freeRemote
   where
     freeRemote :: CUDA.DevicePtr a -> IO ()
     freeRemote !ptr = do
-      message (printf "freeRemote %s" (show ptr))
+      message ("freeRemote " <> fromString (show ptr))
       withContext ctx (CUDA.free ptr)
 
 
@@ -50,10 +51,10 @@ new !ctx = Remote.new freeRemote
 -- ---------
 
 {-# INLINE trace #-}
-trace :: String -> IO a -> IO a
-trace msg next = Debug.traceIO Debug.dump_gc ("gc: " ++ msg) >> next
+trace :: Builder -> IO a -> IO a
+trace msg next = Debug.traceIO Debug.dump_gc ("gc: " <> msg) >> next
 
 {-# INLINE message #-}
-message :: String -> IO ()
+message :: Builder -> IO ()
 message s = s `trace` return ()
 

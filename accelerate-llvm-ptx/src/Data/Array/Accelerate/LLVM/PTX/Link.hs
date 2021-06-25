@@ -1,6 +1,7 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE CPP               #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Link
@@ -40,9 +41,10 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 -- standard library
 import Control.Monad.State
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import Foreign.Ptr
 import Language.Haskell.TH
-import Text.Printf                                                  ( printf )
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P hiding ( lookup )
 
@@ -70,7 +72,7 @@ link (ObjectR uid cfg obj) = do
 
     -- Finalise the module by unloading it from the CUDA context
     addFinalizer oc $ do
-      Debug.traceIO Debug.dump_ld ("ld: unload module: " ++ show nm)
+      Debug.traceIO Debug.dump_ld ("ld: unload module: " <> fromString (show nm))
       withContext (ptxContext target) (CUDA.unload mdl)
 
     return (nm, oc)
@@ -107,17 +109,16 @@ linkFunctionQ mdl name configure = do
   let
       (occ, cta, grid, dsmem, gridQ) = configure maxt regs ssmem
 
-      msg1, msg2 :: String
-      msg1 = printf "kernel function '%s' used %d registers, %d bytes smem, %d bytes lmem, %d bytes cmem"
-                      (unpack name) regs (ssmem + dsmem) lmem cmem
+      msg1 = build "kernel function '{}' used {} registers, {} bytes smem, {} bytes lmem, {} bytes cmem"
+                      (unpack name, regs, ssmem + dsmem, lmem, cmem)
 
-      msg2 = printf "multiprocessor occupancy %.1f %% : %d threads over %d warps in %d blocks"
-                      (CUDA.occupancy100 occ)
-                      (CUDA.activeThreads occ)
-                      (CUDA.activeWarps occ)
-                      (CUDA.activeThreadBlocks occ)
+      msg2 = build "multiprocessor occupancy {} %% : {} threads over {} warps in {} blocks"
+                      ( fixed 1 (CUDA.occupancy100 occ)
+                      , CUDA.activeThreads occ
+                      , CUDA.activeWarps occ
+                      , CUDA.activeThreadBlocks occ )
 
-  Debug.traceIO Debug.dump_cc (printf "cc: %s\n               %s" msg1 msg2)
+  Debug.traceIO Debug.dump_cc (build "cc: {}\n               {}" (msg1, msg2))
   return (Kernel name f dsmem cta grid, gridQ)
 
 

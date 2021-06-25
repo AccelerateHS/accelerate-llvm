@@ -12,10 +12,7 @@ module Main where
 
 import Data.Array.Accelerate.Test.NoFib
 import Data.Array.Accelerate.LLVM.Native
-import Data.Array.Accelerate.Debug.Internal
 
 main :: IO ()
-main = do
-  beginMonitoring
-  nofib runN
+main = nofib runN
 

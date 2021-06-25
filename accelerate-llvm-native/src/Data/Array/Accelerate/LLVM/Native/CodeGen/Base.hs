@@ -20,6 +20,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
+import Data.Array.Accelerate.LLVM.CodeGen.Profile
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
@@ -32,11 +33,8 @@ import LLVM.AST.Type.Name
 import qualified LLVM.AST.Global                                    as LLVM
 import qualified LLVM.AST.Type                                      as LLVM
 
-import Control.Monad
-import Data.Monoid
 import Data.String
-import Text.Printf
-import Prelude                                                      as P
+import qualified Data.ByteString.Short.Char8                        as S8
 
 
 -- | Generate function parameters that will specify the first and last (linear)
@@ -73,17 +71,20 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 --
 makeOpenAcc :: UID -> Label -> [LLVM.Parameter] -> CodeGen Native () -> CodeGen Native (IROpenAcc Native aenv a)
 makeOpenAcc uid name param kernel = do
-  body  <- makeKernel (name <> fromString (printf "_%s" (show uid))) param kernel
+  body  <- makeKernel (name <> fromString ('_' : show uid)) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process
 -- specified in the final parameter.
 --
 makeKernel :: Label -> [LLVM.Parameter] -> CodeGen Native () -> CodeGen Native (Kernel Native aenv a)
-makeKernel name param kernel = do
+makeKernel name@(Label sbs) param kernel = do
+  zone <- zone_begin_alloc 0 [] (S8.unpack sbs) [] 0
   _    <- kernel
+  _    <- zone_end zone
+  return_
   code <- createBlocks
-  return $ Kernel
+  return  $ Kernel
     { kernelMetadata = KM_Native ()
     , unKernel       = LLVM.functionDefaults
                      { LLVM.returnType  = LLVM.VoidType

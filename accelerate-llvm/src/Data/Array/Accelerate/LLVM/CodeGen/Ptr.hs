@@ -1,4 +1,5 @@
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs             #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Ptr
@@ -60,5 +61,6 @@ unPtr x =
     LocalReference t n                    -> LocalReference (retype t) (rename n)
     ConstantOperand (GlobalReference t n) -> ConstantOperand (GlobalReference (retype t) (rename n))
     ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
+    ConstantOperand NullPtrConstant{}     -> internalError "unexpected null pointer constant"
     ConstantOperand ScalarConstant{}      -> internalError "unexpected scalar constant"
 

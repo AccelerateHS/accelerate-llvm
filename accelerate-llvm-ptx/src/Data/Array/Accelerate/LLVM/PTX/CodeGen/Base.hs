@@ -61,6 +61,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.Target
 import Data.Array.Accelerate.Representation.Array
@@ -97,8 +98,9 @@ import Control.Monad                                                ( void )
 import Control.Monad.State                                          ( gets )
 import Data.Bits
 import Data.Proxy
+import Data.String
+import Data.Text.Format
 import Foreign.Storable
-import Text.Printf
 import Prelude                                                      as P
 
 import GHC.TypeLits
@@ -465,7 +467,7 @@ shfl sop tR val delta = go tR val
             else
               let raw :: LLVM.Type -> LLVM.Instruction -> CodeGen PTX LLVM.Operand
                   raw ty ins = do
-                    name <- downcast <$> freshName
+                    name <- downcast <$> freshLocalName
                     instr_ (name LLVM.:= ins)
                     return (LLVM.LocalReference ty name)
 
@@ -485,7 +487,7 @@ shfl sop tR val delta = go tR val
 
                         upcast :: Type u -> LLVM.Operand -> Operand u
                         upcast s (LLVM.LocalReference s' (LLVM.UnName x))
-                          = internalCheck (printf "couldn't match expected type `%s' with actual type `%s'" (show s) (show s')) (s' == downcast s)
+                          = internalCheck (build "couldn't match expected type `{}' with actual type `{}'" (s, Shown s')) (s' == downcast s)
                           $ LocalReference s (UnName x)
                         upcast _ _
                           = internalError "expected local reference"
@@ -550,7 +552,9 @@ shfl_op
     -> Operand Word32               -- delta
     -> Operands a                   -- value to give
     -> CodeGen PTX (Operands a)     -- value received
-shfl_op sop t delta val =
+shfl_op sop t delta val = do
+  dev <- liftCodeGen $ gets ptxDeviceProperties
+
   let
       -- The CUDA __shfl* instruction take an optional final parameter
       -- which is the warp size. Setting this value to something (always
@@ -576,11 +580,13 @@ shfl_op sop t delta val =
       mask :: Operand Int32
       mask  = A.integral integralType (-1) -- all threads participate
 
-      call' = if CUDA.libraryVersion >= 9000
+      useSyncShfl = CUDA.computeCapability dev >= Compute 7 0
+
+      call' = if useSyncShfl
                  then call . Lam primType mask
                  else call
 
-      sync  = if CUDA.libraryVersion >= 9000 then "sync." else ""
+      sync  = if useSyncShfl then "sync." else ""
       asm   = "llvm.nvvm.shfl."
            <> sync
            <> case sop of
@@ -595,7 +601,7 @@ shfl_op sop t delta val =
       t_val = case t of
                 ShuffleInt32 -> primType :: PrimType Int32
                 ShuffleFloat -> primType :: PrimType Float
-  in
+
   call' (Lam t_val (op t_val val) (Lam primType delta (Lam primType width (Body (PrimType t_val) (Just Tail) asm)))) [Convergent, NoUnwind, InaccessibleMemOnly]
 
 
@@ -631,7 +637,7 @@ staticSharedMem tp n = do
     go tt@(TupRsingle t) = do
       -- Declare a new global reference for the statically allocated array
       -- located in the __shared__ memory space.
-      nm <- freshName
+      nm <- freshGlobalName
       sm <- return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType n t) sharedMemAddrSpace)) nm
       declare $ LLVM.globalVariableDefaults
         { LLVM.addrSpace = sharedMemAddrSpace
@@ -736,24 +742,26 @@ IROpenAcc k1 +++ IROpenAcc k2 = IROpenAcc (k1 ++ k2)
 -- | Create a single kernel program with the default launch configuration.
 --
 makeOpenAcc
-    :: Label
+    :: UID
+    -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAcc name param kernel = do
+makeOpenAcc uid name param kernel = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  makeOpenAccWith (simpleLaunchConfig dev) name param kernel
+  makeOpenAccWith (simpleLaunchConfig dev) uid name param kernel
 
 -- | Create a single kernel program with the given launch analysis information.
 --
 makeOpenAccWith
     :: LaunchConfig
+    -> UID
     -> Label
     -> [LLVM.Parameter]
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
-makeOpenAccWith config name param kernel = do
-  body  <- makeKernel config name param kernel
+makeOpenAccWith config uid name param kernel = do
+  body  <- makeKernel config (name <> fromString ('_' : show uid)) param kernel
   return $ IROpenAcc [body]
 
 -- | Create a complete kernel function by running the code generation process

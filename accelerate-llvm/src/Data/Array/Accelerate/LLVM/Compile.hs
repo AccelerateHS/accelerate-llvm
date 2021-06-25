@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE EmptyCase           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
@@ -220,7 +221,7 @@ compileOpenAcc = traverseAcc
             (_,   h2) = stencilHalo s2
 
         fusionError :: error
-        fusionError = internalError $ "unexpected fusible material: " ++ showPreAccOp pacc
+        fusionError = internalError $ "unexpected fusible material: " <> showPreAccOp pacc
 
         travA :: HasCallStack
               => DelayedOpenAcc aenv a

@@ -1,5 +1,8 @@
-{-# LANGUAGE MagicHash       #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE LambdaCase        #-}
+{-# LANGUAGE MagicHash         #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Context
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -19,20 +22,29 @@ module Data.Array.Accelerate.LLVM.PTX.Context (
 
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
-import qualified Data.Array.Accelerate.LLVM.PTX.Debug           as Debug
+import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
-import qualified Foreign.CUDA.Driver.Device                     as CUDA
-import qualified Foreign.CUDA.Driver.Context                    as CUDA
+import qualified Foreign.CUDA.Driver.Device                         as CUDA
+import qualified Foreign.CUDA.Driver.Context                        as CUDA
 
 import Control.Concurrent
 import Control.Exception
 import Control.Monad
+import Data.Char
 import Data.Hashable
-import Text.PrettyPrint
-import Prelude                                                  hiding ( (<>) )
+import Data.Int
+import Data.Primitive.ByteArray
+import Data.Text.Lazy.Builder
+import Data.Text.Prettyprint.Doc
+import Data.Text.Prettyprint.Doc.Internal
+import Data.Text.Prettyprint.Doc.Render.Util.Panic
+import Data.Word
+import Text.Printf
+import qualified Data.Text.Lazy.Builder                             as TLB
+import Prelude                                                      hiding ( (<>) )
 
-import GHC.Base                                                 ( Int(..), addr2Int#, )
-import GHC.Ptr                                                  ( Ptr(..) )
+import GHC.Base                                                     ( Int(..), addr2Int#, )
+import GHC.Ptr                                                      ( Ptr(..) )
 
 
 -- | An execution context, which is tied to a specific device and CUDA execution
@@ -40,6 +52,7 @@ import GHC.Ptr                                                  ( Ptr(..) )
 --
 data Context = Context {
     deviceProperties    :: {-# UNPACK #-} !CUDA.DeviceProperties        -- information on hardware resources
+  , deviceName          :: {-# UNPACK #-} !ByteArray                    -- device name, used for profiling
   , deviceContext       :: {-# UNPACK #-} !(Lifetime CUDA.Context)      -- device execution context
   }
 
@@ -75,7 +88,7 @@ raw :: CUDA.Device
 raw dev prp ctx = do
   lft <- newLifetime ctx
   addFinalizer lft $ do
-    message $ "finalise context " ++ showContext ctx
+    message $ "finalise context " <> showContext ctx
     CUDA.destroy ctx
 
   -- The kernels don't use much shared memory, so for devices that support it
@@ -89,10 +102,21 @@ raw dev prp ctx = do
   when (CUDA.computeCapability prp >= CUDA.Compute 2 0)
        (CUDA.setCache CUDA.PreferL1)
 
+  -- Generate the context name
+  let str = printf "[%d] %s\0" (fromIntegral (CUDA.useDevice dev) :: Int) (CUDA.deviceName prp)
+  mba <- newPinnedByteArray (length str)
+
+  let go !_ []     = unsafeFreezeByteArray mba
+      go !i (x:xs) = do
+        writeByteArray mba i (fromIntegral (ord x) :: Word8)
+        go (i+1) xs
+
+  nm   <- go 0 str
+
   -- Display information about the selected device
   Debug.traceIO Debug.dump_phases (deviceInfo dev prp)
 
-  return $! Context prp lft
+  return $! Context prp nm lft
 
 
 -- | Push the context onto the CPUs thread stack of current contexts and execute
@@ -108,14 +132,14 @@ withContext Context{..} action
 {-# INLINE push #-}
 push :: CUDA.Context -> IO ()
 push ctx = do
-  message $ "push context: " ++ showContext ctx
+  message $ "push context: " <> showContext ctx
   CUDA.push ctx
 
 {-# INLINE pop #-}
 pop :: IO ()
 pop = do
   ctx <- CUDA.pop
-  message $ "pop context: "  ++ showContext ctx
+  message $ "pop context: "  <> showContext ctx
 
 
 -- Debugging
@@ -125,36 +149,44 @@ pop = do
 --
 -- Device 0: GeForce 9600M GT (compute capability 1.1), 4 multiprocessors @ 1.25GHz (32 cores), 512MB global memory
 --
-deviceInfo :: CUDA.Device -> CUDA.DeviceProperties -> String
-deviceInfo dev prp = render $
+deviceInfo :: CUDA.Device -> CUDA.DeviceProperties -> Builder
+deviceInfo dev prp = go $ layoutPretty defaultLayoutOptions $
   devID <> colon <+> name <+> parens compute
-        <> comma <+> processors <+> at <+> text clock <+> parens cores
+        <> comma <+> processors <+> at <+> pretty clock <+> parens cores
         <> comma <+> memory
   where
-    name        = text (CUDA.deviceName prp)
-    compute     = text "compute capability" <+> text (show $ CUDA.computeCapability prp)
-    devID       = text "device" <+> int (fromIntegral $ CUDA.useDevice dev)
-    processors  = int (CUDA.multiProcessorCount prp)                              <+> text "multiprocessors"
-    cores       = int (CUDA.multiProcessorCount prp * coresPerMultiProcessor prp) <+> text "cores"
-    memory      = text mem <+> text "global memory"
-    --
-    clock       = Debug.showFFloatSIBase (Just 2) 1000 (fromIntegral $ CUDA.clockRate prp * 1000 :: Double) "Hz"
-    mem         = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral $ CUDA.totalGlobalMem prp   :: Double) "B"
-    at          = char '@'
-    -- reset       = zeroWidthText "\r"
+    name        = pretty (CUDA.deviceName prp)
+    compute     = "compute capability" <+> unsafeViaShow (CUDA.computeCapability prp)
+    devID       = "device" <+> unsafeViaShow (CUDA.useDevice dev)
+    processors  = pretty (CUDA.multiProcessorCount prp)                              <+> "multiprocessors"
+    cores       = pretty (CUDA.multiProcessorCount prp * coresPerMultiProcessor prp) <+> "cores"
+    memory      = pretty mem <+> "global memory"
+    ----
+    clock       = toLazyText $ Debug.showFFloatSIBase (Just 2) 1000 (fromIntegral $ CUDA.clockRate prp * 1000 :: Double) "Hz"
+    mem         = toLazyText $ Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral $ CUDA.totalGlobalMem prp   :: Double) "B"
+    at          = pretty '@'
+
+    go = \case
+      SFail              -> panicUncaughtFail
+      SEmpty             -> mempty
+      SChar c rest       -> TLB.singleton c <> go rest
+      SText _l t rest    -> TLB.fromText t <> go rest
+      SLine i rest       -> TLB.singleton '\n' <> (TLB.fromText (textSpaces i) <> go rest)
+      SAnnPush _ann rest -> go rest
+      SAnnPop rest       -> go rest
 
 
 {-# INLINE trace #-}
-trace :: String -> IO a -> IO a
+trace :: Builder -> IO a -> IO a
 trace msg next = do
-  Debug.traceIO Debug.dump_gc ("gc: " ++ msg)
+  Debug.traceIO Debug.dump_gc ("gc: " <> msg)
   next
 
 {-# INLINE message #-}
-message :: String -> IO ()
+message :: Builder -> IO ()
 message s = s `trace` return ()
 
 {-# INLINE showContext #-}
-showContext :: CUDA.Context -> String
-showContext (CUDA.Context c) = show c
+showContext :: CUDA.Context -> Builder
+showContext (CUDA.Context c) = fromString (show c)
 

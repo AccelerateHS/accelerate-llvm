@@ -106,6 +106,8 @@ Library
     Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
     Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
+    Control.Concurrent.Extra
+
     Paths_accelerate_llvm_native
 
   build-depends:
@@ -127,7 +129,10 @@ Library
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
         , template-haskell
+        , text                          >= 1.2
+        , text-format                   >= 0.3
         , unique
+        , unordered-containers          >= 0.2
         , vector                        >= 0.11
 
   hs-source-dirs:

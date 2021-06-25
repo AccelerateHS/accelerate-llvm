@@ -65,10 +65,6 @@ data Function kind args t where
   Body :: Type r -> Maybe TailCall -> kind                -> Function kind '[]         r
   Lam  :: PrimType a -> Operand a -> Function kind args t -> Function kind (a ': args) t
 
-data HList (l :: [*]) where
-  HNil  ::                 HList '[]
-  HCons :: e -> HList l -> HList (e ': l)
-
 
 instance Downcast FunctionAttribute LLVM.FunctionAttribute where
   downcast NoReturn            = LLVM.NoReturn

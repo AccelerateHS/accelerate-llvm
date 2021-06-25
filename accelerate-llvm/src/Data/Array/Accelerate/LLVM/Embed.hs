@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}

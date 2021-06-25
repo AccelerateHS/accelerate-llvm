@@ -140,5 +140,3 @@ mkFoldSeg uid aenv aR@(ArrayR shR eR) int combine mseed marr mseg =
 
       writeArray TypeInt arrOut ii r
 
-    return_
-

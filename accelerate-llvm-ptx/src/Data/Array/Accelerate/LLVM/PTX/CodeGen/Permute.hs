@@ -39,6 +39,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Permute
 import Data.Array.Accelerate.LLVM.CodeGen.Ptr
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
@@ -79,17 +80,18 @@ import Prelude
 --
 mkPermute
     :: HasCallStack
-    => Gamma            aenv
+    => UID
+    -> Gamma            aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRPermuteFun PTX aenv (e -> e -> e)
     -> IRFun1       PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed   PTX aenv (Array sh e)
     -> CodeGen      PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute aenv repr shr' IRPermuteFun{..} project arr =
+mkPermute uid aenv repr shr' IRPermuteFun{..} project arr =
   case atomicRMW of
-    Just (rmw, f) -> mkPermute_rmw   aenv repr shr' rmw f   project arr
-    _             -> mkPermute_mutex aenv repr shr' combine project arr
+    Just (rmw, f) -> mkPermute_rmw   uid aenv repr shr' rmw f   project arr
+    _             -> mkPermute_mutex uid aenv repr shr' combine project arr
 
 
 -- Parallel forward permutation function which uses atomic instructions to
@@ -115,7 +117,8 @@ mkPermute aenv repr shr' IRPermuteFun{..} project arr =
 --
 mkPermute_rmw
     :: HasCallStack
-    => Gamma aenv
+    => UID
+    -> Gamma aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> RMWOperation
@@ -123,7 +126,7 @@ mkPermute_rmw
     -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed PTX aenv (Array sh e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
+mkPermute_rmw uid aenv (ArrayR shr tp) shr' rmw update project marr = do
   dev <- liftCodeGen $ gets ptxDeviceProperties
   --
   let
@@ -139,7 +142,7 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
       compute60           = Compute 6 0
       compute70           = Compute 7 0
   --
-  makeOpenAcc "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "permute_rmw" (paramOut ++ paramIn ++ paramEnv) $ do
 
     shIn  <- delayedExtent arrIn
     end   <- shapeSize shr shIn
@@ -215,14 +218,15 @@ mkPermute_rmw aenv (ArrayR shr tp) shr' rmw update project marr = do
 -- a mutex before updating the value at that location.
 --
 mkPermute_mutex
-    :: Gamma          aenv
+    :: UID
+    -> Gamma          aenv
     -> ArrayR (Array sh e)
     -> ShapeR sh'
     -> IRFun2     PTX aenv (e -> e -> e)
     -> IRFun1     PTX aenv (sh -> PrimMaybe sh')
     -> MIRDelayed PTX aenv (Array sh e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
-mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
+mkPermute_mutex uid aenv (ArrayR shr tp) shr' combine project marr =
   let
       outR                  = ArrayR shr' tp
       lockR                 = ArrayR (ShapeRsnoc ShapeRz) (TupRsingle scalarTypeWord32)
@@ -232,7 +236,7 @@ mkPermute_mutex aenv (ArrayR shr tp) shr' combine project marr =
       paramEnv              = envParam aenv
       start                 = liftInt 0
   in
-  makeOpenAcc "permute_mutex" (paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "permute_mutex" (paramOut ++ paramLock ++ paramIn ++ paramEnv) $ do
 
     shIn  <- delayedExtent arrIn
     end   <- shapeSize shr shIn
@@ -425,7 +429,7 @@ atomically_warp barriers i action = do
   -- incoming edge the thread arrived at this block from determines whether they
   -- have completed their critical section.
   setBlock end
-  res  <- freshName
+  res  <- freshLocalName
   done <- phi1 end res [(boolean True, yes), (boolean False, no)]
 
   __syncthreads

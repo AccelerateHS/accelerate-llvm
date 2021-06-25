@@ -26,6 +26,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
@@ -36,19 +37,20 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- multiple elements, striding the array by the grid size.
 --
 mkTransform
-    :: Gamma       aenv
+    :: UID
+    -> Gamma       aenv
     -> ArrayR (Array sh  a)
     -> ArrayR (Array sh' b)
     -> IRFun1  PTX aenv (sh' -> sh)
     -> IRFun1  PTX aenv (a -> b)
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh' b))
-mkTransform aenv repr@(ArrayR shr _) repr'@(ArrayR shr' _) p f =
+mkTransform uid aenv repr@(ArrayR shr _) repr'@(ArrayR shr' _) p f =
   let
       (arrOut, paramOut)  = mutableArray repr' "out"
       (arrIn,  paramIn)   = mutableArray repr  "in"
       paramEnv            = envParam aenv
   in
-  makeOpenAcc "transform" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "transform" (paramOut ++ paramIn ++ paramEnv) $ do
 
     let start = liftInt 0
     end   <- shapeSize shr' (irArrayShape arrOut)

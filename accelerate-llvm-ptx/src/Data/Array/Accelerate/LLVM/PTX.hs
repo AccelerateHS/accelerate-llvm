@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE BangPatterns         #-}
 {-# LANGUAGE CPP                  #-}
@@ -89,7 +90,6 @@ import Data.Array.Accelerate.AST                                    ( PreOpenAfu
 import Data.Array.Accelerate.AST.LeftHandSide                       ( lhsToTupR )
 import Data.Array.Accelerate.Array.Data
 import Data.Array.Accelerate.Async                                  ( Async, asyncBound, wait, poll, cancel )
-import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Representation.Array                   ( liftArraysR )
 import Data.Array.Accelerate.Smart                                  ( Acc )
@@ -102,6 +102,7 @@ import qualified Data.Array.Accelerate.Sugar.Array                  as Sugar
 import Data.Array.Accelerate.LLVM.PTX.Array.Data
 import Data.Array.Accelerate.LLVM.PTX.Compile
 import Data.Array.Accelerate.LLVM.PTX.Context
+import Data.Array.Accelerate.LLVM.PTX.Debug
 import Data.Array.Accelerate.LLVM.PTX.Embed
 import Data.Array.Accelerate.LLVM.PTX.Execute
 import Data.Array.Accelerate.LLVM.PTX.Execute.Async                 ( Par, evalPar, getArrays )
@@ -115,8 +116,8 @@ import Foreign.CUDA.Driver                                          as CUDA ( CU
 import Control.Exception
 import Control.Monad.Trans
 import Data.Maybe
+import Data.Text.Lazy.Builder
 import System.IO.Unsafe
-import Text.Printf
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
@@ -174,9 +175,9 @@ runWithIO target a = execute
     execute = do
       dumpGraph acc
       evalPTX target $ do
-        build <- phase "compile" (compileAcc acc) >>= dumpStats
-        exec  <- phase "link"    (linkAcc build)
-        res   <- phase "execute" (evalPar (executeAcc exec >>= copyToHostLazy (Sugar.arraysR @a)))
+        build <- phase Compile (compileAcc acc) >>= dumpStats
+        exec  <- phase Link    (linkAcc build)
+        res   <- phase Execute (evalPar (executeAcc exec >>= copyToHostLazy (Sugar.arraysR @a)))
         return $ toArr res
 
 
@@ -272,8 +273,8 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalPTX target $ do
-                build <- phase "compile" (compileAfun acc) >>= dumpStats
-                link  <- phase "link"    (linkAfun build)
+                build <- phase Compile (compileAfun acc) >>= dumpStats
+                link  <- phase Link    (linkAfun build)
                 return link
 
     go :: forall aenv t r trepr.
@@ -286,7 +287,7 @@ runNWith' target acc = go (afunctionRepr @f) afun (return Empty)
                   a    <- useRemoteAsync (lhsToTupR lhs) $ fromArr arrs
                   return (aenv `push` (lhs, a))
       in go repr l k'
-    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase "execute" . evalPTX target . evalPar $ do
+    go AfunctionReprBody (Abody b) k = unsafePerformIO . phase Execute . evalPTX target . evalPar $ do
       aenv <- k
       fut  <- executeOpenAcc b aenv
       toArr <$> copyToHostLazy (Sugar.arraysR @r) fut
@@ -331,8 +332,8 @@ runNAsyncWith' target acc = exec
     !afun = unsafePerformIO $ do
               dumpGraph acc
               evalPTX target $ do
-                build <- phase "compile" (compileAfun acc) >>= dumpStats
-                link  <- phase "link"    (linkAfun build)
+                build <- phase Compile (compileAfun acc) >>= dumpStats
+                link  <- phase Link    (linkAfun build)
                 return link
     !exec = runAsync' target afun (return Empty)
 
@@ -352,7 +353,7 @@ instance (Arrays a, RunAsync b) => RunAsync (a -> b) where
 instance Arrays b => RunAsync (IO (Async b)) where
   type RunAsyncR (IO (Async b)) = ArraysR b
   runAsync' _      Alam{}    _ = error "runAsync: function not fully applied"
-  runAsync' target (Abody b) k = asyncBound . phase "execute" . evalPTX target . evalPar $ do
+  runAsync' target (Abody b) k = asyncBound . phase Execute . evalPTX target . evalPar $ do
     aenv <- k
     ans  <- executeOpenAcc b aenv
     arrs <- getArrays (arraysR b) ans
@@ -495,7 +496,7 @@ runQ'_ using k f = do
            in  TH.runIO $ do
                  dumpGraph acc
                  evalPTX defaultTarget $
-                   phase "compile" (compileAfun acc) >>= dumpStats
+                   phase Compile (compileAfun acc) >>= dumpStats
   let
       go :: CompiledOpenAfun PTX aenv t -> [TH.PatQ] -> [TH.ExpQ] -> [TH.StmtQ] -> TH.ExpQ
       go (Alam lhs l) xs as stmts = do
@@ -512,7 +513,7 @@ runQ'_ using k f = do
             body  = embedOpenAcc defaultTarget b
         --
         TH.lamE (reverse xs)
-                [| $using (phase "execute" $(k (
+                [| $using (phase Execute $(k (
                      TH.doE ( reverse stmts ++
                             [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
                             , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
@@ -550,7 +551,7 @@ registerPinnedAllocatorWith target =
   registerForeignPtrAllocator $ \bytes ->
     withContext (ptxContext target) (CUDA.mallocHostForeignPtr [] bytes)
     `catch`
-    \e -> internalError (show (e :: CUDAException))
+    \e -> internalError (fromString (show (e :: CUDAException)))
 
 
 -- Debugging
@@ -559,5 +560,3 @@ registerPinnedAllocatorWith target =
 dumpStats :: MonadIO m => a -> m a
 dumpStats x = liftIO dumpSimplStats >> return x
 
-phase :: MonadIO m => String -> m a -> m a
-phase n go = timed dump_phases (\wall cpu -> printf "phase %s: %s" n (elapsed wall cpu)) go

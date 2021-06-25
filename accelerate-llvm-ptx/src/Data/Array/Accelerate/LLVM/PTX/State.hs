@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                 #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.State
@@ -33,15 +34,17 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as ST
 import qualified Data.Array.Accelerate.LLVM.PTX.Link.Cache          as LC
 import qualified Data.Array.Accelerate.LLVM.PTX.Pool                as Pool
 
-import Control.Exception                                            ( try, catch )
-import Data.Maybe                                                   ( fromMaybe, catMaybes )
-import System.Environment                                           ( lookupEnv )
-import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
-import Text.Printf                                                  ( printf )
-import Text.Read                                                    ( readMaybe )
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                                as CUDA
 import qualified Foreign.CUDA.Driver.Context                        as Context
+
+import Control.Exception                                            ( try, catch )
+import Data.Maybe                                                   ( fromMaybe, catMaybes )
+import Data.Text.Format
+import Data.Text.Lazy.Builder
+import System.Environment                                           ( lookupEnv )
+import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
+import Text.Read                                                    ( readMaybe )
 
 
 -- | Execute a PTX computation
@@ -50,7 +53,7 @@ evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
   CT.withContext (ptxContext ptx) (evalLLVM ptx acc)
   `catch`
-  \e -> internalError (show (e :: CUDAException))
+  \e -> internalError (fromString (show (e :: CUDAException)))
 
 
 -- | Create a new PTX execution target for the given device
@@ -157,7 +160,7 @@ defaultTargetPool = unsafePerformIO $! do
         case r of
           Right ptx               -> return (Just ptx)
           Left (e::CUDAException) -> do
-            Debug.traceIO Debug.dump_gc (printf "gc: failed to initialise device %d: %s" i (show e))
+            Debug.traceIO Debug.dump_gc (build "gc: failed to initialise device {}: {}" (i, Shown e))
             return Nothing
 
   -- Create the pool from the available devices, which get spun-up lazily as

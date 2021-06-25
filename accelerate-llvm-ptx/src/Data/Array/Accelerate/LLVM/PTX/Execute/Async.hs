@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -37,8 +38,8 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as Stream
 
 -- standard library
-import Control.Monad.State
 import Control.Monad.Reader
+import Control.Monad.State
 import Data.IORef
 
 

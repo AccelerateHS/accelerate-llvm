@@ -27,6 +27,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.Exp
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar
+import Data.Array.Accelerate.LLVM.Compile.Cache
 
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
@@ -36,18 +37,19 @@ import Data.Array.Accelerate.LLVM.PTX.Target                    ( PTX )
 -- Apply a unary function to each element of an array. Each thread processes
 -- multiple elements, striding the array by the grid size.
 --
-mkMap :: Gamma       aenv
+mkMap :: UID
+      -> Gamma       aenv
       -> ArrayR (Array sh a)
       -> TypeR b
       -> IRFun1  PTX aenv (a -> b)
       -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh b))
-mkMap aenv repr@(ArrayR shr _) tp' apply =
+mkMap uid aenv repr@(ArrayR shr _) tp' apply =
   let
       (arrOut, paramOut)  = mutableArray (ArrayR shr tp') "out"
       (arrIn,  paramIn)   = mutableArray repr             "in"
       paramEnv            = envParam aenv
   in
-  makeOpenAcc "map" (paramOut ++ paramIn ++ paramEnv) $ do
+  makeOpenAcc uid "map" (paramOut ++ paramIn ++ paramEnv) $ do
 
     start <- return (liftInt 0)
     end   <- shapeSize shr (irArrayShape arrIn)

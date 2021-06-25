@@ -1,5 +1,6 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile
@@ -43,13 +44,14 @@ import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
+import Data.Text.Encoding
+import Data.Text.Format
+import Data.Text.Lazy.Builder
 import System.Directory
 import System.IO.Unsafe
-import Text.Printf
 import qualified Data.ByteString                                    as B
-import qualified Data.ByteString.Char8                              as B8
 import qualified Data.ByteString.Short                              as BS
-import qualified Data.Map                                           as Map
+import qualified Data.HashMap.Strict                                as HashMap
 
 
 instance Compile Native where
@@ -78,7 +80,7 @@ compile pacc aenv = do
 
   let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
       datalayout    = moduleDataLayout ast
-      nms           = [ f | Name f <- Map.keys md ]
+      nms           = [ f | Name f <- HashMap.keys md ]
 
   -- Lower the generated LLVM and produce an object file.
   --
@@ -91,7 +93,7 @@ compile pacc aenv = do
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
       then do
-        Debug.traceIO Debug.dump_cc (printf "cc: found cached object code %s" (show uid))
+        Debug.traceIO Debug.dump_cc (build "cc: found cached object code {}" (Only (Shown uid)))
         B.readFile cacheFile
 
       else
@@ -102,11 +104,11 @@ compile pacc aenv = do
           optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
           Debug.when Debug.verbose $ do
-            Debug.traceIO Debug.dump_cc  . B8.unpack =<< moduleLLVMAssembly mdl
-            Debug.traceIO Debug.dump_asm . B8.unpack =<< moduleTargetAssembly machine mdl
+            Debug.traceIO Debug.dump_cc  . fromText . decodeUtf8 =<< moduleLLVMAssembly mdl
+            Debug.traceIO Debug.dump_asm . fromText . decodeUtf8 =<< moduleTargetAssembly machine mdl
 
           obj <- moduleObject machine mdl
-          Debug.traceIO Debug.dump_cc (printf "cc: new object code %s" (show uid))
+          Debug.traceIO Debug.dump_cc (build "cc: new object code {}" (Only (Shown uid)))
           B.writeFile cacheFile obj
           return obj
 
