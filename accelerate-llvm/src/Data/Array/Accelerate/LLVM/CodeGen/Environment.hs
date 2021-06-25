@@ -1,5 +1,6 @@
 {-# LANGUAGE GADTs             #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.CodeGen.Environment
@@ -20,7 +21,7 @@ import Text.Printf
 import qualified Data.IntMap                                    as IM
 
 import Data.Array.Accelerate.AST                                ( ArrayVar )
-import Data.Array.Accelerate.AST.Idx                            ( Idx(..), idxToInt )
+import Data.Array.Accelerate.AST.Idx                            ( Idx, pattern ZeroIdx, pattern SuccIdx, idxToInt )
 import Data.Array.Accelerate.AST.Var                            ( Var(..) )
 import Data.Array.Accelerate.Error                              ( internalError )
 import Data.Array.Accelerate.Representation.Array               ( Array, ArrayR(..) )
