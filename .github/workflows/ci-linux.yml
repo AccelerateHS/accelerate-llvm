@@ -38,28 +38,28 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: actions/cache@v2
-        with:
-          path: ~/.local/bin
-          key: ${{ runner.os }}-local-bin-${{ matrix.ghc }}-${{ hashFiles('**.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-local-bin-${{ matrix.ghc }}-
+      - run: ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
 
       - uses: actions/cache@v2
         with:
-          path:
+          path: snapshot.pkgdb
+          key: ${{ runner.os }}-${{ matrix.ghc }}-snapshot.pkgdb
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.local/bin
             ~/.stack/programs
             ~/.stack/snapshots
-          key: ${{ runner.os }}-stack-global-${{ matrix.ghc }}-${{ hashFiles('**.yaml') }}
+            .stack-work
+            accelerae-llvm/.stack-work
+            accelerae-llvm-ptx/.stack-work
+            accelerae-llvm-native/.stack-work
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
           restore-keys: |
-            ${{ runner.os }}-stack-global-${{ matrix.ghc }}-
-
-      - uses: actions/cache@v2
-        with:
-          path: .stack-work
-          key: ${{ runner.os }}-stack-local-${{ matrix.ghc }}-${{ hashFiles('**.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-stack-local-${{ matrix.ghc }}-
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-
+            ${{ runner.os }}-${{ matrix.ghc }}-
 
       - name: Install stack
         run: |
@@ -69,15 +69,12 @@ jobs:
             chmod a+x ~/.local/bin/stack
           fi
           echo "~/.local/bin" >> $GITHUB_PATH
-          ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
 
       - name: Install GHC
-        run: |
-          stack setup --install-ghc
+        run: stack setup --install-ghc
 
       - name: Install LLVM
-        run: |
-          sudo apt-get -y install llvm-${{ matrix.llvm }}-dev
+        run: sudo apt-get -y install llvm-${{ matrix.llvm }}-dev
 
       - name: Install CUDA
         run: |
@@ -93,26 +90,23 @@ jobs:
           echo "/usr/local/cuda-${MATRIX_CUDA}/bin" >> $GITHUB_PATH
 
       - name: Build dependencies
-        run: |
-          stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
 
       - name: Build accelerate-llvm
-        run: |
-          stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
 
       - name: Build accelerate-llvm-native
-        run: |
-          stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+        run: stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
 
       - name: Build accelerate-llvm-ptx
-        run: |
-          stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+        run: stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
 
       - name: Test accelerate-llvm-native
-        run: |
-          stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
+        run: stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
 
       - name: Test haddock generation
-        run: |
-          stack haddock $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
+        run: stack haddock $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
+
+      - name: Save snapshot.pkgdb
+        run: stack exec ghc-pkg -- --package-db=$(stack path --snapshot-pkg-db) list > snapshot.pkgdb
 
