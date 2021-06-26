@@ -81,7 +81,7 @@ data PrimType a where
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
   ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
   StructPrimType  :: Bool -> TupR PrimType l -> PrimType l          -- aggregate structures
-  NamedPrimType   :: Label                   -> PrimType a          -- typedef
+  NamedPrimType   :: Label                   -> PrimType a          -- typedef (TODO: add a type witness)
 
 
 -- | All types
