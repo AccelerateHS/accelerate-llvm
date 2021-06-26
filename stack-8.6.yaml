@@ -16,6 +16,7 @@ extra-deps:
 - nvvm-0.10.0.0
 - tasty-rerun-1.1.18
 - text-1.2.4.1
+- prettyprinter-1.7.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
