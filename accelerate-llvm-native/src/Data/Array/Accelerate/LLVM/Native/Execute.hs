@@ -64,6 +64,8 @@ import Data.Foldable                                                ( asum )
 import Data.Text.Format                                             ( build )
 import Data.Text.Lazy.Builder                                       ( Builder, fromString )
 import System.CPUTime                                               ( getCPUTime )
+import qualified Data.ByteString.Short                              as S
+import qualified Data.ByteString.Short.Extra                        as S
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Data.DList                                         as DL
@@ -787,7 +789,7 @@ aforeignOp name _ _ asm arr = do
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
-  find (\(n,_) -> S8.takeWhile (/= '_') n == name) (functionTable (unsafeGetValue nativeExecutable))
+  find (\(n,_) -> S.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
@@ -990,10 +992,10 @@ timed name job =
                          --
                          let wallTime = wall1 - wall0
                              cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
-                             name' | verbose   = S8.unpack name
-                                   | otherwise = takeWhile (/= '_') (S8.unpack name)
+                             name' | verbose   = name
+                                   | otherwise = S.take (S.length name - 65) name
                          --
-                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (name', Debug.elapsedP wallTime cpuTime)
+                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (S8.unpack name', Debug.elapsedP wallTime cpuTime)
               --
           return $ Job { jobTasks = start Seq.<| jobTasks job
                        , jobDone  = case jobDone job of
