@@ -3,7 +3,8 @@
 
 # LLVM backends for the Accelerate array language
 
-[![GitHub CI](https://github.com/tmcdonell/accelerate-llvm/workflows/CI/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions)
+[![CI-Linux](https://github.com/tmcdonell/accelerate-llvm/workflows/ci-linux/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions?query=workflow%3Aci-linux)
+[![CI-MacOS](https://github.com/tmcdonell/accelerate-llvm/workflows/ci-macos/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions?query=workflow%3Aci-macos)
 [![Gitter](https://img.shields.io/gitter/room/nwjs/nw.js.svg)](https://gitter.im/AccelerateHS/Lobby)
 <br>
 [![Stackage LTS](https://stackage.org/package/accelerate-llvm/badge/lts)](https://stackage.org/lts/package/accelerate-llvm)

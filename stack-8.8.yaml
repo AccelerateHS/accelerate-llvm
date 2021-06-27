@@ -14,6 +14,7 @@ extra-deps:
 
 - cuda-0.10.2.0
 - nvvm-0.10.0.0
+- text-format-0.3.2
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

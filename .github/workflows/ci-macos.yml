@@ -1,0 +1,93 @@
+name: ci-macos
+
+# Trigger the workflow on push or pull request
+on:
+  pull_request:
+    # branches: [master]
+  push:
+    paths:
+      - '.github/workflows/ci-macos.yml'
+      - 'stack*.yaml'
+      - '*/*.cabal'
+      - '*/src/**'
+      - '*/test/**'
+      - '*/cbits/**'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - ghc: "8.10"
+            llvm: "9"
+
+    env:
+      STACK_FLAGS: "--fast --flag accelerate:nofib"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - run: ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
+
+      - uses: actions/cache@v2
+        with:
+          path: snapshot.pkgdb
+          key: ${{ runner.os }}-${{ matrix.ghc }}-snapshot.pkgdb
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.local/bin
+            ~/.stack/programs
+            ~/.stack/snapshots
+            .stack-work
+            accelerae-llvm/.stack-work
+            accelerae-llvm-native/.stack-work
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-
+            ${{ runner.os }}-${{ matrix.ghc }}-
+
+      - name: Install stack
+        run: |
+          mkdir -p ~/.local/bin
+          if [[ ! -x ~/.local/bin/stack ]]; then
+            brew install gnu-tar
+            curl -sL https://get.haskellstack.org/stable/osx-x86_64.tar.gz | gtar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+            chmod a+x ~/.local/bin/stack
+          fi
+          echo "~/.local/bin" >> $GITHUB_PATH
+
+      - name: Install GHC
+        run: stack setup --install-ghc
+
+      - name: Install LLVM
+        run: |
+          brew tap llvm-hs/homebrew-llvm
+          brew install pkg-config libffi llvm-${{ matrix.llvm }}
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
+      - name: Build dependencies
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
+
+      - name: Build accelerate-llvm
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
+
+      - name: Build accelerate-llvm-native
+        run: stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+
+      # We can't install CUDA because the root volume is read only
+      # - name: Build accelerate-llvm-ptx
+      #   run: stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+
+      - name: Test accelerate-llvm-native
+        run: stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
+
+      - name: Test haddock generation
+        run: stack haddock accelerate-llvm accelerate-llvm-native $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
+
+      - name: Save snapshot.pkgdb
+        run: stack exec ghc-pkg -- --package-db=$(stack path --snapshot-pkg-db) list > snapshot.pkgdb
+

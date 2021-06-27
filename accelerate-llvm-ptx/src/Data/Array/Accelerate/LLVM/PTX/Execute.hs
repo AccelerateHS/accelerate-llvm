@@ -59,7 +59,8 @@ import Data.Maybe                                                   ( fromMaybe 
 import Data.Text.Format
 import Data.Text.Lazy.Builder
 import Prelude                                                      hiding ( exp, map, sum, scanl, scanr )
-import qualified Data.ByteString.Short.Char8                        as S8
+import qualified Data.ByteString.Short                              as S
+import qualified Data.ByteString.Short.Extra                        as S
 import qualified Data.DList                                         as DL
 
 
@@ -799,7 +800,7 @@ aforeignOp name _ _ asm arr = do
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
-  find (\k -> S8.takeWhile (/= '_') (kernelName k) == name) (functionTable ptxExecutable)
+  find (\k -> let n = kernelName k in S.take (S.length n - 65) n == name) (functionTable ptxExecutable)
 
 delayedShape :: Delayed (Array sh e) -> sh
 delayedShape (Delayed sh) = sh
@@ -857,13 +858,12 @@ launch Kernel{..} stream n args =
               then return True
               else Debug.getFlag Debug.dump_exec
 
-    longIf True  = id
-    longIf False = takeWhile (/= '_')
-
     fst3 (x,_,_)      = x
     msg wall cpu gpu  = do
       verbose <- Debug.getFlag Debug.verbose
+      let kernelName' | verbose   = kernelName
+                      | otherwise = S.take (S.length kernelName - 65) kernelName
       Debug.traceIO Debug.dump_exec $
         build "exec: {} <<< {}, {}, {} >>> {}"
-              (longIf verbose (unpack kernelName), fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
+              (unpack kernelName', fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
 

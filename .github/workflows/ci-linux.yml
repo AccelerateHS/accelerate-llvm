@@ -1,0 +1,111 @@
+name: ci-linux
+
+# Trigger the workflow on push or pull request
+on:
+  pull_request:
+    # branches: [master]
+  push:
+    paths:
+      - '.github/workflows/ci-linux.yml'
+      - 'stack*.yaml'
+      - '*/*.cabal'
+      - '*/src/**'
+      - '*/test/**'
+      - '*/cbits/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - ghc: "8.10"
+            llvm: "9"
+            cuda: "10.2"
+
+          - ghc: "8.8"
+            llvm: "9"
+            cuda: "10.2"
+
+          - ghc: "8.6"
+            llvm: "8"
+            cuda: "10.1"
+
+    env:
+      STACK_FLAGS: "--fast --flag accelerate:nofib"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - run: ln -s stack-${{ matrix.ghc }}.yaml stack.yaml
+
+      - uses: actions/cache@v2
+        with:
+          path: snapshot.pkgdb
+          key: ${{ runner.os }}-${{ matrix.ghc }}-snapshot.pkgdb
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.local/bin
+            ~/.stack/programs
+            ~/.stack/snapshots
+            .stack-work
+            accelerae-llvm/.stack-work
+            accelerae-llvm-ptx/.stack-work
+            accelerae-llvm-native/.stack-work
+          key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
+            ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-
+            ${{ runner.os }}-${{ matrix.ghc }}-
+
+      - name: Install stack
+        run: |
+          mkdir -p ~/.local/bin
+          if [[ ! -x ~/.local/bin/stack ]]; then
+            curl -sL https://get.haskellstack.org/stable/linux-x86_64.tar.gz | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+            chmod a+x ~/.local/bin/stack
+          fi
+          echo "~/.local/bin" >> $GITHUB_PATH
+
+      - name: Install GHC
+        run: stack setup --install-ghc
+
+      - name: Install LLVM
+        run: sudo apt-get -y install llvm-${{ matrix.llvm }}-dev
+
+      - name: Install CUDA
+        run: |
+          MATRIX_CUDA=${{ matrix.cuda }}
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/cuda-ubuntu1804.pin
+          sudo mv cuda-ubuntu1804.pin /etc/apt/preferences.d/cuda-repository-pin-600
+          sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/7fa2af80.pub
+          sudo add-apt-repository "deb http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/ /"
+          sudo apt-get update
+          sudo apt-get -y install cuda-${MATRIX_CUDA/./-}
+          echo "CUDA_HOME=/usr/local/cuda-${MATRIX_CUDA}" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/local/cuda-${MATRIX_CUDA}/lib64:$(stack exec ghc -- --print-libdir)/rts:/usr/local/cuda-${MATRIX_CUDA}/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "/usr/local/cuda-${MATRIX_CUDA}/bin" >> $GITHUB_PATH
+
+      - name: Build dependencies
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
+
+      - name: Build accelerate-llvm
+        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
+
+      - name: Build accelerate-llvm-native
+        run: stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+
+      - name: Build accelerate-llvm-ptx
+        run: stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+
+      - name: Test accelerate-llvm-native
+        run: stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
+
+      - name: Test haddock generation
+        run: stack haddock $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
+
+      - name: Save snapshot.pkgdb
+        run: stack exec ghc-pkg -- --package-db=$(stack path --snapshot-pkg-db) list > snapshot.pkgdb
+

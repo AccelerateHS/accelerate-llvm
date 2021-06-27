@@ -72,7 +72,6 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Constant        as A
 
 import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
 import qualified Foreign.CUDA.Analysis                              as CUDA
-import qualified Foreign.CUDA.Driver.Utils                          as CUDA
 
 import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
