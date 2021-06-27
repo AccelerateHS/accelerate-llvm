@@ -144,7 +144,7 @@ Library
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.9
         , prettyprinter                 >= 1.6.1
-        , primitive                     >= 0.6.4
+        , primitive                     >= 0.7
         , process                       >= 1.4.3
         , template-haskell
         , text                          >= 1.2
