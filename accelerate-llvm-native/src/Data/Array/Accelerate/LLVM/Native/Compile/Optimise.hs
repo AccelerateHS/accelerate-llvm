@@ -22,7 +22,7 @@ import LLVM.Target
 
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
-import Data.Text.Format
+import Formatting
 
 
 -- | Run the standard optimisations on the given module when targeting a
@@ -48,8 +48,7 @@ optimiseModule datalayout machine libinfo mdl = do
             }
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
-  Debug.traceIO Debug.dump_cc $
-    build "llvm: optimisation did work? {}" (Only b1)
+  Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
 
 {--
 -- The first gentle optimisation pass. I think this is usually done when loading

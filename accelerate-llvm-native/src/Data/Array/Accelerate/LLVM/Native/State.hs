@@ -28,7 +28,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 import Data.Char
 import Data.Maybe
-import Data.Text.Format
+import Formatting
 import Language.Haskell.TH
 import System.Environment
 import System.IO.Unsafe
@@ -144,7 +144,7 @@ defaultTarget = unsafePerformIO $ do
   --
   setNumCapabilities (max ncaps nthreads)
 
-  Debug.traceIO Debug.dump_gc (build "gc: initialise native target with {} worker threads" (Only nthreads))
+  Debug.traceM Debug.dump_gc ("gc: initialise native target with " % int % " worker threads") nthreads
   createTarget [0 .. nthreads-1]
 
 

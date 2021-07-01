@@ -121,6 +121,7 @@ Library
         , directory                     >= 1.0
         , dlist                         >= 0.6
         , filepath                      >= 1.0
+        , formatting                    >= 7.0
         , ghc
         , hashable                      >= 1.0
         , libffi                        >= 0.1
@@ -130,7 +131,6 @@ Library
         , mtl                           >= 2.2.1
         , template-haskell
         , text                          >= 1.2
-        , text-format                   >= 0.3
         , unique
         , unordered-containers          >= 0.2
         , vector                        >= 0.11

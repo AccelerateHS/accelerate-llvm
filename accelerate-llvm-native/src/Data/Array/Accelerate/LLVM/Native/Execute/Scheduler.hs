@@ -36,8 +36,7 @@ import Data.Concurrent.Queue.MichaelScott
 import Data.IORef
 import Data.Int
 import Data.Sequence                                                ( Seq )
-import Data.Text.Format
-import Data.Text.Lazy.Builder
+import Formatting
 import Foreign.C.String
 import Text.Printf
 import qualified Data.Sequence                                      as Seq
@@ -140,7 +139,7 @@ runWorker tid ref queue = loop 0
                          --
                          -- When some other thread pushes new work, it will also write to that MVar
                          -- and this thread will wake up.
-                         message $ build "sched: Thread {} sleeping" (Only (getThreadId tid))
+                         message ("sched: Thread " % int % " sleeping") (getThreadId tid)
 
                          -- blocking, wake-up when new work is available
                          () <- readMVar var
@@ -148,7 +147,7 @@ runWorker tid ref queue = loop 0
         --
         Just task -> case task of
                        Work io -> io >> loop 0
-                       Retire  -> message $ build "sched: Thread {} shutting down" (Only (getThreadId tid))
+                       Retire  -> message ("sched: Thread " % int % " shutting down") (getThreadId tid)
 
 
 -- Spawn a new worker thread for each capability
@@ -176,7 +175,7 @@ hireWorkersOn caps = do
                                   (restore $ runWorker tid workerActive workerTaskQueue)
                                   (appendMVar workerException . (tid,))
                        --
-                       message $ build "sched: fork Thread {} on capability {}" (getThreadId tid, cpu)
+                       message ("sched: fork Thread " % int % " on capability " % int) (getThreadId tid) cpu
                        return tid
   --
   workerThreadIds `deepseq` return Workers { workerCount = length workerThreadIds, ..}
@@ -260,6 +259,7 @@ appendMVar mvar a =
 -- Debug
 -- -----
 
-message :: Builder -> IO ()
-message = Debug.traceIO Debug.dump_sched
+{-# INLINE message #-}
+message :: Format (IO ()) a -> a
+message = Debug.traceM Debug.dump_sched
 
