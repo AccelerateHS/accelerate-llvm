@@ -57,7 +57,6 @@ import Data.ByteString.Short.Char8                                  ( ShortByteS
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Formatting
-import Data.Text.Lazy.Builder
 import Prelude                                                      hiding ( exp, map, sum, scanl, scanr )
 import qualified Data.ByteString.Short                              as S
 import qualified Data.ByteString.Short.Extra                        as S
@@ -793,7 +792,7 @@ aforeignOp name _ _ asm arr = do
 --
 (!#) :: HasCallStack => FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " <> fromString (unpack name)))
+  = fromMaybe (internalError ("function not found: " % string) (unpack name))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel

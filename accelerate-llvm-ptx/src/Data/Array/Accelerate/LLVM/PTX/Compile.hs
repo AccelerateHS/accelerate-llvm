@@ -183,7 +183,7 @@ compileCUBIN dev sass ptx = do
     -- wait on the process
     ex <- waitForProcess ph
     case ex of
-      ExitFailure r -> internalError (bformat ("ptxas " % unworded string % " (exit " % int % ")\n" % reindented 2 string) flags r info)
+      ExitFailure r -> internalError ("ptxas " % unworded string % " (exit " % int % ")\n" % reindented 2 string) flags r info
       ExitSuccess   -> return ()
 
     when _verbose $

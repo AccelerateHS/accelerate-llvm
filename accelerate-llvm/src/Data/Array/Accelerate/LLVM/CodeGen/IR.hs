@@ -74,10 +74,10 @@ instance IROP Type where
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
   op BoolPrimType       = \case OP_Bool x -> x
-  op t                  = internalError $ bformat ("unhandled type: " % formatPrimType) t
+  op t                  = internalError ("unhandled type: " % formatPrimType) t
   ir (ScalarPrimType t) = ir t
   ir BoolPrimType       = OP_Bool
-  ir t                  = internalError $ bformat ("unhandled type: " % formatPrimType) t
+  ir t                  = internalError ("unhandled type: " % formatPrimType) t
 
 instance IROP ScalarType where
   op (SingleScalarType t) = op t

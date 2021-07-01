@@ -62,7 +62,6 @@ import Data.Maybe                                                   ( fromMaybe 
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
 import Formatting
-import Data.Text.Lazy.Builder                                       ( fromString )
 import System.CPUTime                                               ( getCPUTime )
 import qualified Data.ByteString.Short                              as S
 import qualified Data.ByteString.Short.Extra                        as S
@@ -784,7 +783,7 @@ aforeignOp name _ _ asm arr = do
 
 (!#) :: HasCallStack => Lifetime FunctionTable -> ShortByteString -> Function
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " <> fromString (S8.unpack name)))
+  = fromMaybe (internalError ("function not found: " % string) (S8.unpack name))
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function

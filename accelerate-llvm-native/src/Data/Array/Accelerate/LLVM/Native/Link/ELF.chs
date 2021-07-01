@@ -35,7 +35,6 @@ import Data.Int
 import Data.List
 import Data.Serialize.Get
 import Data.Text.Encoding
-import Data.Text.Lazy.Builder                             ( fromString )
 import Data.Vector                                        ( Vector )
 import Data.Word
 import Foreign.C
@@ -75,7 +74,7 @@ import Prelude                                            as P
 loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err                              -> internalError (fromString err)
+    Left err                              -> internalError string err
     Right (secs, symbols, relocs, strtab) -> do
       -- Load the sections into executable memory
       --

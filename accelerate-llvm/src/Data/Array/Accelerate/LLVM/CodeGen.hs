@@ -125,6 +125,6 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
 
     -- sadness
     fusionError, unexpectedError :: error
-    fusionError      = internalError $ bformat ("unexpected fusible material: " % formatPreAccOp) pacc
-    unexpectedError  = internalError $ bformat ("unexpected array primitive: "  % formatPreAccOp) pacc
+    fusionError      = internalError ("unexpected fusible material: " % formatPreAccOp) pacc
+    unexpectedError  = internalError ("unexpected array primitive: "  % formatPreAccOp) pacc
 

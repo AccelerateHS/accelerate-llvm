@@ -52,7 +52,7 @@ import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
 import Data.IntMap                                                  ( IntMap )
-import Formatting                                                   ( bformat, (%) )
+import Formatting                                                   ( (%) )
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
 import qualified Data.IntMap                                        as IntMap
@@ -222,7 +222,7 @@ compileOpenAcc = traverseAcc
             (_,   h2) = stencilHalo s2
 
         fusionError :: error
-        fusionError = internalError $ bformat ("unexpected fusible material: " % formatPreAccOp) pacc
+        fusionError = internalError ("unexpected fusible material: " % formatPreAccOp) pacc
 
         travA :: HasCallStack
               => DelayedOpenAcc aenv a

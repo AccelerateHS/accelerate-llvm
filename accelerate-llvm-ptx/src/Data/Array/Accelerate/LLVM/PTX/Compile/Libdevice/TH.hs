@@ -123,7 +123,7 @@ libdeviceBitcode compute = do
         , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
         | otherwise                  = "libdevice"
       --
-      err     = internalError (bformat ("not found: " % string % ".YY.bc") basename)
+      err     = internalError ("not found: " % string % ".YY.bc") basename
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
 #if MIN_VERSION_nvvm(0,10,0)
       nvvm    = nvvmDeviceLibraryPath

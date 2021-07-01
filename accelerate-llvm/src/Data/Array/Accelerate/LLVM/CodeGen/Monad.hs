@@ -197,7 +197,7 @@ newBlock nm =
     let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (fromString label) Seq.empty err
-        err     = internalError (bformat ("block `" % string % "' has no terminator") label)
+        err     = internalError ("block `" % string % "' has no terminator") label
     in
     ( next, s )
 

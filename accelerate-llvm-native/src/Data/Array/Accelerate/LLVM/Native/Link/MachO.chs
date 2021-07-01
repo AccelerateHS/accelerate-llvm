@@ -34,7 +34,6 @@ import Data.ByteString                                    ( ByteString )
 import Data.Maybe                                         ( catMaybes )
 import Data.Serialize.Get
 import Data.Text.Encoding
-import Data.Text.Lazy.Builder                             ( fromString )
 import Data.Vector                                        ( Vector )
 import Data.Word
 import Foreign.C
@@ -84,7 +83,7 @@ import Prelude                                            as P
 loadObject :: HasCallStack => ByteString -> IO (FunctionTable, ObjectCode)
 loadObject obj =
   case parseObject obj of
-    Left err            -> internalError (fromString err)
+    Left err            -> internalError string err
     Right (symtab, lcs) -> loadSegments obj symtab lcs
 
 
@@ -265,7 +264,7 @@ processRelocation symtab LoadSegment{} seg_p jump_p sec RelocationInfo{..}
         1 -> let p' = castPtr pc :: Ptr Word16 in poke p' =<< addend p' x
         2 -> let p' = castPtr pc :: Ptr Word32 in poke p' =<< addend p' x
         3 -> let p' = castPtr pc :: Ptr Word64 in poke p' =<< addend p' x
-        _ -> internalError (bformat ("unhandled relocation size " % parenthesised int) ri_length)
+        _ -> internalError ("unhandled relocation size " % parenthesised int) ri_length
 
 #else
 precessRelocation =

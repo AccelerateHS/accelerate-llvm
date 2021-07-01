@@ -41,7 +41,6 @@ import qualified Foreign.CUDA.Driver.Context                        as Context
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import Formatting
-import Data.Text.Lazy.Builder
 import System.Environment                                           ( lookupEnv )
 import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
 import Text.Read                                                    ( readMaybe )
@@ -53,7 +52,7 @@ evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
   CT.withContext (ptxContext ptx) (evalLLVM ptx acc)
   `catch`
-  \e -> internalError (fromString (show (e :: CUDAException)))
+  \e -> internalError shown (e :: CUDAException)
 
 
 -- | Create a new PTX execution target for the given device
