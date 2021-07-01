@@ -49,14 +49,14 @@ elapsedS = Debug.elapsed
 
 data Phase = Compile | Link | Execute
 
-formatPhase :: Format r (Phase -> r)
-formatPhase = later $ \case
+buildPhase :: Phase -> Builder
+buildPhase = \case
   Compile -> "compile"
   Link    -> "link"
   Execute -> "execute"
 
 phase :: MonadIO m => Phase -> Format Builder (Double -> Double -> Builder) -> m a -> m a
-phase p fmt = timed dump_phases (now ("phase " <> bformat formatPhase p <> ": ") % fmt)
+phase p fmt = timed dump_phases (now ("phase " <> buildPhase p <> ": ") % fmt)
 
 {--
 phase :: (MonadIO m, HasCallStack) => Phase -> (Double -> Double -> Builder) -> m a -> m a
