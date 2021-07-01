@@ -71,8 +71,8 @@ import Data.Function
 import Data.HashMap.Strict                                          ( HashMap )
 import Data.Sequence                                                ( Seq )
 import Data.String
-import Data.Text.Format
 import Data.Text.Lazy.Builder                                       ( Builder )
+import Formatting
 import Prelude
 import qualified Data.Foldable                                      as F
 import qualified Data.HashMap.Strict                                as HashMap
@@ -197,7 +197,7 @@ newBlock nm =
     let idx     = Seq.length (blockChain s)
         label   = let (h,t) = break (== '.') nm in (h ++ shows idx t)
         next    = Block (fromString label) Seq.empty err
-        err     = internalError (build "block `{}' has no terminator" (Only label))
+        err     = internalError (bformat ("block `" % string % "' has no terminator") label)
     in
     ( next, s )
 
@@ -232,7 +232,7 @@ createBlocks
               m      = Seq.length (blockChain s)
               n      = F.foldl' (\i b -> i + Seq.length (instructions b)) 0 (blockChain s)
           in
-          trace (build "generated {} instructions in {} blocks" (n+m, m)) ( F.toList blocks , s' )
+          trace (bformat ("generated " % int % " instructions in " % int % " blocks") (n+m) m) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
       LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)

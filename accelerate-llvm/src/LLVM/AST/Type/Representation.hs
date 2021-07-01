@@ -33,12 +33,11 @@ import LLVM.AST.Type.Name
 import qualified LLVM.AST.Type                                      as LLVM
 
 import Data.List
-import Data.Text.Buildable
 import Data.Text.Lazy.Builder
 import Foreign.Ptr
+import Formatting
 import Text.Printf
 import qualified Data.ByteString.Short.Char8                        as S8
-import qualified Data.Text.Format                                   as F
 
 
 -- Witnesses to observe the LLVM type hierarchy:
@@ -283,26 +282,27 @@ instance Show (PrimType a) where
       -- p | PtrPrimType{} <- t  = printf "(%s)" (show t)
       --   | otherwise           = show t
 
-instance Buildable (Type a) where
-  build VoidType     = "()"
-  build (PrimType t) = build t
+formatType :: Format r (Type a -> r)
+formatType = later $ \case
+  VoidType   -> "()"
+  PrimType t -> bformat formatPrimType t
 
-instance Buildable (PrimType a) where
-  build BoolPrimType              = "Bool"
-  build (ScalarPrimType t)        = build t
-  build (NamedPrimType (Label t)) = fromString (S8.unpack t)
-  build (ArrayPrimType n t)       = F.build "[{} x {}]" (n, t)
-  build (StructPrimType _ t)      = "{ " <> (foldr (<>) mempty (intersperse ", " (go t))) <> " }"
+formatPrimType :: Format r (PrimType a -> r)
+formatPrimType = later $ \case
+  BoolPrimType            -> "Bool"
+  ScalarPrimType t        -> bformat formatScalarType t
+  NamedPrimType (Label t) -> bformat string (S8.unpack t)
+  ArrayPrimType n t       -> bformat (squared (int % " x " % formatScalarType)) n t
+  StructPrimType _ t      -> bformat (braced (commaSpaceSep builder)) (go t)
     where
       go :: TupR PrimType t -> [Builder]
       go TupRunit         = []
-      go (TupRsingle s)   = [build s]
+      go (TupRsingle s)   = [bformat formatPrimType s]
       go (TupRpair ta tb) = go ta ++ go tb
 
-  build (PtrPrimType t (AddrSpace n)) = F.build "Ptr{} {}" (a, t)
-    where
-      a | n == 0    = ""
-        | otherwise = F.build "[addrspace {}]" (F.Only n)
+  PtrPrimType t (AddrSpace 0) -> bformat ("Ptr "                        % formatPrimType) t
+  PtrPrimType t (AddrSpace n) -> bformat ("Ptr[addrspace " % int % "] " % formatPrimType) n t
+
 
 -- | Does the concrete type represent signed or unsigned values?
 --

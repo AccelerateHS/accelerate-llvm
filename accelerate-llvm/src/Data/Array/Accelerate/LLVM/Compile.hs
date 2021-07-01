@@ -52,6 +52,7 @@ import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.AST                     as AST
 
 import Data.IntMap                                                  ( IntMap )
+import Formatting                                                   ( bformat, (%) )
 import Control.Applicative                                          hiding ( Const )
 import Prelude                                                      hiding ( map, unzip, zipWith, scanl, scanl1, scanr, scanr1, exp )
 import qualified Data.IntMap                                        as IntMap
@@ -221,7 +222,7 @@ compileOpenAcc = traverseAcc
             (_,   h2) = stencilHalo s2
 
         fusionError :: error
-        fusionError = internalError $ "unexpected fusible material: " <> showPreAccOp pacc
+        fusionError = internalError $ bformat ("unexpected fusible material: " % formatPreAccOp) pacc
 
         travA :: HasCallStack
               => DelayedOpenAcc aenv a
@@ -324,9 +325,8 @@ compileOpenAcc = traverseAcc
             go TupRunit                = AST.UnzipUnit
             go (TupRpair v1 v2)        = AST.UnzipPair (go v1) (go v2)
             go (TupRsingle (Var _ ix)) = case lookupVar lhs ix of
-              Right u  -> u
-              Left ix' -> case ix' of {}
-              -- Left branch is unreachable, as `Idx () y` is an empty type
+              Right u -> u
+              Left _  -> internalError "Left branch is unreachable as `Idx () y` is an empty type"
 
             lookupVar :: ELeftHandSide x env1 env2 -> Idx env2 y -> Either (Idx env1 y) (AST.UnzipIdx x y)
             lookupVar (LeftHandSideWildcard _) ix = Left ix
