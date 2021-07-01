@@ -24,6 +24,7 @@ jobs:
 
     env:
       STACK_FLAGS: "--fast --flag accelerate:nofib"
+      HADDOCK_FLAGS: "--haddock --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments=\"--no-print-missing-docs\""
 
     steps:
       - uses: actions/checkout@v2
@@ -73,20 +74,20 @@ jobs:
         run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
 
       - name: Build accelerate-llvm
-        run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests
+        run: stack build accelerate-llvm $STACK_FLAGS $HADDOCK_FLAGS --test --no-run-tests
 
       - name: Build accelerate-llvm-native
-        run: stack build accelerate-llvm-native $STACK_FLAGS --test --no-run-tests
+        run: stack build accelerate-llvm-native $STACK_FLAGS $HADDOCK_FLAGS --test --no-run-tests
 
       # We can't install CUDA because the root volume is read only
       # - name: Build accelerate-llvm-ptx
-      #   run: stack build accelerate-llvm-ptx $STACK_FLAGS --test --no-run-tests
+      #   run: stack build accelerate-llvm-ptx $STACK_FLAGS $HADDOCK_FLAGS --test --no-run-tests
 
       - name: Test accelerate-llvm-native
         run: stack test accelerate-llvm-native $STACK_FLAGS --test-arguments='--hedgehog-tests=50 --hedgehog-shrinks=0 --timeout=120s --num-threads=1'
 
-      - name: Test haddock generation
-        run: stack haddock accelerate-llvm accelerate-llvm-native $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
+      # - name: Test haddock generation
+      #   run: stack haddock accelerate-llvm accelerate-llvm-native $STACK_FLAGS --no-haddock-deps --no-haddock-hyperlink-source --haddock-arguments="--no-print-missing-docs"
 
       - name: Save snapshot.pkgdb
         run: stack exec ghc-pkg -- --package-db=$(stack path --snapshot-pkg-db) list > snapshot.pkgdb
