@@ -138,6 +138,7 @@ Library
         , dlist                         >= 0.6
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
+        , formatting                    >= 7.0
         , hashable                      >= 1.2
         , llvm-hs                       >= 4.1 && < 9.1
         , llvm-hs-pure                  >= 4.1 && < 9.1
@@ -148,7 +149,6 @@ Library
         , process                       >= 1.4.3
         , template-haskell
         , text                          >= 1.2
-        , text-format                   >= 0.3
         , unordered-containers          >= 0.2
 
   if impl(ghc >= 8.6)

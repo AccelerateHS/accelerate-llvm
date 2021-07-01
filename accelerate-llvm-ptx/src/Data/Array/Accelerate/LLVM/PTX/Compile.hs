@@ -62,12 +62,11 @@ import Data.ByteString                                              ( ByteString
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
 import Data.Text.Encoding
-import Data.Text.Format
-import Data.Text.Lazy.Builder
 import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
+import Formatting
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -116,7 +115,7 @@ compile pacc aenv = do
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
       then do
-        Debug.traceIO Debug.dump_cc (build "cc: found cached object code {}" (Only (Shown uid)))
+        Debug.traceM Debug.dump_cc ("cc: found cached object code " % shown) uid
         B.readFile cacheFile
 
       else
@@ -139,7 +138,7 @@ compilePTX dev ctx ast = do
 #else
   ptx <- withLibdeviceNVPTX dev ctx ast (_compileModuleNVPTX dev)
 #endif
-  Debug.when Debug.dump_asm $ Debug.traceIO Debug.verbose (fromText (decodeUtf8 ptx))
+  Debug.when Debug.dump_asm $ Debug.traceM Debug.verbose stext (decodeUtf8 ptx)
   return ptx
 
 
@@ -184,12 +183,12 @@ compileCUBIN dev sass ptx = do
     -- wait on the process
     ex <- waitForProcess ph
     case ex of
-      ExitFailure r -> internalError (build "ptxas {} (exit {})\n{}" (unwords flags, r, info))
+      ExitFailure r -> internalError (bformat ("ptxas " % unworded string % " (exit " % int % ")\n" % reindented 2 string) flags r info)
       ExitSuccess   -> return ()
 
     when _verbose $
       unless (null info) $
-        Debug.traceIO Debug.dump_cc (build "ptx: compiled entry function(s)\n{}" (Only info))
+        Debug.traceM Debug.dump_cc ("ptx: compiled entry function(s)\n" % reindented 2 string) info
 
   -- Read back the results
   B.readFile sass
@@ -224,7 +223,7 @@ _compileModuleNVVM dev name libdevice mdl = do
   Debug.when Debug.dump_cc   $ do
     Debug.when Debug.verbose $ do
       ll <- LLVM.moduleLLVMAssembly mdl -- TLM: unfortunate to do the lowering twice in debug mode
-      Debug.traceIO Debug.verbose (fromText (decodeUtf8 ll))
+      Debug.traceM Debug.verbose stext (decodeUtf8 ll)
 
   -- Lower the generated module to bitcode, then compile and link together with
   -- the shim header and libdevice library (if necessary)
@@ -232,7 +231,7 @@ _compileModuleNVVM dev name libdevice mdl = do
   ptx <- NVVM.compileModules (("",header) : (name,bc) : libdevice) flags
 
   unless (B.null (NVVM.compileLog ptx)) $ do
-    Debug.traceIO Debug.dump_cc $ "llvm: " <> fromText (decodeUtf8 (NVVM.compileLog ptx))
+    Debug.traceM Debug.dump_cc ("llvm: " % stext) (decodeUtf8 (NVVM.compileLog ptx))
 
   -- Return the generated binary code
   return (NVVM.compileResult ptx)
@@ -255,8 +254,8 @@ _compileModuleNVPTX dev mdl =
 
       -- debug printout
       Debug.when Debug.dump_cc $ do
-        Debug.traceIO Debug.dump_cc $ build "llvm: optimisation did work? {}" (Only (Shown b1))
-        Debug.traceIO Debug.verbose . fromText . decodeUtf8 =<< LLVM.moduleLLVMAssembly mdl
+        Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
+        Debug.traceM Debug.verbose stext . decodeUtf8 =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)
       moduleTargetAssembly nvptx mdl

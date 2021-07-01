@@ -21,8 +21,8 @@ import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context )
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 import Control.Concurrent.MVar
-import Data.Text.Lazy.Builder
 import Data.Sequence                                                ( Seq )
+import Formatting
 import qualified Data.Sequence                                      as Seq
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
@@ -81,24 +81,18 @@ malloc !ref =
 {-# INLINEABLE insert #-}
 insert :: Reservoir -> Stream.Stream -> IO ()
 insert !ref !stream = do
-  message ("stash stream " <> showStream stream)
+  message ("stash stream " % formatStream) stream
   modifyMVar_ ref $ \rsv -> return (rsv Seq.|> stream)
 
 
 -- Debug
 -- -----
 
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = do
-  Debug.traceIO Debug.dump_sched ("stream: " <> msg)
-  next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: Format (IO ()) a -> a
+message fmt = Debug.traceM Debug.dump_sched ("stream: " % fmt)
 
-{-# INLINE showStream #-}
-showStream :: Stream.Stream -> Builder
-showStream (Stream.Stream s) = fromString (show s)
+{-# INLINE formatStream #-}
+formatStream :: Format r (Stream.Stream -> r)
+formatStream = later $ \(Stream.Stream s) -> bformat shown s
 

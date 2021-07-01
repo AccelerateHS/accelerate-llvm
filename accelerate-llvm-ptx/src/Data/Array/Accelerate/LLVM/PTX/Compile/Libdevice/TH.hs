@@ -45,7 +45,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.FileEmbed
 import Data.List
 import Data.Maybe
-import Data.Text.Format
+import Formatting
 import Language.Haskell.TH.Syntax                                   ( Q, TExp )
 import System.Directory
 import System.FilePath
@@ -123,19 +123,19 @@ libdeviceBitcode compute = do
         , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
         | otherwise                  = "libdevice"
       --
-      err     = internalError (build "not found: {}.YY.bc" (Only basename))
+      err     = internalError (bformat ("not found: " % string % ".YY.bc") basename)
       best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
 #if MIN_VERSION_nvvm(0,10,0)
-      base    = nvvmDeviceLibraryPath
+      nvvm    = nvvmDeviceLibraryPath
 #else
-      base    = cudaInstallPath </> "nvvm" </> "libdevice"
+      nvvm    = cudaInstallPath </> "nvvm" </> "libdevice"
 #endif
 
   --
-  files <- TH.runIO $ getDirectoryContents base
+  files <- TH.runIO $ getDirectoryContents nvvm
   --
   let name  = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
-      path  = base </> name
+      path  = nvvm </> name
   --
   TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS (S8.pack name))
                                 , embedFile path ]

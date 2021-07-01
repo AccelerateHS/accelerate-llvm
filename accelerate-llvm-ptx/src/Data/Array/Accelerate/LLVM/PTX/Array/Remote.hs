@@ -44,8 +44,9 @@ import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 
 import Control.Exception
 import Control.Monad.State
-import Data.Text.Format
 import Data.Text.Lazy.Builder
+import Formatting                                                   hiding ( bytes )
+import qualified Formatting                                         as F
 
 import GHC.Base                                                     ( Int(..), Double(..), int2Double# )
 
@@ -69,7 +70,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
             Right p                     -> do Debug.remote_memory_alloc name (CUDA.useDevicePtr p) n
                                               return (Just p)
             Left (ExitCode OutOfMemory) -> do return Nothing
-            Left e                      -> do message ("malloc failed with error: " <> fromString (show e))
+            Left e                      -> do message ("malloc failed with error: " % shown) e
                                               throwIO e
 
   peekRemote t n src ad
@@ -151,27 +152,16 @@ double (I# i#) = D# (int2Double# i#)
 -- Debugging
 -- ---------
 
-{-# INLINE showBytes #-}
-showBytes :: Int -> Builder
-showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (double x) "B"
-
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = Debug.traceIO Debug.dump_gc ("gc: " <> msg) >> next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: Format (IO ()) a -> a
+message fmt = Debug.traceM Debug.dump_gc ("gc: " % fmt)
 
 {-# INLINE transfer #-}
 transfer :: Builder -> Int -> Maybe CUDA.Stream -> IO () -> IO ()
-transfer name bytes stream action
-  = let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (double x / t) "B/s"
-        msg wall cpu gpu  = build "gc: {}: {} bytes @ {}, {}"
-                              ( name
-                              , showBytes bytes
-                              , showRate bytes wall
-                              , Debug.elapsed wall cpu gpu )
-    in
-    Debug.timed Debug.dump_gc msg stream action
+transfer name bytes stream action =
+  let fmt wall cpu gpu =
+        message (builder % ": " % F.bytes @Double shortest % " @ " % Debug.formatSIBase (Just 3) 1024 % "B/s, " % Debug.elapsed)
+          name bytes (double bytes / wall) wall cpu gpu
+  in
+  Debug.timed Debug.dump_gc fmt stream action
 

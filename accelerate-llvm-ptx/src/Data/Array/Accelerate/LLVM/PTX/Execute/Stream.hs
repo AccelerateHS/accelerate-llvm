@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Stream (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Array.Remote.LRU             as Remote
 
@@ -31,14 +30,13 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      as RSV
 
--- cuda
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
--- standard library
 import Control.Exception
 import Control.Monad.State
 import Data.Text.Lazy.Builder
+import Formatting
 
 
 -- | A 'Stream' represents an independent sequence of computations executed on
@@ -147,7 +145,7 @@ create' = do
       ma <- ea
       case ma of
         Nothing -> return Nothing
-        Just a  -> do liftIO (message msg)
+        Just a  -> do message builder msg
                       return (Just a)
 
     orElse :: MonadIO m => m (Maybe a) -> m (Maybe a) -> m (Maybe a)
@@ -169,13 +167,7 @@ destroy = finalize
 -- Debug
 -- -----
 
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = do
-  Debug.traceIO Debug.dump_sched ("stream: " <> msg)
-  next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: MonadIO m => Format (m ()) a -> a
+message fmt = Debug.traceM Debug.dump_sched ("stream: " % fmt)
 

@@ -1,4 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE OverloadedStrings        #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Debug
@@ -18,17 +19,16 @@ module Data.Array.Accelerate.LLVM.PTX.Debug (
 ) where
 
 import Data.Array.Accelerate.Debug.Internal                         hiding ( timed, elapsed )
-import qualified Data.Array.Accelerate.Debug.Internal               as DI
+import qualified Data.Array.Accelerate.Debug.Internal               as D
 
 import Foreign.CUDA.Driver.Stream                                   ( Stream )
 import qualified Foreign.CUDA.Driver.Event                          as Event
 
 import Control.Concurrent
 import Control.Monad.Trans
-import Data.Text.Format
 import Data.Text.Lazy.Builder
+import Formatting
 import System.CPUTime
-import qualified Data.Text.Buildable                                as B
 
 import GHC.Float
 
@@ -39,13 +39,13 @@ import GHC.Float
 timed
     :: MonadIO m
     => Flag
-    -> (Double -> Double -> Double -> Builder)
+    -> (Double -> Double -> Double -> IO ())
     -> Maybe Stream
     -> m a
     -> m a
 {-# INLINE timed #-}
-timed f msg =
-  monitorProcTime (getFlag f) (\t1 t2 t3 -> traceIO f (msg t1 t2 t3))
+timed f fmt =
+  monitorProcTime (getFlag f) fmt
 
 monitorProcTime
     :: MonadIO m
@@ -92,23 +92,22 @@ monitorProcTime enabled display stream action = do
 
 
 {-# INLINE elapsed #-}
-elapsed :: Double -> Double -> Double -> Builder
-elapsed wallTime cpuTime gpuTime =
-  build "{} (wall), {} (cpu), {} (gpu)"
-    ( showFFloatSIBase (Just 3) 1000 wallTime "s"
-    , showFFloatSIBase (Just 3) 1000 cpuTime "s"
-    , showFFloatSIBase (Just 3) 1000 gpuTime "s" )
+elapsed :: Format r (Double -> Double -> Double -> r)
+elapsed = formatSIBase (Just 3) 1000 % "s (wall), "
+        % formatSIBase (Just 3) 1000 % "s (cpu), "
+        % formatSIBase (Just 3) 1000 % "s (gpu)"
 
 -- accelerate/cbits/clock.c
 foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
 
 data Phase = Compile | Link | Execute
 
-instance B.Buildable Phase where
-  build Compile = "compile"
-  build Link    = "link"
-  build Execute = "execute"
+buildPhase :: Phase -> Builder
+buildPhase = \case
+  Compile -> "compile"
+  Link    -> "link"
+  Execute -> "execute"
 
 phase :: MonadIO m => Phase -> m a -> m a
-phase p go = DI.timed dump_phases (\wall cpu -> build "phase {}: {}" (p, DI.elapsed wall cpu)) go
+phase p = D.timed dump_phases (now ("phase " <> buildPhase p <> ": ") % D.elapsed)
 

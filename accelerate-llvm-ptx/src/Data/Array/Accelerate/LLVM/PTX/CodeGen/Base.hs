@@ -98,8 +98,8 @@ import Control.Monad.State                                          ( gets )
 import Data.Bits
 import Data.Proxy
 import Data.String
-import Data.Text.Format
 import Foreign.Storable
+import Formatting                                                   hiding ( bytes, int )
 import Prelude                                                      as P
 
 import GHC.TypeLits
@@ -486,7 +486,7 @@ shfl sop tR val delta = go tR val
 
                         upcast :: Type u -> LLVM.Operand -> Operand u
                         upcast s (LLVM.LocalReference s' (LLVM.UnName x))
-                          = internalCheck (build "couldn't match expected type `{}' with actual type `{}'" (s, Shown s')) (s' == downcast s)
+                          = internalCheck (bformat ("couldn't match expected type `" % formatType % "' with actual type `" % shown % "'") s s') (s' == downcast s)
                           $ LocalReference s (UnName x)
                         upcast _ _
                           = internalError "expected local reference"
