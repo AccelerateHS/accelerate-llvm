@@ -56,8 +56,7 @@ import Control.Monad.State                                          ( liftIO )
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
-import Data.Text.Format
-import Data.Text.Lazy.Builder
+import Formatting
 import Prelude                                                      hiding ( exp, map, sum, scanl, scanr )
 import qualified Data.ByteString.Short                              as S
 import qualified Data.ByteString.Short.Extra                        as S
@@ -779,13 +778,11 @@ aforeignOp name _ _ asm arr = do
   stream <- asks ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
+    msg   = Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsed) name
     query = if Debug.debuggingIsEnabled
               then return True
               else liftIO $ Debug.getFlag Debug.dump_exec
 
-    msg wall cpu gpu = do
-      Debug.traceIO Debug.dump_exec $
-        build "exec: {} {}" (name, Debug.elapsed wall cpu gpu)
 
 
 -- Skeleton execution
@@ -795,7 +792,7 @@ aforeignOp name _ _ asm arr = do
 --
 (!#) :: HasCallStack => FunctionTable -> ShortByteString -> Kernel
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " <> fromString (unpack name)))
+  = fromMaybe (internalError ("function not found: " % string) (unpack name))
   $ lookupKernel name exe
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
@@ -863,7 +860,6 @@ launch Kernel{..} stream n args =
       verbose <- Debug.getFlag Debug.verbose
       let kernelName' | verbose   = kernelName
                       | otherwise = S.take (S.length kernelName - 65) kernelName
-      Debug.traceIO Debug.dump_exec $
-        build "exec: {} <<< {}, {}, {} >>> {}"
-              (unpack kernelName', fst3 grid, fst3 cta, smem, Debug.elapsed wall cpu gpu)
+      Debug.traceM Debug.dump_exec ("exec: " % string % " <<< " % int % ", " % int % ", " % int % " >>> " % Debug.elapsed)
+        (unpack kernelName') (fst3 grid) (fst3 cta) smem wall cpu gpu
 

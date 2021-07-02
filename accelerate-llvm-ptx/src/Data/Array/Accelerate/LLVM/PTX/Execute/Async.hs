@@ -23,7 +23,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Async (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 
@@ -37,7 +36,6 @@ import Data.Array.Accelerate.LLVM.PTX.Link.Object                   ( FunctionTa
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as Stream
 
--- standard library
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.IORef

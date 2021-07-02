@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP               #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeOperators     #-}
@@ -22,9 +23,9 @@ module Data.Array.Accelerate.LLVM.Native.Debug (
 import Data.Array.Accelerate.Debug.Internal                         hiding ( elapsed )
 import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
-import Data.Text.Format
+import Formatting
+import Formatting.Internal
 import Data.Text.Lazy.Builder
-import qualified Data.Text.Buildable                                as B
 
 import Control.Monad.Trans
 
@@ -32,29 +33,30 @@ import Control.Monad.Trans
 -- | Display elapsed wall and CPU time, together with speedup fraction
 --
 {-# INLINEABLE elapsedP #-}
-elapsedP :: Double -> Double -> Builder
-elapsedP wallTime cpuTime =
-  build "{} (wall), {} (cpu), {} x speedup"
-    ( showFFloatSIBase (Just 3) 1000 wallTime "s"
-    , showFFloatSIBase (Just 3) 1000 cpuTime  "s"
-    , fixed 2 (cpuTime / wallTime) )
+elapsedP :: Format r (Double -> Double -> r)
+elapsedP = Format $ \k cpuTime wallTime ->
+  k $ bformat (formatSIBase (Just 3) 1000 % "s (wall), " % formatSIBase (Just 3) 1000 % "s (cpu), " % fixed 2 % " x speedup")
+        wallTime
+        cpuTime
+        (wallTime/cpuTime)
 
 -- | Display elapsed wall and CPU time
 --
 {-# INLINEABLE elapsedS #-}
-elapsedS :: Double -> Double -> Builder
+elapsedS :: Format r (Double -> Double -> r)
 elapsedS = Debug.elapsed
 
 
 data Phase = Compile | Link | Execute
 
-instance B.Buildable Phase where
-  build Compile = "compile"
-  build Link    = "link"
-  build Execute = "execute"
+buildPhase :: Phase -> Builder
+buildPhase = \case
+  Compile -> "compile"
+  Link    -> "link"
+  Execute -> "execute"
 
-phase :: MonadIO m => Phase -> (Double -> Double -> Builder) -> m a -> m a
-phase p fmt go = timed dump_phases (\wall cpu -> build "phase {}: {}" (p, fmt wall cpu)) go
+phase :: MonadIO m => Phase -> Format Builder (Double -> Double -> Builder) -> m a -> m a
+phase p fmt = timed dump_phases (now ("phase " <> buildPhase p <> ": ") % fmt)
 
 {--
 phase :: (MonadIO m, HasCallStack) => Phase -> (Double -> Double -> Builder) -> m a -> m a

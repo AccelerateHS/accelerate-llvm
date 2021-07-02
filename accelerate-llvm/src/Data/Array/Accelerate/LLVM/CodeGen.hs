@@ -47,6 +47,7 @@ import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Foreign
 import Data.Array.Accelerate.LLVM.State
 
+import Formatting
 import Prelude                                                      hiding ( map, scanl, scanl1, scanr, scanr1 )
 
 
@@ -124,6 +125,6 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
 
     -- sadness
     fusionError, unexpectedError :: error
-    fusionError      = internalError $ "unexpected fusible material: " <> showPreAccOp pacc
-    unexpectedError  = internalError $ "unexpected array primitive: "  <> showPreAccOp pacc
+    fusionError      = internalError ("unexpected fusible material: " % formatPreAccOp) pacc
+    unexpectedError  = internalError ("unexpected array primitive: "  % formatPreAccOp) pacc
 

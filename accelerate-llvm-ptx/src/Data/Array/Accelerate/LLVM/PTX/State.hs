@@ -40,8 +40,7 @@ import qualified Foreign.CUDA.Driver.Context                        as Context
 
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
-import Data.Text.Format
-import Data.Text.Lazy.Builder
+import Formatting
 import System.Environment                                           ( lookupEnv )
 import System.IO.Unsafe                                             ( unsafePerformIO, unsafeInterleaveIO )
 import Text.Read                                                    ( readMaybe )
@@ -53,7 +52,7 @@ evalPTX :: PTX -> LLVM PTX a -> IO a
 evalPTX ptx acc =
   CT.withContext (ptxContext ptx) (evalLLVM ptx acc)
   `catch`
-  \e -> internalError (fromString (show (e :: CUDAException)))
+  \e -> internalError shown (e :: CUDAException)
 
 
 -- | Create a new PTX execution target for the given device
@@ -140,7 +139,7 @@ defaultTarget = head (unmanaged defaultTargetPool)
 {-# NOINLINE defaultTargetPool #-}
 defaultTargetPool :: Pool PTX
 defaultTargetPool = unsafePerformIO $! do
-  Debug.traceIO Debug.dump_gc "gc: initialise default PTX pool"
+  Debug.traceM Debug.dump_gc "gc: initialise default PTX pool"
   CUDA.initialise []
 
   -- Figure out which GPUs we should put into the execution pool
@@ -160,7 +159,7 @@ defaultTargetPool = unsafePerformIO $! do
         case r of
           Right ptx               -> return (Just ptx)
           Left (e::CUDAException) -> do
-            Debug.traceIO Debug.dump_gc (build "gc: failed to initialise device {}: {}" (i, Shown e))
+            Debug.traceM Debug.dump_gc ("gc: failed to initialise device " % int % ": " % shown) i e
             return Nothing
 
   -- Create the pool from the available devices, which get spun-up lazily as

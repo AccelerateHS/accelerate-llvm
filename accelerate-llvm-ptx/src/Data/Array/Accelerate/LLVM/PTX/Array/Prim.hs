@@ -3,9 +3,11 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE UnboxedTuples       #-}
 -- |
@@ -55,11 +57,12 @@ import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 import Control.Monad
 import Control.Monad.Reader
 import Data.IORef
-import Data.Text.Format
 import Data.Text.Lazy.Builder
+import Formatting                                                   hiding ( bytes )
+import qualified Formatting                                         as F
 import Prelude
 
-import GHC.Base                                                     ( IO(..), touch# )
+import GHC.Base                                                     ( IO(..), Int(..), Double(..), touch#, int2Double# )
 
 
 -- | Allocate a device-side array associated with the given host array. If the
@@ -74,7 +77,7 @@ mallocArray
     -> ArrayData e
     -> LLVM PTX ()
 mallocArray !t !n !ad = do
-  message ("mallocArray: " <> showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  message ("mallocArray: " % formatBytes) (n * bytesElt (TupRsingle (SingleScalarType t)))
   void $ Remote.malloc t ad n False
 
 
@@ -91,7 +94,7 @@ useArrayAsync
     -> ArrayData e
     -> Par PTX (Future (ArrayData e))
 useArrayAsync !t !n !ad = do
-  message ("useArrayAsync: " <> showBytes (n * bytesElt (TupRsingle (SingleScalarType t))))
+  message ("useArrayAsync: " % formatBytes) (n * bytesElt (TupRsingle (SingleScalarType t)))
   alloc <- liftPar $ Remote.malloc t ad n True
   if alloc
     then pokeArrayAsync t n ad
@@ -366,27 +369,24 @@ touchIORef r = IO $ \s -> case touch# r s of s' -> (# s', () #)
 -- Debug
 -- -----
 
-{-# INLINE showBytes #-}
-showBytes :: Int -> Builder
-showBytes x = Debug.showFFloatSIBase (Just 0) 1024 (fromIntegral x :: Double) "B"
+{-# INLINE double #-}
+double :: Int -> Double
+double (I# i#) = D# (int2Double# i#)
 
-{-# INLINE trace #-}
-trace :: MonadIO m => Builder -> m a -> m a
-trace msg next = liftIO (Debug.traceIO Debug.dump_gc ("gc: " <> msg)) >> next
+{-# INLINE formatBytes #-}
+formatBytes :: Format r (Int -> r)
+formatBytes = F.bytes @Double shortest
 
 {-# INLINE message #-}
-message :: MonadIO m => Builder -> m ()
-message s = s `trace` return ()
+message :: MonadIO m => Format (m ()) a -> a
+message fmt = Debug.traceM Debug.dump_gc ("gc: " % fmt)
 
 {-# INLINE transfer #-}
 transfer :: MonadIO m => Builder -> Int -> Maybe CUDA.Stream -> IO () -> m ()
 transfer name bytes stream action =
-  let showRate x t      = Debug.showFFloatSIBase (Just 3) 1024 (fromIntegral x / t) "B/s"
-      msg wall cpu gpu  = build "gc: {}: {} @ {}, {}"
-                            ( name
-                            , showBytes bytes
-                            , showRate bytes wall
-                            , Debug.elapsed wall cpu gpu )
+  let fmt wall cpu gpu =
+        message (builder % ": " % F.bytes @Double shortest % " @ " % Debug.formatSIBase (Just 3) 1024 % "B/s, " % Debug.elapsed)
+          name bytes (double bytes / wall) wall cpu gpu
   in
-  liftIO (Debug.timed Debug.dump_gc msg stream action)
+  liftIO (Debug.timed Debug.dump_gc fmt stream action)
 

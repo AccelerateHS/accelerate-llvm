@@ -17,7 +17,6 @@ module Data.Array.Accelerate.LLVM.PTX.Execute.Event (
 
 ) where
 
--- accelerate
 import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Array.Remote.LRU             as Remote
 
@@ -27,14 +26,14 @@ import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Stream
 
--- cuda
 import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver.Event                          as Event
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
-import Data.Text.Lazy.Builder
 import Control.Exception
 import Control.Monad.State
+import Data.Text.Lazy.Builder
+import Formatting
 
 
 -- | Events can be used for efficient device-side synchronisation between
@@ -51,7 +50,7 @@ create :: LLVM PTX Event
 create = do
   e     <- create'
   event <- liftIO $ newLifetime e
-  liftIO $ addFinalizer event $ do message $ "destroy " <> showEvent e
+  liftIO $ addFinalizer event $ do message ("destroy " % formatEvent) e
                                    Event.destroy e
   return event
 
@@ -82,7 +81,7 @@ create' = do
       ma <- ea
       case ma of
         Nothing -> return Nothing
-        Just a  -> do liftIO (message msg)
+        Just a  -> do message builder msg
                       return (Just a)
 
     orElse :: MonadIO m => m (Maybe a) -> m (Maybe a) -> m (Maybe a)
@@ -109,7 +108,7 @@ waypoint stream = do
   liftIO $
     withLifetime stream  $ \s -> do
       withLifetime event $ \e -> do
-        message $ "add waypoint " <> showEvent e <> " in stream " <> showStream s
+        message ("add waypoint " % formatEvent % " in stream " % formatStream) e s
         Event.record e (Just s)
         return event
 
@@ -121,7 +120,7 @@ after :: Event -> Stream -> IO ()
 after event stream =
   withLifetime stream $ \s ->
   withLifetime event  $ \e -> do
-    message $ "after " <> showEvent e <> " in stream " <> showStream s
+    message ("after " % formatEvent % " in stream " % formatStream) e s
     Event.wait e (Just s) []
 
 -- | Block the calling thread until the event is recorded
@@ -130,7 +129,7 @@ after event stream =
 block :: Event -> IO ()
 block event =
   withLifetime event $ \e -> do
-    message $ "blocked on event " <> showEvent e
+    message ("blocked on event " % formatEvent) e
     Event.block e
 
 -- | Test whether an event has completed
@@ -143,21 +142,15 @@ query event = withLifetime event Event.query
 -- Debug
 -- -----
 
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = do
-  Debug.traceIO Debug.dump_sched ("event: " <> msg)
-  next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: MonadIO m => Format (m ()) a -> a
+message fmt = Debug.traceM Debug.dump_sched ("event: " % fmt)
 
-{-# INLINE showEvent #-}
-showEvent :: Event.Event -> Builder
-showEvent (Event.Event e) = fromString (show e)
+{-# INLINE formatEvent #-}
+formatEvent :: Format r (Event.Event -> r)
+formatEvent = later $ \(Event.Event e) -> bformat shown e
 
-{-# INLINE showStream #-}
-showStream :: Stream.Stream -> Builder
-showStream (Stream.Stream s) = fromString (show s)
+{-# INLINE formatStream #-}
+formatStream :: Format r (Stream.Stream -> r)
+formatStream = later $ \(Stream.Stream s) -> bformat shown s
 

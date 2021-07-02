@@ -14,6 +14,7 @@ module Data.Array.Accelerate.LLVM.PTX.Link.Object
 import Data.Array.Accelerate.Lifetime
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List
+import Formatting
 import qualified Foreign.CUDA.Driver                                as CUDA
 
 
@@ -34,6 +35,10 @@ instance Show FunctionTable where
     = showString "<<"
     . showString (intercalate "," [ unpack (kernelName k) | k <- functionTable f ])
     . showString ">>"
+
+formatFunctionTable :: Format r (FunctionTable -> r)
+formatFunctionTable = later $ \f ->
+  bformat (angled (angled (commaSep string))) [ unpack (kernelName k) | k <- functionTable f ]
 
 -- | Object code consists of executable code in the device address space
 --

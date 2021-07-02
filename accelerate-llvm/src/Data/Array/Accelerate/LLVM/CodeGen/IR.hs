@@ -28,7 +28,7 @@ import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Error
 import Data.Primitive.Vec
-import Data.Text.Format
+import Formatting
 
 import qualified Data.ByteString.Short                              as B
 
@@ -74,10 +74,10 @@ instance IROP Type where
 instance IROP PrimType where
   op (ScalarPrimType t) = op t
   op BoolPrimType       = \case OP_Bool x -> x
-  op t                  = internalError $ build "unhandled type: {}" (Only t)
+  op t                  = internalError ("unhandled type: " % formatPrimType) t
   ir (ScalarPrimType t) = ir t
   ir BoolPrimType       = OP_Bool
-  ir t                  = internalError $ build "unhandled type: {}" (Only t)
+  ir t                  = internalError ("unhandled type: " % formatPrimType) t
 
 instance IROP ScalarType where
   op (SingleScalarType t) = op t

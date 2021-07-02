@@ -61,8 +61,7 @@ import Data.List                                                    ( find )
 import Data.Maybe                                                   ( fromMaybe )
 import Data.Sequence                                                ( Seq )
 import Data.Foldable                                                ( asum )
-import Data.Text.Format                                             ( build )
-import Data.Text.Lazy.Builder                                       ( Builder, fromString )
+import Formatting
 import System.CPUTime                                               ( getCPUTime )
 import qualified Data.ByteString.Short                              as S
 import qualified Data.ByteString.Short.Extra                        as S
@@ -371,7 +370,7 @@ foldSegOp
     -> Delayed (Array (sh, Int) e)
     -> Delayed (Segments i)
     -> Par Native (Future (Array (sh, Int) e))
-foldSegOp int repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segments@(delayedShape -> ((), ss)) = do
+foldSegOp iR repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segments@(delayedShape -> ((), ss)) = do
   Native{..}  <- gets llvmTarget
   future      <- new
   let
@@ -379,7 +378,7 @@ foldSegOp int repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segmen
       splits  = numWorkers workers
       minsize = 1
       shR     = arrayRshape repr
-      segR    = ArrayR dim1 $ TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType int
+      segR    = ArrayR dim1 $ TupRsingle $ SingleScalarType $ NumSingleType $ IntegralNumType iR
       param   = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray segR)
   --
   result  <- allocateRemote repr (sh, n)
@@ -612,8 +611,8 @@ permuteOp inplace repr shr' NativeR{..} gamma aenv defaults@(shape -> shOut) inp
   Native{..}  <- gets llvmTarget
   future      <- new
   result      <- if inplace
-                   then Debug.trace Debug.dump_exec               "exec: permute/inplace"                            $ return defaults
-                   else Debug.timed Debug.dump_exec (\wall cpu -> "exec: permute/clone " <> Debug.elapsedS wall cpu) $ liftPar (cloneArray repr' defaults)
+                   then Debug.trace Debug.dump_exec  "exec: permute/inplace"                  $ return defaults
+                   else Debug.timed Debug.dump_exec ("exec: permute/clone " % Debug.elapsedS) $ liftPar (cloneArray repr' defaults)
   let
       splits  = numWorkers workers
       minsize = case shr of
@@ -776,7 +775,7 @@ aforeignOp
     -> Par Native (Future bs)
 aforeignOp name _ _ asm arr = do
   -- TODO: add tracy marks
-  Debug.timed Debug.dump_exec (\wall cpu -> build "exec: {} {}" (name, Debug.elapsedP wall cpu)) (asm arr)
+  Debug.timed Debug.dump_exec (now ("exec: " <> bformat string name <> " ") % Debug.elapsedP) (asm arr)
 
 
 -- Skeleton execution
@@ -784,7 +783,7 @@ aforeignOp name _ _ asm arr = do
 
 (!#) :: HasCallStack => Lifetime FunctionTable -> ShortByteString -> Function
 (!#) exe name
-  = fromMaybe (internalError ("function not found: " <> fromString (S8.unpack name)))
+  = fromMaybe (internalError ("function not found: " % string) (S8.unpack name))
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
@@ -922,7 +921,7 @@ mkTasksUsing
 mkTasksUsing ranges (name, f) gamma aenv shr paramsR params = do
   arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(_,u,v) -> do
-    sched $ build "{} ({}) -> ({})" (S8.unpack name, showShape shr u, showShape shr v)
+    sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u
     let argV = marshalShape' @Native shr v
     callFFI f retVoid $ DL.toList $ argU `DL.append` argV `DL.append` arg
@@ -940,7 +939,7 @@ mkTasksUsingIndex
 mkTasksUsingIndex ranges (name, f) gamma aenv shr paramsR params = do
   arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(i,u,v) -> do
-    sched $ build "{} ({}) -> ({})" (S8.unpack name, showShape shr u, showShape shr v)
+    sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u
     let argV = marshalShape' @Native shr v
     let argI = DL.singleton $ marshalInt @Native i
@@ -995,7 +994,7 @@ timed name job =
                              name' | verbose   = name
                                    | otherwise = S.take (S.length name - 65) name
                          --
-                         Debug.traceIO Debug.dump_exec $ build "exec: {} {}" (S8.unpack name', Debug.elapsedP wallTime cpuTime)
+                         Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsedP) (S8.unpack name') wallTime cpuTime
               --
           return $ Job { jobTasks = start Seq.<| jobTasks job
                        , jobDone  = case jobDone job of
@@ -1009,10 +1008,11 @@ timed name job =
 foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double
 
 
-sched :: Builder -> IO ()
-sched msg
-  = Debug.when Debug.verbose
-  $ Debug.when Debug.dump_sched
-  $ do tid <- myThreadId
-       Debug.putTraceMsg $ build "sched: Thread {} {}" (getThreadId tid, msg)
+sched :: Format (IO ()) a -> a
+sched fmt =
+  runFormat fmt $ \k ->
+    Debug.when Debug.verbose $
+    Debug.when Debug.dump_sched $ do
+      tid <- myThreadId
+      Debug.putTraceMsg ("sched: Thread " % int % " " % builder) (getThreadId tid) k
 

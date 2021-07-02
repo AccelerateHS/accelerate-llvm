@@ -45,8 +45,7 @@ import Data.ByteString                                              ( ByteString
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
 import Data.Text.Encoding
-import Data.Text.Format
-import Data.Text.Lazy.Builder
+import Formatting
 import System.Directory
 import System.IO.Unsafe
 import qualified Data.ByteString                                    as B
@@ -93,7 +92,7 @@ compile pacc aenv = do
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
       then do
-        Debug.traceIO Debug.dump_cc (build "cc: found cached object code {}" (Only (Shown uid)))
+        Debug.traceM Debug.dump_cc ("cc: found cached object code " % shown) uid
         B.readFile cacheFile
 
       else
@@ -104,11 +103,11 @@ compile pacc aenv = do
           optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
           Debug.when Debug.verbose $ do
-            Debug.traceIO Debug.dump_cc  . fromText . decodeUtf8 =<< moduleLLVMAssembly mdl
-            Debug.traceIO Debug.dump_asm . fromText . decodeUtf8 =<< moduleTargetAssembly machine mdl
+            Debug.traceM Debug.dump_cc  stext . decodeUtf8 =<< moduleLLVMAssembly mdl
+            Debug.traceM Debug.dump_asm stext . decodeUtf8 =<< moduleTargetAssembly machine mdl
 
           obj <- moduleObject machine mdl
-          Debug.traceIO Debug.dump_cc (build "cc: new object code {}" (Only (Shown uid)))
+          Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
           B.writeFile cacheFile obj
           return obj
 

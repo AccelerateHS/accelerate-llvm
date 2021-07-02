@@ -25,7 +25,7 @@ import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
 import qualified Foreign.CUDA.Ptr                                   as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Data.Text.Lazy.Builder
+import Formatting
 
 
 -- Remote memory tables. This builds upon the LRU-cached memory tables provided
@@ -43,18 +43,14 @@ new !ctx = Remote.new freeRemote
   where
     freeRemote :: CUDA.DevicePtr a -> IO ()
     freeRemote !ptr = do
-      message ("freeRemote " <> fromString (show ptr))
+      message ("freeRemote " % shown) ptr
       withContext ctx (CUDA.free ptr)
 
 
 -- Debugging
 -- ---------
 
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = Debug.traceIO Debug.dump_gc ("gc: " <> msg) >> next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: Format (IO ()) a -> a
+message fmt = Debug.traceM Debug.dump_gc ("gc: " % fmt)
 

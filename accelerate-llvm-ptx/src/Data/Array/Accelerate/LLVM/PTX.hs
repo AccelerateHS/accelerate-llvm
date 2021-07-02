@@ -116,7 +116,7 @@ import Foreign.CUDA.Driver                                          as CUDA ( CU
 import Control.Exception
 import Control.Monad.Trans
 import Data.Maybe
-import Data.Text.Lazy.Builder
+import Formatting                                                   ( shown )
 import System.IO.Unsafe
 import qualified Language.Haskell.TH                                as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
@@ -551,7 +551,7 @@ registerPinnedAllocatorWith target =
   registerForeignPtrAllocator $ \bytes ->
     withContext (ptxContext target) (CUDA.mallocHostForeignPtr [] bytes)
     `catch`
-    \e -> internalError (fromString (show (e :: CUDAException)))
+    \e -> internalError shown (e :: CUDAException)
 
 
 -- Debugging

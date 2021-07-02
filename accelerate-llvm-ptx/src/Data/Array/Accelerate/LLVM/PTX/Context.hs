@@ -39,6 +39,7 @@ import Data.Text.Prettyprint.Doc
 import Data.Text.Prettyprint.Doc.Internal
 import Data.Text.Prettyprint.Doc.Render.Util.Panic
 import Data.Word
+import Formatting
 import Text.Printf
 import qualified Data.Text.Lazy.Builder                             as TLB
 import Prelude                                                      hiding ( (<>) )
@@ -88,7 +89,7 @@ raw :: CUDA.Device
 raw dev prp ctx = do
   lft <- newLifetime ctx
   addFinalizer lft $ do
-    message $ "finalise context " <> showContext ctx
+    message ("finalise context " % formatContext) ctx
     CUDA.destroy ctx
 
   -- The kernels don't use much shared memory, so for devices that support it
@@ -114,7 +115,7 @@ raw dev prp ctx = do
   nm   <- go 0 str
 
   -- Display information about the selected device
-  Debug.traceIO Debug.dump_phases (deviceInfo dev prp)
+  Debug.traceM Debug.dump_phases builder (deviceInfo dev prp)
 
   return $! Context prp nm lft
 
@@ -132,14 +133,14 @@ withContext Context{..} action
 {-# INLINE push #-}
 push :: CUDA.Context -> IO ()
 push ctx = do
-  message $ "push context: " <> showContext ctx
+  message ("push context: " % formatContext) ctx
   CUDA.push ctx
 
 {-# INLINE pop #-}
 pop :: IO ()
 pop = do
   ctx <- CUDA.pop
-  message $ "pop context: "  <> showContext ctx
+  message ("pop context: " % formatContext) ctx
 
 
 -- Debugging
@@ -176,17 +177,11 @@ deviceInfo dev prp = go $ layoutPretty defaultLayoutOptions $
       SAnnPop rest       -> go rest
 
 
-{-# INLINE trace #-}
-trace :: Builder -> IO a -> IO a
-trace msg next = do
-  Debug.traceIO Debug.dump_gc ("gc: " <> msg)
-  next
-
 {-# INLINE message #-}
-message :: Builder -> IO ()
-message s = s `trace` return ()
+message :: Format (IO ()) a -> a
+message fmt = Debug.traceM Debug.dump_gc ("gc: " % fmt)
 
-{-# INLINE showContext #-}
-showContext :: CUDA.Context -> Builder
-showContext (CUDA.Context c) = fromString (show c)
+{-# INLINE formatContext #-}
+formatContext :: Format r (CUDA.Context -> r)
+formatContext = later $ \(CUDA.Context c) -> bformat shown c
 

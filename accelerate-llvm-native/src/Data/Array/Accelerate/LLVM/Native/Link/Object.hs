@@ -15,6 +15,7 @@ import Data.List
 import Data.Word
 import Foreign.ForeignPtr
 import Foreign.Ptr
+import Formatting
 
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.Array.Accelerate.Lifetime
@@ -31,6 +32,10 @@ instance Show FunctionTable where
     = showString "<<"
     . showString (intercalate "," [ unpack n | (n,_) <- functionTable f ])
     . showString ">>"
+
+formatFunctionTable :: Format r (FunctionTable -> r)
+formatFunctionTable = later $ \f ->
+  bformat (angled (angled (commaSep string))) [ unpack n | (n,_) <- functionTable f ]
 
 -- | Object code consists of memory in the target address space.
 --

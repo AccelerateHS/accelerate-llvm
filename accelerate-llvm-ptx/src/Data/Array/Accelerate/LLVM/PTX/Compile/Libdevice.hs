@@ -19,7 +19,6 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 
 ) where
 
--- llvm-hs
 import LLVM.Context
 import qualified LLVM.Module                                        as LLVM
 
@@ -27,22 +26,17 @@ import LLVM.AST                                                     as AST
 import LLVM.AST.Global                                              as G
 import LLVM.AST.Linkage
 
--- accelerate
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
--- cuda
 import Foreign.CUDA.Analysis
 
--- standard library
 import Control.Monad
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import Data.HashSet                                                 ( HashSet )
-import Data.List
 import Data.Maybe
-import Data.Text.Format
-import Data.Text.Lazy.Builder
+import Formatting
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.ByteString.Short.Extra                        as BS
 import qualified Data.HashSet                                       as Set
@@ -86,7 +80,7 @@ withLibdeviceNVPTX dev ctx ast next =
       LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
         LLVM.linkModules mdl refl
         LLVM.linkModules mdl libd
-        Debug.traceIO Debug.dump_cc msg
+        Debug.traceM Debug.dump_cc ("cc: linking with libdevice: " % commaSpaceSep string) [ S8.unpack n | n <- Set.toList externs ]
         next mdl
   where
     -- Replace the target triple and datalayout from the libdevice.bc module
@@ -97,14 +91,6 @@ withLibdeviceNVPTX dev ctx ast next =
                                    }
     externs     = analyse ast
     arch        = computeCapability dev
-
-    msg         = build "cc: linking with libdevice: {}"
-                $ Only
-                $ foldr (<>) mempty
-                $ intersperse ", "
-                $ map (fromString . S8.unpack)
-                $ Set.toList externs
-
 
 -- | Lower an LLVM AST to C++ objects and prepare it for linking against
 -- libdevice using the nvvm bindings, iff any libdevice functions are referenced
@@ -125,7 +111,7 @@ withLibdeviceNVVM
     -> IO a
 withLibdeviceNVVM dev ctx ast next =
   LLVM.withModuleFromAST ctx ast $ \mdl -> do
-    when withlib $ Debug.traceIO Debug.dump_cc msg
+    when withlib $ Debug.traceM Debug.dump_cc ("cc: linking with libdevice: " % commaSpaceSep string) [ S8.unpack n | n <- Set.toList externs ]
     next lib mdl
   where
     externs             = analyse ast
@@ -134,14 +120,6 @@ withLibdeviceNVVM dev ctx ast next =
         | otherwise     = []
 
     arch        = computeCapability dev
-
-    msg         = build "cc: linking with libdevice: {}"
-                $ Only
-                $ foldr (<>) mempty
-                $ intersperse ", "
-                $ map (fromString . S8.unpack)
-                $ Set.toList externs
-
 
 -- | Analyse the LLVM AST module and determine if any of the external
 -- declarations are intrinsics implemented by libdevice. The set of such
