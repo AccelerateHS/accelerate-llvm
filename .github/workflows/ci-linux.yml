@@ -52,9 +52,9 @@ jobs:
             ~/.stack/programs
             ~/.stack/snapshots
             .stack-work
-            accelerae-llvm/.stack-work
-            accelerae-llvm-ptx/.stack-work
-            accelerae-llvm-native/.stack-work
+            accelerate-llvm/.stack-work
+            accelerate-llvm-ptx/.stack-work
+            accelerate-llvm-native/.stack-work
           key: ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.ghc }}-${{ hashFiles('stack.yaml') }}-${{ hashFiles('snapshot.pkgdb') }}
