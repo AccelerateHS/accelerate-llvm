@@ -23,6 +23,7 @@ import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Type
 
 import Control.Monad.Trans                                          ( MonadIO )
+import Data.Kind
 import GHC.Stack
 
 
@@ -31,11 +32,11 @@ class (Monad (Par arch), MonadIO (Par arch)) => Async arch where
   -- | The monad parallel computations will be executed in. Presumably a stack
   -- with the LLVM monad at the base.
   --
-  data Par arch :: * -> *
+  data Par arch :: Type -> Type
 
   -- | Parallel computations can communicate via futures.
   --
-  type FutureR arch :: * -> *
+  type FutureR arch :: Type -> Type
 
   -- | Create a new (empty) promise, to be fulfilled at some future point.
   --

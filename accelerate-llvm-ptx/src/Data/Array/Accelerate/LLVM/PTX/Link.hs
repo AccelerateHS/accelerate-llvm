@@ -41,7 +41,7 @@ import Control.Monad.State
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Formatting
 import Foreign.Ptr
-import Language.Haskell.TH
+import Language.Haskell.TH.Extra
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P hiding ( lookup )
 
@@ -94,7 +94,7 @@ linkFunctionQ
     :: CUDA.Module
     -> ShortByteString
     -> LaunchConfig
-    -> IO (Kernel, Q (TExp (Int -> Int)))
+    -> IO (Kernel, CodeQ (Int -> Int))
 linkFunctionQ mdl name configure = do
   f     <- CUDA.getFun mdl name
   regs  <- CUDA.requires f CUDA.NumRegs

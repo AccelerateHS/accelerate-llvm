@@ -19,7 +19,7 @@ module Data.Array.Accelerate.LLVM.PTX.Analysis.Launch (
 ) where
 
 import Foreign.CUDA.Analysis                            as CUDA
-import Language.Haskell.TH
+import Language.Haskell.TH.Extra
 
 
 -- | Given information about the resource usage of the compiled kernel,
@@ -33,7 +33,7 @@ type LaunchConfig
      , Int                          -- thread block size
      , Int -> Int                   -- grid size required to process the given input size
      , Int                          -- #bytes dynamic shared memory
-     , Q (TExp (Int -> Int))
+     , CodeQ (Int -> Int)
      )
 
 -- | Analytics for a simple kernel which requires no additional shared memory or
@@ -51,7 +51,7 @@ launchConfig
     -> [Int]                        -- ^ Thread block sizes to consider
     -> (Int -> Int)                 -- ^ Shared memory (#bytes) as a function of thread block size
     -> (Int -> Int -> Int)          -- ^ Determine grid size for input size 'n' (first arg) over thread blocks of size 'm' (second arg)
-    -> Q (TExp (Int -> Int -> Int))
+    -> CodeQ (Int -> Int -> Int)
     -> LaunchConfig
 launchConfig dev candidates dynamic_smem grid_size grid_sizeQ maxThreads registers static_smem =
   let
@@ -69,6 +69,6 @@ launchConfig dev candidates dynamic_smem grid_size grid_sizeQ maxThreads registe
 multipleOf :: Int -> Int -> Int
 multipleOf x y = ((x + y - 1) `quot` y)
 
-multipleOfQ :: Q (TExp (Int -> Int -> Int))
+multipleOfQ :: CodeQ (Int -> Int -> Int)
 multipleOfQ = [|| multipleOf ||]
 

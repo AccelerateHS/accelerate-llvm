@@ -27,7 +27,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/llvm/llvm-9
+    > brew install llvm-hs/llvm/llvm-12
     .
     /Debian & Ubuntu/
     .
@@ -36,13 +36,13 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-9-dev
+    > apt-get install llvm-12-dev
     .
     /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/8.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/12.0.0/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built.
@@ -132,6 +132,8 @@ Library
     LLVM.AST.Orphans
 
   other-modules:
+    Language.Haskell.TH.Extra
+
     Paths_accelerate_llvm
 
   build-depends:
@@ -148,8 +150,8 @@ Library
         , filepath                      >= 1.0
         , formatting                    >= 7.0
         , hashable                      >= 1.1
-        , llvm-hs                       >= 4.1 && < 9.1
-        , llvm-hs-pure                  >= 4.1 && < 9.1
+        , llvm-hs                       >= 4.1 && < 13
+        , llvm-hs-pure                  >= 4.1 && < 13
         , mtl                           >= 2.0
         , primitive                     >= 0.6.4
         , template-haskell

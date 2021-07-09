@@ -13,15 +13,19 @@
 module Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
   where
 
+#if __GLASGOW_HASKELL__ >= 900
+import GHC.Unit
+import GHC.Utils.Binary
+#else
+import Binary
 import Module
+#endif
 
 import Data.Map                                                     ( Map )
-import Data.Serialize
-import Formatting
 import System.Directory
 import System.FilePath
-import qualified Data.ByteString                                    as B
 import qualified Data.Map                                           as Map
+import qualified Data.Map.Internal                                  as Map
 
 import Data.Array.Accelerate.Error
 
@@ -34,28 +38,34 @@ readBuildInfo path = do
   exists <- doesFileExist path
   if not exists
     then return Map.empty
-    else do
-      f <- B.readFile path
-      case decode f of
-        Left err -> internalError string err
-        Right m  -> return m
+    else get =<< readBinMem path
 
 writeBuildInfo :: FilePath -> Map Module [FilePath] -> IO ()
-writeBuildInfo path objs = B.writeFile path (encode objs)
+writeBuildInfo path objs = do
+  h <- openBinMem 4096
+  put_ h objs
+  writeBinMem h path
 
 
-instance Serialize Module where
-  put (Module p n) = put p >> put n
-  get = do
-    p <- get
-    n <- get
-    return (Module p n)
+instance (Binary k, Binary v) => Binary (Map k v) where
+  get h = do
+    t <- getByte h
+    case t of
+      0 -> return Map.Tip
+      _ -> do
+        s <- get h
+        k <- get h
+        a <- get h
+        l <- get h
+        r <- get h
+        return $ Map.Bin s k a l r
 
-instance Serialize UnitId where
-  put u = put (unitIdString u)
-  get   = stringToUnitId <$> get
-
-instance Serialize ModuleName where
-  put m = put (moduleNameString m)
-  get   = mkModuleName <$> get
+  put_ h Map.Tip             = putByte h 0
+  put_ h (Map.Bin s k a l r) = do
+    putByte h 1
+    put_ h s
+    put_ h k
+    put_ h a
+    put_ h l
+    put_ h r
 

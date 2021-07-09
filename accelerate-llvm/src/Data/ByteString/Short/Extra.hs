@@ -26,9 +26,8 @@ import Data.ByteString.Short                                        ( ShortByteS
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Internal                     as BI
 
-import Language.Haskell.TH                                          ( Q, TExp )
-import qualified Language.Haskell.TH                                as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
+import Language.Haskell.TH.Extra                                    ( CodeQ )
+import qualified Language.Haskell.TH.Extra                          as TH
 
 import System.IO.Unsafe
 import Prelude                                                      hiding ( take, takeWhile )
@@ -77,12 +76,12 @@ findIndexOrEnd p xs = go 0
 
 -- | Lift a ShortByteString into a Template Haskell splice
 --
-liftSBS :: ShortByteString -> Q (TExp ShortByteString)
+liftSBS :: ShortByteString -> CodeQ ShortByteString
 liftSBS bs =
   let bytes = BS.unpack bs
       len   = BS.length bs
   in
-  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
+  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
 ------------------------------------------------------------------------
 -- Internal utils

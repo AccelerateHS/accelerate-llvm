@@ -37,7 +37,7 @@ import qualified Data.ByteString.Short                              as B
 -- representing a single Accelerate type. Using a data family rather than a type
 -- family means that Operands is bijective.
 --
-data family Operands e :: *
+data family Operands e
 data instance Operands ()         = OP_Unit
 data instance Operands Int        = OP_Int     (Operand Int)
 data instance Operands Int8       = OP_Int8    (Operand Int8)

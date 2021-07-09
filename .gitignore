@@ -13,3 +13,4 @@ stack.yaml
 tags
 local/
 /stack.yaml.lock
+.ipynb_checkpoints
