@@ -44,11 +44,10 @@ import Data.Array.Accelerate.LLVM.Link
 
 import Data.ByteString.Short                                        ( ShortByteString )
 import GHC.Ptr                                                      ( Ptr(..) )
-import Language.Haskell.TH                                          ( Q, TExp )
+import Language.Haskell.TH.Extra                                    ( CodeQ )
 import System.IO.Unsafe
 import qualified Data.ByteString.Short.Internal                     as BS
-import qualified Language.Haskell.TH                                as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
+import qualified Language.Haskell.TH.Extra                          as TH
 
 #if MIN_VERSION_containers(0,5,9)
 import qualified Data.IntMap.Internal                               as IM
@@ -68,7 +67,7 @@ class Embed arch where
   embedForTarget
       :: arch
       -> ObjectR arch
-      -> Q (TExp (ExecutableR arch))
+      -> CodeQ (ExecutableR arch)
 
 
 -- | Embed the compiled array function into a TemplateHaskell expression,
@@ -79,7 +78,7 @@ embedAfun
     :: Embed arch
     => arch
     -> CompiledAfun arch f
-    -> Q (TExp (ExecAfun arch f))
+    -> CodeQ (ExecAfun arch f)
 embedAfun = embedOpenAfun
 
 {-# INLINEABLE embedOpenAfun #-}
@@ -87,7 +86,7 @@ embedOpenAfun
     :: (HasCallStack, Embed arch)
     => arch
     -> CompiledOpenAfun arch aenv f
-    -> Q (TExp (ExecOpenAfun arch aenv f))
+    -> CodeQ (ExecOpenAfun arch aenv f)
 embedOpenAfun arch (Alam lhs l) = [|| Alam $$(liftALeftHandSide lhs) $$(embedOpenAfun arch l) ||]
 embedOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
@@ -96,15 +95,15 @@ embedOpenAcc
     :: forall arch aenv arrs. (HasCallStack, Embed arch)
     => arch
     -> CompiledOpenAcc arch aenv arrs
-    -> Q (TExp (ExecOpenAcc arch aenv arrs))
+    -> CodeQ (ExecOpenAcc arch aenv arrs)
 embedOpenAcc arch = liftA
   where
-    liftA :: CompiledOpenAcc arch aenv' arrs' -> Q (TExp (ExecOpenAcc arch aenv' arrs'))
+    liftA :: CompiledOpenAcc arch aenv' arrs' -> CodeQ (ExecOpenAcc arch aenv' arrs')
     liftA acc = case acc of
         PlainAcc repr pacc          -> [|| EvalAcc $$(liftArraysR repr) $$(liftPreOpenAccCommand arch pacc) ||]
         BuildAcc repr aenv obj pacc -> [|| ExecAcc $$(liftArraysR repr) $$(liftGamma aenv) $$(embedForTarget arch obj) $$(liftPreOpenAccSkeleton arch pacc) ||]
 
-    liftGamma :: Gamma aenv' -> Q (TExp (Gamma aenv'))
+    liftGamma :: Gamma aenv' -> CodeQ (Gamma aenv')
 #if MIN_VERSION_containers(0,5,8)
     liftGamma IM.Nil           = [|| IM.Nil ||]
     liftGamma (IM.Bin p m l r) = [|| IM.Bin p m $$(liftGamma l) $$(liftGamma r) ||]
@@ -113,22 +112,22 @@ embedOpenAcc arch = liftA
     -- O(n) at runtime to reconstruct the set
     liftGamma aenv             = [|| IM.fromAscList $$(liftIM (IM.toAscList aenv)) ||]
       where
-        liftIM :: [(Int, (Label, Idx' aenv'))] -> Q (TExp [(Int, (Label, Idx' aenv'))])
+        liftIM :: [(Int, (Label, Idx' aenv'))] -> CodeQ [(Int, (Label, Idx' aenv'))]
         liftIM im =
           TH.TExp . TH.ListE <$> mapM (\(k,v) -> TH.unTypeQ [|| (k, $$(liftV v)) ||]) im
 #endif
-    liftV :: (Label, Idx' aenv') -> Q (TExp (Label, Idx' aenv'))
+    liftV :: (Label, Idx' aenv') -> CodeQ (Label, Idx' aenv')
     liftV (Label n, Idx' repr ix) = [|| (Label $$(liftSBS n), Idx' $$(liftArrayR repr) $$(liftIdx ix)) ||]
 
     -- O(n) at runtime to copy from the Addr# to the ByteArray#. We should
     -- be able to do this without copying, but I don't think the definition of
     -- ByteArray# is exported (or it is deeply magical).
-    liftSBS :: ShortByteString -> Q (TExp ShortByteString)
+    liftSBS :: ShortByteString -> CodeQ ShortByteString
     liftSBS bs =
       let bytes = BS.unpack bs
           len   = BS.length bs
       in
-      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeTExpCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
+      [|| unsafePerformIO $ BS.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
 
 {-# INLINEABLE liftPreOpenAfun #-}
@@ -136,7 +135,7 @@ liftPreOpenAfun
     :: (HasCallStack, Embed arch)
     => arch
     -> PreOpenAfun (CompiledOpenAcc arch) aenv t
-    -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv t))
+    -> CodeQ (PreOpenAfun (ExecOpenAcc arch) aenv t)
 liftPreOpenAfun arch (Alam lhs f) = [|| Alam $$(liftALeftHandSide lhs) $$(liftPreOpenAfun arch f) ||]
 liftPreOpenAfun arch (Abody b)    = [|| Abody $$(embedOpenAcc arch b) ||]
 
@@ -145,16 +144,16 @@ liftPreOpenAccCommand
     :: forall arch aenv a. (HasCallStack, Embed arch)
     => arch
     -> PreOpenAccCommand CompiledOpenAcc arch aenv a
-    -> Q (TExp (PreOpenAccCommand ExecOpenAcc arch aenv a))
+    -> CodeQ (PreOpenAccCommand ExecOpenAcc arch aenv a)
 liftPreOpenAccCommand arch pacc =
   let
-      liftA :: CompiledOpenAcc arch aenv' arrs -> Q (TExp (ExecOpenAcc arch aenv' arrs))
+      liftA :: CompiledOpenAcc arch aenv' arrs -> CodeQ (ExecOpenAcc arch aenv' arrs)
       liftA = embedOpenAcc arch
 
-      liftE :: Exp aenv t -> Q (TExp (Exp aenv t))
+      liftE :: Exp aenv t -> CodeQ (Exp aenv t)
       liftE = liftOpenExp
 
-      liftAF :: PreOpenAfun (CompiledOpenAcc arch) aenv f -> Q (TExp (PreOpenAfun (ExecOpenAcc arch) aenv f))
+      liftAF :: PreOpenAfun (CompiledOpenAcc arch) aenv f -> CodeQ (PreOpenAfun (ExecOpenAcc arch) aenv f)
       liftAF = liftPreOpenAfun arch
   in
   case pacc of
@@ -178,27 +177,27 @@ liftPreOpenAccSkeleton
     :: forall arch aenv a. (HasCallStack, Embed arch)
     => arch
     -> PreOpenAccSkeleton CompiledOpenAcc arch aenv a
-    -> Q (TExp (PreOpenAccSkeleton ExecOpenAcc arch aenv a))
+    -> CodeQ (PreOpenAccSkeleton ExecOpenAcc arch aenv a)
 liftPreOpenAccSkeleton arch pacc =
   let
-      liftA :: CompiledOpenAcc arch aenv arrs -> Q (TExp (ExecOpenAcc arch aenv arrs))
+      liftA :: CompiledOpenAcc arch aenv arrs -> CodeQ (ExecOpenAcc arch aenv arrs)
       liftA = embedOpenAcc arch
 
-      liftD :: DelayedOpenAcc CompiledOpenAcc arch aenv arrs -> Q (TExp (DelayedOpenAcc ExecOpenAcc arch aenv arrs))
+      liftD :: DelayedOpenAcc CompiledOpenAcc arch aenv arrs -> CodeQ (DelayedOpenAcc ExecOpenAcc arch aenv arrs)
       liftD (Delayed repr sh) = [|| Delayed $$(liftArrayR repr) $$(liftE sh) ||]
       liftD (Manifest repr a) = [|| Manifest $$(liftArraysR repr) $$(liftA a) ||]
 
-      liftE :: Exp aenv t -> Q (TExp (Exp aenv t))
+      liftE :: Exp aenv t -> CodeQ (Exp aenv t)
       liftE = liftOpenExp
 
-      liftS :: ShapeR sh -> sh -> Q (TExp sh)
+      liftS :: ShapeR sh -> sh -> CodeQ sh
       liftS shr sh = [|| $$(liftElt (shapeType shr) sh) ||]
 
-      liftZ :: HasInitialValue -> Q (TExp HasInitialValue)
+      liftZ :: HasInitialValue -> CodeQ HasInitialValue
       liftZ True  = [|| True  ||]
       liftZ False = [|| False ||]
 
-      liftDir :: Direction -> Q (TExp Direction)
+      liftDir :: Direction -> CodeQ Direction
       liftDir LeftToRight = [|| LeftToRight ||]
       liftDir RightToLeft = [|| RightToLeft ||]
   in
@@ -215,10 +214,10 @@ liftPreOpenAccSkeleton arch pacc =
     Stencil1 tp h a      -> [|| Stencil1 $$(liftTypeR tp) $$(liftS (arrayRshape $ arrayR a) h) $$(liftD a) ||]
     Stencil2 tp h a b    -> [|| Stencil2 $$(liftTypeR tp) $$(liftS (arrayRshape $ arrayR a) h) $$(liftD a) $$(liftD b) ||]
 
-liftArrayVar :: ArrayVar aenv v -> Q (TExp (ArrayVar aenv v))
+liftArrayVar :: ArrayVar aenv v -> CodeQ (ArrayVar aenv v)
 liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]
 
-liftUnzipIdx :: UnzipIdx tup e -> Q (TExp (UnzipIdx tup e))
+liftUnzipIdx :: UnzipIdx tup e -> CodeQ (UnzipIdx tup e)
 liftUnzipIdx UnzipId                    = [|| UnzipId ||]
 liftUnzipIdx (UnzipPrj PairIdxLeft  ix) = [|| UnzipPrj PairIdxLeft  $$(liftUnzipIdx ix) ||]
 liftUnzipIdx (UnzipPrj PairIdxRight ix) = [|| UnzipPrj PairIdxRight $$(liftUnzipIdx ix) ||]

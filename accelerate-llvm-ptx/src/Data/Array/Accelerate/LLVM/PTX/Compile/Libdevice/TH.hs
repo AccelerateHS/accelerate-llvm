@@ -46,15 +46,14 @@ import Data.FileEmbed
 import Data.List
 import Data.Maybe
 import Formatting
-import Language.Haskell.TH.Syntax                                   ( Q, TExp )
+import Language.Haskell.TH.Extra                                    ( CodeQ )
 import System.Directory
 import System.FilePath
 import Text.Printf
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.ByteString.Short.Extra                        as BS
-import qualified Language.Haskell.TH                                as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
+import qualified Language.Haskell.TH.Extra                          as TH
 
 
 -- This is a hacky module that can be linked against in order to provide the
@@ -97,14 +96,13 @@ nvvmReflectModule =
 
 -- Lower the given NVVM Reflect module into bitcode.
 --
-nvvmReflectBitcode :: AST.Module -> Q (TExp (ShortByteString, ByteString))
-nvvmReflectBitcode mdl = do
+nvvmReflectBitcode :: AST.Module -> CodeQ (ShortByteString, ByteString)
+nvvmReflectBitcode mdl =
   let name = "__nvvm_reflect"
-  --
-  bs <- TH.runIO $ LLVM.withContext $ \ctx ->
-                     LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly
-  TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS name)
-                                , bsToExp bs ]
+  in
+  TH.runIO (LLVM.withContext $ \ctx -> LLVM.withModuleFromAST ctx mdl LLVM.moduleLLVMAssembly)
+    `TH.bindCode` \bs ->
+      TH.unsafeCodeCoerce $ TH.tupE [ TH.unTypeCode (BS.liftSBS name), bsToExp bs ]
 
 
 -- Load the libdevice bitcode file for the given compute architecture. The name
@@ -116,27 +114,25 @@ nvvmReflectBitcode mdl = do
 -- search the libdevice PATH for all files of the appropriate compute capability
 -- and load the "most recent" (by sort order).
 --
-libdeviceBitcode :: HasCallStack => Compute -> Q (TExp (ShortByteString, ByteString))
-libdeviceBitcode compute = do
-  let basename
-        | CUDA.libraryVersion < 9000
-        , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
-        | otherwise                  = "libdevice"
-      --
-      err     = internalError ("not found: " % string % ".YY.bc") basename
-      best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
+libdeviceBitcode :: HasCallStack => Compute -> CodeQ (ShortByteString, ByteString)
+libdeviceBitcode compute =
 #if MIN_VERSION_nvvm(0,10,0)
-      nvvm    = nvvmDeviceLibraryPath
+  let nvvm    = nvvmDeviceLibraryPath
 #else
-      nvvm    = cudaInstallPath </> "nvvm" </> "libdevice"
+  let nvvm    = cudaInstallPath </> "nvvm" </> "libdevice"
 #endif
-
-  --
-  files <- TH.runIO $ getDirectoryContents nvvm
-  --
-  let name  = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
-      path  = nvvm </> name
-  --
-  TH.unsafeTExpCoerce $ TH.tupE [ TH.unTypeQ (BS.liftSBS (S8.pack name))
-                                , embedFile path ]
+  in
+  TH.runIO (getDirectoryContents nvvm)
+  `TH.bindCode` \files ->
+    let basename
+          | CUDA.libraryVersion < 9000
+          , Compute m n <- compute     = printf "libdevice.compute_%d%d" m n
+          | otherwise                  = "libdevice"
+        --
+        err     = internalError ("not found: " % string % ".YY.bc") basename
+        best f  = basename `isPrefixOf` f && takeExtension f == ".bc"
+        name    = fromMaybe err . listToMaybe . sortBy (flip compare) $ filter best files
+        path    = nvvm </> name
+    in
+    TH.unsafeCodeCoerce $ TH.tupE [ TH.unTypeCode (BS.liftSBS (S8.pack name)), embedFile path ]
 

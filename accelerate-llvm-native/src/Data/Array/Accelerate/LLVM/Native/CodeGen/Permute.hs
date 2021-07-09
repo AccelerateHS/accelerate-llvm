@@ -197,10 +197,10 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
                       | IntegralNumType{} <- t  -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
                       | RMW.Add <- rmw          -> atomicCAS_rmw s (A.add t r) addr
                       | RMW.Sub <- rmw          -> atomicCAS_rmw s (A.sub t r) addr
-#endif
                     _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r)
                       | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r)
                     _                           -> internalError "unexpected transition"
+#endif
           --
           _ -> internalError "unexpected transition"
 

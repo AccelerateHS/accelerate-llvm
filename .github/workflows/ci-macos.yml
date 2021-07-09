@@ -19,6 +19,9 @@ jobs:
     strategy:
       matrix:
         include:
+          - ghc: "9.0"
+            llvm: "12"
+
           - ghc: "8.10"
             llvm: "9"
 

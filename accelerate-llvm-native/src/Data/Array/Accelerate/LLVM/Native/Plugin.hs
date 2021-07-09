@@ -27,9 +27,14 @@ import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
+#if __GLASGOW_HASKELL__ >= 900
+import GHC.Plugins
+import GHC.Runtime.Linker
+#else
 import GhcPlugins
 import Linker
 import SysTools
+#endif
 
 
 -- | This GHC plugin is required to support ahead-of-time compilation for the
@@ -141,7 +146,11 @@ objectPaths guts (Rec bs)     = concat <$> mapM (objectAnns guts) (map fst bs)
 objectAnns :: ModGuts -> CoreBndr -> CoreM [FilePath]
 objectAnns guts bndr = do
   anns  <- getAnnotations deserializeWithData guts
-  return [ path | Object path <- lookupWithDefaultUFM anns [] (varUnique bndr) ]
+#if __GLASGOW_HASKELL__ >= 900
+  return [ path | Object path <- lookupWithDefaultUFM (snd anns) [] (varName bndr) ]
+#else
+  return [ path | Object path <- lookupWithDefaultUFM anns       [] (varUnique bndr) ]
+#endif
 
 objectMapPath :: DynFlags -> FilePath
 objectMapPath DynFlags{..}

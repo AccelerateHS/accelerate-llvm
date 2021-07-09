@@ -81,7 +81,7 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Control.Monad.Trans
 import System.IO.Unsafe
-import qualified Language.Haskell.TH                                as TH
+import qualified Language.Haskell.TH.Extra                          as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
 import GHC.Stack
@@ -410,8 +410,8 @@ runQ' using target f = do
       go (Alam lhs l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.varP x : xs) ([| ($(TH.unTypeQ $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        let s = TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeCode $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.varP x : xs) ([| ($(TH.unTypeCode $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
@@ -423,8 +423,8 @@ runQ' using target f = do
         TH.lamE (reverse xs)
                 [| $using . phase Execute elapsedP . evalNative $target . evalPar $
                       $(TH.doE ( reverse stmts ++
-                               [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
+                               [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeCode body) $aenv |]
+                               , TH.bindS (TH.varP s) [| getArrays $(TH.unTypeCode (liftArraysR (arraysR b))) $(TH.varE r) |]
                                , TH.noBindS [| return $ toArr $(TH.varE s) |]
                                ]))
                  |]

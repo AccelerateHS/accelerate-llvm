@@ -118,8 +118,7 @@ import Control.Monad.Trans
 import Data.Maybe
 import Formatting                                                   ( shown )
 import System.IO.Unsafe
-import qualified Language.Haskell.TH                                as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
+import qualified Language.Haskell.TH.Extra                          as TH
 
 
 -- Accelerate: LLVM backend for NVIDIA GPUs
@@ -502,8 +501,8 @@ runQ'_ using k f = do
       go (Alam lhs l) xs as stmts = do
         x <- TH.newName "x" -- lambda bound variable
         a <- TH.newName "a" -- local array name
-        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeQ $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
-        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeQ $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
+        s <- TH.bindS (TH.varP a) [| useRemoteAsync $(TH.unTypeCode $ liftArraysR (lhsToTupR lhs)) (fromArr $(TH.varE x)) |]
+        go l (TH.bangP (TH.varP x) : xs) ([| ($(TH.unTypeCode $ liftALeftHandSide lhs), $(TH.varE a)) |] : as) (return s : stmts)
 
       go (Abody b) xs as stmts = do
         r <- TH.newName "r" -- result
@@ -515,8 +514,8 @@ runQ'_ using k f = do
         TH.lamE (reverse xs)
                 [| $using (phase Execute $(k (
                      TH.doE ( reverse stmts ++
-                            [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeQ body) $aenv |]
-                            , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeQ (liftArraysR (arraysR b))) $(TH.varE r) |]
+                            [ TH.bindS (TH.varP r) [| executeOpenAcc $(TH.unTypeCode body) $aenv |]
+                            , TH.bindS (TH.varP s) [| copyToHostLazy $(TH.unTypeCode (liftArraysR (arraysR b))) $(TH.varE r) |]
                             , TH.noBindS [| return $ toArr $(TH.varE s) |]
                             ]))))
                  |]

@@ -35,8 +35,7 @@ import System.IO.Unsafe
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as S8
-import qualified Language.Haskell.TH                                as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
+import qualified Language.Haskell.TH.Extra                          as TH
 
 
 -- NVVM Reflect
@@ -70,57 +69,59 @@ class Libdevice a where
 -- As of CUDA-9.0, libdevice is no longer split into multiple files
 -- depending on the target compute architecture.
 --
-$( let
-      libdeviceModule :: TH.ExpQ
-      libdeviceModule = [| \(name, bc) ->
-        unsafePerformIO $
-          withContext $ \ctx ->
-            withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST |]
-   in
-   if CUDA.libraryVersion < 9000
-      then
-        [d| {-# NOINLINE libdevice_20_mdl #-}
-            {-# NOINLINE libdevice_30_mdl #-}
-            {-# NOINLINE libdevice_35_mdl #-}
-            {-# NOINLINE libdevice_50_mdl #-}
-            libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
-            libdevice_20_mdl = $libdeviceModule libdevice_20_bc
-            libdevice_30_mdl = $libdeviceModule libdevice_30_bc
-            libdevice_35_mdl = $libdeviceModule libdevice_35_bc
-            libdevice_50_mdl = $libdeviceModule libdevice_50_bc
+TH.runQ $
+  let
+     libdeviceModule :: TH.ExpQ
+     libdeviceModule = [| \(name, bc) ->
+       unsafePerformIO $
+         withContext $ \ctx ->
+           withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
+      |]
 
-            libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
-            libdevice_20_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 2 0) )
-            libdevice_30_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 3 0) )
-            libdevice_35_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 3 5) )
-            libdevice_50_bc = $( TH.unTypeQ $ libdeviceBitcode (Compute 5 0) )
+  in
+  if CUDA.libraryVersion < 9000
+     then
+       [d| {-# NOINLINE libdevice_20_mdl #-}
+           {-# NOINLINE libdevice_30_mdl #-}
+           {-# NOINLINE libdevice_35_mdl #-}
+           {-# NOINLINE libdevice_50_mdl #-}
+           libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
+           libdevice_20_mdl = $libdeviceModule libdevice_20_bc
+           libdevice_30_mdl = $libdeviceModule libdevice_30_bc
+           libdevice_35_mdl = $libdeviceModule libdevice_35_bc
+           libdevice_50_mdl = $libdeviceModule libdevice_50_bc
 
-            instance Libdevice AST.Module where
-              libdevice compute =
-                case compute of
-                  Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
-                  Compute 3 x
-                    | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
-                    | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-                  Compute 5 _   -> libdevice_50_mdl   -- 5.x
-                  _             -> internalError
-                                 $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
-                                           , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
-                                           ]
-        |]
-      else
-        [d| {-# NOINLINE libdevice_mdl #-}
-            libdevice_mdl :: AST.Module
-            libdevice_mdl = $libdeviceModule libdevice_bc
+           libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
+           libdevice_20_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 2 0) )
+           libdevice_30_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 3 0) )
+           libdevice_35_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 3 5) )
+           libdevice_50_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 5 0) )
 
-            libdevice_bc :: (ShortByteString,ByteString)
-            libdevice_bc = $( TH.unTypeQ $ libdeviceBitcode undefined )
+           instance Libdevice AST.Module where
+             libdevice compute =
+               case compute of
+                 Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
+                 Compute 3 x
+                   | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
+                   | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
+                 Compute 5 _   -> libdevice_50_mdl   -- 5.x
+                 _             -> internalError
+                                $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
+                                          , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
+                                          ]
+       |]
+     else
+       [d| {-# NOINLINE libdevice_mdl #-}
+           libdevice_mdl :: AST.Module
+           libdevice_mdl = $libdeviceModule libdevice_bc
 
-            instance Libdevice AST.Module where
-              libdevice _ = libdevice_mdl
+           libdevice_bc :: (ShortByteString,ByteString)
+           libdevice_bc = $( TH.unTypeCode $ libdeviceBitcode undefined )
 
-            instance Libdevice (ShortByteString,ByteString) where
-              libdevice _ = libdevice_bc
-        |]
- )
+           instance Libdevice AST.Module where
+             libdevice _ = libdevice_mdl
+
+           instance Libdevice (ShortByteString,ByteString) where
+             libdevice _ = libdevice_bc
+       |]
 

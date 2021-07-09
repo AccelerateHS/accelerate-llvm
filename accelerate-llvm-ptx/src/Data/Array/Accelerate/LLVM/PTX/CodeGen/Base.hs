@@ -307,7 +307,7 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val =
 #if MIN_VERSION_llvm_hs(10,0,0)
-  void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.FAdd addr val (CrossThread, AcquireRelease)
+  void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.Add addr val (CrossThread, AcquireRelease)
 #else
   let
       _width :: Int
