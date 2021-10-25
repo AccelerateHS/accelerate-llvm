@@ -9,8 +9,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: AccelerateHS/accelerate
-  commit: 20cd26291f42b2ea74d4e9750301620f83f98b17
+- github: robbert-vdh/accelerate
+  commit: 40bf37354de5249820190dd732775a3ad91707d7
 
 - cuda-0.10.2.0
 - formatting-7.1.3
