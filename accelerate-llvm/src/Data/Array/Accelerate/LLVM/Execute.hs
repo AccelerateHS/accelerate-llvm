@@ -272,15 +272,15 @@ executeOpenAcc !topAcc !aenv = travA topAcc
     travA :: ExecOpenAcc arch aenv a -> Par arch (FutureArraysR arch a)
     travA (EvalAcc _ pacc) =
       case pacc of
-        Use repr arr        -> spawn $ useRemoteAsync (TupRsingle repr) arr
-        Unit tp x           -> unit tp x
-        Avar (Var ArrayR{} ix) -> return $ prj ix aenv
-        Alet lhs bnd body      -> alet lhs bnd body
-        Apair a1 a2            -> liftM2 (,) (travA a1) (travA a2)
-        Anil                   -> return ()
-        Alloc repr sh          -> allocate repr sh
-        Apply _ f a            -> travAF f =<< spawn (travA a)
-        Atrace msg a1 a2       -> do
+        Use repr arr             -> spawn $ useRemoteAsync (TupRsingle repr) arr
+        Unit tp x                -> unit tp x
+        Avar (Var _ ArrayR{} ix) -> return $ prj ix aenv
+        Alet lhs bnd body        -> alet lhs bnd body
+        Apair a1 a2              -> liftM2 (,) (travA a1) (travA a2)
+        Anil                     -> return ()
+        Alloc repr sh            -> allocate repr sh
+        Apply _ f a              -> travAF f =<< spawn (travA a)
+        Atrace msg a1 a2         -> do
           let repr = arraysR a1
           a1' <- travA a1 >>= blockArrays repr >>= copyToHost repr
           liftIO $ atraceOp msg a1'
@@ -297,9 +297,9 @@ executeOpenAcc !topAcc !aenv = travA topAcc
                                -> (>>=) @(Par arch) @(FutureArraysR arch a) @(FutureArraysR arch a)
                                     (spawn @arch @(FutureArraysR arch a) $ travA a)
                                     (awhile p f)
-        Reshape shr sh (Var (ArrayR shr' _) ix)
+        Reshape shr sh (Var _ (ArrayR shr' _) ix)
                                -> liftF2 (\s -> reshape shr s shr') (travE sh) (return $ prj ix aenv)
-        Unzip tix (Var _ ix)   -> liftF1 (unzip tix) (return $ prj ix aenv)
+        Unzip tix (Var _ _ ix) -> liftF1 (unzip tix) (return $ prj ix aenv)
         Aforeign r str asm a   -> do
           x <- travA a
           y <- spawn $ aforeign str (arraysR a) r asm =<< getArrays (arraysR a) x
@@ -482,6 +482,7 @@ executeExp
     -> Par arch (FutureR arch t)
 executeExp exp aenv = executeOpenExp exp Empty aenv
 
+-- TODO: We throw away all annotations here. Probably not the best idea.
 {-# INLINEABLE executeOpenExp #-}
 executeOpenExp
     :: forall arch env aenv exp. Execute arch
@@ -493,38 +494,38 @@ executeOpenExp rootExp env aenv = travE rootExp
   where
     travE :: OpenExp env aenv t -> Par arch (FutureR arch t)
     travE = \case
-      Evar (Var _ ix)           -> return $ prj ix env
-      Let lhs bnd body          -> do
+      Evar (Var _ _ ix)         -> return $ prj ix env
+      Let _ lhs bnd body        -> do
                                      x <- travE bnd
                                      env' <- env `pushE` (lhs, x)
                                      executeOpenExp body env' aenv
-      Undef tp                  -> newFull $ undefElt (TupRsingle tp)
-      Const _ c                 -> newFull c
-      PrimConst c               -> newFull (evalPrimConst c)
-      PrimApp f x               -> lift1 (newFull . evalPrim f) (travE x)
-      Nil                       -> newFull ()
-      Pair e1 e2                -> liftF2 (,) (travE e1) (travE e2)
-      VecPack   vecr e          -> liftF1 (pack   vecr) (travE e)
-      VecUnpack vecr e          -> liftF1 (unpack vecr) (travE e)
-      Case p xs x               -> caseof xs x =<< travE p
-      Cond p t e                -> cond t e =<< travE p
-      While p f x               -> while p f =<< travE x
-      IndexSlice ix slix sh     -> lift2 (newFull $$ indexSlice ix) (travE slix) (travE sh)
-      IndexFull ix slix sl      -> lift2 (newFull $$ indexFull  ix) (travE slix) (travE sl)
-      ToIndex shr sh ix         -> lift2 (newFull $$ toIndex shr) (travE sh) (travE ix)
-      FromIndex shr sh ix       -> lift2 (newFull $$ fromIndex shr) (travE sh) (travE ix)
-      ShapeSize shr sh          -> lift1 (newFull . size shr) (travE sh)
-      Shape var                 -> lift1 (newFull . shape) (travAvar var)
-      Index (Var repr a) ix     -> lift2 (index repr) (travAIdx a) (travE ix)
-      LinearIndex (Var (ArrayR _ tp) a) ix -> lift2 (indexRemoteAsync tp) (travAIdx a) (travE ix)
-      Coerce t1 t2 x            -> lift1 (newFull . evalCoerceScalar t1 t2) (travE x)
-      Foreign _ _ f x           -> foreignE f x
+      Undef _ tp                -> newFull $ undefElt (TupRsingle tp)
+      Const _ _ c               -> newFull c
+      PrimConst _ c             -> newFull (evalPrimConst c)
+      PrimApp _ f x             -> lift1 (newFull . evalPrim f) (travE x)
+      Nil _                     -> newFull ()
+      Pair _ e1 e2              -> liftF2 (,) (travE e1) (travE e2)
+      VecPack   _ vecr e        -> liftF1 (pack   vecr) (travE e)
+      VecUnpack _ vecr e        -> liftF1 (unpack vecr) (travE e)
+      Case _ p xs x             -> caseof xs x =<< travE p
+      Cond _ p t e              -> cond t e =<< travE p
+      While _ p f x             -> while p f =<< travE x
+      IndexSlice _ ix slix sh   -> lift2 (newFull $$ indexSlice ix) (travE slix) (travE sh)
+      IndexFull _ ix slix sl    -> lift2 (newFull $$ indexFull  ix) (travE slix) (travE sl)
+      ToIndex _ shr sh ix       -> lift2 (newFull $$ toIndex shr) (travE sh) (travE ix)
+      FromIndex _ shr sh ix     -> lift2 (newFull $$ fromIndex shr) (travE sh) (travE ix)
+      ShapeSize _ shr sh        -> lift1 (newFull . size shr) (travE sh)
+      Shape _ var               -> lift1 (newFull . shape) (travAvar var)
+      Index _ (Var _ repr a) ix -> lift2 (index repr) (travAIdx a) (travE ix)
+      LinearIndex _ (Var _ (ArrayR _ tp) a) ix -> lift2 (indexRemoteAsync tp) (travAIdx a) (travE ix)
+      Coerce _ t1 t2 x          -> lift1 (newFull . evalCoerceScalar t1 t2) (travE x)
+      Foreign _ _ _ f x         -> foreignE f x
 
     -- Helpers
     -- -------
 
     travAvar :: ArrayVar aenv a -> Par arch (FutureR arch a)
-    travAvar (Var _ ix) = travAIdx ix
+    travAvar (Var _ _ ix) = travAIdx ix
 
     travAIdx :: Idx aenv a -> Par arch (FutureR arch a)
     travAIdx a = return $ prj a aenv

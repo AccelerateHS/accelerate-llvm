@@ -84,6 +84,10 @@ llvmOfFun2 _                                 _    = internalError "impossible ev
 -- Code is generated in depth first order, and uses a monad to collect the
 -- sequence of instructions used to construct basic blocks.
 --
+-- TODO: Right now we just throw away all annotations from the AST nodes and
+--       from the Vars to make things compile.  That's obviously not the right
+--       thing to do.
+--
 {-# INLINEABLE llvmOfOpenExp #-}
 llvmOfOpenExp
     :: forall arch env aenv _t. (HasCallStack, Foreign arch)
@@ -101,31 +105,31 @@ llvmOfOpenExp top env aenv = cvtE top
     cvtE :: forall t. OpenExp env aenv t -> IROpenExp arch env aenv t
     cvtE exp =
       case exp of
-        Let lhs bnd body            -> do x <- cvtE bnd
+        Let _ lhs bnd body          -> do x <- cvtE bnd
                                           llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
-        Evar (Var _ ix)             -> return $ prj ix env
-        Const tp c                  -> return $ ir tp $ scalar tp c
-        PrimConst c                 -> let tp = (SingleScalarType $ primConstType c)
+        Evar (Var _ _ ix)           -> return $ prj ix env
+        Const _ tp c                -> return $ ir tp $ scalar tp c
+        PrimConst _ c               -> let tp = (SingleScalarType $ primConstType c)
                                        in  return $ ir tp $ scalar tp $ primConst c
-        PrimApp f x                 -> primFun f x
-        Undef tp                    -> return $ ir tp $ undef tp
-        Nil                         -> return $ OP_Unit
-        Pair e1 e2                  -> join $ pair <$> cvtE e1 <*> cvtE e2
-        VecPack   vecr e            -> vecPack   vecr =<< cvtE e
-        VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
-        Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
-        Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
-        Cond c t e                  -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
-        IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
-        IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh
-        ToIndex shr sh ix           -> join $ intOfIndex shr <$> cvtE sh <*> cvtE ix
-        FromIndex shr sh ix         -> join $ indexOfInt shr <$> cvtE sh <*> cvtE ix
-        Index acc ix                -> index acc =<< cvtE ix
-        LinearIndex acc ix          -> linearIndex acc =<< cvtE ix
-        ShapeSize shr sh            -> shapeSize shr =<< cvtE sh
-        Shape acc                   -> return $ shape acc
-        While c f x                 -> while (expType x) (cvtF1 c) (cvtF1 f) (cvtE x)
-        Coerce t1 t2 x              -> coerce t1 t2 =<< cvtE x
+        PrimApp _ f x               -> primFun f x
+        Undef _ tp                  -> return $ ir tp $ undef tp
+        Nil _                       -> return $ OP_Unit
+        Pair _ e1 e2                -> join $ pair <$> cvtE e1 <*> cvtE e2
+        VecPack   _ vecr e          -> vecPack   vecr =<< cvtE e
+        VecUnpack _ vecr e          -> vecUnpack vecr =<< cvtE e
+        Foreign _ tp asm f x        -> foreignE tp asm f =<< cvtE x
+        Case _ tag xs mx            -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
+        Cond _ c t e                -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
+        IndexSlice _ slice slix sh  -> indexSlice slice <$> cvtE slix <*> cvtE sh
+        IndexFull _ slice slix sh   -> indexFull slice  <$> cvtE slix <*> cvtE sh
+        ToIndex _ shr sh ix         -> join $ intOfIndex shr <$> cvtE sh <*> cvtE ix
+        FromIndex _ shr sh ix       -> join $ indexOfInt shr <$> cvtE sh <*> cvtE ix
+        Index _ acc ix              -> index acc =<< cvtE ix
+        LinearIndex _ acc ix        -> linearIndex acc =<< cvtE ix
+        ShapeSize _ shr sh          -> shapeSize shr =<< cvtE sh
+        Shape _ acc                 -> return $ shape acc
+        While _ c f x               -> while (expType x) (cvtF1 c) (cvtF1 f) (cvtE x)
+        Coerce _ t1 t2 x            -> coerce t1 t2 =<< cvtE x
 
     indexSlice :: SliceIndex slix sl co sh -> Operands slix -> Operands sh -> Operands sl
     indexSlice SliceNil              OP_Unit               OP_Unit          = OP_Unit
@@ -172,13 +176,13 @@ llvmOfOpenExp top env aenv = cvtE top
         VectorType n singleTp = vecRvector vecr
 
     linearIndex :: ArrayVar aenv (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
-    linearIndex (Var repr v) = linearIndexArray (irArray repr (aprj v aenv))
+    linearIndex (Var _ repr v) = linearIndexArray (irArray repr (aprj v aenv))
 
     index :: ArrayVar aenv (Array sh e) -> Operands sh -> IROpenExp arch env aenv e
-    index (Var repr v) = indexArray (irArray repr (aprj v aenv))
+    index (Var _ repr v) = indexArray (irArray repr (aprj v aenv))
 
     shape :: ArrayVar aenv (Array sh e) -> Operands sh
-    shape (Var repr v) = irArrayShape (irArray repr (aprj v aenv))
+    shape (Var _ repr v) = irArrayShape (irArray repr (aprj v aenv))
 
     pair :: Operands t1 -> Operands t2 -> IROpenExp arch env aenv (t1, t2)
     pair a b = return $ OP_Pair a b
@@ -382,7 +386,7 @@ linearIndexArray :: IRArray (Array sh e) -> Operands Int -> IROpenExp arch env a
 linearIndexArray = readArray TypeInt
 
 pushE :: Val env -> (ELeftHandSide t env env', Operands t) -> Val env'
-pushE env (LeftHandSideSingle _  , e)               = env `Push` e
+pushE env (LeftHandSideSingle _ _, e)               = env `Push` e
 pushE env (LeftHandSideWildcard _, _)               = env
 pushE env (LeftHandSidePair l1 l2, (OP_Pair e1 e2)) = pushE env (l1, e1) `pushE` (l2, e2)
 

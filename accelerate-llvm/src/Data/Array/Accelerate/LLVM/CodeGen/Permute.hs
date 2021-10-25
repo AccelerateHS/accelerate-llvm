@@ -115,7 +115,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
       -- atomic compare-and-swap, which is likely to be more performant than the
       -- generic spin-lock based approach.
       --
-      | Lam lhs@(LeftHandSideSingle _) (Lam (LeftHandSideSingle _) (Body body)) <- fun
+      | Lam lhs@(LeftHandSideSingle _ _) (Lam (LeftHandSideSingle _ _) (Body body)) <- fun
       , Just (rmw, x)         <- rmwOp body
       , Just x'               <- strengthenE latest x
       , fun'                  <- llvmOfFun1 (Lam lhs (Body x')) aenv
@@ -135,7 +135,7 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     --    TLM-2019-09-27
     --
     rmwOp :: OpenExp (((),e),e) aenv e -> Maybe (RMWOperation, OpenExp (((),e),e) aenv e)
-    rmwOp (PrimApp f xs)
+    rmwOp (PrimApp _ f xs)
       | PrimAdd{}  <- f = (RMW.Add,) <$> extract xs
       | PrimSub{}  <- f = (RMW.Sub,) <$> extract xs
       | PrimMin{}  <- f = (RMW.Min,) <$> extract xs
@@ -154,9 +154,9 @@ llvmOfPermuteFun fun aenv = IRPermuteFun{..}
     -- argument, corresponding to ZeroIdx.
     --
     extract :: OpenExp (((),e),e) aenv (e,e) -> Maybe (OpenExp (((),e),e) aenv e)
-    extract (Pair x y)
-      | Evar (Var _ ZeroIdx) <- x = Just y
-      | Evar (Var _ ZeroIdx) <- y = Just x
+    extract (Pair _ x y)
+      | Evar (Var _ _ ZeroIdx) <- x = Just y
+      | Evar (Var _ _ ZeroIdx) <- y = Just x
     extract _
       = Nothing
 

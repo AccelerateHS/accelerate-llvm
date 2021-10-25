@@ -27,6 +27,7 @@ module Data.Array.Accelerate.LLVM.Embed (
 
 import LLVM.AST.Type.Name
 
+import Data.Array.Accelerate.Annotations
 import Data.Array.Accelerate.AST                                    ( PreOpenAfun(..), ArrayVar, Direction(..), Exp, liftALeftHandSide, liftOpenExp, liftMessage, arraysR, arrayR )
 import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.Var
@@ -215,7 +216,7 @@ liftPreOpenAccSkeleton arch pacc =
     Stencil2 tp h a b    -> [|| Stencil2 $$(liftTypeR tp) $$(liftS (arrayRshape $ arrayR a) h) $$(liftD a) $$(liftD b) ||]
 
 liftArrayVar :: ArrayVar aenv v -> CodeQ (ArrayVar aenv v)
-liftArrayVar (Var tp v) = [|| Var $$(liftArrayR tp) $$(liftIdx v) ||]
+liftArrayVar (Var ann tp v) = [|| Var $$(liftAnn ann) $$(liftArrayR tp) $$(liftIdx v) ||]
 
 liftUnzipIdx :: UnzipIdx tup e -> CodeQ (UnzipIdx tup e)
 liftUnzipIdx UnzipId                    = [|| UnzipId ||]

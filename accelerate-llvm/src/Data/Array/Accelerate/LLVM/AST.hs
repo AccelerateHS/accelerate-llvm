@@ -37,6 +37,8 @@ import Data.Array.Accelerate.Type
 -- | Non-computational array program operations, parameterised over array
 -- variables represented as de Bruijn indices.
 --
+-- TODO: Add the annotation fields here
+--
 data PreOpenAccCommand acc arch aenv a where
 
   Avar        :: ArrayVar                   aenv arrs
@@ -192,20 +194,20 @@ data DelayedOpenAcc acc arch aenv a where
 
 instance HasArraysR (acc arch) => HasArraysR (PreOpenAccCommand acc arch) where
   {-# INLINEABLE arraysR #-}
-  arraysR (Avar (Var repr _))                   = TupRsingle repr
-  arraysR (Alet _ _ a)                          = arraysR a
-  arraysR (Alloc repr _)                        = TupRsingle repr
-  arraysR (Use repr _)                          = TupRsingle repr
-  arraysR (Unit tp _)                           = TupRsingle $ ArrayR ShapeRz tp
-  arraysR (Apair a1 a2)                         = arraysR a1 `TupRpair` arraysR a2
-  arraysR Anil                                  = TupRunit
-  arraysR (Atrace _ _ a2)                       = arraysR a2
-  arraysR (Apply repr _ _)                      = repr
-  arraysR (Aforeign repr _ _ _)                 = repr
-  arraysR (Acond _ a1 _)                        = arraysR a1
-  arraysR (Awhile _ _ a)                        = arraysR a
-  arraysR (Reshape shr _ (Var (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp
-  arraysR (Unzip idx (Var (ArrayR shr tp) _))   = TupRsingle $ ArrayR shr $ go idx tp
+  arraysR (Avar (Var _ repr _))                   = TupRsingle repr
+  arraysR (Alet _ _ a)                            = arraysR a
+  arraysR (Alloc repr _)                          = TupRsingle repr
+  arraysR (Use repr _)                            = TupRsingle repr
+  arraysR (Unit tp _)                             = TupRsingle $ ArrayR ShapeRz tp
+  arraysR (Apair a1 a2)                           = arraysR a1 `TupRpair` arraysR a2
+  arraysR Anil                                    = TupRunit
+  arraysR (Atrace _ _ a2)                         = arraysR a2
+  arraysR (Apply repr _ _)                        = repr
+  arraysR (Aforeign repr _ _ _)                   = repr
+  arraysR (Acond _ a1 _)                          = arraysR a1
+  arraysR (Awhile _ _ a)                          = arraysR a
+  arraysR (Reshape shr _ (Var _ (ArrayR _ tp) _)) = TupRsingle $ ArrayR shr tp
+  arraysR (Unzip idx (Var _ (ArrayR shr tp) _))   = TupRsingle $ ArrayR shr $ go idx tp
     where
       go :: UnzipIdx a b -> TypeR a -> TypeR b
       go UnzipId                    t              = t

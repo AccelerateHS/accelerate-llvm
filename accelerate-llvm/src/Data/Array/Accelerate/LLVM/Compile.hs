@@ -29,6 +29,7 @@ module Data.Array.Accelerate.LLVM.Compile (
 
 ) where
 
+import Data.Array.Accelerate.Annotations
 import Data.Array.Accelerate.AST
 import Data.Array.Accelerate.AST.Environment
 import Data.Array.Accelerate.AST.Idx
@@ -136,6 +137,8 @@ compileOpenAcc = traverseAcc
     -- array variables that were referred to within scalar sub-expressions.
     -- These will be required during code generation and execution.
     --
+    -- TODO: Let's not throw away all annotations.
+    --
     traverseAcc
         :: forall aenv arrs. HasCallStack
         => DelayedOpenAcc aenv arrs
@@ -144,49 +147,49 @@ compileOpenAcc = traverseAcc
     traverseAcc (Manifest pacc) =
       case pacc of
         -- Environment and control flow
-        Avar ix                     -> plain $ pure (AST.Avar ix)
-        Alet lhs a b                -> plain . pure =<< AST.Alet lhs  <$> traverseAcc a <*> traverseAcc b
-        Apply r f a                 -> plain =<< liftA2 (AST.Apply r) <$> travAF f <*> travA a
-        Awhile p f a                -> plain =<< liftA3 AST.Awhile    <$> travAF p <*> travAF f <*> travA a
-        Acond p t e                 -> plain =<< liftA3 AST.Acond     <$> travE  p <*> travA  t <*> travA e
-        Apair a1 a2                 -> plain =<< liftA2 AST.Apair     <$> travA a1 <*> travA a2
-        Anil                        -> plain $ pure AST.Anil
-        Atrace msg a1 a2            -> plain =<< liftA2 (AST.Atrace msg) <$> travA a1 <*> travA a2
+        Avar ix                       -> plain $ pure (AST.Avar ix)
+        Alet _ lhs a b                -> plain . pure =<< AST.Alet lhs  <$> traverseAcc a <*> traverseAcc b
+        Apply _ r f a                 -> plain =<< liftA2 (AST.Apply r) <$> travAF f <*> travA a
+        Awhile _ p f a                -> plain =<< liftA3 AST.Awhile    <$> travAF p <*> travAF f <*> travA a
+        Acond _ p t e                 -> plain =<< liftA3 AST.Acond     <$> travE  p <*> travA  t <*> travA e
+        Apair _ a1 a2                 -> plain =<< liftA2 AST.Apair     <$> travA a1 <*> travA a2
+        Anil _                        -> plain $ pure AST.Anil
+        Atrace _ msg a1 a2            -> plain =<< liftA2 (AST.Atrace msg) <$> travA a1 <*> travA a2
 
         -- Foreign arrays operations
-        Aforeign repr ff afun a     -> foreignA repr ff afun a
+        Aforeign ann repr ff afun a   -> foreignA ann repr ff afun a
 
         -- Uninitialised array allocation
-        Generate r sh f
-          | alloc f                 -> plain =<< liftA (AST.Alloc r)  <$> travE sh
+        Generate _ r sh f
+          | alloc f                   -> plain =<< liftA (AST.Alloc r)  <$> travE sh
 
         -- Array injection & manipulation
-        Reshape shr sh a            -> plain =<< liftA2 (AST.Reshape shr) <$> travE sh <*> travM a
-        Unit tp e                   -> plain =<< liftA (AST.Unit tp)  <$> travE e
-        Use repr arrs               -> plain $ pure (AST.Use repr arrs)
-        Map _ f a
+        Reshape _ shr sh a            -> plain =<< liftA2 (AST.Reshape shr) <$> travE sh <*> travM a
+        Unit _ tp e                   -> plain =<< liftA (AST.Unit tp)  <$> travE e
+        Use _ repr arrs               -> plain $ pure (AST.Use repr arrs)
+        Map _ _ f a
           | Just (t,x) <- unzip f a -> plain $ pure (AST.Unzip t x)
 
         -- Skeleton operations resulting in compiled code
         -- Producers
-        Map tp f a                  -> build =<< liftA2 (map tp)      <$> travF f  <*> travA a
-        Generate r sh f             -> build =<< liftA2 (generate r)  <$> travE sh <*> travF f
-        Transform r sh p f a        -> build =<< liftA4 (transform r) <$> travE sh <*> travF p <*> travF f <*> travA a
-        Backpermute shr sh f a      -> build =<< liftA3 (backpermute shr) <$> travE sh <*> travF f <*> travA a
+        Map _ tp f a                  -> build =<< liftA2 (map tp)      <$> travF f  <*> travA a
+        Generate _ r sh f             -> build =<< liftA2 (generate r)  <$> travE sh <*> travF f
+        Transform _ r sh p f a        -> build =<< liftA4 (transform r) <$> travE sh <*> travF p <*> travF f <*> travA a
+        Backpermute _ shr sh f a      -> build =<< liftA3 (backpermute shr) <$> travE sh <*> travF f <*> travA a
 
         -- Consumers
-        Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travME z <*> travD a
-        FoldSeg i f z a s           -> build =<< liftA4 (foldSeg i)   <$> travF f <*> travME z <*> travD a <*> travD s
-        Scan  d f z a               -> build =<< liftA3 (scan  d)     <$> travF f <*> travME z <*> travD a
-        Scan' d f z a               -> build =<< liftA3 (scan' d)     <$> travF f <*> travE z <*> travD a
-        Permute f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
-        Stencil s tp f x a          -> build =<< liftA3 (stencil1 s tp) <$> travF f <*> travB x <*> travD a
-        Stencil2 s1 s2 tp f x a y b -> build =<< liftA5 (stencil2 s1 s2 tp) <$> travF f <*> travB x <*> travD a <*> travB y <*> travD b
+        Fold _ f z a                  -> build =<< liftA3 fold          <$> travF f <*> travME z <*> travD a
+        FoldSeg _ i f z a s           -> build =<< liftA4 (foldSeg i)   <$> travF f <*> travME z <*> travD a <*> travD s
+        Scan  _ d f z a               -> build =<< liftA3 (scan  d)     <$> travF f <*> travME z <*> travD a
+        Scan' _ d f z a               -> build =<< liftA3 (scan' d)     <$> travF f <*> travE z <*> travD a
+        Permute _ f d g a             -> build =<< liftA4 permute       <$> travF f <*> travA d <*> travF g <*> travD a
+        Stencil _ s tp f x a          -> build =<< liftA3 (stencil1 s tp) <$> travF f <*> travB x <*> travD a
+        Stencil2 _ s1 s2 tp f x a y b -> build =<< liftA5 (stencil2 s1 s2 tp) <$> travF f <*> travB x <*> travD a <*> travB y <*> travD b
 
         -- Removed by fusion
-        Replicate{}                 -> fusionError
-        Slice{}                     -> fusionError
-        ZipWith{}                   -> fusionError
+        Replicate{}                   -> fusionError
+        Slice{}                       -> fusionError
+        ZipWith{}                     -> fusionError
 
       where
         map tp _ a             = AST.Map tp a
@@ -295,8 +298,8 @@ compileOpenAcc = traverseAcc
         alloc :: Fun aenv (sh -> e)
               -> Bool
         alloc f
-          | Lam _ (Body (Undef _)) <- f = True
-          | otherwise                   = False
+          | Lam _ (Body (Undef _ _)) <- f = True
+          | otherwise                     = False
 
         -- Unzips of manifest array data can be done in constant time without
         -- executing any array programs. We split them out here into a separate
@@ -310,8 +313,8 @@ compileOpenAcc = traverseAcc
         unzip f a
           | Lam lhs (Body b) <- f
           , Just vars <- extractExpVars b
-          , Delayed _ sh index _                <- a
-          , Shape u                             <- sh
+          , Delayed _ _ sh index _              <- a
+          , Shape _ u                           <- sh
           , Just v                              <- isIdentityIndexing index
           , Just Refl                           <- matchVar u v
           = Just (unzipIdx lhs vars, u)
@@ -322,15 +325,15 @@ compileOpenAcc = traverseAcc
         unzipIdx lhs = go
           where
             go :: Vars ScalarType env y -> AST.UnzipIdx a y
-            go TupRunit                = AST.UnzipUnit
-            go (TupRpair v1 v2)        = AST.UnzipPair (go v1) (go v2)
-            go (TupRsingle (Var _ ix)) = case lookupVar lhs ix of
+            go TupRunit                  = AST.UnzipUnit
+            go (TupRpair v1 v2)          = AST.UnzipPair (go v1) (go v2)
+            go (TupRsingle (Var _ _ ix)) = case lookupVar lhs ix of
               Right u -> u
               Left _  -> internalError "Left branch is unreachable as `Idx () y` is an empty type"
 
             lookupVar :: ELeftHandSide x env1 env2 -> Idx env2 y -> Either (Idx env1 y) (AST.UnzipIdx x y)
             lookupVar (LeftHandSideWildcard _) ix = Left ix
-            lookupVar (LeftHandSideSingle _)   ix = case ix of
+            lookupVar (LeftHandSideSingle _ _) ix = case ix of
               ZeroIdx     -> Right AST.UnzipId
               SuccIdx ix' -> Left ix'
             lookupVar (LeftHandSidePair l1 l2) ix = case lookupVar l2 ix of
@@ -345,15 +348,16 @@ compileOpenAcc = traverseAcc
         -- implementations.
         --
         foreignA :: (HasCallStack, A.Foreign asm)
-                 => ArraysR b
+                 => Ann
+                 -> ArraysR b
                  -> asm         (a -> b)
                  -> DelayedAfun (a -> b)
                  -> DelayedOpenAcc aenv a
                  -> LLVM arch (CompiledOpenAcc arch aenv b)
-        foreignA repr ff f a =
+        foreignA ann repr ff f a =
           case foreignAcc ff of
             Just asm -> plain =<< liftA (AST.Aforeign repr (A.strForeign ff) asm) <$> travA a
-            Nothing  -> traverseAcc $ Manifest (Apply repr (weaken weakenEmpty f) a)
+            Nothing  -> traverseAcc $ Manifest (Apply ann repr (weaken weakenEmpty f) a)
 
     -- Traverse a scalar expression
     --
@@ -363,29 +367,29 @@ compileOpenAcc = traverseAcc
     travE exp =
       case exp of
         Evar v                  -> return $ pure $ Evar v
-        Const tp c              -> return $ pure $ Const tp c
-        PrimConst c             -> return $ pure $ PrimConst c
-        Undef tp                -> return $ pure $ Undef tp
-        Foreign tp ff f x       -> foreignE tp ff f x
+        Const ann tp c          -> return $ pure $ Const ann tp c
+        PrimConst ann c         -> return $ pure $ PrimConst ann c
+        Undef ann tp            -> return $ pure $ Undef ann tp
+        Foreign ann tp ff f x   -> foreignE ann tp ff f x
         --
-        Let lhs a b             -> liftA2 (Let lhs)         <$> travE a <*> travE b
-        IndexSlice slix x s     -> liftA2 (IndexSlice slix) <$> travE x <*> travE s
-        IndexFull slix x s      -> liftA2 (IndexFull slix)  <$> travE x <*> travE s
-        ToIndex shr s i         -> liftA2 (ToIndex   shr)   <$> travE s <*> travE i
-        FromIndex shr s i       -> liftA2 (FromIndex shr)   <$> travE s <*> travE i
-        Nil                     -> return $ pure Nil
-        Pair e1 e2              -> liftA2 Pair              <$> travE e1 <*> travE e2
-        VecPack   vecr e        -> liftA  (VecPack   vecr)  <$> travE e
-        VecUnpack vecr e        -> liftA  (VecUnpack vecr)  <$> travE e
-        Case t xs x             -> liftA3 Case              <$> travE t <*> travLE xs <*> travME x
-        Cond p t e              -> liftA3 Cond              <$> travE p <*> travE t <*> travE e
-        While p f x             -> liftA3 While             <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> liftA  (PrimApp f)       <$> travE e
-        Index a e               -> liftA2 Index             <$> travA a <*> travE e
-        LinearIndex a e         -> liftA2 LinearIndex       <$> travA a <*> travE e
-        Shape a                 -> liftA  Shape             <$> travA a
-        ShapeSize shr e         -> liftA  (ShapeSize shr)   <$> travE e
-        Coerce t1 t2 x          -> liftA  (Coerce t1 t2)    <$> travE x
+        Let ann lhs a b         -> liftA2 (Let ann lhs)         <$> travE a  <*> travE b
+        IndexSlice ann slix x s -> liftA2 (IndexSlice ann slix) <$> travE x  <*> travE s
+        IndexFull ann slix x s  -> liftA2 (IndexFull ann slix)  <$> travE x  <*> travE s
+        ToIndex ann shr s i     -> liftA2 (ToIndex   ann shr)   <$> travE s  <*> travE i
+        FromIndex ann shr s i   -> liftA2 (FromIndex ann shr)   <$> travE s  <*> travE i
+        Nil ann                 -> return . pure $ Nil ann
+        Pair ann e1 e2          -> liftA2 (Pair ann)            <$> travE e1 <*> travE e2
+        VecPack   ann vecr e    -> liftA  (VecPack   ann vecr)  <$> travE e
+        VecUnpack ann vecr e    -> liftA  (VecUnpack ann vecr)  <$> travE e
+        Case ann t xs x         -> liftA3 (Case ann)            <$> travE t  <*> travLE xs <*> travME x
+        Cond ann p t e          -> liftA3 (Cond ann)            <$> travE p  <*> travE t   <*> travE e
+        While ann p f x         -> liftA3 (While ann)           <$> travF p  <*> travF f   <*> travE x
+        PrimApp ann f e         -> liftA  (PrimApp ann f)       <$> travE e
+        Index ann a e           -> liftA2 (Index ann)           <$> travA a  <*> travE e
+        LinearIndex ann a e     -> liftA2 (LinearIndex ann)     <$> travA a  <*> travE e
+        Shape ann a             -> liftA  (Shape ann)           <$> travA a
+        ShapeSize ann shr e     -> liftA  (ShapeSize ann shr)   <$> travE e
+        Coerce ann t1 t2 x      -> liftA  (Coerce ann t1 t2)    <$> travE x
 
       where
         travA :: ArrayVar aenv (Array sh e)
@@ -414,17 +418,18 @@ compileOpenAcc = traverseAcc
         travME (Just e) = fmap Just <$> travE e
 
         foreignE :: (HasCallStack, A.Foreign asm)
-                 => TypeR b
+                 => Ann
+                 -> TypeR b
                  -> asm           (a -> b)
                  -> Fun () (a -> b)
                  -> OpenExp env aenv a
                  -> LLVM arch (IntMap (Idx' aenv), OpenExp env aenv b)
-        foreignE tp asm f x =
+        foreignE ann tp asm f x =
           case foreignExp @arch asm of
-            Just{}                            -> liftA (Foreign tp asm err) <$> travE x
+            Just{}                            -> liftA (Foreign ann tp asm err) <$> travE x
             Nothing
               | Lam lhs (Body b) <- f
-              , Exists lhs' <- rebuildLHS lhs -> liftA2 (Let lhs')       <$> travE x <*> travE (weaken weakenEmpty $ weakenE (sinkWithLHS lhs lhs' weakenEmpty) b)
+              , Exists lhs' <- rebuildLHS lhs -> liftA2 (Let ann lhs')          <$> travE x <*> travE (weaken weakenEmpty $ weakenE (sinkWithLHS lhs lhs' weakenEmpty) b)
             _                                 -> error "the slow regard of silent things"
           where
             err :: Fun () (a -> b)

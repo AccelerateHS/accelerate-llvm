@@ -90,5 +90,4 @@ makeGamma = snd . IM.mapAccum (\n ix -> (n+1, toAval n ix)) 0
 -- | A free variable
 --
 freevar :: ArrayVar aenv a -> IntMap (Idx' aenv)
-freevar (Var repr@ArrayR{} ix) = IM.singleton (idxToInt ix) (Idx' repr ix)
-
+freevar (Var _ repr@ArrayR{} ix) = IM.singleton (idxToInt ix) (Idx' repr ix)

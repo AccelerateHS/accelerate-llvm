@@ -53,6 +53,9 @@ import Prelude                                                      hiding ( map
 
 -- | Generate code for a given target architecture.
 --
+-- TODO: We throw out all annotations from the AST nodes and from the variables.
+--       Maybe uh don't do this.
+--
 {-# INLINEABLE llvmOfPreOpenAcc #-}
 llvmOfPreOpenAcc
     :: forall arch aenv arrs. (HasCallStack, Target arch, Skeleton arch, Intrinsic arch, Foreign arch)
@@ -63,19 +66,19 @@ llvmOfPreOpenAcc
 llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
   case pacc of
     -- Producers
-    Map tp f (arrayR -> repr)               -> map uid aenv repr tp (travF1 f)
-    Generate repr _ f                       -> generate uid aenv repr (travF1 f)
-    Transform repr2 _ p f (arrayR -> repr1) -> transform uid aenv repr1 repr2 (travF1 p) (travF1 f)
-    Backpermute shr _ p (arrayR -> repr)    -> backpermute uid aenv repr shr (travF1 p)
+    Map _ tp f (arrayR -> repr)               -> map uid aenv repr tp (travF1 f)
+    Generate _ repr _ f                       -> generate uid aenv repr (travF1 f)
+    Transform _ repr2 _ p f (arrayR -> repr1) -> transform uid aenv repr1 repr2 (travF1 p) (travF1 f)
+    Backpermute _ shr _ p (arrayR -> repr)    -> backpermute uid aenv repr shr (travF1 p)
 
     -- Consumers
-    Fold f z a                              -> fold uid aenv (reduceRank $ arrayR a) (travF2 f) (travE <$> z) (travD a)
-    FoldSeg i f z a s                       -> foldSeg uid aenv (arrayR a) i (travF2 f) (travE <$> z) (travD a) (travD s)
-    Scan d f z a                            -> scan uid aenv (arrayR a) d (travF2 f) (travE <$> z) (travD a)
-    Scan' d f z a                           -> scan' uid aenv (arrayR a) d (travF2 f) (travE z) (travD a)
-    Permute f (arrayR -> ArrayR shr _) p a  -> permute uid aenv (arrayR a) shr (travPF f) (travF1 p) (travD a)
-    Stencil s tp f b a                      -> stencil1 uid aenv s tp (travF1 f) (travB (stencilEltR s) b) (travD a)
-    Stencil2 s1 s2 tp f b1 a1 b2 a2         -> stencil2 uid aenv s1 s2 tp (travF2 f) (travB (stencilEltR s1) b1) (travD a1) (travB (stencilEltR s2) b2) (travD a2)
+    Fold _ f z a                              -> fold uid aenv (reduceRank $ arrayR a) (travF2 f) (travE <$> z) (travD a)
+    FoldSeg _ i f z a s                       -> foldSeg uid aenv (arrayR a) i (travF2 f) (travE <$> z) (travD a) (travD s)
+    Scan _ d f z a                            -> scan uid aenv (arrayR a) d (travF2 f) (travE <$> z) (travD a)
+    Scan' _ d f z a                           -> scan' uid aenv (arrayR a) d (travF2 f) (travE z) (travD a)
+    Permute _ f (arrayR -> ArrayR shr _) p a  -> permute uid aenv (arrayR a) shr (travPF f) (travF1 p) (travD a)
+    Stencil _ s tp f b a                      -> stencil1 uid aenv s tp (travF1 f) (travB (stencilEltR s) b) (travD a)
+    Stencil2 _ s1 s2 tp f b1 a1 b2 a2         -> stencil2 uid aenv s1 s2 tp (travF2 f) (travB (stencilEltR s1) b1) (travD a1) (travB (stencilEltR s2) b2) (travD a2)
 
     -- Non-computation forms: sadness
     Alet{}      -> unexpectedError
@@ -84,7 +87,7 @@ llvmOfPreOpenAcc uid pacc aenv = evalCodeGen $
     Acond{}     -> unexpectedError
     Awhile{}    -> unexpectedError
     Apair{}     -> unexpectedError
-    Anil        -> unexpectedError
+    Anil _      -> unexpectedError
     Atrace{}    -> unexpectedError
     Use{}       -> unexpectedError
     Unit{}      -> unexpectedError

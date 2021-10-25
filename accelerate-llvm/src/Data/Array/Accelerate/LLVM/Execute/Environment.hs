@@ -33,12 +33,12 @@ data ValR arch env where
   Push  :: ValR arch env -> FutureR arch t -> ValR arch (env, t)
 
 push :: ValR arch env -> (ALeftHandSide t env env', FutureArraysR arch t) -> ValR arch env'
-push env (LeftHandSideWildcard _     , _       ) = env
-push env (LeftHandSideSingle ArrayR{}, a       ) = env `Push` a
-push env (LeftHandSidePair l1 l2     , (a1, a2)) = push env (l1, a1) `push` (l2, a2)
+push env (LeftHandSideWildcard _       , _       ) = env
+push env (LeftHandSideSingle _ ArrayR{}, a       ) = env `Push` a
+push env (LeftHandSidePair l1 l2       , (a1, a2)) = push env (l1, a1) `push` (l2, a2)
 
 pushE :: Async arch => ValR arch env -> (ELeftHandSide t env env', FutureR arch t) -> Par arch (ValR arch env')
-pushE env (LeftHandSideSingle _  , e) = return $ env `Push` e
+pushE env (LeftHandSideSingle _ _, e) = return $ env `Push` e
 pushE env (LeftHandSideWildcard _, _) = return env
 pushE env (LeftHandSidePair l1 l2, e) = do
   -- TODO: This code creates many intermediate Futures, in case of deeply nested pairs.
