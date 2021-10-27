@@ -28,6 +28,7 @@ import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Operand
+import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Representation
 
 import Data.Array.Accelerate.Representation.Array
@@ -205,16 +206,15 @@ store addrspace volatility e p v
   | SingleScalarType{} <- e = do_ $ Store volatility p v
   | VectorScalarType s <- e
   , VectorType n base  <- s
-  , m                  <- fromIntegral n
-  = if popCount m == 1
+  = if popCount n == 1
        then do_ $ Store volatility p v
        else do
          p' <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (SingleScalarType base)) addrspace) p
          --
-         let go i
-               | i >= m    = return ()
+         let go i 
+               | i >= n    = return ()
                | otherwise = do
-                   x <- instr' $ ExtractElement i v
+                   x <- instr' $ ExtractElement integralType v (constOp n)
                    q <- instr' $ GetElementPtr p' [integral integralType i]
                    _ <- instr' $ Store volatility q x
                    go (i+1)

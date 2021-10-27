@@ -15,6 +15,7 @@
 module LLVM.AST.Type.Operand (
 
   Operand(..),
+  constOp,
 
 ) where
 
@@ -31,6 +32,9 @@ import qualified LLVM.AST.Operand                                   as LLVM
 data Operand a where
   LocalReference  :: Type a -> Name a -> Operand a
   ConstantOperand :: Constant a -> Operand a
+
+constOp :: (IsScalar a) => a -> Operand a
+constOp x = ConstantOperand (ScalarConstant scalarType x)
 
 
 -- | Convert to llvm-hs

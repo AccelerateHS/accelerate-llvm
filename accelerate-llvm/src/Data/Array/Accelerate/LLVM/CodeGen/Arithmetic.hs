@@ -20,6 +20,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
+import Data.Primitive.Vec
+
 import Data.Array.Accelerate.AST                                    ( PrimMaybe )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Representation.Tag
@@ -463,6 +465,17 @@ min ty x y
   | NumSingleType (FloatingNumType f) <- ty = mathf2 "fmin" f x y
   | otherwise                               = do c <- unbool <$> lte ty x y
                                                  binop (flip Select c) ty x y
+
+-- Vector operators
+-- ----------------------
+
+vecCreate :: VectorType (Vec n a) -> CodeGen arch (Operands (Vec n a))
+vecCreate = undefined
+
+vecIndex :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> CodeGen arch (Operands a)
+vecIndex tv ti (OP_Vec v) i = do
+    (OP_Int32 i') <- fromIntegral ti (IntegralNumType TypeInt32) i 
+    instr $ ExtractElement TypeInt32 v i'
 
 
 -- Logical operators

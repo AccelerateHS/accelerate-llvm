@@ -61,7 +61,7 @@ scalar t = ConstantOperand . ScalarConstant t
 single :: SingleType a -> a -> Operand a
 single t = scalar (SingleScalarType t)
 
-vector :: VectorType (Vec n a) -> (Vec n a) -> Operand (Vec n a)
+vector :: VectorType (Vec n a) -> Vec n a -> Operand (Vec n a)
 vector t = scalar (VectorScalarType t)
 
 num :: NumType a -> a -> Operand a

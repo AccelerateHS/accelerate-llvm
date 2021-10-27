@@ -48,7 +48,8 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 import Data.Primitive.Vec
 
 import LLVM.AST.Type.Instruction
-import LLVM.AST.Type.Operand                                        ( Operand )
+import LLVM.AST.Type.Operand                                        ( Operand(..), constOp)
+import LLVM.AST.Type.Constant                                       ( Constant(..), )
 
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
@@ -105,7 +106,7 @@ llvmOfOpenExp top env aenv = cvtE top
                                           llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
         Evar (Var _ ix)             -> return $ prj ix env
         Const tp c                  -> return $ ir tp $ scalar tp c
-        PrimConst c                 -> let tp = (SingleScalarType $ primConstType c)
+        PrimConst c                 -> let tp = primConstType c
                                        in  return $ ir tp $ scalar tp $ primConst c
         PrimApp f x                 -> primFun f x
         Undef tp                    -> return $ ir tp $ undef tp
@@ -165,7 +166,7 @@ llvmOfOpenExp top env aenv = cvtE top
         go (VecRnil _)      _ = internalError "index mismatch"
         go (VecRsucc vecr') i = do
           xs <- go vecr' (i - 1)
-          x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
+          x  <- instr' $ ExtractElement TypeInt vec (constOp (i - 1))
           return $ OP_Pair xs (ir singleTp x)
 
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
@@ -307,6 +308,7 @@ llvmOfOpenExp top env aenv = cvtE top
         PrimEq t                  -> primbool $ A.uncurry (A.eq t)  =<< cvtE x
         PrimNEq t                 -> primbool $ A.uncurry (A.neq t) =<< cvtE x
         PrimLNot                  -> primbool $ A.lnot              =<< bool (cvtE x)
+        PrimVectorIndex v i       -> A.uncurry (A.vecIndex v i)     =<< cvtE x
           -- no missing patterns, whoo!
 
 
