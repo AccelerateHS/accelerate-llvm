@@ -1,4 +1,5 @@
 dist
+dist-newstyle
 cabal-dev
 *.o
 *.hi
@@ -7,6 +8,7 @@ cabal-dev
 .virthualenv
 *.swp
 .cabal-sandbox
+cabal.project.local*
 cabal.sandbox.config
 .stack-work
 stack.yaml
