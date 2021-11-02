@@ -189,8 +189,9 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#insertelement-instruction>
   --
-  InsertElement   :: Int32  -- TupleIdx (ProdRepr (Vec n a)) a
+  InsertElement   :: IntegralType i  -- TupleIdx (ProdRepr (Vec n a)) a
                   -> Operand (Vec n a)
+                  -> Operand i
                   -> Operand a
                   -> Instruction (Vec n a)
 
@@ -406,7 +407,7 @@ instance Downcast (Instruction a) LLVM.Instruction where
     LOr x y               -> LLVM.Or (downcast x) (downcast y) md
     BXor _ x y            -> LLVM.Xor (downcast x) (downcast y) md
     LNot x                -> LLVM.Xor (downcast x) (LLVM.ConstantOperand (LLVM.Int 1 1)) md
-    InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
+    InsertElement _ v i x -> LLVM.InsertElement (downcast v) (downcast x) (downcast i) md
     ExtractElement _ v i -> LLVM.ExtractElement (downcast v) (downcast i) md
     ExtractValue _ i s    -> extractStruct i (downcast s)
     Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
@@ -596,7 +597,7 @@ instance TypeOf Instruction where
     LOr x _               -> typeOf x
     LNot x                -> typeOf x
     ExtractElement _ x _  -> typeOfVec x
-    InsertElement _ x _   -> typeOf x
+    InsertElement _ x _ _ -> typeOf x
     ExtractValue t _ _    -> scalar t
     Load t _ _            -> scalar t
     Store{}               -> VoidType

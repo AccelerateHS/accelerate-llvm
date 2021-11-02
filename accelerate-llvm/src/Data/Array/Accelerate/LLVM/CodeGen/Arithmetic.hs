@@ -473,9 +473,11 @@ vecCreate :: VectorType (Vec n a) -> CodeGen arch (Operands (Vec n a))
 vecCreate = undefined
 
 vecIndex :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> CodeGen arch (Operands a)
-vecIndex tv ti (OP_Vec v) i = do
-    (OP_Int32 i') <- fromIntegral ti (IntegralNumType TypeInt32) i 
-    instr $ ExtractElement TypeInt32 v i'
+vecIndex tv ti (op tv -> v) (op ti -> i) = instr $ ExtractElement ti v i
+
+vecWrite :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> Operands a -> CodeGen arch (Operands (Vec n a))
+vecWrite tv@(VectorType _ ta) ti (op tv -> v) (op ti -> i) (op ta -> val) = instr $ InsertElement ti v i val
+
 
 
 -- Logical operators
@@ -569,6 +571,9 @@ unpair (OP_Pair x y) = (x, y)
 
 uncurry :: (Operands a -> Operands b -> c) -> Operands (a, b) -> c
 uncurry f (OP_Pair x y) = f x y
+
+uncurry3 :: (Operands a -> Operands b -> Operands c -> d) -> Operands (a, (b, c)) -> d
+uncurry3 f (OP_Pair x (OP_Pair y z)) = f x y z
 
 unbool :: Operands Bool -> Operand Bool
 unbool (OP_Bool x) = x

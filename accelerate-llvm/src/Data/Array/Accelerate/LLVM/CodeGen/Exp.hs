@@ -153,7 +153,7 @@ llvmOfOpenExp top env aenv = cvtE top
         go (VecRnil _)      _ OP_Unit        = internalError "index mismatch"
         go (VecRsucc vecr') i (OP_Pair xs x) = do
           vec <- go vecr' (i - 1) xs
-          instr' $ InsertElement (fromIntegral i - 1) vec (op singleTp x)
+          instr' $ InsertElement integralType vec (constOp (i - 1)) (op singleTp x)
 
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         tp@(VectorType n singleTp) = vecRvector vecr
@@ -309,6 +309,7 @@ llvmOfOpenExp top env aenv = cvtE top
         PrimNEq t                 -> primbool $ A.uncurry (A.neq t) =<< cvtE x
         PrimLNot                  -> primbool $ A.lnot              =<< bool (cvtE x)
         PrimVectorIndex v i       -> A.uncurry (A.vecIndex v i)     =<< cvtE x
+        PrimVectorWrite v i       -> A.uncurry3 (A.vecWrite v i)    =<< cvtE x
           -- no missing patterns, whoo!
 
 
