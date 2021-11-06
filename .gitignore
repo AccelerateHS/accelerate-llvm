@@ -14,3 +14,4 @@ tags
 local/
 /stack.yaml.lock
 .ipynb_checkpoints
+dist-newstyle/
