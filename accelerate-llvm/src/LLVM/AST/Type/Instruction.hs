@@ -45,6 +45,7 @@ import qualified LLVM.AST.Instruction                     as LLVM
 import qualified LLVM.AST.IntegerPredicate                as IP
 import qualified LLVM.AST.Operand                         as LLVM ( Operand(..), CallableOperand )
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
+import qualified LLVM.AST.RMWOperation                    as LLVM ( RMWOperation )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
 
 import Data.Array.Accelerate.AST                          ( PrimBool )
@@ -412,8 +413,8 @@ instance Downcast (Instruction a) LLVM.Instruction where
     Store v p x           -> LLVM.Store (downcast v) (downcast p) (downcast x) atomicity alignment md
     GetElementPtr n i     -> LLVM.GetElementPtr inbounds (downcast n) (downcast i) md
     Fence a               -> LLVM.Fence (downcast a) md
-    CmpXchg _ v p x y a m -> LLVM.CmpXchg (downcast v) (downcast p) (downcast x) (downcast y) (downcast a) (downcast m) md
-    AtomicRMW t v f p x a -> LLVM.AtomicRMW (downcast v) (downcast (t,f)) (downcast p) (downcast x) (downcast a) md
+    CmpXchg _ v p x y a m -> cmpXchg (downcast v) (downcast p) (downcast x) (downcast y) (downcast a) (downcast m) md
+    AtomicRMW t v f p x a -> atomicRMW (downcast v) (downcast (t,f)) (downcast p) (downcast x) (downcast a) md
     Trunc _ t x           -> LLVM.Trunc (downcast x) (downcast t) md
     IntToBool _ x         -> LLVM.Trunc (downcast x) (LLVM.IntegerType 1) md
     FTrunc _ t x          -> LLVM.FPTrunc (downcast x) (downcast t) md
@@ -463,6 +464,25 @@ instance Downcast (Instruction a) LLVM.Instruction where
               }
 #else
       fmf = LLVM.UnsafeAlgebra -- allow everything
+#endif
+
+      -- LLVM 13 added optional alignment parameters. These behave differently from
+      -- the alignment in the load and store instructions though. An alignment of 0
+      -- here means that the alignment is the same as the size of the type, while an
+      -- alignment of 0 in those instructions means that the alignment is defined by
+      -- the ABI.
+      cmpXchg :: Bool -> LLVM.Operand -> LLVM.Operand -> LLVM.Operand -> LLVM.Atomicity -> LLVM.MemoryOrdering -> LLVM.InstructionMetadata -> LLVM.Instruction
+      atomicRMW :: Bool -> LLVM.RMWOperation -> LLVM.Operand -> LLVM.Operand -> LLVM.Atomicity -> LLVM.InstructionMetadata -> LLVM.Instruction
+#if MIN_VERSION_llvm_hs_pure(13,0,0)
+      cmpXchg volatile address expected replacement atomicity' failureMemoryOrdering metadata =
+        LLVM.CmpXchg volatile address expected replacement alignment atomicity' failureMemoryOrdering metadata
+      atomicRMW volatile rmwOperation address value atomicity' metadata =
+        LLVM.AtomicRMW volatile rmwOperation address value alignment atomicity' metadata
+#else
+      cmpXchg volatile address expected replacement atomicity failureMemoryOrdering metadata =
+        LLVM.CmpXchg volatile address expected replacement atomicity failureMemoryOrdering metadata
+      atomicRMW volatile rmwOperation address value atomicity metadata =
+        LLVM.AtomicRMW volatile rmwOperation address value atomicity metadata
 #endif
 
       md :: LLVM.InstructionMetadata

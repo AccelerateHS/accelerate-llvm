@@ -126,8 +126,8 @@ Library
         , ghc
         , hashable                      >= 1.0
         , libffi                        >= 0.1
-        , llvm-hs                       >= 4.1 && < 13
-        , llvm-hs-pure                  >= 4.1 && < 13
+        , llvm-hs                       >= 4.1 && < 14
+        , llvm-hs-pure                  >= 4.1 && < 14
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
         , template-haskell
