@@ -14,9 +14,10 @@
 module Data.Array.Accelerate.LLVM.Native.Link.Util (
   LibraryHandle,
   sharedObjectExt,
+  rawObjectExt,
   linkSharedObject,
   linkKernel,
-  withRawSharedObject,
+  embedKernel,
 ) where
 
 #if !defined(mingw32_HOST_OS) && !defined(ghcjs_HOST_OS)

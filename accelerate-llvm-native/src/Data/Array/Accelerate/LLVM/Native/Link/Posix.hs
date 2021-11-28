@@ -16,9 +16,10 @@
 module Data.Array.Accelerate.LLVM.Native.Link.Posix (
   LibraryHandle,
   sharedObjectExt,
+  rawObjectExt,
   linkSharedObject,
   linkKernel,
-  withRawSharedObject,
+  embedKernel,
 ) where
 
 import Data.Array.Accelerate.Lifetime
@@ -53,6 +54,10 @@ sharedObjectExt = "dylib"
 #else
 sharedObjectExt = "so"
 #endif
+
+-- | The file extension used for raw relocatable objects.
+rawObjectExt :: String
+rawObjectExt = "o"
 
 -- TODO: 'linkSharedObject' and 'linkKernel' sound similar even though they do
 --       the exact opposite thing. Any suggestions for better names?
@@ -94,25 +99,8 @@ linkKernel nms libPath = do
 
   return libLft
 
--- | Write a raw shared object stored as a byte string to temporary file, run
--- some action on that file, and then return the result. This is needed for the
--- embedding in @runQ@. The reason why this is not done directly inside of the
--- embed function is that on Windows you can't unlink .dll files are loading
--- them, so when adding Windows support we'll need to take a slightly different
--- approach.
---
--- @libName@ should be the library's base name. In theory this could be any
--- arbitrary string, but the name will show up in debugging and profiling tools
--- so it's a good idea to use the same name as the original library we're
--- embedding.
---
--- Alternatively we could also write the file to a memfd instead of to a normal
--- temporary file, but since tempfs also lives in RAM this is more or less
--- equivalent.
-withRawSharedObject :: String -> ByteString -> (FilePath -> IO a) -> IO a
-withRawSharedObject libName obj k =
-  withSystemTempFile libName $ \libPath h -> do
-    B.hPut h obj
-    hFlush h
-
-    k libPath
+-- | Build the same representation as the one created in 'linkKernel' for an
+-- existing table of function pointers. This is used when statically linking
+-- kernels directly into a Haskell binary.
+embedKernel :: FunctionTable -> IO (Lifetime (LibraryHandle, FunctionTable))
+embedKernel funs = newLifetime (Default, funs)

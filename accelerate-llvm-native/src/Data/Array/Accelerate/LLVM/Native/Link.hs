@@ -46,10 +46,13 @@ instance Link Native where
   linkForTarget = link
 
 
--- | Load the generated object file into the target address space
+-- | Link to the generated shared object file, creating function pointers for
+-- every kernel's entry point.
 --
 link :: ObjectR Native -> LLVM Native (ExecutableR Native)
-link (ObjectR nms libPath) = do
+link (ObjectR nms libM _) = do
+  libPath <- libM
+
   liftIO $! Debug.traceM Debug.dump_ld ("ld: loading shared object " % string) libPath
   libLft <- liftIO $! linkKernel nms libPath
   liftIO $! Debug.traceM Debug.dump_ld ("ld: finished loading shared object " % string) libPath

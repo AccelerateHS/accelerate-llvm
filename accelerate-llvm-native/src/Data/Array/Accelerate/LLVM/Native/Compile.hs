@@ -47,14 +47,28 @@ import Data.Maybe
 import Data.Text.Encoding
 import Formatting
 import System.Directory
+import System.FilePath                                              ( replaceExtension )
 import System.IO.Unsafe
+import Data.ByteString                                              ( ByteString )
+import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.HashMap.Strict                                as HashMap
 
 
 instance Compile Native where
-  data ObjectR Native = ObjectR { objSyms :: ![ShortByteString]
-                                , objPath :: {- LAZY -} FilePath
+  data ObjectR Native = ObjectR { -- | The entry points defined in the kernel.
+                                  objSyms    :: ![ShortByteString]
+                                  -- | Points to a shared library file, Used for
+                                  -- runtime dynamic linking with
+                                  -- @run@/@run1@/@runN@. Since we'll only ever
+                                  -- need one or the other, both the shared
+                                  -- library and the raw object are returned as
+                                  -- monadic actions so we can avoid generating
+                                  -- what we don't need.
+                                , objDynamic :: {- LAZY -} LLVM Native FilePath
+                                  -- | Points to a raw object file, used for
+                                  -- static linking with @runQ@.
+                                , objStatic  :: {- LAZY -} LLVM Native FilePath
                                 }
   compileForTarget    = compile
 
@@ -63,7 +77,8 @@ instance Intrinsic Native
 
 -- | Compile an Accelerate expression to object code, link it to a shared
 -- object, link that shared object to this process, and return a handle to the
--- linked library along with its symbols.
+-- linked library along with its symbols. We also do the same thing for a static
+-- archive that can be used in runQ.
 --
 compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
 compile pacc aenv = do
@@ -74,49 +89,57 @@ compile pacc aenv = do
   -- functions which will be contained in the object code, but the actual
   -- code generation step is executed lazily.
   --
-  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
-  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
+  (uid, dynamicCachePath) <- cacheOfPreOpenAcc pacc
+  Module ast md           <- llvmOfPreOpenAcc uid pacc aenv
 
-  let triple        = fromMaybe BS.empty (moduleTargetTriple ast)
-      datalayout    = moduleDataLayout ast
-      nms           = [ f | Name f <- HashMap.keys md ]
+  let staticCachePath     = replaceExtension dynamicCachePath rawObjectExt
+      triple              = fromMaybe BS.empty (moduleTargetTriple ast)
+      datalayout          = moduleDataLayout ast
+      nms                 = [ f | Name f <- HashMap.keys md ]
 
-  -- Lower the generated LLVM and produce an object file.
-  --
-  -- The 'objData' field is only lazy evaluated since the object code might
-  -- already have been loaded into memory from a different function, in which
-  -- case it will be found in the linker cache.
-  --
-  libPath <- liftIO . unsafeInterleaveIO $ do
-    exists <- doesFileExist cacheFile
-    recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
-    if exists && not recomp
-      then
-        Debug.traceM Debug.dump_cc ("cc: found cached shared object " % shown) uid
+  -- After this compilation step we will either dynamically link to a shared
+  -- library, or in the case of @runQ@ we will statically link to the compiled
+  -- object and generate FFI imports so the compiled kernel can be embedded
+  -- directly inside of the resulting binary. Since we'll only ever need one or
+  -- the other, both of these options are presented as monadic actions so we
+  -- lazily compute the required representation in either the linking or the
+  -- embedding phase. The continuation passed to this function receives the raw
+  -- object and is responsible for writing the correct representation to the
+  -- cache file location.
+  let compileObj :: String -> FilePath -> (FilePath -> ByteString -> IO ()) -> LLVM Native FilePath
+      compileObj objectType cachePath k = liftIO . unsafeInterleaveIO $ do
+        exists <- doesFileExist cachePath
+        recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
+        if exists && not recomp
+          then
+            Debug.traceM Debug.dump_cc ("cc: found cached " % string % " " % shown) objectType uid
 
-      else
-        withContext                  $ \ctx     ->
-        withModuleFromAST ctx ast    $ \mdl     ->
-        withNativeTargetMachine      $ \machine ->
-        withTargetLibraryInfo triple $ \libinfo -> do
-          optimiseModule datalayout (Just machine) (Just libinfo) mdl
+          else
+            withContext                  $ \ctx     ->
+            withModuleFromAST ctx ast    $ \mdl     ->
+            withNativeTargetMachine      $ \machine ->
+            withTargetLibraryInfo triple $ \libinfo -> do
+              optimiseModule datalayout (Just machine) (Just libinfo) mdl
 
-          Debug.when Debug.verbose $ do
-            Debug.traceM Debug.dump_cc  stext . decodeUtf8 =<< moduleLLVMAssembly mdl
-            Debug.traceM Debug.dump_asm stext . decodeUtf8 =<< moduleTargetAssembly machine mdl
+              Debug.when Debug.verbose $ do
+                Debug.traceM Debug.dump_cc  stext . decodeUtf8 =<< moduleLLVMAssembly mdl
+                Debug.traceM Debug.dump_asm stext . decodeUtf8 =<< moduleTargetAssembly machine mdl
 
-          -- XXX: We'll let LLVM generate a relocatable object, and we'll then
-          --      manually invoke the system linker to build a shared object out
-          --      of it so we can link to it. LLVM doesn't seem to provide a way
-          --      to do this for us without having to shell out to the linker.
-          obj <- moduleObject machine mdl
-          Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
+              -- XXX: We'll let LLVM generate a relocatable object, and we'll then
+              --      manually invoke the system linker to build a shared object out
+              --      of it so we can link to it. LLVM doesn't seem to provide a way
+              --      to do this for us without having to shell out to the linker.
+              obj <- moduleObject machine mdl
+              Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
 
-          -- XXX: The object file extension is technically platform specific,
-          --      but the linker shouldn't care about the extension anyways
-          linkSharedObject cacheFile obj
-          Debug.traceM Debug.dump_cc ("cc: new shared object " % shown) uid
+              k cachePath obj
+              Debug.traceM Debug.dump_cc ("cc: cached " % string % " " % shown) objectType uid
 
-    return cacheFile
+        return cachePath
 
-  return $! ObjectR nms libPath
+  return $!
+    ObjectR
+      { objSyms    = nms
+      , objDynamic = compileObj "shared object"      dynamicCachePath linkSharedObject
+      , objStatic  = compileObj "relocatable object" staticCachePath  B.writeFile
+      }
