@@ -114,6 +114,13 @@ llvmOfOpenExp top env aenv = cvtE top
         Pair e1 e2                  -> join $ pair <$> cvtE e1 <*> cvtE e2
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
+        VecIndex vt ti v i          -> do v' <- cvtE v
+                                          i' <- cvtE i
+                                          vecIndexGen vt ti v' i'
+        VecWrite vt ti v i e        -> do v' <- cvtE v
+                                          i' <- cvtE i
+                                          e' <- cvtE e
+                                          vecWriteGen vt ti v' i' e'
         Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
         Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
         Cond c t e                  -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
@@ -171,6 +178,12 @@ llvmOfOpenExp top env aenv = cvtE top
 
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         VectorType n singleTp = vecRvector vecr
+
+    vecIndexGen :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> CodeGen arch (Operands a)
+    vecIndexGen tv ti (op tv -> v) (op ti -> i) = instr $ ExtractElement ti v i
+
+    vecWriteGen :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> Operands a -> CodeGen arch (Operands (Vec n a))
+    vecWriteGen tv@(VectorType _ ts) ti (op tv -> v) (op ti -> i) (op ts -> e) = instr $ InsertElement ti v i e
 
     linearIndex :: ArrayVar aenv (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
     linearIndex (Var repr v) = linearIndexArray (irArray repr (aprj v aenv))
@@ -308,8 +321,6 @@ llvmOfOpenExp top env aenv = cvtE top
         PrimEq t                  -> primbool $ A.uncurry (A.eq t)  =<< cvtE x
         PrimNEq t                 -> primbool $ A.uncurry (A.neq t) =<< cvtE x
         PrimLNot                  -> primbool $ A.lnot              =<< bool (cvtE x)
-        PrimVectorIndex v i       -> A.uncurry (A.vecIndex v i)     =<< cvtE x
-        PrimVectorWrite v i       -> A.uncurry3 (A.vecWrite v i)    =<< cvtE x
           -- no missing patterns, whoo!
 
 

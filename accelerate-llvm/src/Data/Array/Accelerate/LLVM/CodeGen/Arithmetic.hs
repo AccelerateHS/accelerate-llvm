@@ -472,11 +472,6 @@ min ty x y
 vecCreate :: VectorType (Vec n a) -> CodeGen arch (Operands (Vec n a))
 vecCreate = undefined
 
-vecIndex :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> CodeGen arch (Operands a)
-vecIndex tv ti (op tv -> v) (op ti -> i) = instr $ ExtractElement ti v i
-
-vecWrite :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> Operands a -> CodeGen arch (Operands (Vec n a))
-vecWrite tv@(VectorType _ ta) ti (op tv -> v) (op ti -> i) (op ta -> val) = instr $ InsertElement ti v i val
 
 
 
