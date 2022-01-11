@@ -125,7 +125,6 @@ mkInside uid aenv repr@(ArrayR shr _) halo apply paramIn =
       shInside            = local        (shapeType shr) "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
-      --
   in
   makeOpenAcc uid "stencil_inside" (paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -161,7 +160,6 @@ mkBorder uid aenv repr@(ArrayR shr _) apply paramIn =
       shInside            = local        (shapeType shr) "shInside"
       shOut               = irArrayShape arrOut
       paramEnv            = envParam aenv
-      --
   in
   makeOpenAcc uid "stencil_border" (paramFrom ++ paramInside ++ paramOut ++ paramIn ++ paramEnv) $ do
 
