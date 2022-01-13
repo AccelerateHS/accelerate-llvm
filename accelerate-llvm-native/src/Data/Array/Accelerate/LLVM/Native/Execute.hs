@@ -781,14 +781,14 @@ aforeignOp name _ _ asm arr = do
 -- Skeleton execution
 -- ------------------
 
-(!#) :: HasCallStack => Lifetime FunctionTable -> ShortByteString -> Function
+(!#) :: HasCallStack => Lifetime (h, FunctionTable) -> ShortByteString -> Function
 (!#) exe name
   = fromMaybe (internalError ("function not found: " % string) (S8.unpack name))
   $ lookupFunction name exe
 
-lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
+lookupFunction :: ShortByteString -> Lifetime (h, FunctionTable) -> Maybe Function
 lookupFunction name nativeExecutable = do
-  find (\(n,_) -> S.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
+  find (\(n,_) -> S.take (S.length n - 65) n == name) (functionTable (snd $ unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)

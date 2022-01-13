@@ -23,81 +23,59 @@ module Data.Array.Accelerate.LLVM.Native.Embed (
 import Data.ByteString.Short.Char8                                  as S8
 import Data.ByteString.Short.Extra                                  as BS
 
-import Data.Array.Accelerate.Lifetime
-
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Embed
 
 import Data.Array.Accelerate.LLVM.Native.Compile
-import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Link
-import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
+import Data.Array.Accelerate.LLVM.Native.Link.Util
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
-import Control.Concurrent.Unique
-import Data.Hashable
-import Foreign.Ptr
+import Data.ByteString                                              ( ByteString )
+import qualified Data.ByteString                                    as B
 import Language.Haskell.TH.Extra                                    ( Q, CodeQ )
-import Numeric
+import System.FilePath                                              ( takeFileName )
 import System.IO.Unsafe
 import qualified Language.Haskell.TH.Extra                          as TH
-import qualified Language.Haskell.TH.Syntax                         as TH
 
-#if __GLASGOW_HASKELL__ >= 806
-import Data.Maybe
-import qualified Data.Set                                           as Set
+-- TODO: bytestring 0.11.2.0 adds their own, better lifting instances. Once
+--       that's stable we should remove this dependency and bump bytestring's
+--       version bound.
+#if !MIN_VERSION_bytestring(0,11,2)
+import Instances.TH.Lift                                            ()
 #endif
 
 
 instance Embed Native where
   embedForTarget = embed
 
--- Add the given object code to the set of files to link the executable with,
--- and generate FFI declarations to access the external functions of that file.
--- The returned ExecutableR references the new FFI declarations.
+-- | Store the compiled shared object in this binary, and dynamically link to it
+-- when the code needs to be run. The cleaner solution would be to create a
+-- static archive, link to that, and to then generate FFI imports, but this
+-- works and requires the least amount of modifications to the rest of the
+-- compiler. If you feel like giving that a shot, then you can use the git
+-- pickaxe to find the commit that removed the old approach that did more or
+-- less that with `git log -p -S 'TH.bindCode getObjectFile $ \objFile'`.
 --
 embed :: Native -> ObjectR Native -> CodeQ (ExecutableR Native)
-embed target (ObjectR uid nms !_) =
-  TH.bindCode getObjectFile $ \objFile ->
-    [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE (makeTable objFile nms)))) ||]
+embed _target (ObjectR nms libPath) =
+  TH.bindCode sharedLibraryQ $ \lib ->
+    [|| unsafePerformIO $
+          -- This linking needs to be done runtime, when the 'ExecutableR
+          -- Native' gets evaluated. Since may not even run on the same machine
+          -- 'embed' was run on we can't use @_target@, but since we're only
+          -- linking to a pre-compiled shared library this shouldn't make any
+          -- difference.
+          withRawSharedObject (takeFileName libPath) lib $ \embeddedLibPath ->
+            evalNative defaultTarget . link $! ObjectR $$(nmsQ) embeddedLibPath
+     ||]
   where
+    sharedLibraryQ :: Q ByteString
+    sharedLibraryQ = TH.runIO $! B.readFile libPath
+
+    nmsQ :: CodeQ [ShortByteString]
+    nmsQ = listE $ map (\fn -> [|| $$(liftSBS fn) ||]) nms
+
     listE :: [CodeQ a] -> CodeQ [a]
     listE xs = TH.unsafeCodeCoerce (TH.listE (map TH.unTypeCode xs))
-
-    makeTable :: FilePath -> [ShortByteString] -> [CodeQ (ShortByteString, FunPtr ())]
-    makeTable objFile = map (\fn -> [|| ( $$(liftSBS fn), $$(makeFFI fn objFile) ) ||])
-
-    makeFFI :: ShortByteString -> FilePath -> CodeQ (FunPtr ())
-    makeFFI (S8.unpack -> fn) objFile = TH.bindCode go (TH.unsafeCodeCoerce . return)
-      where
-        go = do
-          i   <- TH.runIO newUnique
-          fn' <- TH.newName ("__accelerate_llvm_native_" ++ showHex (hash i) [])
-          dec <- TH.forImpD TH.CCall TH.Unsafe ('&':fn) fn' [t| FunPtr () |]
-          ann <- TH.pragAnnD (TH.ValueAnnotation fn') [| (Object objFile) |]
-          TH.addTopDecls [dec, ann]
-          TH.varE fn'
-
-    -- Note: [Template Haskell and raw object files]
-    --
-    -- We can only addForeignFilePath once per object file, otherwise the
-    -- linker will complain about duplicate symbols. To work around this,
-    -- we use putQ/getQ to keep track of which object files have already
-    -- been encountered during compilation _of the current module_. This
-    -- means that we might still run into problems if runQ is invoked at
-    -- multiple modules.
-    --
-    getObjectFile :: Q FilePath
-    getObjectFile = do
-      this <- TH.runIO (evalNative target (cacheOfUID uid))
-#if __GLASGOW_HASKELL__ >= 806
-      rest <- fromMaybe Set.empty <$> TH.getQ
-      if Set.member this rest
-         then return ()
-         else do
-           TH.addForeignFilePath TH.RawObject this
-           TH.putQ (Set.insert this rest)
-#endif
-      return this
-

@@ -91,8 +91,8 @@ Library
     Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
     Data.Array.Accelerate.LLVM.Native.Link
-    Data.Array.Accelerate.LLVM.Native.Link.Cache
     Data.Array.Accelerate.LLVM.Native.Link.Object
+    Data.Array.Accelerate.LLVM.Native.Link.Util
 
     Data.Array.Accelerate.LLVM.Native.Embed
 
@@ -130,6 +130,11 @@ Library
         , llvm-hs-pure                  >= 4.1 && < 14
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
+          -- TODO: These are only used for lifting ByteStrings. bytestring
+          --       0.11.2.0 include its own, better lifting instances. Once
+          --       that's stable, we can remove this dependency and bump
+          --       bytestring's version bound.
+        , th-lift-instances
         , template-haskell
         , text                          >= 1.2
         , unique
@@ -155,33 +160,16 @@ Library
     ghc-options:
         -Wmissed-specialisations
 
-  if os(darwin)
+  -- TODO: Implement similar linking functionality for Windows. See the comments
+  --       in the 'Data.Array.Accelerate.LLVM.Native.Link.Util' module.
+  if !os(windows)
     other-modules:
-      Data.Array.Accelerate.LLVM.Native.Link.MachO
+      Data.Array.Accelerate.LLVM.Native.Link.Posix
 
     build-depends:
-          ghc-prim
+          process                       >= 1.4.3
+        , temporary                     >= 1.3
         , unix                          >= 2.7
-
-    build-tools:
-          c2hs                          >= 0.25
-
-  if os(linux)
-    other-modules:
-      Data.Array.Accelerate.LLVM.Native.Link.ELF
-
-    build-depends:
-          ghc-prim
-        , unix                          >= 2.7
-
-    build-tools:
-          c2hs                          >= 0.25
-
-  if os(windows)
-    other-modules:
-      Data.Array.Accelerate.LLVM.Native.Link.COFF
-
-    -- build-depends:
 
 
 test-suite nofib-llvm-native

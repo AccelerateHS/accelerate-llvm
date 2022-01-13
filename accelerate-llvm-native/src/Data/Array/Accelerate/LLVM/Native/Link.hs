@@ -1,6 +1,6 @@
-{-# LANGUAGE CPP             #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE TypeFamilies      #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link
@@ -22,49 +22,44 @@ module Data.Array.Accelerate.LLVM.Native.Link (
 
 import Data.Array.Accelerate.Lifetime
 
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Link
 import Data.Array.Accelerate.LLVM.State
 
-import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Compile
+import Data.Array.Accelerate.LLVM.Native.Target
 
 import Data.Array.Accelerate.LLVM.Native.Link.Object
-import Data.Array.Accelerate.LLVM.Native.Link.Cache
-#if   defined(darwin_HOST_OS)
-import Data.Array.Accelerate.LLVM.Native.Link.MachO
-#elif defined(linux_HOST_OS)
-import Data.Array.Accelerate.LLVM.Native.Link.ELF
-#elif defined(mingw32_HOST_OS)
-import Data.Array.Accelerate.LLVM.Native.Link.COFF
-#else
-#error "Runtime linking not supported on this platform"
-#endif
+import Data.Array.Accelerate.LLVM.Native.Link.Util
 
 import Control.Monad.State
-import Prelude                                                      hiding ( lookup )
-
+import Formatting
+import Prelude hiding (lookup)
 
 instance Link Native where
-  data ExecutableR Native = NativeR { nativeExecutable :: {-# UNPACK #-} !(Lifetime FunctionTable)
-                                    }
+  data ExecutableR Native = NativeR
+    { -- | The platform-specific library handle along with mappings between
+      -- Accelerate kernel names and function pointers for those kernels.
+      nativeExecutable :: {-# UNPACK #-} !(Lifetime (LibraryHandle, FunctionTable))
+    }
   linkForTarget = link
 
 
 -- | Load the generated object file into the target address space
 --
 link :: ObjectR Native -> LLVM Native (ExecutableR Native)
-link (ObjectR uid _ obj) = do
-  cache  <- gets linkCache
-  funs   <- liftIO $ dlsym uid cache (loadObject obj)
-  return $! NativeR funs
+link (ObjectR nms libPath) = do
+  liftIO $! Debug.traceM Debug.dump_ld ("ld: loading shared object " % string) libPath
+  libLft <- liftIO $! linkKernel nms libPath
+  liftIO $! Debug.traceM Debug.dump_ld ("ld: finished loading shared object " % string) libPath
 
+  return $! NativeR libLft
 
 -- | Execute some operation with the supplied executable functions
 --
 withExecutable :: MonadIO m => ExecutableR Native -> (FunctionTable -> m b) -> m b
 withExecutable NativeR{..} f = do
-  r <- f (unsafeGetValue nativeExecutable)
+  r <- f (snd $ unsafeGetValue nativeExecutable)
   liftIO $ touchLifetime nativeExecutable
   return r
-

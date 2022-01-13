@@ -17,6 +17,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Cache (
 ) where
 
 import Data.Array.Accelerate.LLVM.Compile.Cache
+import Data.Array.Accelerate.LLVM.Native.Link.Util
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Data.Version
@@ -33,5 +34,4 @@ instance Persistent Native where
          </> "llvm-hs-" ++ VERSION_llvm_hs
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
-         </> "meep.o"
-
+         </> ("meep." <> sharedObjectExt)

@@ -32,6 +32,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
+import Data.Array.Accelerate.LLVM.Native.Link.Util
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
@@ -41,29 +42,28 @@ import LLVM.Context
 import LLVM.Target
 
 import Control.Monad.State
-import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Maybe
 import Data.Text.Encoding
 import Formatting
 import System.Directory
 import System.IO.Unsafe
-import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.HashMap.Strict                                as HashMap
 
 
 instance Compile Native where
-  data ObjectR Native = ObjectR { objId   :: {-# UNPACK #-} !UID
-                                , objSyms :: {- LAZY -} [ShortByteString]
-                                , objData :: {- LAZY -} ByteString
+  data ObjectR Native = ObjectR { objSyms :: ![ShortByteString]
+                                , objPath :: {- LAZY -} FilePath
                                 }
   compileForTarget    = compile
 
 instance Intrinsic Native
 
 
--- | Compile an Accelerate expression to object code
+-- | Compile an Accelerate expression to object code, link it to a shared
+-- object, link that shared object to this process, and return a handle to the
+-- linked library along with its symbols.
 --
 compile :: PreOpenAcc DelayedOpenAcc aenv a -> Gamma aenv -> LLVM Native (ObjectR Native)
 compile pacc aenv = do
@@ -87,13 +87,12 @@ compile pacc aenv = do
   -- already have been loaded into memory from a different function, in which
   -- case it will be found in the linker cache.
   --
-  obj <- liftIO . unsafeInterleaveIO $ do
+  libPath <- liftIO . unsafeInterleaveIO $ do
     exists <- doesFileExist cacheFile
     recomp <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.force_recomp else return False
     if exists && not recomp
-      then do
-        Debug.traceM Debug.dump_cc ("cc: found cached object code " % shown) uid
-        B.readFile cacheFile
+      then
+        Debug.traceM Debug.dump_cc ("cc: found cached shared object " % shown) uid
 
       else
         withContext                  $ \ctx     ->
@@ -106,10 +105,18 @@ compile pacc aenv = do
             Debug.traceM Debug.dump_cc  stext . decodeUtf8 =<< moduleLLVMAssembly mdl
             Debug.traceM Debug.dump_asm stext . decodeUtf8 =<< moduleTargetAssembly machine mdl
 
+          -- XXX: We'll let LLVM generate a relocatable object, and we'll then
+          --      manually invoke the system linker to build a shared object out
+          --      of it so we can link to it. LLVM doesn't seem to provide a way
+          --      to do this for us without having to shell out to the linker.
           obj <- moduleObject machine mdl
           Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
-          B.writeFile cacheFile obj
-          return obj
 
-  return $! ObjectR uid nms obj
+          -- XXX: The object file extension is technically platform specific,
+          --      but the linker shouldn't care about the extension anyways
+          linkSharedObject cacheFile obj
+          Debug.traceM Debug.dump_cc ("cc: new shared object " % shown) uid
 
+    return cacheFile
+
+  return $! ObjectR nms libPath
