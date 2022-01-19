@@ -10,8 +10,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: AccelerateHS/accelerate
-  commit: 20cd26291f42b2ea74d4e9750301620f83f98b17
+- github: dpvanbalen/accelerate
+  commit: 704cb2548a97143655e713b78c240a479576f96a
 
 - github: llvm-hs/llvm-hs
   commit: 351683ed1c2f6b329e62439d42a158b1d804b846

@@ -10,8 +10,8 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- github: AccelerateHS/accelerate
-  commit: 20cd26291f42b2ea74d4e9750301620f83f98b17
+- github: dpvanbalen/accelerate
+  commit: 704cb2548a97143655e713b78c240a479576f96a
 
 - cuda-0.10.2.0
 - nvvm-0.10.0.0

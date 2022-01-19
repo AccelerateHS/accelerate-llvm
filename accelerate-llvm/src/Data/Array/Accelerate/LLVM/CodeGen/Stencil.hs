@@ -70,6 +70,9 @@ stencilAccess sR mbndy arr =
         -> (Operands sh -> IRExp arch aenv e)
         -> Operands sh
         -> IRExp arch aenv stencil
+    goR (StencilRunit1 _) rf ix
+      = tup1 <$> rf ix
+
     goR (StencilRunit3 _) rf ix
       = let (z, i) = unindex ix
             rf' d  = do d' <- A.add numType i (int d)
@@ -123,6 +126,13 @@ stencilAccess sR mbndy arr =
     -- when we recurse on the stencil structure we must manipulate the
     -- _left-most_ index component
     --
+    goR (StencilRtup1 s1) rf ix =
+      let shr = stencilShapeR s1
+          (i, ix') = uncons shr ix
+          rf' ds = rf (cons shr i ds)
+      in
+      tup1 <$> goR s1 rf' ix'
+
     goR (StencilRtup3 s1 s2 s3) rf ix =
       let shr = stencilShapeR s1
           (i, ix') = uncons shr ix
@@ -292,6 +302,9 @@ unindex (OP_Pair sh i) = (sh, i)
 
 index :: Operands sh -> Operands Int -> Operands (sh, Int)
 index sh i = OP_Pair sh i
+
+tup1 :: Operands a -> Operands (Tup1 a)
+tup1 a = OP_Pair OP_Unit a
 
 tup3 :: Operands a -> Operands b -> Operands c -> Operands (Tup3 a b c)
 tup3 a b c = OP_Pair (OP_Pair (OP_Pair OP_Unit a) b) c
