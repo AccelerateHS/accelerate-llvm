@@ -45,7 +45,7 @@ import System.Posix.DynamicLinker
 --
 loadSharedObject :: HasCallStack => [ShortByteString] -> FilePath -> IO (FunctionTable, ObjectCode)
 loadSharedObject nms path = do
-  so      <- dlopen path []
+  so      <- dlopen path [RTLD_LAZY, RTLD_LOCAL]
   fun_tab <- fmap FunctionTable $ forM nms $ \nm -> do
     let s = B8.unpack nm
     Debug.traceM Debug.dump_ld ("ld: looking up symbol " % string) s
