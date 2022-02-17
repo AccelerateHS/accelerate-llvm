@@ -156,7 +156,11 @@ compile pacc aenv = do
         -- LLVM doesn't seem to provide a way to build a shared object file
         -- directly, so shell out to the system linker to do this.
         --
-        callProcess ld ["--shared", "-undefined", "dynamic_lookup", "-o", sharedObjFile, objFile]
+#if defined(darwin_HOST_OS)
+        callProcess ld ["--shared", "-o", sharedObjFile, objFile, "-undefined", "dynamic_lookup"]
+#else
+        callProcess ld ["--shared", "-o", sharedObjFile, objFile]
+#endif
         Debug.traceM Debug.dump_cc ("cc: new shared object " % shown) uid
 
     return sharedObjFile
