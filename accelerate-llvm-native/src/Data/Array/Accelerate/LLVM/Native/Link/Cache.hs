@@ -43,6 +43,6 @@ new = do
   -- Accelerate library) causes segfaults; possibly because the RTS was
   -- otherwise linked statically into the executable.
   --
-  when debuggingIsEnabled $ void $ dlopen ACCELERATE_DYLD_LIBRARY_PATH [RTLD_LAZY, RTLD_LOCAL]
+  when debuggingIsEnabled $ void $ dlopen ACCELERATE_DYLD_LIBRARY_PATH [RTLD_LAZY, RTLD_GLOBAL]
   LC.new
 
