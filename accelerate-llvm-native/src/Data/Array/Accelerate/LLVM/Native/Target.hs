@@ -23,6 +23,7 @@ import qualified LLVM.CodeModel                                     as CodeModel
 import qualified LLVM.CodeGenOpt                                    as CodeOptimisation
 
 -- accelerate
+import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler          ( Workers )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
 
@@ -35,7 +36,8 @@ import System.IO.Unsafe
 -- | Native machine code JIT execution target
 --
 data Native = Native
-  { workers       :: !Workers
+  { linkCache     :: !LinkCache
+  , workers       :: !Workers
   }
 
 instance Target Native where

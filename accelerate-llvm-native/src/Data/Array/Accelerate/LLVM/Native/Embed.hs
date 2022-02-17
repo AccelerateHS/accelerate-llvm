@@ -23,12 +23,14 @@ module Data.Array.Accelerate.LLVM.Native.Embed (
 import Data.ByteString.Short.Char8                                  as S8
 import Data.ByteString.Short.Extra                                  as BS
 
+import Data.Array.Accelerate.Lifetime
+
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Embed
 
 import Data.Array.Accelerate.LLVM.Native.Compile
+import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Link
-import Data.Array.Accelerate.LLVM.Native.Link.Util
 import Data.Array.Accelerate.LLVM.Native.Plugin.Annotation
 import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
@@ -54,9 +56,9 @@ instance Embed Native where
 -- The returned ExecutableR references the new FFI declarations.
 --
 embed :: Native -> ObjectR Native -> CodeQ (ExecutableR Native)
-embed target (ObjectR nms _ objM) =
+embed target (ObjectR uid nms !_ _) =
   TH.bindCode getObjectFile $ \objFile ->
-    [|| NativeR . unsafePerformIO . embedKernel $ FunctionTable $$(listE $ makeTable objFile nms) ||]
+    [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE $ makeTable objFile nms))) ||]
   where
     listE :: [CodeQ a] -> CodeQ [a]
     listE xs = TH.unsafeCodeCoerce (TH.listE (map TH.unTypeCode xs))
@@ -86,11 +88,14 @@ embed target (ObjectR nms _ objM) =
     --
     getObjectFile :: Q FilePath
     getObjectFile = do
-      objPath <- TH.runIO (evalNative target objM)
+      this <- TH.runIO (evalNative target (cacheOfUID uid))
+#if __GLASGOW_HASKELL__ >= 806
       rest <- fromMaybe Set.empty <$> TH.getQ
-      if Set.member objPath rest
+      if Set.member this rest
          then return ()
          else do
-           TH.addForeignFilePath TH.RawObject objPath
-           TH.putQ (Set.insert objPath rest)
-      return objPath
+           TH.addForeignFilePath TH.RawObject this
+           TH.putQ (Set.insert this rest)
+#endif
+      return this
+

@@ -23,7 +23,8 @@ import Data.Array.Accelerate.Debug.Internal
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Native.Target
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler
-import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
+import qualified Data.Array.Accelerate.LLVM.Native.Link.Cache       as LC
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Data.Char
 import Data.Maybe
@@ -63,7 +64,8 @@ createTarget
     -> IO Native
 createTarget cpus = do
   gang    <- hireWorkersOn cpus
-  return  $! Native gang -- RvdH: Sorry for making the pun less funny
+  linker  <- LC.new
+  return  $! Native linker gang
 
 {--
 -- | The strategy for balancing work amongst the available worker threads.

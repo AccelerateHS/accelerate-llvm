@@ -1,6 +1,7 @@
+cabal-version:          2.2
+
 name:                   accelerate-llvm
 version:                1.3.0.0
-cabal-version:          >= 1.10
 tested-with:            GHC >= 8.6
 build-type:             Simple
 
@@ -52,7 +53,7 @@ description:
     specified, all targets are built).
     .
 
-license:                BSD3
+license:                BSD-3-Clause
 license-file:           LICENSE
 author:                 Trevor L. McDonell
 maintainer:             Trevor L. McDonell <trevor.mcdonell@gmail.com>
