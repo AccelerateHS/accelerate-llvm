@@ -8,7 +8,7 @@ import Distribution.Simple
 import Distribution.Simple.BuildPaths
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.PackageIndex
-import Distribution.Simple.Setup
+import Distribution.Simple.Setup                                    as Setup
 import Distribution.Verbosity
 import qualified Distribution.InstalledPackageInfo                  as Installed
 
@@ -27,7 +27,7 @@ main = defaultMainWithHooks simpleUserHooks
   , preBuild = readHook buildVerbosity
   }
   where
-    readHook :: (a -> Flag Verbosity) -> Args -> a -> IO HookedBuildInfo
+    readHook :: (a -> Setup.Flag Verbosity) -> Args -> a -> IO HookedBuildInfo
     readHook verbosity _ flags = readHookedBuildInfo (fromFlag (verbosity flags)) buildinfo_file
 
     postConfHook :: Args -> ConfigFlags -> PackageDescription -> LocalBuildInfo -> IO ()
