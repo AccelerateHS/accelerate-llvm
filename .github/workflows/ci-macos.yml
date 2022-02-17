@@ -72,6 +72,7 @@ jobs:
           brew tap llvm-hs/homebrew-llvm
           brew install pkg-config libffi llvm-${{ matrix.llvm }}
           echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/libffi/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$(llvm-config-${{ matrix.llvm }} --libdir):$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Build dependencies
         run: stack build accelerate-llvm $STACK_FLAGS --test --no-run-tests --only-dependencies
