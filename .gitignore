@@ -1,6 +1,6 @@
-dist
-dist-newstyle
-cabal-dev
+dist/
+dist-newstyle/
+cabal-dev/
 *.o
 *.hi
 *.chi

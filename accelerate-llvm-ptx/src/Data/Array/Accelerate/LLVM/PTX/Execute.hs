@@ -620,7 +620,10 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
                  then Debug.trace Debug.dump_exec "exec: permute/inplace" $ return defaults
                  else Debug.trace Debug.dump_exec "exec: permute/clone"   $ get =<< cloneArrayAsync repr' defaults
     --
-    case kernelName kernel of
+    let kernelName' =
+          let kn = kernelName kernel
+          in S.take (S.length kn - 65) kn
+    case kernelName' of
       -- execute directly using atomic operations
       "permute_rmw"   ->
         let paramsR = paramR' `TupRpair` paramR
