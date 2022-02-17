@@ -23,8 +23,14 @@ import System.FilePath
 
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
-  { postConf = postConfHook
-  , preBuild = readHook buildVerbosity
+  { postConf    = postConfHook
+  , preBuild    = readHook buildVerbosity
+  , preCopy     = readHook copyVerbosity
+  , preInst     = readHook installVerbosity
+  , preHscolour = readHook hscolourVerbosity
+  , preHaddock  = readHook haddockVerbosity
+  , preReg      = readHook regVerbosity
+  , preUnreg    = readHook regVerbosity
   }
   where
     readHook :: (a -> Setup.Flag Verbosity) -> Args -> a -> IO HookedBuildInfo
