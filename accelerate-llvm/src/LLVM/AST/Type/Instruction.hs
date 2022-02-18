@@ -471,7 +471,8 @@ instance Downcast (Instruction a) LLVM.Instruction where
       -- here means that the alignment is the same as the size of the type, while an
       -- alignment of 0 in those instructions means that the alignment is defined by
       -- the ABI.
-      cmpXchg :: Bool -> LLVM.Operand -> LLVM.Operand -> LLVM.Operand -> LLVM.Atomicity -> LLVM.MemoryOrdering -> LLVM.InstructionMetadata -> LLVM.Instruction
+      --
+      cmpXchg   :: Bool -> LLVM.Operand -> LLVM.Operand -> LLVM.Operand -> LLVM.Atomicity -> LLVM.MemoryOrdering -> LLVM.InstructionMetadata -> LLVM.Instruction
       atomicRMW :: Bool -> LLVM.RMWOperation -> LLVM.Operand -> LLVM.Operand -> LLVM.Atomicity -> LLVM.InstructionMetadata -> LLVM.Instruction
 #if MIN_VERSION_llvm_hs_pure(13,0,0)
       cmpXchg volatile address expected replacement atomicity' failureMemoryOrdering metadata =
@@ -479,10 +480,10 @@ instance Downcast (Instruction a) LLVM.Instruction where
       atomicRMW volatile rmwOperation address value atomicity' metadata =
         LLVM.AtomicRMW volatile rmwOperation address value alignment atomicity' metadata
 #else
-      cmpXchg volatile address expected replacement atomicity failureMemoryOrdering metadata =
-        LLVM.CmpXchg volatile address expected replacement atomicity failureMemoryOrdering metadata
-      atomicRMW volatile rmwOperation address value atomicity metadata =
-        LLVM.AtomicRMW volatile rmwOperation address value atomicity metadata
+      cmpXchg volatile address expected replacement atomicity' failureMemoryOrdering metadata =
+        LLVM.CmpXchg volatile address expected replacement atomicity' failureMemoryOrdering metadata
+      atomicRMW volatile rmwOperation address value atomicity' metadata =
+        LLVM.AtomicRMW volatile rmwOperation address value atomicity' metadata
 #endif
 
       md :: LLVM.InstructionMetadata

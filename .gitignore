@@ -1,6 +1,6 @@
-dist
-dist-newstyle
-cabal-dev
+dist/
+dist-newstyle/
+cabal-dev/
 *.o
 *.hi
 *.chi
@@ -16,4 +16,4 @@ tags
 local/
 /stack.yaml.lock
 .ipynb_checkpoints
-dist-newstyle/
+/accelerate-llvm-native/accelerate-llvm-native.buildinfo

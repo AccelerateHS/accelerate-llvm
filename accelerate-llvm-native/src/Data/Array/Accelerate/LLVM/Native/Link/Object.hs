@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Link.Object
 -- Copyright   : [2017..2020] The Accelerate Team
@@ -12,13 +13,17 @@ module Data.Array.Accelerate.LLVM.Native.Link.Object
   where
 
 import Data.List
-import Data.Word
-import Foreign.ForeignPtr
 import Foreign.Ptr
 import Formatting
 
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.Array.Accelerate.Lifetime
+
+#if defined(mingw32_HOST_OS)
+import System.Win32.DLL
+#else
+import System.Posix.DynamicLinker
+#endif
 
 
 -- | The function table is a list of function names together with a pointer in
@@ -37,9 +42,14 @@ formatFunctionTable :: Format r (FunctionTable -> r)
 formatFunctionTable = later $ \f ->
   bformat (angled (angled (commaSep string))) [ unpack n | (n,_) <- functionTable f ]
 
--- | Object code consists of memory in the target address space.
+-- | Object code consists of a handle to dynamically loaded code, managed
+-- by the system linker.
 --
-type ObjectCode     = Lifetime [Segment]
-data Segment        = Segment {-# UNPACK #-} !Int                 -- size in bytes
-                              {-# UNPACK #-} !(ForeignPtr Word8)  -- memory in target address space
+type ObjectCode    = Lifetime LibraryHandle
+
+#if defined(mingw32_HOST_OS)
+type LibraryHandle = HINSTANCE
+#else
+type LibraryHandle = DL
+#endif
 

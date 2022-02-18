@@ -44,10 +44,8 @@ import System.IO.Unsafe
 import qualified Language.Haskell.TH.Extra                          as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
-#if __GLASGOW_HASKELL__ >= 806
 import Data.Maybe
 import qualified Data.Set                                           as Set
-#endif
 
 
 instance Embed Native where
@@ -58,9 +56,9 @@ instance Embed Native where
 -- The returned ExecutableR references the new FFI declarations.
 --
 embed :: Native -> ObjectR Native -> CodeQ (ExecutableR Native)
-embed target (ObjectR uid nms !_) =
+embed target (ObjectR uid nms !_ _) =
   TH.bindCode getObjectFile $ \objFile ->
-    [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE (makeTable objFile nms)))) ||]
+    [|| NativeR (unsafePerformIO $ newLifetime (FunctionTable $$(listE $ makeTable objFile nms))) ||]
   where
     listE :: [CodeQ a] -> CodeQ [a]
     listE xs = TH.unsafeCodeCoerce (TH.listE (map TH.unTypeCode xs))

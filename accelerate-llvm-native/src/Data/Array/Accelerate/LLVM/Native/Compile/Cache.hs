@@ -33,5 +33,5 @@ instance Persistent Native where
          </> "llvm-hs-" ++ VERSION_llvm_hs
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
-         </> "meep.o"
+         </> "meep"
 
