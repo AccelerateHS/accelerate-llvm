@@ -46,7 +46,7 @@ library dependencies that you will need to install as well:
  * [`LLVM`](http://llvm.org)
  * [`libFFI`](http://sourceware.org/libffi/) (if using the `accelerate-llvm-native` backend for multicore CPUs)
  * [`CUDA`](https://developer.nvidia.com/cuda-downloads) (if using the `accelerate-llvm-ptx` backend for NVIDIA GPUs)
-
+    [`Note that not all versions of CUDA support all NVIDIA GPUs`](https://en.wikipedia.org/wiki/CUDA#GPUs_supported)
 
 Docker
 ------
