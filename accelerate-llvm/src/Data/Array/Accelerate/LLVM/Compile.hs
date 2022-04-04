@@ -368,24 +368,26 @@ compileOpenAcc = traverseAcc
         Undef tp                -> return $ pure $ Undef tp
         Foreign tp ff f x       -> foreignE tp ff f x
         --
-        Let lhs a b             -> liftA2 (Let lhs)         <$> travE a <*> travE b
-        IndexSlice slix x s     -> liftA2 (IndexSlice slix) <$> travE x <*> travE s
-        IndexFull slix x s      -> liftA2 (IndexFull slix)  <$> travE x <*> travE s
-        ToIndex shr s i         -> liftA2 (ToIndex   shr)   <$> travE s <*> travE i
-        FromIndex shr s i       -> liftA2 (FromIndex shr)   <$> travE s <*> travE i
+        Let lhs a b             -> liftA2 (Let lhs)          <$> travE a <*> travE b
+        IndexSlice slix x s     -> liftA2 (IndexSlice slix)  <$> travE x <*> travE s
+        IndexFull slix x s      -> liftA2 (IndexFull slix)   <$> travE x <*> travE s
+        ToIndex shr s i         -> liftA2 (ToIndex   shr)    <$> travE s <*> travE i
+        FromIndex shr s i       -> liftA2 (FromIndex shr)    <$> travE s <*> travE i
         Nil                     -> return $ pure Nil
-        Pair e1 e2              -> liftA2 Pair              <$> travE e1 <*> travE e2
-        VecPack   vecr e        -> liftA  (VecPack   vecr)  <$> travE e
-        VecUnpack vecr e        -> liftA  (VecUnpack vecr)  <$> travE e
-        Case t xs x             -> liftA3 Case              <$> travE t <*> travLE xs <*> travME x
-        Cond p t e              -> liftA3 Cond              <$> travE p <*> travE t <*> travE e
-        While p f x             -> liftA3 While             <$> travF p <*> travF f <*> travE x
-        PrimApp f e             -> liftA  (PrimApp f)       <$> travE e
-        Index a e               -> liftA2 Index             <$> travA a <*> travE e
-        LinearIndex a e         -> liftA2 LinearIndex       <$> travA a <*> travE e
-        Shape a                 -> liftA  Shape             <$> travA a
-        ShapeSize shr e         -> liftA  (ShapeSize shr)   <$> travE e
-        Coerce t1 t2 x          -> liftA  (Coerce t1 t2)    <$> travE x
+        Pair e1 e2              -> liftA2 Pair               <$> travE e1 <*> travE e2
+        VecPack   vecr e        -> liftA  (VecPack   vecr)   <$> travE e
+        VecUnpack vecr e        -> liftA  (VecUnpack vecr)   <$> travE e
+        VecIndex vt it v i      -> liftA2 (VecIndex vt it)   <$> travE v <*> travE i
+        VecWrite vt it v i e    -> liftA3 (VecWrite vt it)   <$> travE v <*> travE i <*> travE e
+        Case t xs x             -> liftA3 Case               <$> travE t <*> travLE xs <*> travME x
+        Cond p t e              -> liftA3 Cond               <$> travE p <*> travE t <*> travE e
+        While p f x             -> liftA3 While              <$> travF p <*> travF f <*> travE x
+        PrimApp f e             -> liftA  (PrimApp f)        <$> travE e
+        Index a e               -> liftA2 Index              <$> travA a <*> travE e
+        LinearIndex a e         -> liftA2 LinearIndex        <$> travA a <*> travE e
+        Shape a                 -> liftA  Shape              <$> travA a
+        ShapeSize shr e         -> liftA  (ShapeSize shr)    <$> travE e
+        Coerce t1 t2 x          -> liftA  (Coerce t1 t2)     <$> travE x
 
       where
         travA :: ArrayVar aenv (Array sh e)

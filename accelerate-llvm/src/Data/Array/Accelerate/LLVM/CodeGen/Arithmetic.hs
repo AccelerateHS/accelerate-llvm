@@ -20,6 +20,8 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Arithmetic
   where
 
+import Data.Primitive.Vec
+
 import Data.Array.Accelerate.AST                                    ( PrimMaybe )
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Representation.Tag
@@ -464,6 +466,14 @@ min ty x y
   | otherwise                               = do c <- unbool <$> lte ty x y
                                                  binop (flip Select c) ty x y
 
+-- Vector operators
+-- ----------------------
+
+vecCreate :: VectorType (Vec n a) -> CodeGen arch (Operands (Vec n a))
+vecCreate = undefined
+
+
+
 
 -- Logical operators
 -- -----------------
@@ -556,6 +566,9 @@ unpair (OP_Pair x y) = (x, y)
 
 uncurry :: (Operands a -> Operands b -> c) -> Operands (a, b) -> c
 uncurry f (OP_Pair x y) = f x y
+
+uncurry3 :: (Operands a -> Operands b -> Operands c -> d) -> Operands (a, (b, c)) -> d
+uncurry3 f (OP_Pair x (OP_Pair y z)) = f x y z
 
 unbool :: Operands Bool -> Operand Bool
 unbool (OP_Bool x) = x

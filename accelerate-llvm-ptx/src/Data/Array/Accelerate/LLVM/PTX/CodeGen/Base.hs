@@ -445,10 +445,10 @@ shfl sop tR val delta = go tR val
                              repack :: Int32 -> CodeGen PTX (Operands (Vec m Int32))
                              repack 0 = return $ ir v' (A.undef (VectorScalarType v'))
                              repack i = do
-                               d <- instr $ ExtractElement (i-1) c
+                               d <- instr $ ExtractElement integralType c (constOp (i-1))
                                e <- integral integralType d
                                f <- repack (i-1)
-                               g <- instr $ InsertElement (i-1) (op v' f) (op integralType e)
+                               g <- instr $ InsertElement integralType (op v' f) (constOp (i-1)) (op integralType e)
                                return g
 
                          h <- repack (P.fromIntegral m)

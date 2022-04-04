@@ -48,7 +48,8 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Loop            as L
 import Data.Primitive.Vec
 
 import LLVM.AST.Type.Instruction
-import LLVM.AST.Type.Operand                                        ( Operand )
+import LLVM.AST.Type.Operand                                        ( Operand(..), constOp)
+import LLVM.AST.Type.Constant                                       ( Constant(..), )
 
 import Control.Applicative                                          hiding ( Const )
 import Control.Monad
@@ -105,7 +106,7 @@ llvmOfOpenExp top env aenv = cvtE top
                                           llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
         Evar (Var _ ix)             -> return $ prj ix env
         Const tp c                  -> return $ ir tp $ scalar tp c
-        PrimConst c                 -> let tp = (SingleScalarType $ primConstType c)
+        PrimConst c                 -> let tp = primConstType c
                                        in  return $ ir tp $ scalar tp $ primConst c
         PrimApp f x                 -> primFun f x
         Undef tp                    -> return $ ir tp $ undef tp
@@ -113,6 +114,13 @@ llvmOfOpenExp top env aenv = cvtE top
         Pair e1 e2                  -> join $ pair <$> cvtE e1 <*> cvtE e2
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
+        VecIndex vt ti v i          -> do v' <- cvtE v
+                                          i' <- cvtE i
+                                          vecIndexGen vt ti v' i'
+        VecWrite vt ti v i e        -> do v' <- cvtE v
+                                          i' <- cvtE i
+                                          e' <- cvtE e
+                                          vecWriteGen vt ti v' i' e'
         Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
         Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
         Cond c t e                  -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
@@ -152,7 +160,7 @@ llvmOfOpenExp top env aenv = cvtE top
         go (VecRnil _)      _ OP_Unit        = internalError "index mismatch"
         go (VecRsucc vecr') i (OP_Pair xs x) = do
           vec <- go vecr' (i - 1) xs
-          instr' $ InsertElement (fromIntegral i - 1) vec (op singleTp x)
+          instr' $ InsertElement integralType vec (constOp (i - 1)) (op singleTp x)
 
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         tp@(VectorType n singleTp) = vecRvector vecr
@@ -165,11 +173,17 @@ llvmOfOpenExp top env aenv = cvtE top
         go (VecRnil _)      _ = internalError "index mismatch"
         go (VecRsucc vecr') i = do
           xs <- go vecr' (i - 1)
-          x  <- instr' $ ExtractElement (fromIntegral i - 1) vec
+          x  <- instr' $ ExtractElement TypeInt vec (constOp (i - 1))
           return $ OP_Pair xs (ir singleTp x)
 
         singleTp :: SingleType single -- GHC 8.4 cannot infer this type for some reason
         VectorType n singleTp = vecRvector vecr
+
+    vecIndexGen :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> CodeGen arch (Operands a)
+    vecIndexGen tv ti (op tv -> v) (op ti -> i) = instr $ ExtractElement ti v i
+
+    vecWriteGen :: VectorType (Vec n a) -> IntegralType i -> Operands (Vec n a) -> Operands i -> Operands a -> CodeGen arch (Operands (Vec n a))
+    vecWriteGen tv@(VectorType _ ts) ti (op tv -> v) (op ti -> i) (op ts -> e) = instr $ InsertElement ti v i e
 
     linearIndex :: ArrayVar aenv (Array sh e) -> Operands Int -> IROpenExp arch env aenv e
     linearIndex (Var repr v) = linearIndexArray (irArray repr (aprj v aenv))
