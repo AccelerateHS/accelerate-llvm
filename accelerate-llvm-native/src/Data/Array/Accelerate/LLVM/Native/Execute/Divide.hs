@@ -65,7 +65,7 @@ divideWork0 :: Int -> Int -> DIM0 -> DIM0 -> (Int -> DIM0 -> DIM0 -> a) -> Seq a
 divideWork0 _ _ () () action = Seq.singleton (action 0 () ())
 
 divideWork1 :: Int -> Int -> DIM1 -> DIM1 -> (Int -> DIM1 -> DIM1 -> a) -> Seq a
-divideWork1 !pieces !minsize ((), (!from)) ((), (!to)) action =
+divideWork1 !n !minsize ((), (!from)) ((), (!to)) action =
   let
       split 0 !u !v !i !f !s
         | v - u < minsize = (i+1, f, s Seq.|> apply i u v)
@@ -82,7 +82,7 @@ divideWork1 !pieces !minsize ((), (!from)) ((), (!to)) action =
             (i2, f2, s2)
 
       apply i u v = action i ((), u) ((), v)
-      (_, fs, ss) = split pieces from to 0 Seq.empty Seq.empty
+      (_, fs, ss) = split n from to 0 Seq.empty Seq.empty
   in
   fs Seq.>< ss
 
@@ -105,7 +105,7 @@ findSplitPoint1 !u !v !minsize =
 
 
 divideWorkN :: ShapeR sh -> Int -> Int -> sh -> sh -> (Int -> sh -> sh -> a) -> Seq a
-divideWorkN !shr !pieces !minsize !from !to action =
+divideWorkN !shr !n !minsize !from !to action =
   let
       -- Is it worth checking whether the piece is full? Doing so ensures that
       -- full pieces are assigned to threads first, with the non-full blocks
@@ -126,7 +126,7 @@ divideWorkN !shr !pieces !minsize !from !to action =
             (i2, f2, s2)
 
       apply i u v = action i (vecToShape shr u) (vecToShape shr v)
-      (_, fs, ss) = split pieces (shapeToVec shr from) (shapeToVec shr to) 0 Seq.empty Seq.empty
+      (_, fs, ss) = split n (shapeToVec shr from) (shapeToVec shr to) 0 Seq.empty Seq.empty
   in
   fs Seq.>< ss
 
