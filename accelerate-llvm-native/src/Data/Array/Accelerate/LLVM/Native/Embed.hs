@@ -36,10 +36,12 @@ import Data.Array.Accelerate.LLVM.Native.State
 import Data.Array.Accelerate.LLVM.Native.Target
 
 import Control.Concurrent.Unique
+import Control.Monad
 import Data.Hashable
 import Foreign.Ptr
 import Language.Haskell.TH.Extra                                    ( Q, CodeQ )
 import Numeric
+import System.FilePath                                              ( (<.>) )
 import System.IO.Unsafe
 import qualified Language.Haskell.TH.Extra                          as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
@@ -88,14 +90,22 @@ embed target (ObjectR uid nms !_ _) =
     --
     getObjectFile :: Q FilePath
     getObjectFile = do
-      this <- TH.runIO (evalNative target (cacheOfUID uid))
+      cachePath  <- TH.runIO (evalNative target (cacheOfUID uid))
+      let objFile = cachePath <.> staticObjExt
 #if __GLASGOW_HASKELL__ >= 806
-      rest <- fromMaybe Set.empty <$> TH.getQ
-      if Set.member this rest
-         then return ()
-         else do
-           TH.addForeignFilePath TH.RawObject this
-           TH.putQ (Set.insert this rest)
+      objSet     <- fromMaybe Set.empty <$> TH.getQ
+      unless (Set.member objFile objSet) $ do
+        TH.addForeignFilePath TH.RawObject objFile
+        TH.putQ (Set.insert objFile objSet)
 #endif
-      return this
+      return objFile
+
+-- The file extension for static libraries
+--
+staticObjExt :: String
+#if   defined(mingw32_HOST_OS)
+staticObjExt = "obj"
+#else
+staticObjExt = "o"
+#endif
 
