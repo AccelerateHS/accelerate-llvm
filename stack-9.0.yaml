@@ -11,10 +11,10 @@ packages:
 
 extra-deps:
 - github: tmcdonell/accelerate
-  commit: a9cf26f40cea53042659cca7d509ae2acafd3857
+  commit: 5971c5d8e4dbba28d2017e7ce422cf46a20197cb
 
 - github: llvm-hs/llvm-hs
-  commit: eda85a2bbe362a0b89df5adce0cb65e4e755eac5
+  commit: 789e2b9e8b827d4c5e15b997f16e395fd2259c0f
   subdirs:
     - llvm-hs
     - llvm-hs-pure
