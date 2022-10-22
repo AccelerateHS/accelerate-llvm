@@ -2,11 +2,9 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE GADTs                    #-}
-{-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE RecordWildCards          #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
-{-# LANGUAGE TemplateHaskell          #-}
 {-# LANGUAGE TypeApplications         #-}
 {-# LANGUAGE TypeOperators            #-}
 {-# LANGUAGE ViewPatterns             #-}
@@ -55,6 +53,7 @@ import Control.Concurrent                                           ( myThreadId
 import Control.Concurrent.Extra                                     ( getThreadId )
 import Control.Monad.State                                          ( gets )
 import Control.Monad.Trans                                          ( liftIO )
+import Control.Monad (void)
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
 import Data.List                                                    ( find )
@@ -64,7 +63,7 @@ import Data.Foldable                                                ( asum )
 import Formatting
 import System.CPUTime                                               ( getCPUTime )
 import qualified Data.ByteString.Short                              as S
-import qualified Data.ByteString.Short.Extra                        as S
+import qualified Data.ByteString.Short.Extra                        as SE
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Data.DList                                         as DL
@@ -326,7 +325,7 @@ foldAllOp tp NativeR{..} gamma aenv arr = do
                               touchLifetime nativeExecutable
 
       job1  <- mkJobUsingIndex ranges (nativeExecutable !# "foldAllP1") gamma aenv dim1 param1 (tmp, manifest arr)
-                 `andThen` do schedule workers job2
+                 `andThen` schedule workers job2
 
       liftIO $ schedule workers job1
   --
@@ -498,17 +497,16 @@ scan'Op
     -> Val aenv
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e, Array sh e))
-scan'Op repr exe gamma aenv arr@(delayedShape -> (sz, n)) = do
-  case n of
-    0 -> do
-      out     <- allocateRemote repr (sz, 0)
-      sum     <- generateOp (reduceRank repr) exe gamma aenv sz
-      future  <- new
-      fork $ do sum' <- get sum
-                put future (out, sum')
-      return future
-    --
-    _ -> scan'Core repr exe gamma aenv arr
+scan'Op repr exe gamma aenv arr@(delayedShape -> (sz, n)) = case n of
+  0 -> do
+    out     <- allocateRemote repr (sz, 0)
+    sum     <- generateOp (reduceRank repr) exe gamma aenv sz
+    future  <- new
+    fork $ do sum' <- get sum
+              put future (out, sum')
+    return future
+  --
+  _ -> scan'Core repr exe gamma aenv arr
 
 {-# INLINE scan'Core #-}
 scan'Core
@@ -719,7 +717,7 @@ stencilCore repr NativeR{..} gamma aenv halo sh paramsR params = do
       outs    = asum . flip fmap (stencilBorders shr sh halo) $ \(u,v) -> divideWork shr splits minsize u v (,,)
 
       sub :: sh -> sh -> sh
-      sub a b = go shr a b
+      sub = go shr
         where
           go :: ShapeR t -> t -> t -> t
           go ShapeRz          ()      ()      = ()
@@ -787,8 +785,7 @@ aforeignOp name _ _ asm arr = do
   $ lookupFunction name exe
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
-lookupFunction name nativeExecutable = do
-  find (\(n,_) -> S.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
+lookupFunction name nativeExecutable = find (\(n,_) -> SE.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
@@ -875,8 +872,7 @@ mkJob :: Int
       -> params
       -> Maybe Action
       -> Par Native Job
-mkJob splits minsize fun gamma aenv shr from to paramsR params jobDone =
-  mkJobUsing (divideWork shr splits minsize from to (,,)) fun gamma aenv shr paramsR params jobDone
+mkJob splits minsize fun gamma aenv shr from to = mkJobUsing (divideWork shr splits minsize from to (,,)) fun gamma aenv shr
 
 {-# INLINABLE mkJobUsing #-}
 mkJobUsing
@@ -950,7 +946,7 @@ mkTasksUsingIndex ranges (name, f) gamma aenv shr paramsR params = do
 -- --------------------
 
 memset :: Ptr Word8 -> Word8 -> Int -> IO ()
-memset p w s = c_memset p (fromIntegral w) (fromIntegral s) >> return ()
+memset p w s = void (c_memset p (fromIntegral w) (fromIntegral s))
 
 foreign import ccall unsafe "string.h memset" c_memset
     :: Ptr Word8 -> CInt -> CSize -> IO (Ptr Word8)
@@ -970,39 +966,37 @@ foreign import ccall unsafe "string.h memset" c_memset
 --
 timed :: ShortByteString -> Job -> IO Job
 timed name job =
-  case Debug.debuggingIsEnabled of
-    False -> return job
-    True  -> do
-      yes     <- Debug.getFlag Debug.dump_exec
-      verbose <- Debug.getFlag Debug.verbose
-      if yes
-        then do
-          ref1 <- newIORef 0
-          ref2 <- newIORef 0
-          let start = do !wall0 <- getMonotonicTime
-                         !cpu0  <- getCPUTime
-                         writeIORef ref1 wall0
-                         writeIORef ref2 cpu0
+  if Debug.debuggingIsEnabled then (do
+  yes     <- Debug.getFlag Debug.dump_exec
+  verbose <- Debug.getFlag Debug.verbose
+  if yes
+    then do
+      ref1 <- newIORef 0
+      ref2 <- newIORef 0
+      let start = do !wall0 <- getMonotonicTime
+                     !cpu0  <- getCPUTime
+                     writeIORef ref1 wall0
+                     writeIORef ref2 cpu0
 
-              end   = do !cpu1  <- getCPUTime
-                         !wall1 <- getMonotonicTime
-                         !wall0 <- readIORef ref1
-                         !cpu0  <- readIORef ref2
-                         --
-                         let wallTime = wall1 - wall0
-                             cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
-                             name' | verbose   = name
-                                   | otherwise = S.take (S.length name - 65) name
-                         --
-                         Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsedP) (S8.unpack name') wallTime cpuTime
-              --
-          return $ Job { jobTasks = start Seq.<| jobTasks job
-                       , jobDone  = case jobDone job of
-                                      Nothing       -> Just end
-                                      Just finished -> Just (finished >> end)
-                       }
-        else
-          return job
+          end   = do !cpu1  <- getCPUTime
+                     !wall1 <- getMonotonicTime
+                     !wall0 <- readIORef ref1
+                     !cpu0  <- readIORef ref2
+                     --
+                     let wallTime = wall1 - wall0
+                         cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
+                         name' | verbose   = name
+                               | otherwise = SE.take (S.length name - 65) name
+                     --
+                     Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsedP) (S8.unpack name') wallTime cpuTime
+          --
+      return $ Job { jobTasks = start Seq.<| jobTasks job
+                   , jobDone  = case jobDone job of
+                                  Nothing       -> Just end
+                                  Just finished -> Just (finished >> end)
+                   }
+    else
+      return job) else return job
 
 -- accelerate/cbits/clock.c
 foreign import ccall unsafe "clock_gettime_monotonic_seconds" getMonotonicTime :: IO Double

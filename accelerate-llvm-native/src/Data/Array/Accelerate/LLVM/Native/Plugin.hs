@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP             #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-unused-imports   #-}
 {-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
 -- |
@@ -27,7 +28,12 @@ import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
-#if __GLASGOW_HASKELL__ >= 900
+#if __GLASGOW_HASKELL__ >= 902
+import GHC.Plugins
+import GHC (Backend (NoBackend, Interpreter), backend)
+import GHC.Linker.Loader (loadCmdLineLibs)
+import Data.Maybe (fromMaybe)
+#elif __GLASGOW_HASKELL__ >= 900
 import GHC.Plugins
 import GHC.Runtime.Linker
 #else
@@ -66,31 +72,44 @@ pass :: HasCallStack => ModGuts -> CoreM ModGuts
 pass guts = do
   -- Determine the current build environment
   --
-  hscEnv   <- getHscEnv
+  hscEnv :: HscEnv   <- getHscEnv
   dynFlags <- getDynFlags
   this     <- getModule
+
+  
 
   -- Gather annotations for the extra object files which must be supplied to the
   -- linker in order to complete the current module.
   --
   paths   <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
 
-  when (not (null paths))
+  unless (null paths)
     $ debugTraceMsg
     $ hang (text "Data.Array.Accelerate.LLVM.Native.Plugin: linking module" <+> quotes (pprModule this) <+> text "with:") 2 (vcat (map text paths))
 
   -- The linking method depends on the current build target
   --
+#if MIN_VERSION_GLASGOW_HASKELL(9,2,1,0)
+  case backend dynFlags of 
+    NoBackend -> return ()
+    Interpreter -> 
+#else
   case hscTarget dynFlags of
     HscNothing     -> return ()
     HscInterpreted ->
+#endif
       -- We are in interactive mode (ghci)
       --
-      when (not (null paths)) . liftIO $ do
+      unless (null paths) . liftIO $ do
         let opts  = ldInputs dynFlags
             objs  = map optionOfPath paths
         --
+#if MIN_VERSION_GLASGOW_HASKELL(9,2,1,0)
+        let interp = fromMaybe (error "HscEnv doesn't carry an Interp") $ hsc_interp hscEnv
+        loadCmdLineLibs interp
+#else
         linkCmdLineLibs
+#endif
                $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
 
     -- This case is not necessary for GHC-8.6 and above.
@@ -122,7 +141,7 @@ pass guts = do
 
       -- Make sure the linker flags are up-to-date.
       --
-      when (not (isNoLink (ghcLink dynFlags))) $ do
+      unless (isNoLink (ghcLink dynFlags)) $ do
         linker_info <- getLinkerInfo dynFlags
         writeIORef (rtldInfo dynFlags)
           $ Just
@@ -134,8 +153,9 @@ pass guts = do
               AixLD     opts -> AixLD     (nub (opts ++ allObjs))
               LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
               UnknownLD      -> UnknownLD  -- no linking performed?
-#endif
+#else
       return ()
+#endif
 
   return guts
 

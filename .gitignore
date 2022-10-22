@@ -17,3 +17,6 @@ local/
 /stack.yaml.lock
 .ipynb_checkpoints
 /accelerate-llvm-native/accelerate-llvm-native.buildinfo
+.direnv
+.pre-commit-config.yaml
+result
