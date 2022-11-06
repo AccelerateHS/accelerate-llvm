@@ -134,14 +134,15 @@ Library
         , ghc
         , hashable                      >= 1.0
         , libffi                        >= 0.1
-        , llvm-hs                       >= 4.1 && < 14
-        , llvm-hs-pure                  >= 4.1 && < 14
+        , llvm-hs                       >= 4.1 && < 16
+        , llvm-hs-pure                  >= 4.1 && < 16
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
           -- TODO: These are only used for lifting ByteStrings. bytestring
           --       0.11.2.0 include its own, better lifting instances. Once
           --       that's stable, we can remove this dependency and bump
           --       bytestring's version bound.
+        , process
         , th-lift-instances
         , template-haskell
         , text                          >= 1.2

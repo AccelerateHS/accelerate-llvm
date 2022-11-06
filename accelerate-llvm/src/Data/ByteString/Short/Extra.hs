@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UnboxedTuples   #-}
@@ -16,8 +17,10 @@
 module Data.ByteString.Short.Extra (
 
   ShortByteString,
+#if !MIN_VERSION_bytestring(0,11,3)
   take,
   takeWhile,
+#endif
   liftSBS,
 
 ) where
@@ -36,6 +39,8 @@ import GHC.ST
 import GHC.Exts
 import GHC.Word
 
+
+#if !MIN_VERSION_bytestring(0,11,3)
 
 -- | /O(n)/ @'take' n@ applied to the ShortByteString @xs@, returns the prefix
 -- of @xs@ of length @n@ as a new ShortByteString, or @xs@ itself if
@@ -58,6 +63,7 @@ take n xs
 takeWhile :: (Word8 -> Bool) -> ShortByteString -> ShortByteString
 takeWhile f ps = take (findIndexOrEnd (not . f) ps) ps
 
+#endif
 
 -- | Return the index of the first element satisfying the predicate, otherwise
 -- return the length of the string if no such element is found.

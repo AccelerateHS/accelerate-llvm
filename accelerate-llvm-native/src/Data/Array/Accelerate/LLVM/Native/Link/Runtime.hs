@@ -28,10 +28,11 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 import Control.Monad
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import Formatting
+import Foreign.Ptr
 import qualified Data.ByteString.Short.Char8                        as B8
 
 #if defined(mingw32_HOST_OS)
-#error "Dynamic linking not implemented yet"
+import System.Win32.DLL
 #else
 import System.Posix.DynamicLinker
 #endif
@@ -45,6 +46,23 @@ import System.Posix.DynamicLinker
 --
 loadSharedObject :: HasCallStack => [ShortByteString] -> FilePath -> IO (FunctionTable, ObjectCode)
 loadSharedObject nms path = do
+#if defined(mingw32_HOST_OS)
+  dll      <- loadLibrary path
+  fun_tab <- fmap FunctionTable $ forM nms $ \nm -> do
+    let s = B8.unpack nm
+    Debug.traceM Debug.dump_ld ("ld: looking up symbol " % string) s
+    sym <- getProcAddress dll s
+    return (nm, castPtrToFunPtr sym)
+
+  object_code <- newLifetime dll
+  addFinalizer object_code $ do
+    -- XXX: Should we disable unloading objects in debug mode? Tracy might
+    -- still need access to e.g. embedded string data
+    Debug.traceM Debug.dump_gc ("gc: unload module: " % formatFunctionTable) fun_tab
+    freeLibrary dll
+
+  return (fun_tab, object_code)
+#else
   so      <- dlopen path [RTLD_LAZY, RTLD_LOCAL]
   fun_tab <- fmap FunctionTable $ forM nms $ \nm -> do
     let s = B8.unpack nm
@@ -60,4 +78,4 @@ loadSharedObject nms path = do
     dlclose so
 
   return (fun_tab, object_code)
-
+#endif

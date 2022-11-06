@@ -7,6 +7,7 @@ import Distribution.PackageDescription.PrettyPrint
 import Distribution.Simple
 import Distribution.Simple.BuildPaths
 import Distribution.Simple.LocalBuildInfo
+import Distribution.Simple.PackageDescription
 import Distribution.Simple.PackageIndex
 import Distribution.Simple.Setup                                    as Setup
 import Distribution.Verbosity

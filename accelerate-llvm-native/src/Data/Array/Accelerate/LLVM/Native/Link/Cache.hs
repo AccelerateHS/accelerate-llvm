@@ -22,8 +22,12 @@ import Data.Array.Accelerate.LLVM.Native.Link.Object
 import qualified Data.Array.Accelerate.LLVM.Link.Cache              as LC
 
 import Control.Monad
-import System.Posix.DynamicLinker
 
+#if defined(mingw32_HOST_OS)
+import System.Win32.DLL
+#else
+import System.Posix.DynamicLinker
+#endif
 
 type LinkCache = LC.LinkCache FunctionTable ObjectCode
 
@@ -43,6 +47,10 @@ new = do
   -- Accelerate library) causes segfaults; possibly because the RTS was
   -- otherwise linked statically into the executable.
   --
-  when debuggingIsEnabled $ void $ dlopen ACCELERATE_DYLD_LIBRARY_PATH [RTLD_LAZY, RTLD_GLOBAL]
+  when debuggingIsEnabled $ void $
+#if defined(mingw32_HOST_OS)
+    loadLibrary ACCELERATE_DYLD_LIBRARY_PATH
+#else
+    dlopen ACCELERATE_DYLD_LIBRARY_PATH [RTLD_LAZY, RTLD_GLOBAL]
+#endif
   LC.new
-

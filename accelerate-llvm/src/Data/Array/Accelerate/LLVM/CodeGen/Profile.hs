@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -76,14 +77,27 @@ global_string str = do
 --
 source_location_data :: String -> String -> String -> Int -> Word32 -> CodeGen arch (Name a)
 source_location_data n f s line colour = do
-  _               <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.i32, LLVM.i32 ]
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+  let i8ptr_t = LLVM.ptr
+      getElementInboundsI8Ptr = Constant.GetElementPtr True LLVM.i8
+#else
+  let i8ptr_t = LLVM.ptr LVM.i8
+      getElementInboundsI8Ptr = Constant.GetElementPtr True
+#endif
+  _               <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ i8ptr_t, i8ptr_t, i8ptr_t, LLVM.i32, LLVM.i32 ]
   (name, name_sz) <- global_string n
   (fun, fun_sz)   <- global_string f
   (src, src_sz)   <- global_string s
   let
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+      name_c  = Constant.GlobalReference (downcast name)
+      fun_c   = Constant.GlobalReference (downcast fun)
+      src_c   = Constant.GlobalReference (downcast src)
+#else
       name_c  = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType name_sz LLVM.i8)) (downcast name)
       fun_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType fun_sz LLVM.i8)) (downcast fun)
       src_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType src_sz LLVM.i8)) (downcast src)
+#endif
   --
   nm <- freshGlobalName
   _  <- declare $ LLVM.globalVariableDefaults
@@ -97,9 +111,9 @@ source_location_data n f s line colour = do
           { Constant.structName   = Just "___tracy_source_location_data"
           , Constant.isPacked     = False
           , Constant.memberValues =
-              [ if null n then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True name_c [ Constant.Int 32 0, Constant.Int 32 0 ]
-              , if null f then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True fun_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
-              , if null s then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True src_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
+              [ if null n then Constant.Null i8ptr_t else getElementInboundsI8Ptr name_c [ Constant.Int 32 0, Constant.Int 32 0 ]
+              , if null f then Constant.Null i8ptr_t else getElementInboundsI8Ptr fun_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
+              , if null s then Constant.Null i8ptr_t else getElementInboundsI8Ptr src_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
               , Constant.Int 32 (toInteger line)
               , Constant.Int 32 (toInteger colour)
               ]
@@ -131,10 +145,16 @@ alloc_srcloc_name l src fun nm
           sourceSz   = ConstantOperand $ ScalarConstant scalarType (sl-1) -- null
           functionSz = ConstantOperand $ ScalarConstant scalarType (fl-1) -- null
           nameSz     = ConstantOperand $ ScalarConstant scalarType (nl-1) -- null
+
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+          getElementPtr = GetElementPtr scalarType
+#else
+          getElementPtr = GetElementPtr
+#endif
       --
-      ps   <- if null src then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
-      pf   <- if null fun then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
-      pn   <- if null nm  then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
+      ps   <- if null src then return $ ConstantOperand (NullPtrConstant type') else instr' (getElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
+      pf   <- if null fun then return $ ConstantOperand (NullPtrConstant type') else instr' (getElementPtr function [num numType 0, num numType 0 :: Operand Int32])
+      pn   <- if null nm  then return $ ConstantOperand (NullPtrConstant type') else instr' (getElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
       call' $ Lam primType line
             $ Lam primType ps
             $ Lam primType sourceSz

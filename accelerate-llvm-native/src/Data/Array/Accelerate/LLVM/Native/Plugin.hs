@@ -27,7 +27,12 @@ import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
-#if __GLASGOW_HASKELL__ >= 900
+#if __GLASGOW_HASKELL__ >= 902
+import GHC.Driver.Backend
+import GHC.Plugins
+import GHC.Linker
+import GHC.Linker.Loader (loadCmdLineLibs)
+#elif __GLASGOW_HASKELL__ >= 900
 import GHC.Plugins
 import GHC.Runtime.Linker
 #else
@@ -81,17 +86,28 @@ pass guts = do
 
   -- The linking method depends on the current build target
   --
+#if __GLASGOW_HASKELL__ >= 902
+  case backend dynFlags of
+    NoBackend      -> return ()
+    Interpreter    ->
+#else
   case hscTarget dynFlags of
     HscNothing     -> return ()
     HscInterpreted ->
+#endif
       -- We are in interactive mode (ghci)
       --
       when (not (null paths)) . liftIO $ do
         let opts  = ldInputs dynFlags
             objs  = map optionOfPath paths
         --
+#if __GLASGOW_HASKELL__ >= 902
+        loadCmdLineLibs (hscInterp hscEnv)
+               $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
+#else
         linkCmdLineLibs
                $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
+#endif
 
     -- This case is not necessary for GHC-8.6 and above.
     --

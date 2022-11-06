@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Compile.Optimise
@@ -17,7 +18,12 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Optimise (
 
 import LLVM.AST.DataLayout
 import LLVM.Module
+
+#if MIN_VERSION_llvm_hs(15,0,0)
+import LLVM.Passes
+#else
 import LLVM.PassManager
+#endif
 import LLVM.Target
 
 import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
@@ -36,8 +42,18 @@ optimiseModule
     -> Maybe TargetLibraryInfo
     -> Module
     -> IO ()
+#if MIN_VERSION_llvm_hs(15,0,0)
+optimiseModule _ machine _ mdl = do
+  let p1 = PassSetSpec
+            { passes        = [ GlobalDeadCodeElimination
+                              , AlwaysInline True
+                              , CuratedPassSet 3
+                              ]
+            , targetMachine = machine
+            }
+  runPasses p1 mdl
+#else
 optimiseModule datalayout machine libinfo mdl = do
-
   let p1 = defaultCuratedPassSetSpec
             { optLevel                           = Just 3
             , dataLayout                         = datalayout
@@ -49,6 +65,8 @@ optimiseModule datalayout machine libinfo mdl = do
   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
   Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
+#endif
+
 
 {--
 -- The first gentle optimisation pass. I think this is usually done when loading
