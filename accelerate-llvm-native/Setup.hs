@@ -19,10 +19,11 @@ import Distribution.PackageDescription.Parse
 #endif
 
 import System.FilePath
+import System.Info                                                  ( arch )
 
 
 main :: IO ()
-main = defaultMainWithHooks simpleUserHooks
+main = checkArch >> defaultMainWithHooks simpleUserHooks
   { postConf    = postConfHook
   , preBuild    = readHook buildVerbosity
   , preCopy     = readHook copyVerbosity
@@ -33,6 +34,10 @@ main = defaultMainWithHooks simpleUserHooks
   , preUnreg    = readHook regVerbosity
   }
   where
+    checkArch :: IO ()
+    checkArch | arch `elem` ["i386", "x86_64"] = return () 
+              | otherwise                      = error ("Unsupported architecture: " ++ arch)
+
     readHook :: (a -> Setup.Flag Verbosity) -> Args -> a -> IO HookedBuildInfo
     readHook verbosity _ flags = readHookedBuildInfo (fromFlag (verbosity flags)) buildinfo_file
 
