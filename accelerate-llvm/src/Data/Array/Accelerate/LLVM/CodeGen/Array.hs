@@ -133,18 +133,18 @@ getElementPtr
     -> Operand (Ptr e)
     -> Operand int
     -> CodeGen arch (Operand (Ptr e))
-getElementPtr _ SingleScalarType{}   _ arr ix = instr' $ GetElementPtr arr [ix]
-getElementPtr a (VectorScalarType v) i arr ix
+getElementPtr _ t@(SingleScalarType{})   _ arr ix = instr' $ GetElementPtr t arr [ix]
+getElementPtr a t@(VectorScalarType v) i arr ix
   | VectorType n _ <- v
   , IntegralDict   <- integralDict i
   = if popCount n == 1
-       then instr' $ GetElementPtr arr [ix]
+       then instr' $ GetElementPtr t arr [ix]
        else do
           -- Note the initial zero into to the GEP instruction. It is not
           -- really recommended to use GEP to index into vector elements, but
           -- is not forcefully disallowed (at this time)
           ix'  <- instr' $ Mul (IntegralNumType i) ix (integral i (fromIntegral n))
-          p'   <- instr' $ GetElementPtr arr [integral i 0, ix']
+          p'   <- instr' $ GetElementPtr t arr [integral i 0, ix']
           p    <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (VectorScalarType v)) a) p'
           return p
 
@@ -182,7 +182,7 @@ load addrspace e v p
          let go i w
                | i >= m    = return w
                | otherwise = do
-                   q  <- instr' $ GetElementPtr p' [integral integralType i]
+                   q  <- instr' $ GetElementPtr (SingleScalarType base) p' [integral integralType i]
                    r  <- instr' $ Load (SingleScalarType base) v q
                    w' <- instr' $ InsertElement i w r
                    go (i+1) w'
@@ -215,7 +215,7 @@ store addrspace volatility e p v
                | i >= m    = return ()
                | otherwise = do
                    x <- instr' $ ExtractElement i v
-                   q <- instr' $ GetElementPtr p' [integral integralType i]
+                   q <- instr' $ GetElementPtr (SingleScalarType base) p' [integral integralType i]
                    _ <- instr' $ Store volatility q x
                    go (i+1)
          go 0

@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -66,7 +67,11 @@ data Constant a where
 instance Downcast (Constant a) LLVM.Constant where
   downcast = \case
     UndefConstant t       -> LLVM.Undef (downcast t)
+#if MIN_VERSION_llvm_hs(15,0,0)
+    GlobalReference _ n   -> LLVM.GlobalReference (downcast n)
+#else
     GlobalReference t n   -> LLVM.GlobalReference (downcast t) (downcast n)
+#endif
     BooleanConstant x     -> LLVM.Int 1 (toInteger (fromEnum x))
     NullPtrConstant t     -> LLVM.Null (downcast t)
     ScalarConstant t x    -> scalar t x

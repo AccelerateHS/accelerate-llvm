@@ -187,7 +187,11 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
           _ | TupRsingle (SingleScalarType s)   <- arrayRtype repr
             , adata                             <- irArrayData arrOut
             -> do
+#if MIN_VERSION_llvm_hs(15,0,0)
+                  addr <- instr' $ GetElementPtr (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) [op integralType j]
+#else
                   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
+#endif
                   --
                   case s of
 #if MIN_VERSION_llvm_hs(10,0,0)
@@ -271,7 +275,11 @@ atomically barriers i action = do
   crit <- newBlock "spinlock.critical-section"
   exit <- newBlock "spinlock.exit"
 
+#if MIN_VERSION_llvm_hs(15,0,0)
+  addr <- instr' $ GetElementPtr scalarTypeWord8 (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+#else
   addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+#endif
   _    <- br spin
 
   -- Atomically (attempt to) set the lock slot to the locked state. If the slot
