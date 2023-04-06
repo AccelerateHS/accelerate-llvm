@@ -3,14 +3,9 @@
 
 # LLVM backends for the Accelerate array language
 
-[![CI-Linux](https://github.com/tmcdonell/accelerate-llvm/workflows/ci-linux/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions?query=workflow%3Aci-linux)
-[![CI-MacOS](https://github.com/tmcdonell/accelerate-llvm/workflows/ci-macos/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions?query=workflow%3Aci-macos)
+[![CI](https://github.com/tmcdonell/accelerate-llvm/actions/workflows/ci.yml/badge.svg)](https://github.com/tmcdonell/accelerate-llvm/actions/workflows/ci.yml)
 [![Gitter](https://img.shields.io/gitter/room/nwjs/nw.js.svg)](https://gitter.im/AccelerateHS/Lobby)
-<br>
-[![Stackage LTS](https://stackage.org/package/accelerate-llvm/badge/lts)](https://stackage.org/lts/package/accelerate-llvm)
-[![Stackage Nightly](https://stackage.org/package/accelerate-llvm/badge/nightly)](https://stackage.org/nightly/package/accelerate-llvm)
 [![Hackage](https://img.shields.io/hackage/v/accelerate-llvm.svg)](https://hackage.haskell.org/package/accelerate-llvm)
-<br>
 [![Docker Automated build](https://img.shields.io/docker/automated/tmcdonell/accelerate-llvm.svg)](https://hub.docker.com/r/tmcdonell/accelerate-llvm/)
 [![Docker status](https://images.microbadger.com/badges/image/tmcdonell/accelerate-llvm.svg)](https://microbadger.com/images/tmcdonell/accelerate-llvm)
 
@@ -74,7 +69,7 @@ you install (or build) LLVM with the 'nvptx' target.
 Example using [Homebrew](http://brew.sh) on macOS:
 
 ```sh
-$ brew install llvm-hs/llvm/llvm-9
+$ brew install llvm@15
 ```
 
 ## Debian/Ubuntu
@@ -85,17 +80,17 @@ instructions for adding the correct package database for your OS version, and
 then:
 
 ```sh
-$ apt-get install llvm-9-dev
+$ apt-get install llvm-15-dev
 ```
 
 ## Building from source
 
 If your OS does not have an appropriate LLVM distribution available, you can also build from source. Detailed build instructions are available on the [LLVM.org website](http://releases.llvm.org/6.0.0/docs/CMake.html). Note that you will require at least [CMake 3.4.3](http://www.cmake.org/cmake/resources/software.html) and a recent C++ compiler; at least Clang 3.1, GCC 4.8, or Visual Studio 2015 (update 3).
 
-  1. Download and unpack the [LLVM-9 source code](https://github.com/llvm/llvm-project/releases/download/llvmorg-9.0.1/llvm-9.0.1.src.tar.xz). We'll refer to
+  1. Download and unpack the [LLVM source code](https://github.com/llvm/llvm-project/releases/download/llvmorg-15.0.7/llvm-15.0.7.src.tar.xz). We'll refer to
      the path that the source tree was unpacked to as `LLVM_SRC`. Only the main
      LLVM source tree is required, but you can optionally add other components
-     such as the Clang compiler or Polly loop optimiser. See the [LLVM releases](http://releases.llvm.org/download.html#9.0.1)
+     such as the Clang compiler or Polly loop optimiser. See the [LLVM releases](https://github.com/llvm/llvm-project/releases/tag/llvmorg-15.0.7)
      page for the complete list.
 
   2. Create a temporary build directory and `cd` into it, for example:
@@ -123,7 +118,7 @@ If your OS does not have an appropriate LLVM distribution available, you can als
      to [System Integrity Protection](https://en.wikipedia.org/wiki/System_Integrity_Protection):
      ```sh
      cd $INSTALL_PREFIX/lib
-     ln -s libLLVM.dylib libLLVM-9.dylib
+     ln -s libLLVM.dylib libLLVM-15.dylib
      install_name_tool -id $PWD/libLTO.dylib libLTO.dylib
      install_name_tool -id $PWD/libLLVM.dylib libLLVM.dylib
      install_name_tool -change '@rpath/libLLVM.dylib' $PWD/libLLVM.dylib libLTO.dylib
@@ -138,13 +133,12 @@ Once the dependencies are installed, we are ready to install `accelerate-llvm`.
 For example, installation using [`stack`](http://docs.haskellstack.org/en/stable/README.html)
 just requires you to point it to the appropriate configuration file:
 ```sh
-$ ln -s stack-8.8.yaml stack.yaml
 $ stack setup
 $ stack install
 ```
 
 Note that the version of [`llvm-hs`](https://hackage.haskell.org/package/llvm-hs)
-used must match the installed version of LLVM, which is currently 9.0.
+used must match the installed version of LLVM, which is currently 15.
 
 
 ## libNVVM
