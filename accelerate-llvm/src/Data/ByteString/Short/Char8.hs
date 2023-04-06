@@ -22,7 +22,7 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Prelude                                                      as P hiding ( takeWhile )
 import qualified Data.ByteString.Internal                           as BI
 import qualified Data.ByteString.Short                              as BS
-import qualified Data.ByteString.Short.Extra                        as BS
+import qualified Data.ByteString.Short.Extra                        as BE
 
 
 -- | /O(n)/ Convert a 'ShortByteString' into a list.
@@ -42,5 +42,5 @@ pack = BS.pack . P.map BI.c2w
 --
 {-# INLINEABLE takeWhile #-}
 takeWhile :: (Char -> Bool) -> ShortByteString -> ShortByteString
-takeWhile f = BS.takeWhile (f . BI.w2c)
+takeWhile f = BE.takeWhile (f . BI.w2c)
 

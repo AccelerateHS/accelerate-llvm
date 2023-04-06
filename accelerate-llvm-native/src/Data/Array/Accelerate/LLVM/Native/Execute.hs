@@ -64,7 +64,7 @@ import Data.Foldable                                                ( asum )
 import Formatting
 import System.CPUTime                                               ( getCPUTime )
 import qualified Data.ByteString.Short                              as S
-import qualified Data.ByteString.Short.Extra                        as S
+import qualified Data.ByteString.Short.Extra                        as SE
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Sequence                                      as Seq
 import qualified Data.DList                                         as DL
@@ -788,7 +788,7 @@ aforeignOp name _ _ asm arr = do
 
 lookupFunction :: ShortByteString -> Lifetime FunctionTable -> Maybe Function
 lookupFunction name nativeExecutable = do
-  find (\(n,_) -> S.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
+  find (\(n,_) -> SE.take (S.length n - 65) n == name) (functionTable (unsafeGetValue nativeExecutable))
 
 andThen :: (Maybe a -> t) -> a -> t
 andThen f g = f (Just g)
@@ -992,7 +992,7 @@ timed name job =
                          let wallTime = wall1 - wall0
                              cpuTime  = fromIntegral (cpu1 - cpu0) * 1E-12
                              name' | verbose   = name
-                                   | otherwise = S.take (S.length name - 65) name
+                                   | otherwise = SE.take (S.length name - 65) name
                          --
                          Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsedP) (S8.unpack name') wallTime cpuTime
               --

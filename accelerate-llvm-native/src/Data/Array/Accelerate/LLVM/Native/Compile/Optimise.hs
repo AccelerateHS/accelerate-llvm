@@ -18,17 +18,17 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Optimise (
 
 import LLVM.AST.DataLayout
 import LLVM.Module
+import LLVM.Target
 
 #if MIN_VERSION_llvm_hs(15,0,0)
 import LLVM.Passes
 #else
 import LLVM.PassManager
-#endif
-import LLVM.Target
-
-import qualified Data.Array.Accelerate.LLVM.Native.Debug        as Debug
 
 import Formatting
+import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
+#endif
+
 
 
 -- | Run the standard optimisations on the given module when targeting a
@@ -45,10 +45,7 @@ optimiseModule
 #if MIN_VERSION_llvm_hs(15,0,0)
 optimiseModule _ machine _ mdl = do
   let p1 = PassSetSpec
-            { passes        = [ GlobalDeadCodeElimination
-                              , AlwaysInline True
-                              , CuratedPassSet 3
-                              ]
+            { passes        = [ CuratedPassSet 3 ]
             , targetMachine = machine
             }
   runPasses p1 mdl

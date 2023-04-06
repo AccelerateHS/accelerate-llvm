@@ -63,4 +63,5 @@ unPtr x =
     ConstantOperand (UndefConstant t)     -> ConstantOperand (UndefConstant (retype t))
     ConstantOperand NullPtrConstant{}     -> internalError "unexpected null pointer constant"
     ConstantOperand ScalarConstant{}      -> internalError "unexpected scalar constant"
+    ConstantOperand _                     -> internalError "unexpected constant operand"
 

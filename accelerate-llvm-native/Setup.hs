@@ -7,13 +7,14 @@ import Distribution.PackageDescription.PrettyPrint
 import Distribution.Simple
 import Distribution.Simple.BuildPaths
 import Distribution.Simple.LocalBuildInfo
-import Distribution.Simple.PackageDescription
 import Distribution.Simple.PackageIndex
 import Distribution.Simple.Setup                                    as Setup
 import Distribution.Verbosity
 import qualified Distribution.InstalledPackageInfo                  as Installed
 
-#if MIN_VERSION_Cabal(2,2,0)
+#if MIN_VERSION_Cabal(3,8,0)
+import Distribution.Simple.PackageDescription
+#elif MIN_VERSION_Cabal(2,2,0)
 import Distribution.PackageDescription.Parsec
 #else
 import Distribution.PackageDescription.Parse

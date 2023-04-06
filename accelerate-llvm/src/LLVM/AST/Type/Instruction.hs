@@ -24,7 +24,7 @@
 module LLVM.AST.Type.Instruction
   where
 
-import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Constant                             ( Constant(ScalarConstant) )
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.InlineAssembly
@@ -38,7 +38,6 @@ import LLVM.AST.Type.Instruction.RMW                      ( RMWOperation )
 import LLVM.AST.Type.Instruction.Volatile                 ( Volatility )
 
 import qualified LLVM.AST.Constant                        as LLVM ( Constant(GlobalReference, Int) )
-import qualified LLVM.AST.AddrSpace                       as LLVM
 import qualified LLVM.AST.CallingConvention               as LLVM
 import qualified LLVM.AST.FloatingPointPredicate          as FP
 import qualified LLVM.AST.Instruction                     as LLVM
@@ -47,6 +46,9 @@ import qualified LLVM.AST.Operand                         as LLVM ( Operand(..),
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
 import qualified LLVM.AST.RMWOperation                    as LLVM ( RMWOperation )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
+#if !MIN_VERSION_llvm_hs_pure(15,0,0)
+import qualified LLVM.AST.AddrSpace                       as LLVM
+#endif
 
 import Data.Array.Accelerate.AST                          ( PrimBool )
 import Data.Array.Accelerate.AST.Idx
@@ -606,10 +608,8 @@ instance Downcast (Instruction a) LLVM.Instruction where
             in  (downcast t : ts, (downcast x, []) : xs, k, r, n)
 
           (argt, argv, tail, ret, target) = trav f
+#if !MIN_VERSION_llvm_hs_pure(15,0,0)
           fun_ty                          = LLVM.FunctionType ret argt False
-#if MIN_VERSION_llvm_hs_pure(15,0,0)
-          ptr_fun_ty                      = LLVM.PointerType (LLVM.AddrSpace 0)
-#else
           ptr_fun_ty                      = LLVM.PointerType fun_ty (LLVM.AddrSpace 0)
 #endif
 

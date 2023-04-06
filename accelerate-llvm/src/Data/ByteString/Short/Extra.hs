@@ -17,15 +17,13 @@
 module Data.ByteString.Short.Extra (
 
   ShortByteString,
-#if !MIN_VERSION_bytestring(0,11,3)
   take,
   takeWhile,
-#endif
   liftSBS,
 
 ) where
 
-import Data.ByteString.Short                                        ( ShortByteString )
+import Data.ByteString.Short
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Internal                     as BI
 
@@ -35,13 +33,24 @@ import qualified Language.Haskell.TH.Extra                          as TH
 import System.IO.Unsafe
 import Prelude                                                      hiding ( take, takeWhile )
 
+#if !MIN_VERSION_bytestring(0,11,3)
 import GHC.ST
-import GHC.Exts
 import GHC.Word
+#endif
+import GHC.Exts
+
+
+-- | Lift a ShortByteString into a Template Haskell splice
+--
+liftSBS :: ShortByteString -> CodeQ ShortByteString
+liftSBS bs =
+  let bytes = BS.unpack bs
+      len   = BS.length bs
+  in
+  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
 
 #if !MIN_VERSION_bytestring(0,11,3)
-
 -- | /O(n)/ @'take' n@ applied to the ShortByteString @xs@, returns the prefix
 -- of @xs@ of length @n@ as a new ShortByteString, or @xs@ itself if
 -- @n > 'length' xs@
@@ -63,7 +72,6 @@ take n xs
 takeWhile :: (Word8 -> Bool) -> ShortByteString -> ShortByteString
 takeWhile f ps = take (findIndexOrEnd (not . f) ps) ps
 
-#endif
 
 -- | Return the index of the first element satisfying the predicate, otherwise
 -- return the length of the string if no such element is found.
@@ -79,15 +87,6 @@ findIndexOrEnd p xs = go 0
           | p (indexWord8Array ba i) = i
           | otherwise                = go (i+1)
 
-
--- | Lift a ShortByteString into a Template Haskell splice
---
-liftSBS :: ShortByteString -> CodeQ ShortByteString
-liftSBS bs =
-  let bytes = BS.unpack bs
-      len   = BS.length bs
-  in
-  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
 
 ------------------------------------------------------------------------
 -- Internal utils
@@ -122,4 +121,5 @@ copyByteArray :: BA -> Int -> MBA s -> Int -> Int -> ST s ()
 copyByteArray (BA# src#) (I# src_off#) (MBA# dst#) (I# dst_off#) (I# len#) =
     ST $ \s -> case copyByteArray# src# src_off# dst# dst_off# len# s of
                  s' -> (# s', () #)
+#endif
 

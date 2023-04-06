@@ -363,7 +363,7 @@ instance Downcast (PrimType a) LLVM.Type where
 #if MIN_VERSION_llvm_hs_pure(15,0,0)
   downcast (PtrPrimType _ a)    = LLVM.PointerType a
 #else
-  downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a``
+  downcast (PtrPrimType t a)    = LLVM.PointerType (downcast t) a
 #endif
   downcast (ArrayPrimType n t)  = LLVM.ArrayType n (downcast t)
   downcast (StructPrimType p t) = LLVM.StructureType p (go t)

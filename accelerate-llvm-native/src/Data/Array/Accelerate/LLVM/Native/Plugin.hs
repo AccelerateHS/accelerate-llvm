@@ -31,7 +31,7 @@ import qualified Data.Map                                           as Map
 import GHC.Driver.Backend
 import GHC.Plugins
 import GHC.Linker
-import GHC.Linker.Loader (loadCmdLineLibs)
+import GHC.Linker.Loader                                            ( loadCmdLineLibs )
 #elif __GLASGOW_HASKELL__ >= 900
 import GHC.Plugins
 import GHC.Runtime.Linker
@@ -69,23 +69,25 @@ install _ rest = do
 
 pass :: HasCallStack => ModGuts -> CoreM ModGuts
 pass guts = do
-  -- Determine the current build environment
-  --
-  hscEnv   <- getHscEnv
-  dynFlags <- getDynFlags
-  this     <- getModule
-
   -- Gather annotations for the extra object files which must be supplied to the
   -- linker in order to complete the current module.
   --
-  paths   <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
+  this  <- getModule
+  paths <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
 
   when (not (null paths))
     $ debugTraceMsg
     $ hang (text "Data.Array.Accelerate.LLVM.Native.Plugin: linking module" <+> quotes (pprModule this) <+> text "with:") 2 (vcat (map text paths))
 
   -- The linking method depends on the current build target
+  -- TODO: Need to update for ghc-8.6: the Backend data type is now abstract
   --
+#if __GLASGOW_HASKELL__ < 906
+  -- Determine the current build environment
+  --
+  hscEnv   <- getHscEnv
+  dynFlags <- getDynFlags
+
 #if __GLASGOW_HASKELL__ >= 902
   case backend dynFlags of
     NoBackend      -> return ()
@@ -152,6 +154,7 @@ pass guts = do
               UnknownLD      -> UnknownLD  -- no linking performed?
 #endif
       return ()
+#endif
 
   return guts
 

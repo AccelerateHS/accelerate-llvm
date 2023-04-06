@@ -65,6 +65,7 @@ import qualified LLVM.AST                                           as LLVM
 import qualified LLVM.AST.Global                                    as LLVM
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Function
