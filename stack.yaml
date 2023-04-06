@@ -2,7 +2,7 @@
 # For advanced use and comprehensive documentation of the format, please see:
 # https://docs.haskellstack.org/en/stable/yaml_configuration/
 
-resolver: lts-18.25
+resolver: lts-20.17
 
 packages:
 - accelerate-llvm
@@ -11,18 +11,21 @@ packages:
 
 extra-deps:
 - github: tmcdonell/accelerate
-  commit: 5971c5d8e4dbba28d2017e7ce422cf46a20197cb
+  commit: b349b28e9bd9c0c6e0dd61481e4a037d08928e31
 
-- cuda-0.10.2.0
-- nvvm-0.10.0.0
-
-# Extra per-package and global ghc options
-# Required because Cabal-3 is a broken POS
-ghc-options:
-  llvm-hs: -optcxx=-std=c++11
+- github: llvm-hs/llvm-hs
+  commit: 80e0de0f96eb78288c88fda0eaba0f7cf5d38a30  # llvm-15
+  # commit: 423220bffac4990d019fc088c46c5f25310d5a33  # llvm-12
+  subdirs:
+    - llvm-hs
+    - llvm-hs-pure
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
+
+# Extra per-package and global ghc options
+# ghc-options:
+#   llvm-hs: -optcxx=-std=c++14 -optcxx=-lstdc++ -optcxx=-fno-rtti
 
 # Extra package databases containing global packages
 # extra-package-dbs: []
@@ -46,4 +49,3 @@ ghc-options:
 # compiler-check: newer-minor
 #
 # vim: nospell
-
