@@ -29,9 +29,10 @@ import qualified Data.Map                                           as Map
 
 #if __GLASGOW_HASKELL__ >= 902
 import GHC.Driver.Backend
-import GHC.Plugins
 import GHC.Linker
 import GHC.Linker.Loader                                            ( loadCmdLineLibs )
+import GHC.Plugins
+import GHC.Runtime.Interpreter
 #elif __GLASGOW_HASKELL__ >= 900
 import GHC.Plugins
 import GHC.Runtime.Linker
