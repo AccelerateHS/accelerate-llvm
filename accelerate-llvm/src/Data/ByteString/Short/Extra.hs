@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE BangPatterns    #-}
 {-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -12,6 +13,22 @@
 -- Stability   : experimental
 -- Portability : non-portable (GHC extensions)
 --
+
+-- - bytestring-0.11.2.0 adds a Lift instance for ShortByteString
+-- - bytestring-0.11.3.0 implements take and takeWhile
+-- hence from 0.11.3.0 on, this alias for liftTyped suffices.
+#if MIN_VERSION_bytestring(0,11,3)
+
+module Data.ByteString.Short.Extra (liftSBS) where
+
+import Data.ByteString.Short                                        ( ShortByteString )
+import Language.Haskell.TH.Extra                                    ( CodeQ )
+import Language.Haskell.TH.Syntax                                   ( liftTyped )
+
+liftSBS :: ShortByteString -> CodeQ ShortByteString
+liftSBS = liftTyped
+
+#else
 
 module Data.ByteString.Short.Extra (
 
@@ -116,4 +133,4 @@ copyByteArray :: BA -> Int -> MBA s -> Int -> Int -> ST s ()
 copyByteArray (BA# src#) (I# src_off#) (MBA# dst#) (I# dst_off#) (I# len#) =
     ST $ \s -> case copyByteArray# src# src_off# dst# dst_off# len# s of
                  s' -> (# s', () #)
-
+#endif
