@@ -2,22 +2,25 @@
 # For advanced use and comprehensive documentation of the format, please see:
 # https://docs.haskellstack.org/en/stable/yaml_configuration/
 
-resolver: nightly-2022-02-16
+resolver: lts-19.25
 
 packages:
 - accelerate-llvm
 - accelerate-llvm-native
 - accelerate-llvm-ptx
 
-extra-deps:
-- github: tmcdonell/accelerate
-  commit: a9cf26f40cea53042659cca7d509ae2acafd3857
-
+extra-deps: 
+- cuda-0.11.0.0
+- nvvm-0.10.0.0
 - github: llvm-hs/llvm-hs
   commit: eda85a2bbe362a0b89df5adce0cb65e4e755eac5
   subdirs:
     - llvm-hs
     - llvm-hs-pure
+- github: mangoiv/accelerate
+  commit: c49486c618e6d999ff6864a23b4211db48b27795
+
+  # commit: a9cf26f40cea53042659cca7d509ae2acafd3857
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

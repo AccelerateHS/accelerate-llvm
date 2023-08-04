@@ -6,6 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE CPP          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Marshal
@@ -31,9 +32,21 @@ import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.DList                                     as DL
 import qualified Foreign.LibFFI                                 as FFI
 
+#include "MachDeps.h"
+
 instance Marshal Native where
   type ArgR Native = FFI.Arg
 
-  marshalInt = FFI.argInt
+  marshalInt = 
+#if SIZEOF_HSINT==64
+    FFI.argInt64
+#elif SIZEOF_HSINT==32
+    FFI.argInt32
+#elif SIZEOF_HSINT==16
+    FFI.argInt16
+#else 
+    error "unsupported Int size"
+#endif 
+
   marshalScalarData' _ = return . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr
 
