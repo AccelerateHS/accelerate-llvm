@@ -412,15 +412,12 @@ instance Downcast (Instruction a) LLVM.Instruction where
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
     ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
     ExtractValue _ i s    -> extractStruct i (downcast s)
-#if MIN_VERSION_llvm_hs_pure(15,0,0)
-    Load t v p            -> LLVM.Load (downcast v) (downcast t) (downcast p) atomicity alignment md
-#else
-    Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
-#endif
     Store v p x           -> LLVM.Store (downcast v) (downcast p) (downcast x) atomicity alignment md
 #if MIN_VERSION_llvm_hs_pure(15,0,0)
+    Load t v p            -> LLVM.Load (downcast v) (downcast t) (downcast p) atomicity alignment md
     GetElementPtr t n i   -> LLVM.GetElementPtr inbounds (downcast t) (downcast n) (downcast i) md
 #else
+    Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
     GetElementPtr _ n i   -> LLVM.GetElementPtr inbounds (downcast n) (downcast i) md
 #endif
     Fence a               -> LLVM.Fence (downcast a) md
@@ -583,9 +580,9 @@ instance Downcast (Instruction a) LLVM.Instruction where
 
       call :: Function (Either InlineAssembly Label) args t -> [Either GroupID FunctionAttribute] -> LLVM.Instruction
 #if MIN_VERSION_llvm_hs_pure(15,0,0)
-      call f as = LLVM.Call tail LLVM.C [] ret target argv (downcast as) md
+      call f as = LLVM.Call tail LLVM.C [] fun_ty target argv (downcast as) md
 #else
-      call f as = LLVM.Call tail LLVM.C [] target argv (downcast as) md
+      call f as = LLVM.Call tail LLVM.C []        target argv (downcast as) md
 #endif
         where
           trav :: Function (Either InlineAssembly Label) args t
@@ -608,8 +605,8 @@ instance Downcast (Instruction a) LLVM.Instruction where
             in  (downcast t : ts, (downcast x, []) : xs, k, r, n)
 
           (argt, argv, tail, ret, target) = trav f
-#if !MIN_VERSION_llvm_hs_pure(15,0,0)
           fun_ty                          = LLVM.FunctionType ret argt False
+#if !MIN_VERSION_llvm_hs_pure(15,0,0)
           ptr_fun_ty                      = LLVM.PointerType fun_ty (LLVM.AddrSpace 0)
 #endif
 

@@ -129,13 +129,18 @@ alloc_srcloc_name l src fun nm
       (f, fl) <- global_string fun
       (n, nl) <- global_string nm
       let
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+          gep_ix     = [ScalarConstant scalarType 0 :: Constant Int32]
+#else
+          gep_ix     = [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+#endif
           st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
           ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
           nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
           line       = ConstantOperand $ ScalarConstant scalarType (fromIntegral l :: Word32)
-          source     = ConstantOperand $ if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
-          function   = ConstantOperand $ if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
-          name       = ConstantOperand $ if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+          source     = ConstantOperand $ if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) gep_ix
+          function   = ConstantOperand $ if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) gep_ix
+          name       = ConstantOperand $ if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) gep_ix
           sourceSz   = ConstantOperand $ ScalarConstant scalarType (sl-1) -- null
           functionSz = ConstantOperand $ ScalarConstant scalarType (fl-1) -- null
           nameSz     = ConstantOperand $ ScalarConstant scalarType (nl-1) -- null
