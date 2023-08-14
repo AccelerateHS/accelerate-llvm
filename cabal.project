@@ -6,21 +6,16 @@ packages:
 source-repository-package
     type:     git
     location: https://github.com/tmcdonell/accelerate.git
-    tag:      b349b28e9bd9c0c6e0dd61481e4a037d08928e31
+    tag:      f9eb010ed267357ae0e23d7ddf98186ef2ff5034
     -- Required for Cabal < 3.8
     -- post-checkout-command: bash -c "! git submodule update --init --recursive"
 
 source-repository-package
     type:     git
     location: https://github.com/llvm-hs/llvm-hs.git
-    -- tag:      423220bffac4990d019fc088c46c5f25310d5a33
-    tag:      80e0de0f96eb78288c88fda0eaba0f7cf5d38a30
+    tag:      e4b3cfa47e72f094ab109884f18acfc666b0fb7d
+    -- tag:      423220bffac4990d019fc088c46c5f25310d5a33 -- llvm-12
     subdir:
         llvm-hs
         llvm-hs-pure
 
--- XXX: awaiting new release for ghc-9.6
-allow-newer:
-  hedgehog:template-haskell
-
--- vim: nospell syntax=cabal
