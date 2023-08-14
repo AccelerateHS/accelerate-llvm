@@ -1,4 +1,0 @@
-:set -DUNIX
-:set -iaccelerate-llvm
-:set -iaccelerate-llvm-native
-:set -iaccelerate-llvm-ptx
