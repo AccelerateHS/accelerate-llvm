@@ -146,7 +146,7 @@ Library
         , llvm-hs-pure                  >= 4.1 && < 16
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.9
-        , prettyprinter                 >= 1.6.1
+        , prettyprinter                 >= 1.7
         , primitive                     >= 0.7
         , process                       >= 1.4.3
         , template-haskell
