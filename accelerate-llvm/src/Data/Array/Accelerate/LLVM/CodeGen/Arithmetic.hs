@@ -79,12 +79,11 @@ abs n x =
     IntegralNumType i
       | unsigned i                     -> return x
       | IntegralDict <- integralDict i ->
-          let p = ScalarPrimType (SingleScalarType (NumSingleType n))
-              t = PrimType p
+          let p  = ScalarPrimType (SingleScalarType (NumSingleType n))
+              t  = PrimType p
+              fn = fromString $ printf "llvm.abs.i%d" (finiteBitSize (undefined::a))
           in
-          case finiteBitSize (undefined :: a) of
-            64 -> call (Lam p (op n x) (Body t Nothing "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam p (op n x) (Body t Nothing "abs"))   [NoUnwind, ReadNone]
+          call (Lam p (op n x) (Lam primType (boolean False) (Body t Nothing fn))) [NoUnwind, ReadNone]
 
 signum :: forall arch a. NumType a -> Operands a -> CodeGen arch (Operands a)
 signum t x =
