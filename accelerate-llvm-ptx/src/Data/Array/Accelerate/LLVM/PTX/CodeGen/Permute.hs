@@ -164,7 +164,7 @@ mkPermute_rmw uid aenv (ArrayR shr tp) shr' rmw update project marr = do
           _ | TupRsingle (SingleScalarType s)   <- tp
             , adata                             <- irArrayData arrOut
             -> do
-                  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op s adata)) [op integralType j]
+                  addr <- instr' $ GetElementPtr (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   let
                       rmw_integral :: IntegralType t -> Operand (Ptr t) -> Operand t -> CodeGen PTX ()
@@ -309,7 +309,7 @@ atomically_thread barriers i action = do
   exit  <- newBlock "spinlock.exit"
   ns    <- fresh i32
 
-  addr  <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+  addr  <- instr' $ GetElementPtr scalarType (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
   top   <- br entry
 
   -- Loop until this thread has completed its critical section. If the slot
@@ -407,7 +407,7 @@ atomically_warp barriers i action = do
   end   <- newBlock "spinlock.critical-end"
   exit  <- newBlock "spinlock.exit"
 
-  addr <- instr' $ GetElementPtr (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+  addr <- instr' $ GetElementPtr scalarType (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
   _    <- br entry
 
   -- Loop until this thread has completed its critical section. If the slot was

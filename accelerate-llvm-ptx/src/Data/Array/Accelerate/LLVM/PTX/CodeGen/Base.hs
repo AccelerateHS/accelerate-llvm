@@ -649,7 +649,7 @@ staticSharedMem tp n = do
       -- Return a pointer to the first element of the __shared__ memory array.
       -- We do this rather than just returning the global reference directly due
       -- to how __shared__ memory needs to be indexed with the GEP instruction.
-      p <- instr' $ GetElementPtr sm [A.num numType 0, A.num numType 0 :: Operand Int32]
+      p <- instr' $ GetElementPtr t sm [A.num numType 0, A.num numType 0 :: Operand Int32]
       q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
 
       return $ ir t (unPtr q)
@@ -696,7 +696,7 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
-          p <- instr' $ GetElementPtr smem [A.num numTp 0, i] -- TLM: note initial zero index!!
+          p <- instr' $ GetElementPtr scalarType smem [A.num numTp 0, i] -- TLM: note initial zero index!!
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
           a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
           b <- instr' $ Add numTp i a
@@ -776,7 +776,12 @@ makeKernel config name@(Label l) param kernel = do
   _    <- kernel
   code <- createBlocks
   addMetadata "nvvm.annotations"
-    [ Just . MetadataConstantOperand $ LLVM.GlobalReference (LLVM.PointerType (LLVM.FunctionType LLVM.VoidType [ t | LLVM.Parameter t _ _ <- param ] False) (AddrSpace 0)) (LLVM.Name l)
+    [ Just . MetadataConstantOperand
+      $ LLVM.GlobalReference
+#if !MIN_VERSION_llvm_hs(15,0,0)
+          (LLVM.PointerType (LLVM.FunctionType LLVM.VoidType [ t | LLVM.Parameter t _ _ <- param ] False) (AddrSpace 0))
+#endif
+          (LLVM.Name l)
     , Just . MetadataStringOperand   $ "kernel"
     , Just . MetadataConstantOperand $ LLVM.Int 32 1
     ]

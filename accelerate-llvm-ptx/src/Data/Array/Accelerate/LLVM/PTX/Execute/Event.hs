@@ -31,6 +31,7 @@ import qualified Foreign.CUDA.Driver.Event                          as Event
 import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
 import Control.Exception
+import Control.Monad
 import Control.Monad.State
 import Data.Text.Lazy.Builder
 import Formatting

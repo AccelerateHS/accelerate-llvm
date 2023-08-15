@@ -44,6 +44,7 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Async
 import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
 
 import Control.Applicative
+import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State                                          ( gets )
 import System.IO.Unsafe
