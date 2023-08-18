@@ -649,7 +649,11 @@ staticSharedMem tp n = do
       -- Return a pointer to the first element of the __shared__ memory array.
       -- We do this rather than just returning the global reference directly due
       -- to how __shared__ memory needs to be indexed with the GEP instruction.
+#if MIN_VERSION_llvm_hs(15,0,0)
+      p <- instr' $ GetElementPtr t sm [A.num numType 0 :: Operand Int32]
+#else
       p <- instr' $ GetElementPtr t sm [A.num numType 0, A.num numType 0 :: Operand Int32]
+#endif
       q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
 
       return $ ir t (unPtr q)
@@ -696,7 +700,11 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
+#if MIN_VERSION_llvm_hs(15,0,0)
+          p <- instr' $ GetElementPtr scalarType smem [i]
+#else
           p <- instr' $ GetElementPtr scalarType smem [A.num numTp 0, i] -- TLM: note initial zero index!!
+#endif
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
           a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
           b <- instr' $ Add numTp i a
