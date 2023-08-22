@@ -119,6 +119,9 @@ Library
 
     Paths_accelerate_llvm_native
 
+  autogen-modules:
+    Paths_accelerate_llvm_native
+
   build-depends:
           base                          >= 4.10 && < 5
         , accelerate                    == 1.3.*
