@@ -35,11 +35,11 @@ import Data.Hashable
 import Data.Int
 import Data.Primitive.ByteArray
 import Data.Text.Lazy.Builder
-import Data.Text.Prettyprint.Doc
-import Data.Text.Prettyprint.Doc.Internal
-import Data.Text.Prettyprint.Doc.Render.Util.Panic
 import Data.Word
 import Formatting
+import Prettyprinter
+import Prettyprinter.Internal
+import Prettyprinter.Render.Util.Panic
 import Text.Printf
 import qualified Data.Text.Lazy.Builder                             as TLB
 import Prelude                                                      hiding ( (<>) )

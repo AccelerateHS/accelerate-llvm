@@ -27,7 +27,13 @@ import Data.IORef
 import Data.List
 import qualified Data.Map                                           as Map
 
-#if __GLASGOW_HASKELL__ >= 900
+#if __GLASGOW_HASKELL__ >= 902
+import GHC.Driver.Backend
+import GHC.Linker
+import GHC.Linker.Loader                                            ( loadCmdLineLibs )
+import GHC.Plugins
+import GHC.Runtime.Interpreter
+#elif __GLASGOW_HASKELL__ >= 900
 import GHC.Plugins
 import GHC.Runtime.Linker
 #else
@@ -64,84 +70,104 @@ install _ rest = do
 
 pass :: HasCallStack => ModGuts -> CoreM ModGuts
 pass guts = do
-  -- Determine the current build environment
-  --
-  hscEnv   <- getHscEnv
-  dynFlags <- getDynFlags
-  this     <- getModule
-
   -- Gather annotations for the extra object files which must be supplied to the
   -- linker in order to complete the current module.
   --
-  paths   <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
+  this  <- getModule
+  paths <- nub . concat <$> mapM (objectPaths guts) (mg_binds guts)
 
-  when (not (null paths))
+  unless (null paths)
     $ debugTraceMsg
     $ hang (text "Data.Array.Accelerate.LLVM.Native.Plugin: linking module" <+> quotes (pprModule this) <+> text "with:") 2 (vcat (map text paths))
 
   -- The linking method depends on the current build target
+  -- TODO: Need to update for ghc-8.6: the Backend data type is now abstract
   --
-  case hscTarget dynFlags of
-    HscNothing     -> return ()
-    HscInterpreted ->
-      -- We are in interactive mode (ghci)
-      --
-      when (not (null paths)) . liftIO $ do
-        let opts  = ldInputs dynFlags
-            objs  = map optionOfPath paths
-        --
-        linkCmdLineLibs
-               $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
+  -- Determine the current build environment
+  --
+  hscEnv   <- getHscEnv
+  dynFlags <- getDynFlags
 
-    -- This case is not necessary for GHC-8.6 and above.
-    --
-    -- We are building to object code.
-    --
-    -- Because of separate compilation, we will only encounter the annotation
-    -- pragmas on files which have changed between invocations. This applies to
-    -- both @ghc --make@ as well as the separate compile/link phases of building
-    -- with @cabal@ (and @stack@). Note that whenever _any_ file is updated we
-    -- must make sure that the linker options contains the complete list of
-    -- objects required to build the entire project.
-    --
-    _ -> liftIO $ do
-#if __GLASGOW_HASKELL__ < 806
-      -- Read the object file index and update (we may have added or removed
-      -- objects for the given module)
-      --
-      let buildInfo = mkBuildInfoFileName (objectMapPath dynFlags)
-      abi <- readBuildInfo buildInfo
-      --
-      let abi'      = if null paths
-                        then Map.delete this       abi
-                        else Map.insert this paths abi
-          allPaths  = nub (concat (Map.elems abi'))
-          allObjs   = map optionOfPath allPaths
-      --
-      writeBuildInfo buildInfo abi'
-
-      -- Make sure the linker flags are up-to-date.
-      --
-      when (not (isNoLink (ghcLink dynFlags))) $ do
-        linker_info <- getLinkerInfo dynFlags
-        writeIORef (rtldInfo dynFlags)
-          $ Just
-          $ case linker_info of
-              GnuLD     opts -> GnuLD     (nub (opts ++ allObjs))
-              GnuGold   opts -> GnuGold   (nub (opts ++ allObjs))
-              DarwinLD  opts -> DarwinLD  (nub (opts ++ allObjs))
-              SolarisLD opts -> SolarisLD (nub (opts ++ allObjs))
-              AixLD     opts -> AixLD     (nub (opts ++ allObjs))
-              LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
-              UnknownLD      -> UnknownLD  -- no linking performed?
+#if __GLASGOW_HASKELL__ >= 902
+  let target = backend dynFlags
+#else
+  let target = hscTarget dynFlags
 #endif
-      return ()
 
+  when (backendGeneratesCode target) $
+    if backendWritesFiles target
+      then do
+        -- The compiler will write files (interface files and object code). This
+        -- is true of "real" backends, i.e. not the interpreter.
+#if __GLASGOW_HASKELL__ < 806
+        -- Because of separate compilation, we will only encounter the annotation
+        -- pragmas on files which have changed between invocations. This applies to
+        -- both @ghc --make@ as well as the separate compile/link phases of building
+        -- with @cabal@ (and @stack@). Note that whenever _any_ file is updated we
+        -- must make sure that the linker options contains the complete list of
+        -- objects required to build the entire project.
+        --
+
+        -- Read the object file index and update (we may have added or removed
+        -- objects for the given module)
+        --
+        let buildInfo = mkBuildInfoFileName (objectMapPath dynFlags)
+        abi <- readBuildInfo buildInfo
+        --
+        let abi'      = if null paths
+                          then Map.delete this       abi
+                          else Map.insert this paths abi
+            allPaths  = nub (concat (Map.elems abi'))
+            allObjs   = map optionOfPath allPaths
+        --
+        writeBuildInfo buildInfo abi'
+
+        -- Make sure the linker flags are up-to-date.
+        --
+        unless (isNoLink (ghcLink dynFlags)) $ do
+          linker_info <- getLinkerInfo dynFlags
+          writeIORef (rtldInfo dynFlags)
+            $ Just
+            $ case linker_info of
+                GnuLD     opts -> GnuLD     (nub (opts ++ allObjs))
+                GnuGold   opts -> GnuGold   (nub (opts ++ allObjs))
+                DarwinLD  opts -> DarwinLD  (nub (opts ++ allObjs))
+                SolarisLD opts -> SolarisLD (nub (opts ++ allObjs))
+                AixLD     opts -> AixLD     (nub (opts ++ allObjs))
+                LlvmLLD   opts -> LlvmLLD   (nub (opts ++ allObjs))
+                UnknownLD      -> UnknownLD  -- no linking performed?
+#endif
+        return ()
+
+      else
+        -- We are in interactive mode (ghci)
+        --
+        unless (null paths) . liftIO $ do
+          let opts  = ldInputs dynFlags
+              objs  = map optionOfPath paths
+          --
+#if __GLASGOW_HASKELL__ >= 902
+          loadCmdLineLibs (hscInterp hscEnv)
+                 $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
+#else
+          linkCmdLineLibs
+                 $ hscEnv { hsc_dflags = dynFlags { ldInputs = opts ++ objs }}
+#endif
   return guts
+
+#if __GLASGOW_HASKELL__ < 906
+backendGeneratesCode :: Backend -> Bool
+backendGeneratesCode NoBackend = False
+backendGeneratesCode _         = True
+
+backendWritesFiles :: Backend -> Bool
+backendWritesFiles Interpreter = False
+backendWritesFiles _           = True
+#endif
 
 objectPaths :: ModGuts -> CoreBind -> CoreM [FilePath]
 objectPaths guts (NonRec b _) = objectAnns guts b
-objectPaths guts (Rec bs)     = concat <$> mapM (objectAnns guts) (map fst bs)
+objectPaths guts (Rec bs)     = concat <$> mapM (objectAnns guts . fst) bs
 
 objectAnns :: ModGuts -> CoreBndr -> CoreM [FilePath]
 objectAnns guts bndr = do

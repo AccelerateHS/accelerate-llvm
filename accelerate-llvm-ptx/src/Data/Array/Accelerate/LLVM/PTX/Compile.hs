@@ -48,15 +48,19 @@ import qualified LLVM.AST                                           as AST
 import qualified LLVM.AST.Name                                      as LLVM
 import qualified LLVM.Context                                       as LLVM
 import qualified LLVM.Module                                        as LLVM
-import qualified LLVM.PassManager                                   as LLVM
 import qualified LLVM.Target                                        as LLVM
 import qualified LLVM.Internal.Module                               as LLVM.Internal
 import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
 import qualified LLVM.Analysis                                      as LLVM
+#if MIN_VERSION_llvm_hs(15,0,0)
+import qualified LLVM.Passes                                        as LLVM
+#else
+import qualified LLVM.PassManager                                   as LLVM
+#endif
 
 import Control.DeepSeq
 import Control.Exception
-import Control.Monad.Except
+import Control.Monad
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -247,14 +251,22 @@ _compileModuleNVPTX dev mdl =
 
     -- Run the standard optimisation pass
     --
+#if MIN_VERSION_llvm_hs(15,0,0)
+    let pss = LLVM.PassSetSpec { passes = [ LLVM.CuratedPassSet 3 ], targetMachine = Just nvptx }
+    do
+      LLVM.runPasses pss mdl
+#else
     let pss = LLVM.defaultCuratedPassSetSpec { LLVM.optLevel = Just 3 }
     LLVM.withPassManager pss $ \pm -> do
 
       b1 <- LLVM.runPassManager pm mdl
+#endif
 
       -- debug printout
       Debug.when Debug.dump_cc $ do
+#if !MIN_VERSION_llvm_hs(15,0,0)
         Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
+#endif
         Debug.traceM Debug.verbose stext . decodeUtf8 =<< LLVM.moduleLLVMAssembly mdl
 
       -- Lower the LLVM module into target assembly (PTX)

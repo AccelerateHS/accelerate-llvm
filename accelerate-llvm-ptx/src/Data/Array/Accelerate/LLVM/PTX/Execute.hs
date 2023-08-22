@@ -59,7 +59,7 @@ import Data.Maybe                                                   ( fromMaybe 
 import Formatting
 import Prelude                                                      hiding ( exp, map, sum, scanl, scanr )
 import qualified Data.ByteString.Short                              as S
-import qualified Data.ByteString.Short.Extra                        as S
+import qualified Data.ByteString.Short.Extra                        as SE
 import qualified Data.DList                                         as DL
 
 
@@ -622,7 +622,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
     --
     let kernelName' =
           let kn = kernelName kernel
-          in S.take (S.length kn - 65) kn
+          in SE.take (S.length kn - 65) kn
     case kernelName' of
       -- execute directly using atomic operations
       "permute_rmw"   ->
@@ -800,7 +800,7 @@ aforeignOp name _ _ asm arr = do
 
 lookupKernel :: ShortByteString -> FunctionTable -> Maybe Kernel
 lookupKernel name ptxExecutable =
-  find (\k -> let n = kernelName k in S.take (S.length n - 65) n == name) (functionTable ptxExecutable)
+  find (\k -> let n = kernelName k in SE.take (S.length n - 65) n == name) (functionTable ptxExecutable)
 
 delayedShape :: Delayed (Array sh e) -> sh
 delayedShape (Delayed sh) = sh
@@ -862,7 +862,7 @@ launch Kernel{..} stream n args =
     msg wall cpu gpu  = do
       verbose <- Debug.getFlag Debug.verbose
       let kernelName' | verbose   = kernelName
-                      | otherwise = S.take (S.length kernelName - 65) kernelName
+                      | otherwise = SE.take (S.length kernelName - 65) kernelName
       Debug.traceM Debug.dump_exec ("exec: " % string % " <<< " % int % ", " % int % ", " % int % " >>> " % Debug.elapsed)
         (unpack kernelName') (fst3 grid) (fst3 cta) smem wall cpu gpu
 

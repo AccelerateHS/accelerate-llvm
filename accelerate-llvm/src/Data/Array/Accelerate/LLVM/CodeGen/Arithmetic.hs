@@ -79,12 +79,11 @@ abs n x =
     IntegralNumType i
       | unsigned i                     -> return x
       | IntegralDict <- integralDict i ->
-          let p = ScalarPrimType (SingleScalarType (NumSingleType n))
-              t = PrimType p
+          let p  = ScalarPrimType (SingleScalarType (NumSingleType n))
+              t  = PrimType p
+              fn = fromString $ printf "llvm.abs.i%d" (finiteBitSize (undefined::a))
           in
-          case finiteBitSize (undefined :: a) of
-            64 -> call (Lam p (op n x) (Body t Nothing "llabs")) [NoUnwind, ReadNone]
-            _  -> call (Lam p (op n x) (Body t Nothing "abs"))   [NoUnwind, ReadNone]
+          call (Lam p (op n x) (Lam primType (boolean False) (Body t Nothing fn))) [NoUnwind, ReadNone]
 
 signum :: forall arch a. NumType a -> Operands a -> CodeGen arch (Operands a)
 signum t x =
@@ -262,20 +261,22 @@ shiftRA t x i = do
 rotateL :: forall arch a. IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
 rotateL t x i
   | IntegralDict <- integralDict t
-  = do let wsib = finiteBitSize (undefined::a)
-       i1 <- band integralType i (ir integralType (integral integralType (wsib P.- 1)))
-       i2 <- sub numType (ir numType (integral integralType wsib)) i1
-       --
-       a  <- shiftL t x i1
-       b  <- shiftRL t x i2
-       c  <- bor t a b
-       return c
+  = do let fshl = fromString $ printf "llvm.fshl.i%d" (finiteBitSize (undefined::a))
+           p    = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t)))
+           x'   = op t x
+       i' <- fromIntegral integralType (IntegralNumType t) i
+       r  <- call (Lam p x' (Lam p x' (Lam p (op t i') (Body (PrimType p) Nothing fshl)))) [NoUnwind, ReadNone]
+       return r
 
-rotateR :: IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
-rotateR t x i = do
-  i' <- negate numType i
-  r  <- rotateL t x i'
-  return r
+rotateR :: forall arch a. IntegralType a -> Operands a -> Operands Int -> CodeGen arch (Operands a)
+rotateR t x i
+  | IntegralDict <- integralDict t
+  = do let fshr = fromString $ printf "llvm.fshr.i%d" (finiteBitSize (undefined::a))
+           p    = ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t)))
+           x'   = op t x
+       i' <- fromIntegral integralType (IntegralNumType t) i
+       r  <- call (Lam p x' (Lam p x' (Lam p (op t i') (Body (PrimType p) Nothing fshr)))) [NoUnwind, ReadNone]
+       return r
 
 popCount :: forall arch a. IntegralType a -> Operands a -> CodeGen arch (Operands Int)
 popCount i x

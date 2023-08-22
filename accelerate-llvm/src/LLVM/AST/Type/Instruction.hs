@@ -24,7 +24,7 @@
 module LLVM.AST.Type.Instruction
   where
 
-import LLVM.AST.Type.Constant
+import LLVM.AST.Type.Constant                             ( Constant(ScalarConstant) )
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.InlineAssembly
@@ -38,7 +38,6 @@ import LLVM.AST.Type.Instruction.RMW                      ( RMWOperation )
 import LLVM.AST.Type.Instruction.Volatile                 ( Volatility )
 
 import qualified LLVM.AST.Constant                        as LLVM ( Constant(GlobalReference, Int) )
-import qualified LLVM.AST.AddrSpace                       as LLVM
 import qualified LLVM.AST.CallingConvention               as LLVM
 import qualified LLVM.AST.FloatingPointPredicate          as FP
 import qualified LLVM.AST.Instruction                     as LLVM
@@ -47,6 +46,9 @@ import qualified LLVM.AST.Operand                         as LLVM ( Operand(..),
 import qualified LLVM.AST.ParameterAttribute              as LLVM ( ParameterAttribute )
 import qualified LLVM.AST.RMWOperation                    as LLVM ( RMWOperation )
 import qualified LLVM.AST.Type                            as LLVM ( Type(..) )
+#if !MIN_VERSION_llvm_hs_pure(15,0,0)
+import qualified LLVM.AST.AddrSpace                       as LLVM
+#endif
 
 import Data.Array.Accelerate.AST                          ( PrimBool )
 import Data.Array.Accelerate.AST.Idx
@@ -235,7 +237,8 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr   :: Operand (Ptr a)
+  GetElementPtr   :: ScalarType a
+                  -> Operand (Ptr a)
                   -> [Operand i]
                   -> Instruction (Ptr a)
 
@@ -409,9 +412,14 @@ instance Downcast (Instruction a) LLVM.Instruction where
     InsertElement i v x   -> LLVM.InsertElement (downcast v) (downcast x) (constant i) md
     ExtractElement i v    -> LLVM.ExtractElement (downcast v) (constant i) md
     ExtractValue _ i s    -> extractStruct i (downcast s)
-    Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
     Store v p x           -> LLVM.Store (downcast v) (downcast p) (downcast x) atomicity alignment md
-    GetElementPtr n i     -> LLVM.GetElementPtr inbounds (downcast n) (downcast i) md
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+    Load t v p            -> LLVM.Load (downcast v) (downcast t) (downcast p) atomicity alignment md
+    GetElementPtr t n i   -> LLVM.GetElementPtr inbounds (downcast t) (downcast n) (downcast i) md
+#else
+    Load _ v p            -> LLVM.Load (downcast v) (downcast p) atomicity alignment md
+    GetElementPtr _ n i   -> LLVM.GetElementPtr inbounds (downcast n) (downcast i) md
+#endif
     Fence a               -> LLVM.Fence (downcast a) md
     CmpXchg _ v p x y a m -> cmpXchg (downcast v) (downcast p) (downcast x) (downcast y) (downcast a) (downcast m) md
     AtomicRMW t v f p x a -> atomicRMW (downcast v) (downcast (t,f)) (downcast p) (downcast x) (downcast a) md
@@ -571,7 +579,11 @@ instance Downcast (Instruction a) LLVM.Instruction where
           ui GE = IP.UGE
 
       call :: Function (Either InlineAssembly Label) args t -> [Either GroupID FunctionAttribute] -> LLVM.Instruction
-      call f as = LLVM.Call tail LLVM.C [] target argv (downcast as) md
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+      call f as = LLVM.Call tail LLVM.C [] fun_ty target argv (downcast as) md
+#else
+      call f as = LLVM.Call tail LLVM.C []        target argv (downcast as) md
+#endif
         where
           trav :: Function (Either InlineAssembly Label) args t
                -> ( [LLVM.Type]                                 -- argument types
@@ -583,14 +595,20 @@ instance Downcast (Instruction a) LLVM.Instruction where
           trav (Body u k o) =
             case o of
               Left asm -> ([], [], downcast k, downcast u, Left  (downcast (LLVM.FunctionType ret argt False, asm)))
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+              Right n  -> ([], [], downcast k, downcast u, Right (LLVM.ConstantOperand (LLVM.GlobalReference (downcast n))))
+#else
               Right n  -> ([], [], downcast k, downcast u, Right (LLVM.ConstantOperand (LLVM.GlobalReference ptr_fun_ty (downcast n))))
+#endif
           trav (Lam t x l)  =
             let (ts, xs, k, r, n)  = trav l
             in  (downcast t : ts, (downcast x, []) : xs, k, r, n)
 
           (argt, argv, tail, ret, target) = trav f
           fun_ty                          = LLVM.FunctionType ret argt False
+#if !MIN_VERSION_llvm_hs_pure(15,0,0)
           ptr_fun_ty                      = LLVM.PointerType fun_ty (LLVM.AddrSpace 0)
+#endif
 
 
 instance Downcast (i a) i' => Downcast (Named i a) (LLVM.Named i') where
@@ -620,7 +638,7 @@ instance TypeOf Instruction where
     ExtractValue t _ _    -> scalar t
     Load t _ _            -> scalar t
     Store{}               -> VoidType
-    GetElementPtr x _     -> typeOf x
+    GetElementPtr _ x _   -> typeOf x
     Fence{}               -> VoidType
     CmpXchg t _ _ _ _ _ _ -> PrimType . StructPrimType False $ ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t))) `pair` primType
     AtomicRMW _ _ _ _ x _ -> typeOf x

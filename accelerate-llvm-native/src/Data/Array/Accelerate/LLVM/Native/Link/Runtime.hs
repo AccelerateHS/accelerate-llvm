@@ -31,7 +31,7 @@ import Formatting
 import qualified Data.ByteString.Short.Char8                        as B8
 
 #if defined(mingw32_HOST_OS)
-#error "Dynamic linking not implemented yet"
+import System.Win32.DLL
 #else
 import System.Posix.DynamicLinker
 #endif
@@ -45,6 +45,13 @@ import System.Posix.DynamicLinker
 --
 loadSharedObject :: HasCallStack => [ShortByteString] -> FilePath -> IO (FunctionTable, ObjectCode)
 loadSharedObject nms path = do
+#if defined(mingw32_HOST_OS)
+  -- shims for win32 api compatibility
+  let dlopen path _ = loadLibrary path
+      dlsym dll sym = castPtrToFunPtr <$> getProcAddress dll sym
+      dlclose dll   = freeLibrary dll
+#endif
+  --
   so      <- dlopen path [RTLD_LAZY, RTLD_LOCAL]
   fun_tab <- fmap FunctionTable $ forM nms $ \nm -> do
     let s = B8.unpack nm

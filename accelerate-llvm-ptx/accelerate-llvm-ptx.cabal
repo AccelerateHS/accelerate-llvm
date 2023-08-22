@@ -27,7 +27,7 @@ description:
     .
     Example using Homebrew on macOS:
     .
-    > brew install llvm-hs/llvm/llvm-12
+    > brew install llvm@15
     .
     /Debian & Ubuntu/
     .
@@ -36,13 +36,13 @@ description:
     instructions for adding the correct package database for your OS version,
     and then:
     .
-    > apt-get install llvm-12-dev
+    > apt-get install llvm-15-dev
     .
     /Building from source/
     .
     If your OS does not have an appropriate LLVM distribution available, you can
     also build from source. Detailed build instructions are available on
-    <http://releases.llvm.org/12.0.0/docs/CMake.html LLVM.org>. Make sure to
+    <http://releases.llvm.org/15.0.7/docs/CMake.html LLVM.org>. Make sure to
     include the cmake build options
     @-DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON@ so that the @libLLVM@
     shared library will be built. Also ensure that the @LLVM_TARGETS_TO_BUILD@
@@ -142,11 +142,11 @@ Library
         , filepath                      >= 1.0
         , formatting                    >= 7.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 14
-        , llvm-hs-pure                  >= 4.1 && < 14
+        , llvm-hs                       >= 4.1 && < 16
+        , llvm-hs-pure                  >= 4.1 && < 16
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.9
-        , prettyprinter                 >= 1.6.1
+        , prettyprinter                 >= 1.7
         , primitive                     >= 0.7
         , process                       >= 1.4.3
         , template-haskell

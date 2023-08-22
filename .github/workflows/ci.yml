@@ -1,0 +1,273 @@
+name: CI
+
+# Trigger the workflow on push or pull request
+on:
+  # workflow_dispatch:
+  pull_request:
+    # branches: [master]
+    types: [synchronize, opened, reopened]
+  push:
+    # branches: [main]
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'cabal.project'
+      - 'stack.yaml'
+      - '*/src/**'
+      - '*/test/**'
+      - '*/cbits/**'
+  schedule:
+    # additionally run once per week (At 00:00 on Sunday) to maintain cache
+    - cron: '0 0 * * 0'
+
+jobs:
+  cabal:
+    name: cabal | ${{ matrix.sys.os }}-${{ matrix.arch }} ghc-${{ matrix.ghc }} ${{ matrix.mode }}
+    runs-on: ${{ matrix.sys.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sys:
+          - { os: 'ubuntu-latest',  shell: 'bash' }
+          - { os: 'macOS-latest',   shell: 'bash' }
+          - { os: 'windows-latest', shell: 'msys2 {0}' }
+        arch:
+          - 'x64'
+          - 'ARM64'
+        ghc:
+          - 'latest'
+          - '9.6'
+          - '9.4'
+          - '9.2'
+        mode:
+          - 'debug'
+          - 'release'
+        exclude:
+          - sys:
+            - os: 'windows-latest'
+            mode: 'debug'
+          - arch: 'ARM64'
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/checkout@v3
+        with:
+          repository: actions/cache
+          path: .github/actions/cache-always
+          ref: v3
+
+      # Tweak `action.yml` of `actions/cache@v3` to remove the `post-if`
+      # condition, making it default to `post-if: always ()`.
+      - name: Run actions/cache-always@v3
+        run: |
+          sed -i'~' -e '/ post-if: /d' .github/actions/cache-always/action.yml
+        shell: bash
+
+      - uses: msys2/setup-msys2@v2
+        if: matrix.sys.os == 'windows-latest'
+        with:
+          path-type: inherit
+          msystem: clang64
+
+      - uses: haskell/actions/setup@v2
+        id: setup-haskell
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: latest
+
+      - name: Set up environment (ubuntu)
+        if: matrix.sys.os == 'ubuntu-latest'
+        run: |
+          curl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main"
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          sudo apt-get update
+          sudo apt-get -y install llvm-15-dev libpolly-15-dev cuda-11-8
+          echo "LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/usr/local/cuda-11.8/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "/usr/local/cuda-11.8/bin" >> $GITHUB_PATH
+          echo "package accelerate" >> cabal.project
+          if [ ${{ matrix.mode }} == 'release' ]; then
+            echo "  flags: +nofib" >> cabal.project
+          else
+            echo "  flags: +nofib +debug" >> cabal.project
+            echo "  ghc-options: -optc=-DTRACY_TIMER_FALLBACK -optcxx=-DTRACY_TIMER_FALLBACK" >> cabal.project
+            sudo apt-get -y install pkg-config libcapstone-dev libfreetype-dev libglfw3-dev libgtk-3-dev libtbb-dev
+          fi
+
+      - name: Set up environment (macOS)
+        if: matrix.sys.os == 'macOS-latest'
+        run: |
+          brew install llvm@15
+          mkdir -p $HOME/.local/bin
+          ln -s $(brew --prefix llvm@15)/bin/llvm-config $HOME/.local/bin/llvm-config-15
+          ln -s $(brew --prefix llvm@15)/bin/llvm-config $HOME/.local/bin/
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "package accelerate" >> cabal.project
+          if [ ${{ matrix.mode }} == 'release' ]; then
+            echo "  flags: +nofib" >> cabal.project
+          else
+            echo "  flags: +nofib +debug" >> cabal.project
+            echo "  ghc-options: -optc=-DTRACY_TIMER_FALLBACK -optcxx=-DTRACY_TIMER_FALLBACK" >> cabal.project
+            brew install pkg-config capstone freetype glfw
+          fi
+
+      - name: Set up environment (windows)
+        if: matrix.sys.os == 'windows-latest'
+        run: |
+          # https://stackoverflow.com/questions/33969803/how-to-obtain-older-versions-of-packages-using-msys2
+          # https://packages.msys2.org/package/mingw-w64-clang-x86_64-llvm
+          curl -LO https://mirror.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-llvm-15.0.7-3-any.pkg.tar.zst
+          pacman -U --noconfirm mingw-w64-clang-x86_64-llvm-15.0.7-3-any.pkg.tar.zst
+          choco install cuda --version=11.8.0.52206
+          echo "package accelerate" >> cabal.project
+          echo "  flags: +nofib"    >> cabal.project
+
+      - name: Configure
+        run: cabal configure --enable-tests --test-show-details=direct --test-option="--num-threads=1"
+
+      - name: Freeze
+        run: |
+          cabal freeze
+          sed -i'~' -e '/^index-state:/d' cabal.project.freeze
+
+      - name: Run actions/cache-always@v3
+        uses: ./.github/actions/cache-always
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ runner.os }}-${{ matrix.arch }}-${{ matrix.ghc }}-cabal-${{ hashFiles('cabal.project.freeze') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-${{ matrix.ghc }}-cabal-${{ hashFiles('cabal.project.freeze') }}
+            ${{ runner.os }}-${{ matrix.arch }}-${{ matrix.ghc }}-cabal-
+
+      - name: Build accelerate-llvm
+        run: cabal build accelerate-llvm
+
+      - name: Build accelerate-llvm-native
+        run: cabal build accelerate-llvm-native
+
+      - name: Build accelerate-llvm-ptx
+        run: cabal build accelerate-llvm-ptx
+        if: matrix.sys.os != 'macOS-latest'
+
+      - name: Test accelerate-llvm-native
+        run: cabal test accelerate-llvm-native
+
+      # Behaviour of cabal haddock has changed: https://github.com/haskell/cabal/issues/8725
+      - name: Haddock accelerate-llvm
+        run: cabal haddock accelerate-llvm --disable-documentation
+
+      - name: Haddock accelerate-llvm-native
+        run: cabal haddock accelerate-llvm-native --disable-documentation
+
+      - name: Haddock accelerate-llvm-ptx
+        run: cabal haddock accelerate-llvm-ptx --disable-documentation
+        if: matrix.sys.os != 'macOS-latest'
+
+  stack:
+    name: stack | ${{ matrix.sys.os }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.sys.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sys:
+          - { os: 'ubuntu-latest',  shell: 'bash' }
+          - { os: 'macOS-latest',   shell: 'bash' }
+          - { os: 'windows-latest', shell: 'msys2 {0}' }
+        arch:
+          - 'x64'
+          - 'ARM64'
+        exclude:
+          - arch: 'ARM64'
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/checkout@v3
+        with:
+          repository: actions/cache
+          path: .github/actions/cache-always
+          ref: v3
+
+      # Tweak `action.yml` of `actions/cache@v3` to remove the `post-if`
+      # condition, making it default to `post-if: always ()`.
+      - name: Run actions/cache-always@v3
+        run: |
+          sed -i'~' -e '/ post-if: /d' .github/actions/cache-always/action.yml
+        shell: bash
+
+      - uses: msys2/setup-msys2@v2
+        if: matrix.sys.os == 'windows-latest'
+        with:
+          path-type: inherit
+          msystem: clang64
+
+      - uses: haskell/actions/setup@v2
+        id: setup-haskell
+        with:
+          enable-stack: true
+          stack-no-global: true
+
+      - name: actions/cache-always@v3
+        uses: ./.github/actions/cache-always
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.stack-root }}
+            .stack-work
+          key: ${{ runner.os }}-${{ matrix.arch }}-stack-${{ hashFiles('stack.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-stack-${{ hashFiles('stack.yaml') }}
+            ${{ runner.os }}-${{ matrix.arch }}-stack-
+
+      - name: Set up environment (ubuntu)
+        if: matrix.sys.os == 'ubuntu-latest'
+        run: |
+          curl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main"
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          sudo apt-get update
+          sudo apt-get -y install llvm-15-dev libpolly-15-dev cuda-11-8
+          echo "LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/usr/local/cuda-11.8/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "/usr/local/cuda-11.8/bin" >> $GITHUB_PATH
+
+      - name: Set up environment (macOS)
+        if: matrix.sys.os == 'macOS-latest'
+        run: |
+          brew install llvm@15
+          mkdir -p $HOME/.local/bin
+          ln -s $(brew --prefix llvm@15)/bin/llvm-config $HOME/.local/bin/llvm-config-15
+          ln -s $(brew --prefix llvm@15)/bin/llvm-config $HOME/.local/bin/
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Set up environment (windows)
+        if: matrix.sys.os == 'windows-latest'
+        run: |
+          # https://stackoverflow.com/questions/33969803/how-to-obtain-older-versions-of-packages-using-msys2
+          # https://packages.msys2.org/package/mingw-w64-clang-x86_64-llvm
+          curl -LO https://mirror.msys2.org/mingw/clang64/mingw-w64-clang-x86_64-llvm-15.0.7-3-any.pkg.tar.zst
+          pacman -U --noconfirm mingw-w64-clang-x86_64-llvm-15.0.7-3-any.pkg.tar.zst
+          choco install cuda --version=11.8.0.52206
+
+      - name: Setup
+        run: stack setup
+
+      - name: Build accelerate-llvm
+        run: stack build accelerate-llvm
+
+      - name: Build accelerate-llvm-native
+        run: stack build accelerate-llvm-native
+
+      - name: Build accelerate-llvm-ptx
+        run: stack build accelerate-llvm-ptx
+        if: matrix.sys.os != 'macOS-latest'
+
+# vi: nospell

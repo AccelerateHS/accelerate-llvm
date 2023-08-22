@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns    #-}
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE MagicHash       #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UnboxedTuples   #-}
@@ -22,7 +23,7 @@ module Data.ByteString.Short.Extra (
 
 ) where
 
-import Data.ByteString.Short                                        ( ShortByteString )
+import Data.ByteString.Short
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Internal                     as BI
 
@@ -32,11 +33,24 @@ import qualified Language.Haskell.TH.Extra                          as TH
 import System.IO.Unsafe
 import Prelude                                                      hiding ( take, takeWhile )
 
+#if !MIN_VERSION_bytestring(0,11,3)
 import GHC.ST
-import GHC.Exts
 import GHC.Word
+#endif
+import GHC.Exts
 
 
+-- | Lift a ShortByteString into a Template Haskell splice
+--
+liftSBS :: ShortByteString -> CodeQ ShortByteString
+liftSBS bs =
+  let bytes = BS.unpack bs
+      len   = BS.length bs
+  in
+  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
+
+
+#if !MIN_VERSION_bytestring(0,11,3)
 -- | /O(n)/ @'take' n@ applied to the ShortByteString @xs@, returns the prefix
 -- of @xs@ of length @n@ as a new ShortByteString, or @xs@ itself if
 -- @n > 'length' xs@
@@ -74,15 +88,6 @@ findIndexOrEnd p xs = go 0
           | otherwise                = go (i+1)
 
 
--- | Lift a ShortByteString into a Template Haskell splice
---
-liftSBS :: ShortByteString -> CodeQ ShortByteString
-liftSBS bs =
-  let bytes = BS.unpack bs
-      len   = BS.length bs
-  in
-  [|| unsafePerformIO $ BI.createFromPtr $$( TH.unsafeCodeCoerce [| Ptr $(TH.litE (TH.StringPrimL bytes)) |]) len ||]
-
 ------------------------------------------------------------------------
 -- Internal utils
 
@@ -116,4 +121,5 @@ copyByteArray :: BA -> Int -> MBA s -> Int -> Int -> ST s ()
 copyByteArray (BA# src#) (I# src_off#) (MBA# dst#) (I# dst_off#) (I# len#) =
     ST $ \s -> case copyByteArray# src# src_off# dst# dst_off# len# s of
                  s' -> (# s', () #)
+#endif
 

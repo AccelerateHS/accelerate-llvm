@@ -11,9 +11,9 @@ cabal-dev/
 cabal.project.local*
 cabal.sandbox.config
 .stack-work
-stack.yaml
 tags
 local/
 /stack.yaml.lock
 .ipynb_checkpoints
 /accelerate-llvm-native/accelerate-llvm-native.buildinfo
+/cabal.project.freeze

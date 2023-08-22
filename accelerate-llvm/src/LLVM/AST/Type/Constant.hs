@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                   #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -60,16 +61,27 @@ data Constant a where
                         -> Name a
                         -> Constant a
 
+  ConstantGetElementPtr :: ScalarType a
+                        -> Constant (Ptr a)
+                        -> [Constant i]
+                        -> Constant (Ptr a)
+
 
 -- | Convert to llvm-hs
 --
 instance Downcast (Constant a) LLVM.Constant where
   downcast = \case
-    UndefConstant t       -> LLVM.Undef (downcast t)
-    GlobalReference t n   -> LLVM.GlobalReference (downcast t) (downcast n)
-    BooleanConstant x     -> LLVM.Int 1 (toInteger (fromEnum x))
-    NullPtrConstant t     -> LLVM.Null (downcast t)
-    ScalarConstant t x    -> scalar t x
+    UndefConstant t             -> LLVM.Undef (downcast t)
+#if MIN_VERSION_llvm_hs(15,0,0)
+    GlobalReference _ n         -> LLVM.GlobalReference (downcast n)
+    ConstantGetElementPtr t n i -> LLVM.GetElementPtr inbounds (downcast t) (downcast n) (downcast i)
+#else
+    GlobalReference t n         -> LLVM.GlobalReference (downcast t) (downcast n)
+    ConstantGetElementPtr _ n i -> LLVM.GetElementPtr inbounds (downcast n) (downcast i)
+#endif
+    BooleanConstant x           -> LLVM.Int 1 (toInteger (fromEnum x))
+    NullPtrConstant t           -> LLVM.Null (downcast t)
+    ScalarConstant t x          -> scalar t x
     where
       scalar :: ScalarType s -> s -> LLVM.Constant
       scalar (SingleScalarType s) = single s
@@ -120,10 +132,14 @@ instance Downcast (Constant a) LLVM.Constant where
       floatingPrim TypeFloat  = Dict
       floatingPrim TypeDouble = Dict
 
+      inbounds :: Bool
+      inbounds = True
+
 instance TypeOf Constant where
-  typeOf (BooleanConstant _)   = type'
-  typeOf (ScalarConstant t _)  = PrimType (ScalarPrimType t)
-  typeOf (UndefConstant t)     = t
-  typeOf (NullPtrConstant t)   = t
-  typeOf (GlobalReference t _) = t
+  typeOf (BooleanConstant _)           = type'
+  typeOf (ScalarConstant t _)          = PrimType (ScalarPrimType t)
+  typeOf (UndefConstant t)             = t
+  typeOf (NullPtrConstant t)           = t
+  typeOf (GlobalReference t _)         = t
+  typeOf (ConstantGetElementPtr _ p _) = typeOf p
 

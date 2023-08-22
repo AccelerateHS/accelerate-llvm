@@ -12,7 +12,9 @@ import Distribution.Simple.Setup                                    as Setup
 import Distribution.Verbosity
 import qualified Distribution.InstalledPackageInfo                  as Installed
 
-#if MIN_VERSION_Cabal(2,2,0)
+#if MIN_VERSION_Cabal(3,8,0)
+import Distribution.Simple.PackageDescription
+#elif MIN_VERSION_Cabal(2,2,0)
 import Distribution.PackageDescription.Parsec
 #else
 import Distribution.PackageDescription.Parse
@@ -43,7 +45,7 @@ main = defaultMainWithHooks simpleUserHooks
                                  _               -> error "accelerate package was not found or is ambiguous"
 
           dyld_library_name  = mkSharedLibName (hostPlatform lbi) (compilerId (compiler lbi)) (installedUnitId accelerate_pkg)
-          [dyld_install_dir] = case Installed.libraryDynDirs accelerate_pkg of
+          dyld_install_dir:_ = case Installed.libraryDynDirs accelerate_pkg of
                                  [] -> Installed.libraryDirs accelerate_pkg
                                  ds -> ds
 

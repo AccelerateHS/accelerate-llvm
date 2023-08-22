@@ -1,27 +1,21 @@
-packages: accelerate-llvm
-          accelerate-llvm-native
-          accelerate-llvm-ptx
+packages:
+    accelerate-llvm
+    accelerate-llvm-native
+    accelerate-llvm-ptx
 
 source-repository-package
-    type: git
+    type:     git
     location: https://github.com/tmcdonell/accelerate.git
-    tag: a9cf26f40cea53042659cca7d509ae2acafd3857
-    -- Cabal builds from an sdist, and `accelerate.cabal` references files that
-    -- don't exist on a fresh clone. Cabal 3.8.0.0 will do this automatically.
-    --
-    -- XXX: For some reason cabal just stops when the command returns 0? So
-    --      negating this seems to 'work'
-    post-checkout-command: bash -c "! git submodule update --init --recursive"
+    tag:      f9eb010ed267357ae0e23d7ddf98186ef2ff5034
+    -- Required for Cabal < 3.8
+    -- post-checkout-command: bash -c "! git submodule update --init --recursive"
 
--- This is for LLVM 12, comment this stanza out to fall back to the latest
--- versions of these packages published to Hackage
 source-repository-package
-    type: git
+    type:     git
     location: https://github.com/llvm-hs/llvm-hs.git
-    tag: eda85a2bbe362a0b89df5adce0cb65e4e755eac5
-    subdir: llvm-hs llvm-hs-pure
+    tag:      e4b3cfa47e72f094ab109884f18acfc666b0fb7d
+    -- tag:      423220bffac4990d019fc088c46c5f25310d5a33 -- llvm-12
+    subdir:
+        llvm-hs
+        llvm-hs-pure
 
--- package accelerate
---     flags: +debug
-
--- vim: nospell syntax=cabal

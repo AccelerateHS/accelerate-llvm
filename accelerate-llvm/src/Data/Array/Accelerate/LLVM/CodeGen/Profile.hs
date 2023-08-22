@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -24,7 +25,6 @@ import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.Global
-import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
@@ -75,19 +75,27 @@ global_string str = do
 -- };
 --
 source_location_data :: String -> String -> String -> Int -> Word32 -> CodeGen arch (Name a)
-source_location_data n f s line colour = do
-  _               <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.ptr LLVM.i8, LLVM.i32, LLVM.i32 ]
-  (name, name_sz) <- global_string n
-  (fun, fun_sz)   <- global_string f
-  (src, src_sz)   <- global_string s
+source_location_data nm fun src line colour = do
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+  let i8ptr_t = LLVM.ptr
+#else
+  let i8ptr_t = LLVM.ptr LLVM.i8
+#endif
+  _       <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ i8ptr_t, i8ptr_t, i8ptr_t, LLVM.i32, LLVM.i32 ]
+  (s, sl) <- global_string src
+  (f, fl) <- global_string fun
+  (n, nl) <- global_string nm
   let
-      name_c  = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType name_sz LLVM.i8)) (downcast name)
-      fun_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType fun_sz LLVM.i8)) (downcast fun)
-      src_c   = Constant.GlobalReference (LLVM.ptr (LLVM.ArrayType src_sz LLVM.i8)) (downcast src)
+      st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
+      ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
+      nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
+      source     = if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+      function   = if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+      name       = if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
   --
-  nm <- freshGlobalName
-  _  <- declare $ LLVM.globalVariableDefaults
-    { LLVM.name        = downcast nm
+  v <- freshGlobalName
+  _ <- declare $ LLVM.globalVariableDefaults
+    { LLVM.name        = downcast v
     , LLVM.isConstant  = True
     , LLVM.linkage     = LLVM.Internal
     , LLVM.type'       = LLVM.NamedTypeReference "___tracy_source_location_data"
@@ -97,15 +105,15 @@ source_location_data n f s line colour = do
           { Constant.structName   = Just "___tracy_source_location_data"
           , Constant.isPacked     = False
           , Constant.memberValues =
-              [ if null n then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True name_c [ Constant.Int 32 0, Constant.Int 32 0 ]
-              , if null f then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True fun_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
-              , if null s then Constant.Null (LLVM.ptr LLVM.i8) else Constant.GetElementPtr True src_c  [ Constant.Int 32 0, Constant.Int 32 0 ]
+              [ downcast name
+              , downcast function
+              , downcast source
               , Constant.Int 32 (toInteger line)
               , Constant.Int 32 (toInteger colour)
               ]
           }
     }
-  return nm
+  return v
 
 
 alloc_srcloc_name
@@ -121,28 +129,30 @@ alloc_srcloc_name l src fun nm
       (f, fl) <- global_string fun
       (n, nl) <- global_string nm
       let
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+          gep_ix     = [ScalarConstant scalarType 0 :: Constant Int32]
+#else
+          gep_ix     = [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+#endif
           st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
           ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
           nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
           line       = ConstantOperand $ ScalarConstant scalarType (fromIntegral l :: Word32)
-          source     = ConstantOperand $ GlobalReference (PrimType st) s
-          function   = ConstantOperand $ GlobalReference (PrimType ft) f
-          name       = ConstantOperand $ GlobalReference (PrimType nt) n
+          source     = ConstantOperand $ if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) gep_ix
+          function   = ConstantOperand $ if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) gep_ix
+          name       = ConstantOperand $ if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) gep_ix
           sourceSz   = ConstantOperand $ ScalarConstant scalarType (sl-1) -- null
           functionSz = ConstantOperand $ ScalarConstant scalarType (fl-1) -- null
           nameSz     = ConstantOperand $ ScalarConstant scalarType (nl-1) -- null
       --
-      ps   <- if null src then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr source   [num numType 0, num numType 0 :: Operand Int32])
-      pf   <- if null fun then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr function [num numType 0, num numType 0 :: Operand Int32])
-      pn   <- if null nm  then return $ ConstantOperand (NullPtrConstant type') else instr' (GetElementPtr name     [num numType 0, num numType 0 :: Operand Int32])
       call' $ Lam primType line
-            $ Lam primType ps
+            $ Lam primType source
             $ Lam primType sourceSz
-            $ Lam primType pf
+            $ Lam primType function
             $ Lam primType functionSz
-            $ Lam primType pn
+            $ Lam primType name
             $ Lam primType nameSz
-            $ Body (type' :: Type Word64) (Just Tail) "___tracy_alloc_srcloc_name"
+            $ Body (type' @SrcLoc) (Just Tail) "___tracy_alloc_srcloc_name"
 
 zone_begin
     :: Int      -- line
@@ -159,7 +169,7 @@ zone_begin line src fun name colour
       --
       call' $ Lam srcloc_ty (ConstantOperand (GlobalReference (PrimType srcloc_ty) srcloc))
             $ Lam primType (ConstantOperand (ScalarConstant scalarType (1 :: Int32)))
-            $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin"
+            $ Body (type' @SrcLoc) (Just Tail) "___tracy_emit_zone_begin"
 
 zone_begin_alloc
     :: Int      -- line
@@ -174,11 +184,11 @@ zone_begin_alloc line src fun name colour
       srcloc <- alloc_srcloc_name line src fun name
       zone   <- call' $ Lam primType (op primType srcloc)
                       $ Lam primType (ConstantOperand (ScalarConstant scalarType (1 :: Int32)))
-                      $ Body (type' :: Type Word64) (Just Tail) "___tracy_emit_zone_begin_alloc"
+                      $ Body (type' @SrcLoc) (Just Tail) "___tracy_emit_zone_begin_alloc"
       when (colour /= 0) $
         void . call' $ Lam primType (op primType zone)
                      $ Lam primType (ConstantOperand (ScalarConstant scalarType colour))
-                     $ Body (type' :: Type ()) (Just Tail) "___tracy_emit_zone_color"
+                     $ Body VoidType (Just Tail) "___tracy_emit_zone_color"
       return zone
 
 zone_end
@@ -186,5 +196,7 @@ zone_end
     -> CodeGen arch ()
 zone_end zone
   | not debuggingIsEnabled = return ()
-  | otherwise              = void $ call' (Lam primType (op primType zone) (Body VoidType (Just Tail) "___tracy_emit_zone_end"))
+  | otherwise              =
+      void . call' $ Lam primType (op primType zone)
+                   $ Body VoidType (Just Tail) "___tracy_emit_zone_end"
 
