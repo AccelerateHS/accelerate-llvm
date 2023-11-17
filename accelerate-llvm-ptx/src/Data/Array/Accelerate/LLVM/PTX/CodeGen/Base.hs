@@ -43,6 +43,7 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
   -- Shared memory
   staticSharedMem,
+  sharedMemorySizeAdd,
   dynamicSharedMem,
   sharedMemAddrSpace, sharedMemVolatility,
 
@@ -676,6 +677,24 @@ initialiseDynamicSharedMemory = do
     }
   return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType 0 scalarType) sharedMemAddrSpace)) "__shared__"
 
+sharedMemorySizeAdd
+  :: TypeR e
+  -> Int -- number of array elements
+  -> Int -- #bytes of shared memory the have already been allocated
+  -> Int
+sharedMemorySizeAdd tp n i = case tp of
+  TupRunit -> i
+  TupRpair t2 t1 ->
+    -- First handle the second element of the tuple, then the first,
+    -- to match the behaviour of dynamicSharedMem
+    sharedMemorySizeAdd t2 n $ sharedMemorySizeAdd t1 n i
+  TupRsingle t ->
+    let
+      bytes = bytesElt tp
+      -- Align 'i' to the alignment of t
+      aligned = alignTo (scalarAlignment t) i
+    in
+      aligned + bytes * n
 
 -- Declared a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
@@ -700,14 +719,18 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
+          let bytes = bytesElt (TupRsingle t)
+          let align = scalarAlignment t
+          i' <- instr' $ Add numTp i (A.integral int $ P.fromIntegral $ align - 1)
+          aligned <- instr' $ BAnd int i' (A.integral int $ P.fromIntegral $ Data.Bits.complement $ align - 1)
 #if MIN_VERSION_llvm_hs(15,0,0)
-          p <- instr' $ GetElementPtr scalarType smem [i]
+          p <- instr' $ GetElementPtr scalarType smem [aligned]
 #else
-          p <- instr' $ GetElementPtr scalarType smem [A.num numTp 0, i] -- TLM: note initial zero index!!
+          p <- instr' $ GetElementPtr scalarType smem [A.num numTp 0, aligned] -- TLM: note initial zero index!!
 #endif
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-          a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
-          b <- instr' $ Add numTp i a
+          a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral bytes))
+          b <- instr' $ Add numTp aligned a
           return (b, ir t (unPtr q))
     --
     (_, ad) <- go tp offset
@@ -803,3 +826,11 @@ makeKernel config name@(Label l) param kernel = do
                      }
     }
 
+scalarAlignment :: ScalarType t -> Int
+scalarAlignment t@(SingleScalarType _) = bytesElt (TupRsingle t)
+scalarAlignment (VectorScalarType (VectorType _ t)) = bytesElt (TupRsingle $ SingleScalarType t)
+
+-- Align 'ptr' to the given alignment.
+-- Assumes 'align' is a power of 2.
+alignTo :: Int -> Int -> Int
+alignTo align ptr = (ptr + align - 1) .&. Data.Bits.complement (align - 1)
