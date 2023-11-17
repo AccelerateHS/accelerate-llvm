@@ -134,8 +134,8 @@ mkFoldAllS uid dev aenv tp combine mseed marr =
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem multipleOf multipleOfQ
       smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
+        | canShfl dev     = sharedMemorySizeAdd tp warps 0
+        | otherwise       = warps * (1 + per_warp) * bytes -- This does not take alignment into account
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -195,8 +195,8 @@ mkFoldAllM1 uid dev aenv tp combine marr =
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
+        | canShfl dev     = sharedMemorySizeAdd tp warps 0
+        | otherwise       = warps * (1 + per_warp) * bytes -- This does not take alignment into account
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -254,8 +254,8 @@ mkFoldAllM2 uid dev aenv tp combine mseed =
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
+        | canShfl dev     = sharedMemorySizeAdd tp warps 0
+        | otherwise       = warps * (1 + per_warp) * bytes -- This does not take alignment into account
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -325,8 +325,8 @@ mkFoldDim uid aenv repr@(ArrayR shr tp) combine mseed marr = do
       --
       config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
       smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
+        | canShfl dev     = sharedMemorySizeAdd tp warps 0
+        | otherwise       = warps * (1 + per_warp) * bytes -- This does not take alignment into account
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -479,7 +479,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
     warpReduce input = do
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       wid   <- warpId
-      skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes))
+      skip  <- A.mul numType wid (int32 (warp_smem_elems * bytes)) -- This does not take alignment into account
       smem  <- dynamicSharedMem tp TypeInt32 (int32 warp_smem_elems) skip
 
       -- Are we doing bounds checking for this warp?
@@ -505,7 +505,7 @@ reduceBlockSMem dev tp combine size = warpReduce >=> warpAggregate
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
       warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
-      skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes))
+      skip  <- A.mul numType warps (int32 (warp_smem_elems * bytes)) -- This does not take alignment into account
       smem  <- dynamicSharedMem tp TypeInt32 warps skip
 
       -- Share the per-lane aggregates

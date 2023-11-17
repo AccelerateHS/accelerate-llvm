@@ -159,15 +159,7 @@ mkScanAllP1 dir uid aenv tp combine mseed marr = do
       end                 = indexHead (irArrayShape arrTmp)
       paramEnv            = envParam aenv
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) const [|| const ||]
   --
   makeOpenAccWith config uid "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -279,17 +271,9 @@ mkScanAllP2 dir uid aenv tp combine = do
       start               = liftInt 0
       end                 = indexHead (irArrayShape arrTmp)
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) grid gridQ
       grid _ _            = 1
       gridQ               = [|| \_ _ -> 1 ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
   --
   makeOpenAccWith config uid "scanP2" (paramTmp ++ paramEnv) $ do
 
@@ -476,15 +460,7 @@ mkScan'AllP1 dir uid aenv tp combine seed marr = do
       end                 = indexHead (irArrayShape arrTmp)
       paramEnv            = envParam aenv
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) const [|| const ||]
   --
   makeOpenAccWith config uid "scanP1" (paramTmp ++ paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -590,17 +566,9 @@ mkScan'AllP2 dir uid aenv tp combine = do
       start               = liftInt 0
       end                 = indexHead (irArrayShape arrTmp)
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem grid gridQ
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) grid gridQ
       grid _ _            = 1
       gridQ               = [|| \_ _ -> 1 ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
   --
   makeOpenAccWith config uid "scanP2" (paramTmp ++ paramSum ++ paramEnv) $ do
 
@@ -786,15 +754,7 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
       (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) const [|| const ||]
   --
   makeOpenAccWith config uid "scan" (paramOut ++ paramIn ++ paramEnv) $ do
 
@@ -987,15 +947,7 @@ mkScan'Dim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
       (arrIn,  paramIn)   = delayedArray "in" marr
       paramEnv            = envParam aenv
       --
-      config              = launchConfig dev (CUDA.incWarp dev) smem const [|| const ||]
-      smem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
-        where
-          ws        = CUDA.warpSize dev
-          warps     = n `P.quot` ws
-          per_warp  = ws + ws `P.quot` 2
-          bytes     = bytesElt tp
+      config              = launchConfig dev (CUDA.incWarp dev) (scanSMemSize dev tp) const [|| const ||]
   --
   makeOpenAccWith config uid "scan" (paramOut ++ paramSum ++ paramIn ++ paramEnv) $ do
 
@@ -1181,6 +1133,15 @@ mkScan'Fill
 mkScan'Fill uid aenv repr seed =
   Safe.coerce <$> mkGenerate uid aenv (reduceRank repr) (IRFun1 (const seed))
 
+scanSMemSize :: DeviceProperties -> TypeR e -> Int -> Int
+scanSMemSize dev tp n
+  | canShfl dev = sharedMemorySizeAdd tp warps 0
+  | otherwise   = warps * (1 + per_warp) * bytes -- This does not take alignment into account
+  where
+    ws        = CUDA.warpSize dev
+    warps     = n `P.quot` ws
+    per_warp  = ws + ws `P.quot` 2
+    bytes     = bytesElt tp
 
 -- Block wide scan
 -- ---------------
@@ -1240,7 +1201,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
       -- Allocate (1.5 * warpSize) elements of shared memory for each warp
       -- (individually addressable by each warp)
       wid   <- warpId
-      skip  <- A.mul numType wid (int32 warp_smem_bytes)
+      skip  <- A.mul numType wid (int32 warp_smem_bytes) -- This does not take alignment into account
       smem  <- dynamicSharedMem tp TypeInt32 (int32 warp_smem_elems) skip
       scanWarpSMem dir dev tp combine smem input
 
@@ -1252,7 +1213,7 @@ scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
       -- Allocate #warps elements of shared memory
       bd    <- blockDim
       warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
-      skip  <- A.mul numType warps (int32 warp_smem_bytes)
+      skip  <- A.mul numType warps (int32 warp_smem_bytes) -- This does not take alignment into account
       smem  <- dynamicSharedMem tp TypeInt32 warps skip
 
       -- Share warp aggregates

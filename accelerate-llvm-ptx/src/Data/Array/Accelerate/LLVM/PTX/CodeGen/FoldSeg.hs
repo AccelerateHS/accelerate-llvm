@@ -100,8 +100,8 @@ mkFoldSegP_block uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = d
       --
       config              = launchConfig dev (CUDA.decWarp dev) dsmem const [|| const ||]
       dsmem n
-        | canShfl dev     = warps * bytes
-        | otherwise       = warps * (1 + per_warp) * bytes
+        | canShfl dev     = sharedMemorySizeAdd tp warps 0
+        | otherwise       = warps * (1 + per_warp) * bytes -- This does not take alignment into account
         where
           ws        = CUDA.warpSize dev
           warps     = n `P.quot` ws
@@ -307,7 +307,7 @@ mkFoldSegP_warp uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
       --
       per_warp_bytes
         | canShfl dev     = 0
-        | otherwise       = (2 * sizeOf (undefined::Int)) `P.max` (bytesElt tp * per_warp_elems)
+        | otherwise       = (2 * sizeOf (undefined::Int)) `P.max` (bytesElt tp * per_warp_elems) -- This does not take alignment into account
       per_warp_elems      = ws + (ws `P.quot` 2)
       ws                  = CUDA.warpSize dev
 
@@ -358,7 +358,7 @@ mkFoldSegP_warp uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     lim   <- case canShfl dev of
       True  -> return (unsmem (TupRsingle scalarTypeInt))
       False -> do
-        a <- A.mul numType wid (int32 per_warp_bytes)
+        a <- A.mul numType wid (int32 per_warp_bytes) -- This does not take alignment into account
         b <- dynamicSharedMem (TupRsingle scalarTypeInt) TypeInt32 (liftInt32 0) a
         return b
 
@@ -371,7 +371,7 @@ mkFoldSegP_warp uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
     smem  <- case canShfl dev of
       True  -> return (unsmem tp)
       False -> do
-        a <- A.mul numType wid (int32 per_warp_bytes)
+        a <- A.mul numType wid (int32 per_warp_bytes) -- This does not take alignment into account
         b <- dynamicSharedMem tp TypeInt32 (int32 per_warp_elems) a
         return b
 
