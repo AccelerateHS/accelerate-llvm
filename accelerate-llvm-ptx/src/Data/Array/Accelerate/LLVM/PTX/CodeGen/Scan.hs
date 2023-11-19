@@ -189,6 +189,10 @@ mkScanAllP1 dir uid aenv tp combine mseed marr = do
     -- iterating over thread-block-wide segments
     imapFromStepTo s0 gd' end $ \chunk -> do
 
+      -- Make sure all threads have finished previous iterations,
+      -- so we can reuse (and overwrite) shared memory.
+      __syncthreads
+
       bd    <- blockDim
       bd'   <- int bd
       inf   <- A.mul numType chunk bd'
@@ -498,6 +502,10 @@ mkScan'AllP1 dir uid aenv tp combine seed marr = do
 
     -- iterate over thread-block wide segments
     imapFromStepTo bid gd end $ \seg -> do
+
+      -- Make sure all threads have finished previous iterations,
+      -- so we can reuse (and overwrite) shared memory.
+      __syncthreads
 
       bd  <- int =<< blockDim
       inf <- A.mul numType seg bd
@@ -818,6 +826,10 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
     end <- shapeSize shr (indexTail (irArrayShape arrOut))
 
     imapFromStepTo bid gd end $ \seg -> do
+
+      -- Make sure all threads have finished previous iterations,
+      -- so we can reuse (and overwrite) shared memory.
+      __syncthreads
 
       -- Index this thread reads from
       tid   <- threadIdx
