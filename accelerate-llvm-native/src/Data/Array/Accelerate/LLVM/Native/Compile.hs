@@ -117,7 +117,7 @@ compile pacc aenv = do
         Debug.traceM Debug.dump_cc ("cc: found cached object " % shown) uid
 
       else do
-        print ast
+        -- print ast
 
         -- Detect LLVM version
         let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
@@ -136,6 +136,9 @@ compile pacc aenv = do
         -- putStrLn unoptimisedText
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
+
+        -- TODO: do 'opt' and 'llc' in one go using clang:
+        --   $ clang -O3 -o opt.o -march=native -fPIC -c unopt.ll
 
         -- Run the module through `opt` to optimise it
         optimisedText <- readProcess "opt" ["-S", "-O3"] unoptimisedText
