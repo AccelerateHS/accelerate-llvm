@@ -12,16 +12,16 @@
 
 module Data.Array.Accelerate.LLVM.Native.Compile.Optimise (
 
-  optimiseModule
+  -- optimiseModule
 
 ) where
 
 import LLVM.AST.DataLayout
-import LLVM.Module
-import LLVM.Target
+-- import LLVM.Module
+-- import LLVM.Target
 
-#if MIN_VERSION_llvm_hs(15,0,0)
-import LLVM.Passes
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
+-- import LLVM.Passes
 #else
 import LLVM.PassManager
 
@@ -36,33 +36,33 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 -- optimisation passes such that LLVM has the necessary information to
 -- automatically vectorise loops (whenever it deems beneficial to do so).
 --
-optimiseModule
-    :: Maybe DataLayout
-    -> Maybe TargetMachine
-    -> Maybe TargetLibraryInfo
-    -> Module
-    -> IO ()
-#if MIN_VERSION_llvm_hs(15,0,0)
-optimiseModule _ machine _ mdl = do
-  let p1 = PassSetSpec
-            { passes        = [ CuratedPassSet 3 ]
-            , targetMachine = machine
-            }
-  runPasses p1 mdl
-#else
-optimiseModule datalayout machine libinfo mdl = do
-  let p1 = defaultCuratedPassSetSpec
-            { optLevel                           = Just 3
-            , dataLayout                         = datalayout
-            , targetMachine                      = machine
-            , targetLibraryInfo                  = libinfo
-            , loopVectorize                      = Just True
-            , superwordLevelParallelismVectorize = Just True
-            }
-  b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
+-- optimiseModule
+--     :: Maybe DataLayout
+--     -> Maybe TargetMachine
+--     -> Maybe TargetLibraryInfo
+--     -> Module
+--     -> IO ()
+-- #if MIN_VERSION_llvm_hs_pure(15,0,0)
+-- optimiseModule _ machine _ mdl = do
+--   let p1 = PassSetSpec
+--             { passes        = [ CuratedPassSet 3 ]
+--             , targetMachine = machine
+--             }
+--   runPasses p1 mdl
+-- #else
+-- optimiseModule datalayout machine libinfo mdl = do
+--   let p1 = defaultCuratedPassSetSpec
+--             { optLevel                           = Just 3
+--             , dataLayout                         = datalayout
+--             , targetMachine                      = machine
+--             , targetLibraryInfo                  = libinfo
+--             , loopVectorize                      = Just True
+--             , superwordLevelParallelismVectorize = Just True
+--             }
+--   b1 <- withPassManager p1 $ \pm -> runPassManager pm mdl
 
-  Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
-#endif
+--   Debug.traceM Debug.dump_cc ("llvm: optimisation did work? " % shown) b1
+-- #endif
 
 
 {--

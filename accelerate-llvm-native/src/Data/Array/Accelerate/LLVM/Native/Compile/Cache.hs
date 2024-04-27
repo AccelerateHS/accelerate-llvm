@@ -30,7 +30,7 @@ import Paths_accelerate_llvm_native
 instance Persistent Native where
   targetCacheTemplate =
     return $ "accelerate-llvm-native-" ++ showVersion version
-         </> "llvm-hs-" ++ VERSION_llvm_hs
+         </> "llvm-hs-" ++ VERSION_llvm_hs_pure
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
          </> "meep"

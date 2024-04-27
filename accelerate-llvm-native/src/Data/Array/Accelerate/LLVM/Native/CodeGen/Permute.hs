@@ -190,7 +190,7 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
                   addr <- instr' $ GetElementPtr (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) [op integralType j]
                   --
                   case s of
-#if MIN_VERSION_llvm_hs(10,0,0)
+#if MIN_VERSION_llvm_hs_pure(10,0,0)
                     NumSingleType t             -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
 #else
                     NumSingleType t

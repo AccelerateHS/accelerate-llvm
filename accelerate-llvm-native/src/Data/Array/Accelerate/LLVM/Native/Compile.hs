@@ -21,6 +21,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile (
 ) where
 
 import Data.Array.Accelerate.AST                                    ( PreOpenAcc )
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Trafo.Delayed
 
 import Data.Array.Accelerate.LLVM.CodeGen
@@ -35,21 +36,27 @@ import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
+import LLVM.AST.ToLLVMPretty
 
 import LLVM.AST                                                     hiding ( Module )
-import LLVM.Module                                                  as LLVM hiding ( Module )
-import LLVM.Context
-import LLVM.Target
+-- import LLVM.Module                                                  as LLVM hiding ( Module )
+-- import LLVM.Context
+-- import LLVM.Target
+import qualified Text.LLVM.PP                                       as P
+import qualified Text.PrettyPrint                                   as P ( render )
 
 import Control.Applicative
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.List                                                    ( intercalate )
+import Data.Foldable                                                ( toList )
 import Data.Maybe
 import Data.Text.Encoding
 import Formatting
 import System.Directory
 import System.Environment
 import System.FilePath                                              ( (<.>) )
+import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
 import qualified Data.ByteString                                    as B
@@ -109,24 +116,40 @@ compile pacc aenv = do
       then
         Debug.traceM Debug.dump_cc ("cc: found cached object " % shown) uid
 
-      else
-        withContext                  $ \ctx     ->
-        withModuleFromAST ctx ast    $ \mdl     ->
-        withNativeTargetMachine      $ \machine ->
-        withTargetLibraryInfo triple $ \libinfo -> do
-          optimiseModule datalayout (Just machine) (Just libinfo) mdl
+      else do
+        print ast
 
-          Debug.when Debug.verbose $ do
-            Debug.traceM Debug.dump_cc  stext . decodeUtf8 =<< moduleLLVMAssembly mdl
-            Debug.traceM Debug.dump_asm stext . decodeUtf8 =<< moduleTargetAssembly machine mdl
+        -- Detect LLVM version
+        let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
+        llvmver <- case llvmverFromTuple hostLLVMVersion of
+                     Just llvmver -> return llvmver
+                     Nothing -> internalError ("accelerate-llvm-native: Unsupported LLVM version: " % string)
+                                              prettyHostLLVMVersion
+        Debug.traceM Debug.dump_cc ("Using LLVM version " % shown) prettyHostLLVMVersion
 
-          -- XXX: We'll let LLVM generate a relocatable object, and we'll then
-          --      manually invoke the system linker to build a shared object out
-          --      of it so we can link to it. LLVM doesn't seem to provide a way
-          --      to do this for us without having to shell out to the linker.
-          obj <- moduleObject machine mdl
-          Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
-          B.writeFile staticObjFile obj
+        -- Convert module to llvm-pretty format so that we can print it
+        ast' <- case toLLVMPretty ast of
+                  Right m -> return m
+                  Left err -> internalError ("accelerate-llvm-native: Unsupported LLVM IR generated: " % string) err
+        -- print ast'
+        let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast'))
+        -- putStrLn unoptimisedText
+        Debug.when Debug.verbose $ do
+          Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
+
+        -- Run the module through `opt` to optimise it
+        optimisedText <- readProcess "opt" ["-S", "-O3"] unoptimisedText
+        Debug.when Debug.verbose $ do
+          Debug.traceM Debug.dump_cc ("Optimised LLVM IR:\n" % string) optimisedText
+
+        -- Generate optimise machine code and write to the object file
+        doDumpAsm <- Debug.getFlag Debug.dump_asm
+        when doDumpAsm $
+          hPutStrLn stderr "Warning: -ddump-asm non-functional when compiling via textual LLVM IR"
+        _ <- readProcess "llc"
+               ["-o", staticObjFile, "-O3", "-mcpu=native", "-filetype=obj", "-relocation-model=pic"]
+               optimisedText
+        Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
 
     return staticObjFile
 

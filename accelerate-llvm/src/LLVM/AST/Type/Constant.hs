@@ -72,7 +72,7 @@ data Constant a where
 instance Downcast (Constant a) LLVM.Constant where
   downcast = \case
     UndefConstant t             -> LLVM.Undef (downcast t)
-#if MIN_VERSION_llvm_hs(15,0,0)
+#if MIN_VERSION_llvm_hs_pure(15,0,0)
     GlobalReference _ n         -> LLVM.GlobalReference (downcast n)
     ConstantGetElementPtr t n i -> LLVM.GetElementPtr inbounds (downcast t) (downcast n) (downcast i)
 #else
