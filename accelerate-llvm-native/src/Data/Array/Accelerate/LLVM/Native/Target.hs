@@ -75,6 +75,9 @@ nativeTargetTriple = unsafePerformIO $
 -- | String that describes the host CPU
 --
 -- TODO: this function needs to be generalised a LOT
+-- TODO: Ivo says: perhaps we can simply hash the model numbers that the
+-- `cpuinfo` instruction returns? No need to do a complicated lookup if we're
+-- going to hash the result anyway.
 nativeCPUName :: ByteString
 nativeCPUName = BS8.pack $
   case parseCPUInfo procCPUInfoContents of
