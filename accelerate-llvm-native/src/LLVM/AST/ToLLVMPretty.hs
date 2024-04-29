@@ -265,6 +265,7 @@ cvtParameter (AG.Parameter t name _attribs) = do
   name' <- cvtName name
   -- TODO attributes! llvm-pretty doesn't seem to support them, but we put
   -- [NoAlias, NoCapture] on pointer types.
+  -- TODO: Should check if these parameters are necessary (by benchmarking the old backend with llvm-hs), and if so, should send a PR to llvm-prettyt
   return $ P.Typed (cvtType t) name'
 
 cvtBB :: AG.BasicBlock -> M P.BasicBlock
