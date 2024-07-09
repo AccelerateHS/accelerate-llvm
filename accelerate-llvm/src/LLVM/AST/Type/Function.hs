@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -22,9 +23,10 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
-import qualified LLVM.AST.Attribute                                 as LLVM
-import qualified LLVM.AST.Global                                    as LLVM
-import qualified LLVM.AST.Instruction                               as LLVM
+-- import qualified LLVM.AST.Attribute                                 as LLVM
+-- import qualified LLVM.AST.Global                                    as LLVM
+-- import qualified LLVM.AST.Instruction                               as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | Attributes for the function call instruction
@@ -66,27 +68,28 @@ data Function kind args t where
   Lam  :: PrimType a -> Operand a -> Function kind args t -> Function kind (a ': args) t
 
 
-instance Downcast FunctionAttribute LLVM.FunctionAttribute where
-  downcast NoReturn            = LLVM.NoReturn
-  downcast NoUnwind            = LLVM.NoUnwind
-  downcast ReadOnly            = LLVM.ReadOnly
-  downcast ReadNone            = LLVM.ReadNone
-  downcast AlwaysInline        = LLVM.AlwaysInline
-  downcast NoDuplicate         = LLVM.NoDuplicate
-  downcast Convergent          = LLVM.Convergent
-  downcast InaccessibleMemOnly = LLVM.InaccessibleMemOnly
+instance Downcast FunctionAttribute LLVM.FunAttr where
+  downcast NoReturn            = LLVM.Noreturn
+  downcast NoUnwind            = LLVM.Nounwind
+  downcast ReadOnly            = LLVM.Readonly
+  downcast ReadNone            = LLVM.Readnone
+  downcast AlwaysInline        = LLVM.Alwaysinline
+  downcast NoDuplicate         = LLVM.Noduplicate
+  downcast Convergent          = error "TODO FunctionAttribute Convergent" -- LLVM.Convergent
+  downcast InaccessibleMemOnly = error "TODO FunctionAttribute InaccessibleMemOnly" -- LLVM.InaccessibleMemOnly
 
-instance Downcast (Parameter a) LLVM.Parameter where
-  downcast (Parameter t n) = LLVM.Parameter (downcast t) (downcast n) attrs
-    where
-      attrs | PtrPrimType{} <- t = [LLVM.NoAlias, LLVM.NoCapture] -- XXX: alignment
-            | otherwise          = []
+instance Downcast (Parameter a) (LLVM.Typed LLVM.Ident) where
+  -- TODO attributes! llvm-pretty doesn't seem to support them, but we put
+  -- [NoAlias, NoCapture] on pointer types.
+  -- TODO: Should check if these parameters are necessary (by benchmarking the old backend with llvm-hs), and if so, should send a PR to llvm-pretty
+  downcast (Parameter t n) = LLVM.Typed (downcast t) (nameToPrettyI n)
 
-instance Downcast TailCall LLVM.TailCallKind where
-  downcast Tail     = LLVM.Tail
-  downcast NoTail   = LLVM.NoTail
-  downcast MustTail = LLVM.MustTail
+-- | This instance is inaccurate because it rounds MustTail to simply Tail.
+instance Downcast TailCall Bool where
+  downcast Tail     = True
+  downcast NoTail   = False
+  downcast MustTail = True
 
-instance Downcast GroupID LLVM.GroupID where
-  downcast (GroupID n) = LLVM.GroupID n
+-- instance Downcast GroupID LLVM.GroupID where
+--   downcast (GroupID n) = LLVM.GroupID n
 

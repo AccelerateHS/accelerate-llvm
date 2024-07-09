@@ -1,6 +1,8 @@
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Terminator
@@ -20,7 +22,7 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Downcast
 
-import qualified LLVM.AST.Instruction                               as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | <http://llvm.org/docs/LangRef.html#terminators>
@@ -63,14 +65,11 @@ data Terminator a where
 
 -- | Convert to llvm-hs
 --
-instance Downcast (Terminator a) LLVM.Terminator where
+instance Downcast (Terminator a) LLVM.Instr where
   downcast = \case
-    Ret           -> LLVM.Ret Nothing md
-    RetVal x      -> LLVM.Ret (Just (downcast x)) md
-    Br l          -> LLVM.Br (downcast l) md
-    CondBr p t f  -> LLVM.CondBr (downcast p) (downcast t) (downcast f) md
-    Switch p d a  -> LLVM.Switch (downcast p) (downcast d) (downcast a) md
-    where
-      md :: LLVM.InstructionMetadata
-      md = []
+    Ret           -> LLVM.RetVoid
+    RetVal x      -> LLVM.Ret (downcast x)
+    Br l          -> LLVM.Jump (LLVM.Named (labelToPrettyI l))
+    CondBr p t f  -> LLVM.Br (downcast p) (LLVM.Named (labelToPrettyI t)) (LLVM.Named (labelToPrettyI f))
+    Switch p d a  -> error "TODO"  -- LLVM.Switch (downcast p) (downcast d) (downcast a) []
 

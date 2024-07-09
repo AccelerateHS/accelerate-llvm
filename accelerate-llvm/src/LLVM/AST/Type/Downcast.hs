@@ -1,6 +1,8 @@
 {-# LANGUAGE GADTs                 #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Downcast
@@ -19,7 +21,8 @@ module LLVM.AST.Type.Downcast (
 ) where
 
 import Data.Array.Accelerate.Type
-import qualified LLVM.AST.Type                                      as LLVM
+-- import qualified LLVM.AST.Type                                      as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 import Data.Bits
 
@@ -58,7 +61,7 @@ instance Downcast (SingleType a) LLVM.Type where
   downcast (NumSingleType t) = downcast t
 
 instance Downcast (VectorType a) LLVM.Type where
-  downcast (VectorType n t) = LLVM.VectorType (fromIntegral n) (downcast t)
+  downcast (VectorType n t) = LLVM.Vector (fromIntegral n) (downcast t)
 
 instance Downcast (BoundedType t) LLVM.Type where
   downcast (IntegralBoundedType t) = downcast t
@@ -68,19 +71,19 @@ instance Downcast (NumType a) LLVM.Type where
   downcast (FloatingNumType t) = downcast t
 
 instance Downcast (IntegralType a) LLVM.Type where
-  downcast TypeInt     = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Int)) |] )
-  downcast TypeInt8    = LLVM.IntegerType 8
-  downcast TypeInt16   = LLVM.IntegerType 16
-  downcast TypeInt32   = LLVM.IntegerType 32
-  downcast TypeInt64   = LLVM.IntegerType 64
-  downcast TypeWord    = LLVM.IntegerType $( [| fromIntegral (finiteBitSize (undefined :: Word)) |] )
-  downcast TypeWord8   = LLVM.IntegerType 8
-  downcast TypeWord16  = LLVM.IntegerType 16
-  downcast TypeWord32  = LLVM.IntegerType 32
-  downcast TypeWord64  = LLVM.IntegerType 64
+  downcast TypeInt     = LLVM.PrimType (LLVM.Integer (fromIntegral (finiteBitSize (undefined :: Int))))
+  downcast TypeInt8    = LLVM.PrimType (LLVM.Integer 8)
+  downcast TypeInt16   = LLVM.PrimType (LLVM.Integer 16)
+  downcast TypeInt32   = LLVM.PrimType (LLVM.Integer 32)
+  downcast TypeInt64   = LLVM.PrimType (LLVM.Integer 64)
+  downcast TypeWord    = LLVM.PrimType (LLVM.Integer (fromIntegral (finiteBitSize (undefined :: Word))))
+  downcast TypeWord8   = LLVM.PrimType (LLVM.Integer 8)
+  downcast TypeWord16  = LLVM.PrimType (LLVM.Integer 16)
+  downcast TypeWord32  = LLVM.PrimType (LLVM.Integer 32)
+  downcast TypeWord64  = LLVM.PrimType (LLVM.Integer 64)
 
 instance Downcast (FloatingType a) LLVM.Type where
-  downcast TypeHalf    = LLVM.FloatingPointType LLVM.HalfFP
-  downcast TypeFloat   = LLVM.FloatingPointType LLVM.FloatFP
-  downcast TypeDouble  = LLVM.FloatingPointType LLVM.DoubleFP
+  downcast TypeHalf    = LLVM.PrimType (LLVM.FloatType LLVM.Half)
+  downcast TypeFloat   = LLVM.PrimType (LLVM.FloatType LLVM.Float)
+  downcast TypeDouble  = LLVM.PrimType (LLVM.FloatType LLVM.Double)
 

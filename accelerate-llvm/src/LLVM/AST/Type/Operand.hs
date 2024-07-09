@@ -23,7 +23,7 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
 
-import qualified LLVM.AST.Operand                                   as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'
@@ -33,11 +33,11 @@ data Operand a where
   ConstantOperand :: Constant a -> Operand a
 
 
--- | Convert to llvm-hs
+-- | Convert to llvm-pretty
 --
-instance Downcast (Operand a) LLVM.Operand where
-  downcast (LocalReference t n) = LLVM.LocalReference (downcast t) (downcast n)
-  downcast (ConstantOperand c)  = LLVM.ConstantOperand (downcast c)
+instance Downcast (Operand a) (LLVM.Typed LLVM.Value) where
+  downcast (LocalReference t n) = LLVM.Typed (downcast t) (LLVM.ValIdent (nameToPrettyI n))
+  downcast (ConstantOperand c)  = downcast c
 
 instance TypeOf Operand where
   typeOf (LocalReference t _) = t

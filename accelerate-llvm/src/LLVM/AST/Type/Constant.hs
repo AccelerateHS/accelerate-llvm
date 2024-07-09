@@ -23,9 +23,7 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
 
-import qualified LLVM.AST.Constant                                  as LLVM
-import qualified LLVM.AST.Float                                     as LLVM
-import qualified LLVM.AST.Type                                      as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 import Data.Constraint
 import Data.Primitive.ByteArray
@@ -67,46 +65,41 @@ data Constant a where
                         -> Constant (Ptr a)
 
 
--- | Convert to llvm-hs
+-- | Convert to llvm-pretty
 --
-instance Downcast (Constant a) LLVM.Constant where
+instance Downcast (Constant a) (LLVM.Typed LLVM.Value) where
   downcast = \case
-    UndefConstant t             -> LLVM.Undef (downcast t)
-#if MIN_VERSION_llvm_hs_pure(15,0,0)
-    GlobalReference _ n         -> LLVM.GlobalReference (downcast n)
-    ConstantGetElementPtr t n i -> LLVM.GetElementPtr inbounds (downcast t) (downcast n) (downcast i)
-#else
-    GlobalReference t n         -> LLVM.GlobalReference (downcast t) (downcast n)
-    ConstantGetElementPtr _ n i -> LLVM.GetElementPtr inbounds (downcast n) (downcast i)
-#endif
-    BooleanConstant x           -> LLVM.Int 1 (toInteger (fromEnum x))
-    NullPtrConstant t           -> LLVM.Null (downcast t)
+    UndefConstant t             -> LLVM.Typed (downcast t) LLVM.ValUndef
+    GlobalReference t n         -> LLVM.Typed (downcast t) (LLVM.ValSymbol (nameToPrettyS n))
+    ConstantGetElementPtr t n i -> LLVM.Typed (LLVM.PtrTo (downcast t)) (LLVM.ValConstExpr (LLVM.ConstGEP inbounds Nothing (downcast t) (downcast n) (downcast i)))
+    BooleanConstant x           -> LLVM.Typed (LLVM.PrimType (LLVM.Integer 1)) (LLVM.ValInteger (toInteger (fromEnum x)))
+    NullPtrConstant t           -> LLVM.Typed (downcast t) LLVM.ValNull
     ScalarConstant t x          -> scalar t x
     where
-      scalar :: ScalarType s -> s -> LLVM.Constant
+      scalar :: ScalarType s -> s -> LLVM.Typed LLVM.Value
       scalar (SingleScalarType s) = single s
       scalar (VectorScalarType s) = vector s
 
-      single :: SingleType s -> s -> LLVM.Constant
+      single :: SingleType s -> s -> LLVM.Typed LLVM.Value
       single (NumSingleType s) = num s
 
-      vector :: VectorType s -> s -> LLVM.Constant
+      vector :: VectorType s -> s -> LLVM.Typed LLVM.Value
       vector (VectorType _ s) (Vec ba#)
-        = LLVM.Vector
-        $ map (single s)
-        $ singlePrim s `withDict` foldrByteArray (:) [] (ByteArray ba#)
+        = error "TODO"
+        -- = LLVM.Vector
+        -- $ map (single s)
+        -- $ singlePrim s `withDict` foldrByteArray (:) [] (ByteArray ba#)
 
-      num :: NumType s -> s -> LLVM.Constant
+      num :: NumType s -> s -> LLVM.Typed LLVM.Value
       num (IntegralNumType s) v
         | IntegralDict <- integralDict s
-        = LLVM.Int (LLVM.typeBits (downcast s)) (fromIntegral v)
+        = LLVM.Typed (downcast s) (LLVM.ValInteger (fromIntegral v))
 
       num (FloatingNumType s) v
-        = LLVM.Float
-        $ case s of
-            TypeFloat                        -> LLVM.Single v
-            TypeDouble                       -> LLVM.Double v
-            TypeHalf | Half (CUShort u) <- v -> LLVM.Half u
+        = case s of
+            TypeFloat                        -> LLVM.Typed (LLVM.PrimType (LLVM.FloatType LLVM.Float)) (LLVM.ValFloat v)
+            TypeDouble                       -> LLVM.Typed (LLVM.PrimType (LLVM.FloatType LLVM.Double)) (LLVM.ValDouble v)
+            TypeHalf | Half (CUShort u) <- v -> error "TODO"  -- LLVM.Half u
 
       singlePrim :: SingleType s -> Dict (Prim s)
       singlePrim (NumSingleType s) = numPrim s

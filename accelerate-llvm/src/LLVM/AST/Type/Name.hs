@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveDataTypeable    #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RoleAnnotations       #-}
+{-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.Name
@@ -16,6 +18,7 @@ module LLVM.AST.Type.Name
   where
 
 import Data.ByteString.Short                                        ( ShortByteString )
+import qualified Data.ByteString.Short.Char8                        as SBS8
 import Data.Data
 import Data.Semigroup
 import Data.Hashable
@@ -23,9 +26,7 @@ import Data.String
 import Data.Word
 import Prelude
 
-import LLVM.AST.Type.Downcast
-
-import qualified LLVM.AST.Name                                      as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM
@@ -88,12 +89,17 @@ instance Hashable Label where
   hashWithSalt salt (Label sbs) = hashWithSalt salt sbs
 
 
--- | Convert to llvm-hs
+-- | Convert to llvm-pretty
 --
-instance Downcast (Name a) LLVM.Name where
-  downcast (Name s)   = LLVM.Name s
-  downcast (UnName n) = LLVM.UnName n
+-- We only explicit conversion functions for symbols and identifiers separately.
+--
+nameToPrettyS :: Name a -> LLVM.Symbol
+nameToPrettyS (Name s) = LLVM.Symbol (SBS8.unpack s)
+nameToPrettyS (UnName n) = LLVM.Symbol ("tollpr_s_" ++ show n)
 
-instance Downcast Label LLVM.Name where
-  downcast (Label l)  = LLVM.Name l
+nameToPrettyI :: Name a -> LLVM.Ident
+nameToPrettyI (Name s) = LLVM.Ident (SBS8.unpack s)
+nameToPrettyI (UnName n) = LLVM.Ident ("tollpr_i_" ++ show n)
 
+labelToPrettyI :: Label -> LLVM.Ident
+labelToPrettyI (Label s) = LLVM.Ident (SBS8.unpack s)
