@@ -84,11 +84,10 @@ instance Downcast (Parameter a) (LLVM.Typed LLVM.Ident) where
   -- TODO: Should check if these parameters are necessary (by benchmarking the old backend with llvm-hs), and if so, should send a PR to llvm-pretty
   downcast (Parameter t n) = LLVM.Typed (downcast t) (nameToPrettyI n)
 
--- | This instance is inaccurate because it rounds MustTail to simply Tail.
 instance Downcast TailCall Bool where
   downcast Tail     = True
   downcast NoTail   = False
-  downcast MustTail = True
+  downcast MustTail = error "TODO MustTail"
 
 -- instance Downcast GroupID LLVM.GroupID where
 --   downcast (GroupID n) = LLVM.GroupID n

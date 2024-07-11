@@ -22,26 +22,31 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.Name
 
-import qualified LLVM.AST.Global                                    as LLVM
-import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.AST.Type                                      as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | A global function definition.
 --
 type GlobalFunction args t = Function Label args t
 
-instance Downcast (GlobalFunction args t) LLVM.Global where
-  downcast f = LLVM.functionDefaults { LLVM.name       = nm
-                                     , LLVM.returnType = res
-                                     , LLVM.parameters = (params, False)
-                                     }
-    where
-      trav :: GlobalFunction args t -> ([LLVM.Type], LLVM.Type, LLVM.Name)
-      trav (Body t _ n) = ([], downcast t, downcast n)
-      trav (Lam a _ l)  = let (as, r, n) = trav l
-                          in  (downcast a : as, r, n)
-      --
-      (args, res, nm)  = trav f
-      params           = [ LLVM.Parameter t (LLVM.UnName i) [] | t <- args | i <- [0..] ]
+-- instance Downcast (GlobalFunction args t) LLVM.Global where
+--   downcast f = LLVM.Global
+--     { LLVM.globalSym = _
+--     , LLVM.globalAttrs = _
+--     , LLVM.globalType = _
+--     , LLVM.globalValue = _
+--     , LLVM.globalAlign = _
+--     , LLVM.globalMetadata = _ }
+  -- downcast f = LLVM.functionDefaults { LLVM.name       = nm
+  --                                    , LLVM.returnType = res
+  --                                    , LLVM.parameters = (params, False)
+  --                                    }
+    -- where
+    --   trav :: GlobalFunction args t -> ([LLVM.Type], LLVM.Type, LLVM.Name)
+    --   trav (Body t _ n) = ([], downcast t, downcast n)
+    --   trav (Lam a _ l)  = let (as, r, n) = trav l
+    --                       in  (downcast a : as, r, n)
+    --   --
+    --   (args, res, nm)  = trav f
+    --   params           = [ LLVM.Parameter t (LLVM.UnName i) [] | t <- args | i <- [0..] ]
 

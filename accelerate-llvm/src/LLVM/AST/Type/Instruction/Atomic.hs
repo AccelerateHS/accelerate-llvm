@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP                   #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -15,7 +16,7 @@ module LLVM.AST.Type.Instruction.Atomic
   where
 
 import LLVM.AST.Type.Downcast
-import qualified LLVM.AST.Instruction                               as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | Atomic instructions take ordering parameters that determine which other
@@ -49,21 +50,18 @@ data Synchronisation
 type Atomicity = (Synchronisation, MemoryOrdering)
 
 
--- | Convert to llvm-hs
+-- | Convert to llvm-pretty
 --
-instance Downcast MemoryOrdering LLVM.MemoryOrdering where
+instance Downcast MemoryOrdering LLVM.AtomicOrdering where
   downcast Unordered              = LLVM.Unordered
   downcast Monotonic              = LLVM.Monotonic
   downcast Acquire                = LLVM.Acquire
   downcast Release                = LLVM.Release
-  downcast AcquireRelease         = LLVM.AcquireRelease
-  downcast SequentiallyConsistent = LLVM.SequentiallyConsistent
+  downcast AcquireRelease         = LLVM.AcqRel
+  downcast SequentiallyConsistent = LLVM.SeqCst
 
-instance Downcast Synchronisation LLVM.SynchronizationScope where
-  downcast SingleThread = LLVM.SingleThread
-#if MIN_VERSION_llvm_hs_pure(5,0,0)
-  downcast CrossThread  = LLVM.System
-#else
-  downcast CrossThread  = LLVM.CrossThread
-#endif
+-- llvm-pretty's typing is weak here
+instance Downcast Synchronisation (Maybe String) where
+  downcast SingleThread = Just "singlethread"
+  downcast CrossThread  = Nothing  -- "system"
 

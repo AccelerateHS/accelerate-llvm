@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.Target
   where
 
-import LLVM.AST.DataLayout                                ( DataLayout )
+import Text.LLVM                                          ( DataLayout )
 import Data.ByteString.Short                              ( ShortByteString )
 
 

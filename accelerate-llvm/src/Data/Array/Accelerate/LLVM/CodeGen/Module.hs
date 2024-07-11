@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Module
   where
 
-import qualified LLVM.AST                                 as LLVM
+import qualified Text.LLVM                                as LLVM
 
 import Data.HashMap.Strict                                ( HashMap )
 
@@ -24,14 +24,14 @@ import Data.HashMap.Strict                                ( HashMap )
 --
 data Module arch aenv a
   = Module { unModule       :: LLVM.Module
-           , moduleMetadata :: HashMap LLVM.Name (KernelMetadata arch)
+           , moduleMetadata :: HashMap LLVM.Symbol (KernelMetadata arch)
            }
 
 -- | A fully-instantiated skeleton is a [collection of] kernel(s) that can be compiled
 -- by LLVM into a global function that we can execute.
 --
 data Kernel arch aenv a
-  = Kernel { unKernel       :: LLVM.Global
+  = Kernel { unKernel       :: LLVM.Define
            , kernelMetadata :: KernelMetadata arch
            }
 

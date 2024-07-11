@@ -63,11 +63,14 @@ import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
 import qualified LLVM.AST                                           as LLVM
 import qualified LLVM.AST.Global                                    as LLVM
+import qualified Text.LLVM                                          as LP
+import qualified Text.LLVM.Triple.Parse                             as LP
 
 import Control.Applicative
 import Control.Monad
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
+import qualified Data.ByteString.Short.Char8                        as SBS8
 import Data.Function
 import Data.HashMap.Strict                                          ( HashMap )
 import Data.Sequence                                                ( Seq )
@@ -92,7 +95,7 @@ import qualified Data.ByteString.Short                              as B
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                                      -- blocks for this function
   , symbolTable         :: HashMap Label LLVM.Global                      -- global (external) function declarations
-  , typedefTable        :: HashMap Label (Maybe LLVM.Type)                -- global type definitions
+  , typedefTable        :: HashMap Label LLVM.Type                        -- global type definitions
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
   , local               :: {-# UNPACK #-} !Word                           -- a name supply
@@ -129,28 +132,39 @@ evalCodeGen ll = do
                             , global            = 0
                             }
 
-  let (kernels, md)     = let (fs, as) = unzip [ (f , (LLVM.name f, a)) | Kernel f a <- ks ]
+  let (kernels, md)     = let (fs, as) = unzip [ (f , (LP.defName f, a)) | Kernel f a <- ks ]
                           in  (fs, HashMap.fromList as)
 
-      createTypedefs    = map (\(n,t) -> LLVM.TypeDefinition (downcast n) t) . HashMap.toList
+      createTypedefs    = map (\(n,t) -> LP.TypeDecl (downcast n) (downcast t)) . HashMap.toList
 
-      definitions       = createTypedefs (typedefTable st)
-                       ++ map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
-                       ++ createMetadata (metadataTable st)
+      (namedMd, unnamedMd) = createMetadata (metadataTable st)
 
-      name | x:_               <- kernels
-           , f@LLVM.Function{} <- x
-           , LLVM.Name s       <- LLVM.name f = s
-           | otherwise                        = "<undefined>"
+      -- TODO: These were the definitions that were previously inserted in the
+      -- module wholesale, because llvm-hs put everything in a big list of
+      -- coproducts. llvm-pretty splits things out, so we'll need to partition
+      -- this (preferably further upstream) and put the parts in the Module
+      -- below.
+      definitions       = map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
 
   return $
     Module { moduleMetadata = md
-           , unModule       = LLVM.Module
-                            { LLVM.moduleName           = name
-                            , LLVM.moduleSourceFileName = B.empty
-                            , LLVM.moduleDataLayout     = targetDataLayout @arch
-                            , LLVM.moduleTargetTriple   = targetTriple @arch
-                            , LLVM.moduleDefinitions    = definitions
+           , unModule       = LP.Module
+                            { LP.modSourceName = Nothing
+                            , LP.modDataLayout     = []  -- TODO: targetDataLayout @arch
+                            , LP.modTriple   =
+                                case targetTriple @arch of
+                                  Just s -> LP.parseTriple (SBS8.unpack s)
+                                  Nothing -> error "TODO: module target triple"
+                            -- , LP.moduleDefinitions    = definitions
+                            , LP.modTypes = createTypedefs (typedefTable st)
+                            , LP.modNamedMd = namedMd
+                            , LP.modUnnamedMd = unnamedMd
+                            , LP.modComdat = mempty
+                            , LP.modGlobals = pdGlobals pdefs
+                            , LP.modDeclares = pdDeclares pdefs
+                            , LP.modDefines = pdDefines pdefs
+                            , LP.modInlineAsm = []
+                            , LP.modAliases = []
                             }
            }
 
@@ -391,7 +405,7 @@ declare g =
 
 -- | Add a global type definition
 --
-typedef :: HasCallStack => Label -> Maybe LLVM.Type -> CodeGen arch ()
+typedef :: HasCallStack => Label -> LLVM.Type -> CodeGen arch ()
 typedef name t =
   let unique (Just s) | t /= s    = internalError "duplicate typedef"
                       | otherwise = Just t
@@ -427,24 +441,24 @@ addMetadata key val =
 -- represent the metadata node definitions that will be attached to that
 -- definition.
 --
-createMetadata :: HashMap ShortByteString (Seq [Maybe Metadata]) -> [LLVM.Definition]
+createMetadata :: HashMap ShortByteString (Seq [Maybe Metadata]) -> ([LP.NamedMd], [LP.UnnamedMd])
 createMetadata md = go (HashMap.toList md) (Seq.empty, Seq.empty)
   where
     go :: [(ShortByteString, Seq [Maybe Metadata])]
-       -> (Seq LLVM.Definition, Seq LLVM.Definition) -- accumulator of (names, metadata)
-       -> [LLVM.Definition]
-    go []     (k,d) = F.toList (k Seq.>< d)
+       -> (Seq LP.NamedMd, Seq LP.UnnamedMd) -- accumulator of (names, metadata)
+       -> ([LP.NamedMd], [LP.UnnamedMd])
+    go []     (k,d) = (F.toList k, F.toList d)
     go (x:xs) (k,d) =
       let (k',d') = meta (Seq.length d) x
       in  go xs (k Seq.|> k', d Seq.>< d')
 
     meta :: Int                                         -- number of metadata node definitions so far
          -> (ShortByteString, Seq [Maybe Metadata])     -- current assoc of the metadata map
-         -> (LLVM.Definition, Seq LLVM.Definition)
+         -> (LP.NamedMd, Seq LP.UnnamedMd)
     meta n (key, vals)
-      = let node i      = LLVM.MetadataNodeID (fromIntegral (i+n))
-            nodes       = Seq.mapWithIndex (\i x -> LLVM.MetadataNodeDefinition (node i) (downcast (F.toList x))) vals
-            name        = LLVM.NamedMetadataDefinition key [ node i | i <- [0 .. Seq.length vals - 1] ]
+      = let node i      = i + n
+            nodes       = Seq.mapWithIndex (\i x -> LP.UnnamedMd (node i) (downcast (F.toList x)) False) vals
+            name        = LP.NamedMd (SBS8.unpack key) [ node i | i <- [0 .. Seq.length vals - 1] ]
         in
         (name, nodes)
 

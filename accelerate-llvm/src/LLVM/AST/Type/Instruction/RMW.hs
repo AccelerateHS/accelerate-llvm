@@ -21,7 +21,7 @@ import Data.Array.Accelerate.Error
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Representation
 
-import qualified LLVM.AST.RMWOperation                              as LLVM
+import qualified Text.LLVM                                          as LLVM
 
 
 -- | Operations for the 'AtomicRMW' instruction.
@@ -40,34 +40,32 @@ data RMWOperation
     | Max
 
 
--- | Convert to llvm-hs
+-- | Convert to llvm-pretty
 --
-instance Downcast (NumType a, RMWOperation) LLVM.RMWOperation where
+instance Downcast (NumType a, RMWOperation) LLVM.AtomicRWOp where
   downcast (IntegralNumType t, rmw) = downcast (t,rmw)
   downcast (FloatingNumType t, rmw) = downcast (t,rmw)
 
-instance Downcast (IntegralType a, RMWOperation) LLVM.RMWOperation where
+instance Downcast (IntegralType a, RMWOperation) LLVM.AtomicRWOp where
   downcast (t, rmw) =
     case rmw of
-      Exchange        -> LLVM.Xchg
-      Add             -> LLVM.Add
-      Sub             -> LLVM.Sub
-      And             -> LLVM.And
-      Or              -> LLVM.Or
-      Xor             -> LLVM.Xor
-      Nand            -> LLVM.Nand
-      Min | signed t  -> LLVM.Min
-          | otherwise -> LLVM.UMin
-      Max | signed t  -> LLVM.Max
-          | otherwise -> LLVM.UMax
+      Exchange        -> LLVM.AtomicXchg
+      Add             -> LLVM.AtomicAdd
+      Sub             -> LLVM.AtomicSub
+      And             -> LLVM.AtomicAnd
+      Or              -> LLVM.AtomicOr
+      Xor             -> LLVM.AtomicXor
+      Nand            -> LLVM.AtomicNand
+      Min | signed t  -> LLVM.AtomicMin
+          | otherwise -> LLVM.AtomicUMin
+      Max | signed t  -> LLVM.AtomicMax
+          | otherwise -> LLVM.AtomicUMax
 
-instance Downcast (FloatingType a, RMWOperation) LLVM.RMWOperation where
+instance Downcast (FloatingType a, RMWOperation) LLVM.AtomicRWOp where
   downcast (_, rmw) =
     case rmw of
-      Exchange        -> LLVM.Xchg
-#if MIN_VERSION_llvm_hs_pure(10,0,0)
-      Add             -> LLVM.FAdd
-      Sub             -> LLVM.FSub
-#endif
+      Exchange        -> LLVM.AtomicXchg
+      Add             -> error "TODO atomicfadd" -- LLVM.AtomicFAdd
+      Sub             -> error "TODO atomicfsub" -- LLVM.AtomicFSub
       _               -> internalError "unsupported operand type to RMWOperation"
 
