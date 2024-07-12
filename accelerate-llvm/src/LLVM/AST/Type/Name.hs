@@ -101,5 +101,11 @@ nameToPrettyI :: Name a -> LLVM.Ident
 nameToPrettyI (Name s) = LLVM.Ident (SBS8.unpack s)
 nameToPrettyI (UnName n) = LLVM.Ident ("tollpr_i_" ++ show n)
 
+labelToPrettyS :: Label -> LLVM.Symbol
+labelToPrettyS (Label s) = LLVM.Symbol (SBS8.unpack s)
+
 labelToPrettyI :: Label -> LLVM.Ident
 labelToPrettyI (Label s) = LLVM.Ident (SBS8.unpack s)
+
+labelToPrettyBL :: Label -> LLVM.BlockLabel
+labelToPrettyBL (Label s) = LLVM.Named (LLVM.Ident (SBS8.unpack s))

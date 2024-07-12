@@ -56,6 +56,7 @@ import Data.Array.Accelerate.Representation.Type
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Exp
 
 import qualified LLVM.AST.Global                                    as LLVM
+import qualified Text.LLVM                                          as LP
 
 import Data.Monoid
 import Data.String
@@ -202,15 +203,14 @@ travTypeToOperands tp f = snd $ go tp 0
 --
 call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (Operands t)
 call f attrs = do
-  let decl      = (downcast f) { LLVM.functionAttributes = downcast attrs' }
-      attrs'    = map Right attrs
+  let decl      = (downcast f) { LP.decAttrs = downcast attrs }
       --
       go :: GlobalFunction args t -> Function (Either InlineAssembly Label) args t
       go (Body t k l) = Body t k (Right l)
       go (Lam t x l)  = Lam t x (go l)
   --
-  declare decl
-  instr (Call (go f) attrs')
+  declareExternFunc decl
+  instr (Call (go f) attrs)
 
 
 parameter :: TypeR t -> Name t -> [LLVM.Parameter]

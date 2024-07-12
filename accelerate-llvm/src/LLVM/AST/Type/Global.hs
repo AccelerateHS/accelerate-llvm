@@ -1,7 +1,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE ParallelListComp      #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# OPTIONS_HADDOCK hide #-}
@@ -25,28 +24,25 @@ import LLVM.AST.Type.Name
 import qualified Text.LLVM                                          as LLVM
 
 
--- | A global function definition.
+-- | An external global function definition.
 --
 type GlobalFunction args t = Function Label args t
 
--- instance Downcast (GlobalFunction args t) LLVM.Global where
---   downcast f = LLVM.Global
---     { LLVM.globalSym = _
---     , LLVM.globalAttrs = _
---     , LLVM.globalType = _
---     , LLVM.globalValue = _
---     , LLVM.globalAlign = _
---     , LLVM.globalMetadata = _ }
-  -- downcast f = LLVM.functionDefaults { LLVM.name       = nm
-  --                                    , LLVM.returnType = res
-  --                                    , LLVM.parameters = (params, False)
-  --                                    }
-    -- where
-    --   trav :: GlobalFunction args t -> ([LLVM.Type], LLVM.Type, LLVM.Name)
-    --   trav (Body t _ n) = ([], downcast t, downcast n)
-    --   trav (Lam a _ l)  = let (as, r, n) = trav l
-    --                       in  (downcast a : as, r, n)
-    --   --
-    --   (args, res, nm)  = trav f
-    --   params           = [ LLVM.Parameter t (LLVM.UnName i) [] | t <- args | i <- [0..] ]
+instance Downcast (GlobalFunction args t) LLVM.Declare where
+  downcast f = LLVM.Declare
+    { LLVM.decLinkage = Just LLVM.External
+    , LLVM.decVisibility = Nothing
+    , LLVM.decRetType = res
+    , LLVM.decName = nm
+    , LLVM.decArgs = args
+    , LLVM.decVarArgs = False
+    , LLVM.decAttrs = []
+    , LLVM.decComdat = Nothing }
+    where
+      trav :: GlobalFunction args t -> ([LLVM.Type], LLVM.Type, LLVM.Symbol)
+      trav (Body t _ n) = ([], downcast t, labelToPrettyS n)
+      trav (Lam a _ l)  = let (as, r, n) = trav l
+                          in  (downcast a : as, r, n)
+      --
+      (args, res, nm)  = trav f
 

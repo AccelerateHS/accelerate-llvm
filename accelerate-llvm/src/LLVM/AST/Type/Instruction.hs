@@ -359,7 +359,7 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#call-instruction>
   --
   Call            :: Function (Either InlineAssembly Label) args t
-                  -> [Either GroupID FunctionAttribute]
+                  -> [FunctionAttribute]
                   -> Instruction t
 
   -- <http://llvm.org/docs/LangRef.html#select-instruction>
@@ -542,7 +542,7 @@ instance Downcast (Instruction a) LP.Instr where
           ui GT = LP.Iugt
           ui GE = LP.Iuge
 
-      call :: Function (Either InlineAssembly Label) args t -> [Either GroupID FunctionAttribute] -> LP.Instr
+      call :: Function (Either InlineAssembly Label) args t -> [FunctionAttribute] -> LP.Instr
       call _ (_:_) = error "TODO call with function attributes"
       call f [] = LP.Call tail fun_ty target argv
         where

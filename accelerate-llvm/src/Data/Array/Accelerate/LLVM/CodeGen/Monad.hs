@@ -24,7 +24,8 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
 
   -- declarations
   fresh, freshLocalName, freshGlobalName,
-  declare,
+  declareGlobalVar,
+  declareExternFunc,
   typedef,
   intrinsic,
 
@@ -61,8 +62,6 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
-import qualified LLVM.AST                                           as LLVM
-import qualified LLVM.AST.Global                                    as LLVM
 import qualified Text.LLVM                                          as LP
 import qualified Text.LLVM.Triple.Parse                             as LP
 
@@ -80,6 +79,7 @@ import Formatting
 import Prelude
 import qualified Data.Foldable                                      as F
 import qualified Data.HashMap.Strict                                as HashMap
+import qualified Data.Map.Strict                                    as Map
 import qualified Data.Sequence                                      as Seq
 import qualified Data.ByteString.Short                              as B
 
@@ -94,8 +94,9 @@ import qualified Data.ByteString.Short                              as B
 --
 data CodeGenState = CodeGenState
   { blockChain          :: Seq Block                                      -- blocks for this function
-  , symbolTable         :: HashMap Label LLVM.Global                      -- global (external) function declarations
-  , typedefTable        :: HashMap Label LLVM.Type                        -- global type definitions
+  , globalvarTable      :: HashMap Label LP.Global                        -- global variable definitions
+  , fundeclTable        :: HashMap Label LP.Declare                       -- global (external) function declarations
+  , typedefTable        :: HashMap Label LP.Type                          -- global type definitions
   , metadataTable       :: HashMap ShortByteString (Seq [Maybe Metadata]) -- module metadata to be collected
   , intrinsicTable      :: HashMap ShortByteString Label                  -- standard math intrinsic functions
   , local               :: {-# UNPACK #-} !Word                           -- a name supply
@@ -103,9 +104,9 @@ data CodeGenState = CodeGenState
   }
 
 data Block = Block
-  { blockLabel          :: {-# UNPACK #-} !Label                          -- block label
-  , instructions        :: Seq (LLVM.Named LLVM.Instruction)              -- stack of instructions
-  , terminator          :: LLVM.Terminator                                -- block terminator
+  { blockLabel          :: {-# UNPACK #-} !Label -- block label
+  , instructions        :: Seq LP.Stmt           -- stack of instructions
+  , terminator          :: LP.Stmt               -- block terminator
   }
 
 newtype CodeGen target a = CodeGen { runCodeGen :: StateT CodeGenState (LLVM target) a }
@@ -124,7 +125,8 @@ evalCodeGen ll = do
   (IROpenAcc ks, st)   <- runStateT (runCodeGen ll)
                         $ CodeGenState
                             { blockChain        = initBlockChain
-                            , symbolTable       = HashMap.empty
+                            , globalvarTable    = HashMap.empty
+                            , fundeclTable      = HashMap.empty
                             , typedefTable      = HashMap.empty
                             , metadataTable     = HashMap.empty
                             , intrinsicTable    = intrinsicForTarget @arch
@@ -133,38 +135,30 @@ evalCodeGen ll = do
                             }
 
   let (kernels, md)     = let (fs, as) = unzip [ (f , (LP.defName f, a)) | Kernel f a <- ks ]
-                          in  (fs, HashMap.fromList as)
+                          in  (fs, Map.fromList as)
 
-      createTypedefs    = map (\(n,t) -> LP.TypeDecl (downcast n) (downcast t)) . HashMap.toList
+      createTypedefs    = map (\(n,t) -> LP.TypeDecl (labelToPrettyI n) t) . HashMap.toList
 
       (namedMd, unnamedMd) = createMetadata (metadataTable st)
-
-      -- TODO: These were the definitions that were previously inserted in the
-      -- module wholesale, because llvm-hs put everything in a big list of
-      -- coproducts. llvm-pretty splits things out, so we'll need to partition
-      -- this (preferably further upstream) and put the parts in the Module
-      -- below.
-      definitions       = map LLVM.GlobalDefinition (kernels ++ HashMap.elems (symbolTable st))
 
   return $
     Module { moduleMetadata = md
            , unModule       = LP.Module
                             { LP.modSourceName = Nothing
-                            , LP.modDataLayout     = []  -- TODO: targetDataLayout @arch
-                            , LP.modTriple   =
+                            , LP.modDataLayout = []  -- TODO: targetDataLayout @arch
+                            , LP.modTriple     =
                                 case targetTriple @arch of
                                   Just s -> LP.parseTriple (SBS8.unpack s)
                                   Nothing -> error "TODO: module target triple"
-                            -- , LP.moduleDefinitions    = definitions
-                            , LP.modTypes = createTypedefs (typedefTable st)
-                            , LP.modNamedMd = namedMd
-                            , LP.modUnnamedMd = unnamedMd
-                            , LP.modComdat = mempty
-                            , LP.modGlobals = pdGlobals pdefs
-                            , LP.modDeclares = pdDeclares pdefs
-                            , LP.modDefines = pdDefines pdefs
-                            , LP.modInlineAsm = []
-                            , LP.modAliases = []
+                            , LP.modTypes      = createTypedefs (typedefTable st)
+                            , LP.modNamedMd    = namedMd
+                            , LP.modUnnamedMd  = unnamedMd
+                            , LP.modComdat     = mempty
+                            , LP.modGlobals    = HashMap.elems (globalvarTable st)
+                            , LP.modDeclares   = HashMap.elems (fundeclTable st)
+                            , LP.modDefines    = kernels
+                            , LP.modInlineAsm  = []
+                            , LP.modAliases    = []
                             }
            }
 
@@ -239,7 +233,7 @@ beginBlock nm = do
 -- body. The block stream is re-initialised, but module-level state such as the
 -- global symbol table is left intact.
 --
-createBlocks :: HasCallStack => CodeGen arch [LLVM.BasicBlock]
+createBlocks :: HasCallStack => CodeGen arch [LP.BasicBlock]
 createBlocks
   = state
   $ \s -> let s'     = s { blockChain = initBlockChain, local = 0 }
@@ -250,7 +244,7 @@ createBlocks
           trace (bformat ("generated " % int % " instructions in " % int % " blocks") (n+m) m) ( F.toList blocks , s' )
   where
     makeBlock Block{..} =
-      LLVM.BasicBlock (downcast blockLabel) (F.toList instructions) (LLVM.Do terminator)
+      LP.BasicBlock (Just (labelToPrettyBL blockLabel)) (F.toList instructions ++ [terminator])
 
 
 -- Instructions
@@ -291,17 +285,17 @@ instr' ins =
     --
     ty -> do
       name <- freshLocalName
-      instr_ $ downcast (name := ins)
+      instr_ $ LP.Result (nameToPrettyI name) (downcast ins) []
       return $ LocalReference ty name
 
 -- | Execute an unnamed instruction
 --
 do_ :: HasCallStack => Instruction () -> CodeGen arch ()
-do_ ins = instr_ $ downcast (Do ins)
+do_ ins = instr_ $ LP.Effect (downcast ins) []
 
 -- | Add raw assembly instructions to the execution stream
 --
-instr_ :: HasCallStack => LLVM.Named LLVM.Instruction -> CodeGen arch ()
+instr_ :: HasCallStack => LP.Stmt -> CodeGen arch ()
 instr_ ins =
   modify $ \s ->
     case Seq.viewr (blockChain s) of
@@ -363,7 +357,7 @@ phi' tp target = go tp
 phi1 :: HasCallStack => Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
-      update b  = b { instructions = downcast (crit := Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) Seq.<| instructions b }
+      update b  = b { instructions = LP.Result (nameToPrettyI crit) (downcast $ Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) [] Seq.<| instructions b }
       t         = case incoming of
                     []        -> internalError "no incoming values specified"
                     (o,_):_   -> case typeOf o of
@@ -385,27 +379,40 @@ terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> internalError "empty block chain"
-      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = downcast term } } )
+      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = LP.Effect (downcast term) [] } } )
 
 
--- | Add a global declaration to the symbol table
+-- | Add a global variable declaration to the module
 --
-declare :: HasCallStack => LLVM.Global -> CodeGen arch ()
-declare g =
+declareGlobalVar :: HasCallStack => LP.Global -> CodeGen arch ()
+declareGlobalVar g =
   let unique (Just q) | g /= q    = internalError "duplicate symbol"
                       | otherwise = Just g
       unique _                    = Just g
 
-      name = case LLVM.name g of
-               LLVM.Name n      -> Label n
-               LLVM.UnName n    -> Label (fromString (show n))
+      name = case LP.globalSym g of
+               LP.Symbol n -> Label (fromString n)
   in
-  modify (\s -> s { symbolTable = HashMap.alter unique name (symbolTable s) })
+  modify (\s -> s { globalvarTable = HashMap.alter unique name (globalvarTable s) })
+
+
+-- | Add an external function declaration to the module
+--
+declareExternFunc :: HasCallStack => LP.Declare -> CodeGen arch ()
+declareExternFunc g =
+  let unique (Just q) | g /= q    = internalError "duplicate symbol"
+                      | otherwise = Just g
+      unique _                    = Just g
+
+      name = case LP.decName g of
+               LP.Symbol n -> Label (fromString n)
+  in
+  modify (\s -> s { fundeclTable = HashMap.alter unique name (fundeclTable s) })
 
 
 -- | Add a global type definition
 --
-typedef :: HasCallStack => Label -> LLVM.Type -> CodeGen arch ()
+typedef :: HasCallStack => Label -> LP.Type -> CodeGen arch ()
 typedef name t =
   let unique (Just s) | t /= s    = internalError "duplicate typedef"
                       | otherwise = Just t
@@ -457,7 +464,7 @@ createMetadata md = go (HashMap.toList md) (Seq.empty, Seq.empty)
          -> (LP.NamedMd, Seq LP.UnnamedMd)
     meta n (key, vals)
       = let node i      = i + n
-            nodes       = Seq.mapWithIndex (\i x -> LP.UnnamedMd (node i) (downcast (F.toList x)) False) vals
+            nodes       = Seq.mapWithIndex (\i x -> LP.UnnamedMd (node i) (LP.ValMdNode (downcast (F.toList x))) False) vals
             name        = LP.NamedMd (SBS8.unpack key) [ node i | i <- [0 .. Seq.length vals - 1] ]
         in
         (name, nodes)

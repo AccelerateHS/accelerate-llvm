@@ -15,7 +15,7 @@ module Data.Array.Accelerate.LLVM.CodeGen.Module
 
 import qualified Text.LLVM                                as LLVM
 
-import Data.HashMap.Strict                                ( HashMap )
+import Data.Map.Strict                                    ( Map )
 
 
 -- | A compiled module consists of a number of global functions (kernels). The
@@ -24,7 +24,7 @@ import Data.HashMap.Strict                                ( HashMap )
 --
 data Module arch aenv a
   = Module { unModule       :: LLVM.Module
-           , moduleMetadata :: HashMap LLVM.Symbol (KernelMetadata arch)
+           , moduleMetadata :: Map LLVM.Symbol (KernelMetadata arch)
            }
 
 -- | A fully-instantiated skeleton is a [collection of] kernel(s) that can be compiled
