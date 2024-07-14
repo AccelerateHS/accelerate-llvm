@@ -359,7 +359,6 @@ data Instruction a where
   -- <http://llvm.org/docs/LangRef.html#call-instruction>
   --
   Call            :: Function (Either InlineAssembly Label) args t
-                  -> [FunctionAttribute]
                   -> Instruction t
 
   -- <http://llvm.org/docs/LangRef.html#select-instruction>
@@ -429,7 +428,7 @@ instance Downcast (Instruction a) LP.Instr where
     Select _ p x y        -> LP.Select (downcast p) (downcast x) (LP.typedValue (downcast y))
     IsNaN _ x             -> isNaN (downcast x)
     Cmp t p x y           -> cmp t p (downcast x) (downcast y)
-    Call f a              -> call f a
+    Call f                -> call f
 
     where
       nsw :: Bool       -- no signed wrap
@@ -542,9 +541,8 @@ instance Downcast (Instruction a) LP.Instr where
           ui GT = LP.Iugt
           ui GE = LP.Iuge
 
-      call :: Function (Either InlineAssembly Label) args t -> [FunctionAttribute] -> LP.Instr
-      call _ (_:_) = error "TODO call with function attributes"
-      call f [] = LP.Call tail fun_ty target argv
+      call :: Function (Either InlineAssembly Label) args t -> LP.Instr
+      call f = LP.Call tail fun_ty target argv
         where
           trav :: Function (Either InlineAssembly Label) args t
                -> ( [LP.Type]           -- argument types
@@ -612,7 +610,7 @@ instance TypeOf Instruction where
     IsNaN{}               -> type'
     Phi t _               -> PrimType t
     Select _ _ x _        -> typeOf x
-    Call f _              -> fun f
+    Call f                -> fun f
     where
       typeOfVec :: HasCallStack => Operand (Vec n a) -> Type a
       typeOfVec x

@@ -209,7 +209,12 @@ call f attrs = do
       go (Lam t x l)  = Lam t x (go l)
   --
   declareExternFunc decl
-  instr (Call (go f) attrs)
+  -- TODO: this only puts the attributes on the external function declaration,
+  -- not on the call instruction. The original llvm-hs code also put them on
+  -- the call instruction. Should compare LLVM IR / benchmark to see if this is
+  -- an issue (llvm-pretty does not yet support function attributes on call
+  -- instructions).
+  instr (Call (go f))
 
 
 parameter :: TypeR t -> Name t -> [LP.Typed LP.Ident]
