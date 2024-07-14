@@ -557,7 +557,7 @@ instance Downcast (Instruction a) LP.Instr where
             case o of
               Left asm -> error "TODO inline assembly"
               -- Left asm -> ([], [], downcast k, downcast u, Left  (downcast (LLVM.FunctionType ret argt False, asm)))
-              Right n  -> ([], [], fromMaybe False (downcast k), downcast u, LP.ValIdent (labelToPrettyI n))
+              Right n  -> ([], [], fromMaybe False (downcast k), downcast u, LP.ValSymbol (labelToPrettyS n))
           trav (Lam t x l)  =
             let (ts, xs, k, r, n) = trav l
             in  (downcast t : ts, downcast x : xs, k, r, n)

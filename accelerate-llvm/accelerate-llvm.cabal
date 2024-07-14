@@ -110,7 +110,7 @@ Library
     LLVM.AST.Type.AddrSpace
     LLVM.AST.Type.Constant
     LLVM.AST.Type.Downcast
-    LLVM.AST.Type.Flags
+    -- LLVM.AST.Type.Flags
     LLVM.AST.Type.Function
     LLVM.AST.Type.Global
     LLVM.AST.Type.InlineAssembly
@@ -129,7 +129,7 @@ Library
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
 
-    LLVM.AST.Orphans
+    -- LLVM.AST.Orphans
 
   other-modules:
     Language.Haskell.TH.Extra

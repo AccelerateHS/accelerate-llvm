@@ -76,11 +76,13 @@ data Type a where
   VoidType  :: Type ()
   PrimType  :: PrimType a -> Type a
 
+data LLArray a
+
 data PrimType a where
   BoolPrimType    ::                            PrimType Bool
   ScalarPrimType  :: ScalarType a            -> PrimType a          -- scalar value types (things in registers)
   PtrPrimType     :: PrimType a -> AddrSpace -> PrimType (Ptr a)    -- pointers (XXX: volatility?)
-  ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType a          -- static arrays
+  ArrayPrimType   :: Word64 -> ScalarType a  -> PrimType (LLArray a) -- static arrays (TODO: type-level array length)
   StructPrimType  :: Bool -> TupR PrimType l -> PrimType l          -- aggregate structures
   NamedPrimType   :: Label                   -> PrimType a          -- typedef (TODO: add a type witness)
 

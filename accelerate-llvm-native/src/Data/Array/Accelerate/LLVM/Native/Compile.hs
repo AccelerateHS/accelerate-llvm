@@ -32,16 +32,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..)
 
 import Data.Array.Accelerate.LLVM.Native.CodeGen                    ( )
 import Data.Array.Accelerate.LLVM.Native.Compile.Cache
-import Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 import LLVM.AST.ToLLVMPretty
 
-import LLVM.AST                                                     hiding ( Module )
--- import LLVM.Module                                                  as LLVM hiding ( Module )
--- import LLVM.Context
--- import LLVM.Target
+import qualified Text.LLVM                                          as P
 import qualified Text.LLVM.PP                                       as P
 import qualified Text.PrettyPrint                                   as P ( render )
 
@@ -51,7 +47,6 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.List                                                    ( intercalate )
 import Data.Foldable                                                ( toList )
 import Data.Maybe
-import Data.Text.Encoding
 import Formatting
 import System.Directory
 import System.Environment
@@ -59,9 +54,8 @@ import System.FilePath                                              ( (<.>) )
 import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
-import qualified Data.ByteString                                    as B
-import qualified Data.ByteString.Short                              as BS
-import qualified Data.HashMap.Strict                                as HashMap
+import qualified Data.ByteString.Short.Char8                        as SBS8
+import qualified Data.Map.Strict                                    as Map
 
 
 instance Compile Native where
@@ -99,9 +93,9 @@ compile pacc aenv = do
 
   let staticObjFile = cachePath <.> staticObjExt
       sharedObjFile = cachePath <.> sharedObjExt
-      triple        = fromMaybe BS.empty (moduleTargetTriple ast)
-      datalayout    = moduleDataLayout ast
-      nms           = [ f | Name f <- HashMap.keys md ]
+      -- triple        = fromMaybe BS.empty (moduleTargetTriple ast)
+      -- datalayout    = moduleDataLayout ast
+      nms           = [ SBS8.pack f | P.Symbol f <- Map.keys md ]
 
   -- Lower the generated LLVM and produce an object file.
   --
@@ -117,7 +111,7 @@ compile pacc aenv = do
         Debug.traceM Debug.dump_cc ("cc: found cached object " % shown) uid
 
       else do
-        -- print ast
+        print ast
 
         -- Detect LLVM version
         let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
@@ -128,12 +122,8 @@ compile pacc aenv = do
         Debug.traceM Debug.dump_cc ("Using LLVM version " % shown) prettyHostLLVMVersion
 
         -- Convert module to llvm-pretty format so that we can print it
-        ast' <- case toLLVMPretty ast of
-                  Right m -> return m
-                  Left err -> internalError ("accelerate-llvm-native: Unsupported LLVM IR generated: " % string) err
-        -- print ast'
-        let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast'))
-        -- putStrLn unoptimisedText
+        let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast))
+        putStrLn unoptimisedText
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 

@@ -55,7 +55,6 @@ import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Type
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Exp
 
-import qualified LLVM.AST.Global                                    as LLVM
 import qualified Text.LLVM                                          as LP
 
 import Data.Monoid
@@ -118,7 +117,7 @@ irArray repr@(ArrayR shr tp) n
 mutableArray
     :: ArrayR (Array sh e)
     -> Name (Array sh e)
-    -> (IRArray (Array sh e), [LLVM.Parameter])
+    -> (IRArray (Array sh e), [LP.Typed LP.Ident])
 mutableArray repr name =
   ( irArray repr name
   , arrayParam repr name )
@@ -130,7 +129,7 @@ mutableArray repr name =
 delayedArray
     :: Name (Array sh e)
     -> MIRDelayed arch aenv (Array sh e)
-    -> (IRDelayed arch aenv (Array sh e), [LLVM.Parameter])
+    -> (IRDelayed arch aenv (Array sh e), [LP.Typed LP.Ident])
 delayedArray name = \case
   IRDelayedJust a -> (a, [])
   IRDelayedNothing repr ->
@@ -213,13 +212,13 @@ call f attrs = do
   instr (Call (go f) attrs)
 
 
-parameter :: TypeR t -> Name t -> [LLVM.Parameter]
-parameter tp n = travTypeToList tp (\s i -> scalarParameter s (rename n i))
+parameter :: TypeR t -> Name t -> [LP.Typed LP.Ident]
+parameter tp n = travTypeToList tp (\s i -> LP.Typed (downcast s) (nameToPrettyI (rename n i)))
 
-scalarParameter :: ScalarType t -> Name t -> LLVM.Parameter
+scalarParameter :: ScalarType t -> Name t -> LP.Typed LP.Ident
 scalarParameter t x = downcast (Parameter (ScalarPrimType t) x)
 
-ptrParameter :: ScalarType t -> Name (Ptr t) -> LLVM.Parameter
+ptrParameter :: ScalarType t -> Name (Ptr t) -> LP.Typed LP.Ident
 ptrParameter t x = downcast (Parameter (PtrPrimType (ScalarPrimType t) defaultAddrSpace) x)
 
 
@@ -227,11 +226,8 @@ ptrParameter t x = downcast (Parameter (PtrPrimType (ScalarPrimType t) defaultAd
 -- The environment here refers only to the actual free array variables that are
 -- accessed by the function.
 --
-envParam :: forall aenv. Gamma aenv -> [LLVM.Parameter]
-envParam aenv = concatMap (\(Label n, Idx' repr _) -> toParam repr (Name n)) (IM.elems aenv)
-  where
-    toParam :: ArrayR (Array sh e) -> Name (Array sh e) -> [LLVM.Parameter]
-    toParam repr name = arrayParam repr name
+envParam :: forall aenv. Gamma aenv -> [LP.Typed LP.Ident]
+envParam aenv = concatMap (\(Label n, Idx' repr _) -> arrayParam repr (Name n)) (IM.elems aenv)
 
 
 -- | Generate function parameters for an Array with given base name.
@@ -240,7 +236,7 @@ envParam aenv = concatMap (\(Label n, Idx' repr _) -> toParam repr (Name n)) (IM
 arrayParam
     :: ArrayR (Array sh e)
     -> Name (Array sh e)
-    -> [LLVM.Parameter]
+    -> [LP.Typed LP.Ident]
 arrayParam (ArrayR shr tp) name = ad ++ sh
   where
     ad = travTypeToList tp              (\t i -> ptrParameter    t (arrayName name i))

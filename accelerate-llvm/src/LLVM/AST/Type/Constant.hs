@@ -59,10 +59,18 @@ data Constant a where
                         -> Name a
                         -> Constant a
 
-  ConstantGetElementPtr :: ScalarType a
+  ConstantGetElementPtr :: Type a
                         -> Constant (Ptr a)
-                        -> [Constant i]
-                        -> Constant (Ptr a)
+                        -> Constant i       -- ^ the offset to the initial pointer (counted in pointees, not in bytes)
+                        -> GEPIndex a b     -- ^ field/index selection path
+                        -> Constant (Ptr b)
+
+-- | An index sequence that goes from a 'Ptr a' to a 'Ptr b'.
+data GEPIndex a b where
+  GEPEmpty :: PrimType b -> GEPIndex b b
+  GEPPtr   :: Constant i -> GEPIndex a b -> GEPIndex (Ptr a) b
+  GEPArray :: Constant i -> GEPIndex a b -> GEPIndex (LLArray a) b
+  -- TODO: structure indexing
 
 
 -- | Convert to llvm-pretty
@@ -71,7 +79,7 @@ instance Downcast (Constant a) (LLVM.Typed LLVM.Value) where
   downcast = \case
     UndefConstant t             -> LLVM.Typed (downcast t) LLVM.ValUndef
     GlobalReference t n         -> LLVM.Typed (downcast t) (LLVM.ValSymbol (nameToPrettyS n))
-    ConstantGetElementPtr t n i -> LLVM.Typed (LLVM.PtrTo (downcast t)) (LLVM.ValConstExpr (LLVM.ConstGEP inbounds Nothing (downcast t) (downcast n) (downcast i)))
+    instr@(ConstantGetElementPtr t n i1 path) -> LLVM.Typed (downcast (typeOf instr)) (LLVM.ValConstExpr (LLVM.ConstGEP inbounds Nothing (downcast t) (downcast n) (downcast i1 : downcast path)))
     BooleanConstant x           -> LLVM.Typed (LLVM.PrimType (LLVM.Integer 1)) (LLVM.ValInteger (toInteger (fromEnum x)))
     NullPtrConstant t           -> LLVM.Typed (downcast t) LLVM.ValNull
     ScalarConstant t x          -> scalar t x
@@ -134,5 +142,17 @@ instance TypeOf Constant where
   typeOf (UndefConstant t)             = t
   typeOf (NullPtrConstant t)           = t
   typeOf (GlobalReference t _)         = t
-  typeOf (ConstantGetElementPtr _ p _) = typeOf p
+  typeOf (ConstantGetElementPtr _ p _ path) =
+    case typeOf p of
+      PrimType (PtrPrimType _ addr) -> PrimType (PtrPrimType (go path) addr)
+      _ -> error "Pointer type is not a pointer type"
+    where
+      go :: GEPIndex a b -> PrimType b
+      go (GEPEmpty t) = t
+      go (GEPPtr _ l) = go l
+      go (GEPArray _ l) = go l
 
+instance Downcast (GEPIndex a b) [LLVM.Typed LLVM.Value] where
+  downcast (GEPEmpty _) = []
+  downcast (GEPPtr i l) = downcast i : downcast l
+  downcast (GEPArray i l) = downcast i : downcast l

@@ -42,7 +42,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
-import qualified LLVM.AST.Global                                    as LLVM
+import qualified Text.LLVM                                          as LP
 
 import Control.Monad
 
@@ -110,7 +110,7 @@ mkInside
     -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRFun1  Native aenv (sh -> e)
-    -> [LLVM.Parameter]
+    -> [LP.Typed LP.Ident]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkInside uid aenv repr apply paramIn =
   let
@@ -131,7 +131,7 @@ mkBorder
     -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRFun1  Native aenv (sh -> e)
-    -> [LLVM.Parameter]
+    -> [LP.Typed LP.Ident]
     -> CodeGen Native      (IROpenAcc Native aenv (Array sh e))
 mkBorder uid aenv repr apply paramIn =
   let

@@ -28,10 +28,7 @@ import LLVM.AST.Type.Global
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
-import qualified LLVM.AST.Constant                                  as Constant
-import qualified LLVM.AST.Global                                    as LLVM
-import qualified LLVM.AST.Linkage                                   as LLVM
-import qualified LLVM.AST.Type                                      as LLVM
+import qualified Text.LLVM                                          as LP
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant
@@ -46,23 +43,41 @@ import Data.Char
 
 
 call' :: GlobalFunction args t -> CodeGen arch (Operands t)
-call' f = call f [NoUnwind, NoDuplicate]
+-- TODO: support function call attributes
+-- call' f = call f [NoUnwind, NoDuplicate]
+call' f = call f []
 
-global_string :: String -> CodeGen arch (Name (Ptr Word8), Word64)
+global_string :: String -> CodeGen arch (Name (Ptr (LLArray Word8)), Word64)
 global_string str = do
   let str0  = str ++ "\0"
       l     = fromIntegral (length str0)
   --
   nm <- freshGlobalName
-  _  <- declare $ LLVM.globalVariableDefaults
-    { LLVM.name        = downcast nm
-    , LLVM.isConstant  = True
-    , LLVM.linkage     = LLVM.Private
-    , LLVM.type'       = LLVM.ArrayType l LLVM.i8
-    , LLVM.unnamedAddr = Just LLVM.GlobalAddr
-    , LLVM.initializer = Just $ Constant.Array LLVM.i8 [ Constant.Int 8 (toInteger (ord c)) | c <- str0 ]
+  _  <- declareGlobalVar $ LP.Global
+    { LP.globalSym = nameToPrettyS nm
+    , LP.globalAttrs = LP.GlobalAttrs
+        { LP.gaLinkage = Just LP.Private
+        , LP.gaVisibility = Nothing
+        , LP.gaConstant = True }
+    , LP.globalType = LP.Array l (LP.PrimType (LP.Integer 8))
+    , LP.globalValue = Just $ LP.ValArray (LP.PrimType (LP.Integer 8)) [ LP.ValInteger (toInteger (ord c)) | c <- str0 ]
+    , LP.globalAlign = Nothing
+    , LP.globalMetadata = mempty
     }
   return (nm, l)
+
+derefGlobalString :: Word64 -> Name (Ptr (LLArray Word8)) -> Constant (Ptr Word8)
+derefGlobalString slen sname =
+  -- Global references are _pointers_ to their values. A string is an
+  -- [_ x i8], hence the global reference is an [_ x i8]*. The GEP needs
+  -- to index the outer pointer (with a 0) and index the array (at index
+  -- 0) to address the first i8 in the string; GEP then returns a pointer
+  -- to this i8.
+  ConstantGetElementPtr
+    (PrimType (ArrayPrimType slen scalarType))
+    (GlobalReference (PrimType (PtrPrimType (ArrayPrimType slen scalarType) defaultAddrSpace)) sname)
+    (ScalarConstant scalarType 0 :: Constant Int32)
+    (GEPArray (ScalarConstant scalarType 0 :: Constant Int32) (GEPEmpty primType))
 
 
 -- struct ___tracy_source_location_data
@@ -76,42 +91,35 @@ global_string str = do
 --
 source_location_data :: String -> String -> String -> Int -> Word32 -> CodeGen arch (Name a)
 source_location_data nm fun src line colour = do
-#if MIN_VERSION_llvm_hs_pure(15,0,0)
-  let i8ptr_t = LLVM.ptr
-#else
-  let i8ptr_t = LLVM.ptr LLVM.i8
-#endif
-  _       <- typedef "___tracy_source_location_data" . Just $ LLVM.StructureType False [ i8ptr_t, i8ptr_t, i8ptr_t, LLVM.i32, LLVM.i32 ]
+  let i8ptr_t = LP.PtrTo (LP.PrimType (LP.Integer 8))
+      i32_t = LP.PrimType (LP.Integer 32)
+  _       <- typedef "___tracy_source_location_data" $ LP.Struct [ i8ptr_t, i8ptr_t, i8ptr_t, i32_t, i32_t ]
   (s, sl) <- global_string src
   (f, fl) <- global_string fun
   (n, nl) <- global_string nm
   let
-      st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
-      ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
-      nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
-      source     = if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
-      function   = if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
-      name       = if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
+      source     = if null src then NullPtrConstant type' else derefGlobalString sl s
+      function   = if null fun then NullPtrConstant type' else derefGlobalString fl f
+      name       = if null nm  then NullPtrConstant type' else derefGlobalString nl n
   --
   v <- freshGlobalName
-  _ <- declare $ LLVM.globalVariableDefaults
-    { LLVM.name        = downcast v
-    , LLVM.isConstant  = True
-    , LLVM.linkage     = LLVM.Internal
-    , LLVM.type'       = LLVM.NamedTypeReference "___tracy_source_location_data"
-    , LLVM.alignment   = 8
-    , LLVM.initializer = Just $
-        Constant.Struct
-          { Constant.structName   = Just "___tracy_source_location_data"
-          , Constant.isPacked     = False
-          , Constant.memberValues =
-              [ downcast name
-              , downcast function
-              , downcast source
-              , Constant.Int 32 (toInteger line)
-              , Constant.Int 32 (toInteger colour)
-              ]
-          }
+  _ <- declareGlobalVar $ LP.Global
+    { LP.globalSym = nameToPrettyS v
+    , LP.globalAttrs = LP.GlobalAttrs
+        { LP.gaLinkage = Just LP.Internal
+        , LP.gaVisibility = Nothing
+        , LP.gaConstant = True }
+    , LP.globalType = LP.Alias (LP.Ident "___tracy_source_location_data")
+    , LP.globalValue = Just $
+        LP.ValStruct
+          [ downcast name
+          , downcast function
+          , downcast source
+          , LP.Typed (LP.PrimType (LP.Integer 32)) (LP.ValInteger (toInteger line))
+          , LP.Typed (LP.PrimType (LP.Integer 32)) (LP.ValInteger (toInteger colour))
+          ]
+    , LP.globalAlign = Just 8
+    , LP.globalMetadata = mempty
     }
   return v
 
@@ -129,18 +137,10 @@ alloc_srcloc_name l src fun nm
       (f, fl) <- global_string fun
       (n, nl) <- global_string nm
       let
-#if MIN_VERSION_llvm_hs_pure(15,0,0)
-          gep_ix     = [ScalarConstant scalarType 0 :: Constant Int32]
-#else
-          gep_ix     = [ScalarConstant scalarType 0, ScalarConstant scalarType 0 :: Constant Int32]
-#endif
-          st         = PtrPrimType (ArrayPrimType sl scalarType) defaultAddrSpace
-          ft         = PtrPrimType (ArrayPrimType fl scalarType) defaultAddrSpace
-          nt         = PtrPrimType (ArrayPrimType nl scalarType) defaultAddrSpace
           line       = ConstantOperand $ ScalarConstant scalarType (fromIntegral l :: Word32)
-          source     = ConstantOperand $ if null src then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType st) s) gep_ix
-          function   = ConstantOperand $ if null fun then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType ft) f) gep_ix
-          name       = ConstantOperand $ if null nm  then NullPtrConstant type' else ConstantGetElementPtr scalarType (GlobalReference (PrimType nt) n) gep_ix
+          source     = ConstantOperand $ if null src then NullPtrConstant type' else derefGlobalString sl s
+          function   = ConstantOperand $ if null fun then NullPtrConstant type' else derefGlobalString fl f
+          name       = ConstantOperand $ if null nm  then NullPtrConstant type' else derefGlobalString nl n
           sourceSz   = ConstantOperand $ ScalarConstant scalarType (sl-1) -- null
           functionSz = ConstantOperand $ ScalarConstant scalarType (fl-1) -- null
           nameSz     = ConstantOperand $ ScalarConstant scalarType (nl-1) -- null
