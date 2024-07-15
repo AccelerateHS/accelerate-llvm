@@ -52,7 +52,6 @@ import Formatting
 import System.Directory
 import System.Environment
 import System.FilePath                                              ( (<.>) )
-import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
 import qualified Data.ByteString.Short.Char8                        as SBS8
@@ -115,6 +114,7 @@ compile pacc aenv = do
         -- print ast
 
         -- Detect LLVM version
+        -- TODO: should incorporate host LLVM version in the shared object hash so that we don't mix objects compiled with different LLVM versions
         let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
         llvmver <- case llvmverFromTuple hostLLVMVersion of
                      Just llvmver -> return llvmver
@@ -128,21 +128,35 @@ compile pacc aenv = do
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
-        -- TODO: do 'opt' and 'llc' in one go using clang:
-        --   $ clang -O3 -o opt.o -march=native -fPIC -c unopt.ll
+        dVerbose <- Debug.getFlag Debug.verbose
+        dDumpCC <- Debug.getFlag Debug.dump_cc
+        dDumpAsm <- Debug.getFlag Debug.dump_asm
 
-        -- Run the module through `opt` to optimise it
-        optimisedText <- readProcess "opt" ["-S", "-O3"] unoptimisedText
-        Debug.when Debug.verbose $ do
-          Debug.traceM Debug.dump_cc ("Optimised LLVM IR:\n" % string) optimisedText
+        let clangFlags inputType outputFlags output =
+              ["-O3", "-march=native", "-c", "-o", output, "-x", inputType, "-"
+              -- clang overrides our (not very complete) target triple. Yes,
+              -- please do, and don't warn about it!
+              ,"-Wno-override-module"]
+              ++ outputFlags
 
-        -- Generate optimise machine code and write to the object file
-        doDumpAsm <- Debug.getFlag Debug.dump_asm
-        when doDumpAsm $
-          hPutStrLn stderr "Warning: -ddump-asm non-functional when compiling via textual LLVM IR"
-        _ <- readProcess "llc"
-               ["-o", staticObjFile, "-O3", "-mcpu=native", "-filetype=obj", "-relocation-model=pic"]
-               optimisedText
+        -- Minimise the number of clang invocations (to 1) in the common case
+        -- of no verbose debug flags. If we need to print some intermediate
+        -- stages, run all stages separately for simplicity, and print only the
+        -- intermediate values that were requested.
+        -- See llvm-project/clang/include/clang/Driver/Types.def for "-x" argument values:
+        --   https://github.com/llvm/llvm-project/blob/da286c8bf69684d1612d1fc440bd9c6f1a4326df/clang/include/clang/Driver/Types.def
+        if dVerbose && (dDumpCC || dDumpAsm)
+          then do
+            optText <- readProcess "clang" (clangFlags "ir" ["-S", "-emit-llvm"] "-") unoptimisedText
+            Debug.traceM Debug.dump_cc ("Optimised LLVM IR:\n" % string) optText
+            asmText <- readProcess "clang" (clangFlags "ir" ["-S"] "-") optText
+            Debug.traceM Debug.dump_asm ("Optimised assembly:\n" % string) asmText
+            _ <- readProcess "clang" (clangFlags "assembler" ["-fPIC"] staticObjFile) asmText
+            return ()
+          else do
+            _ <- readProcess "clang" (clangFlags "ir" ["-fPIC"] staticObjFile) unoptimisedText
+            return ()
+
         Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
 
     return staticObjFile

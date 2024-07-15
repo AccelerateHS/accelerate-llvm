@@ -139,7 +139,7 @@ hostLLVMVersion = fmap read (splitOn '.' versionString)
   where
   {-# NOINLINE versionString #-}
   versionString :: String
-  versionString = unsafePerformIO $ readProcess "llvm-config" ["--version"] ""
+  versionString = unsafePerformIO $ readProcess "clang" ["-dumpversion"] ""
 
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
   splitOn _ [] = [] NE.:| []
