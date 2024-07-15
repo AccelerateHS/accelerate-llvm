@@ -41,6 +41,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
 import LLVM.AST.Type.AddrSpace
+import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Atomic
 import LLVM.AST.Type.Instruction.RMW                                as RMW
@@ -187,7 +188,7 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
           _ | TupRsingle (SingleScalarType s)   <- arrayRtype repr
             , adata                             <- irArrayData arrOut
             -> do
-                  addr <- instr' $ GetElementPtr (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) [op integralType j]
+                  addr <- instr' $ GetElementPtr $ GEP1 (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) (op integralType j)
                   --
                   case s of
 #if MIN_VERSION_llvm_hs_pure(10,0,0)
@@ -271,7 +272,7 @@ atomically barriers i action = do
   crit <- newBlock "spinlock.critical-section"
   exit <- newBlock "spinlock.exit"
 
-  addr <- instr' $ GetElementPtr scalarTypeWord8 (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) [op integralType i]
+  addr <- instr' $ GetElementPtr $ GEP1 scalarTypeWord8 (asPtr defaultAddrSpace (op integralType (irArrayData barriers))) (op integralType i)
   _    <- br spin
 
   -- Atomically (attempt to) set the lock slot to the locked state. If the slot

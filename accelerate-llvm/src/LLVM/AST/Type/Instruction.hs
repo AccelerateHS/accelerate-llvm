@@ -29,6 +29,7 @@ module LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Constant                             ( Constant(ScalarConstant) )
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
+import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
@@ -230,10 +231,8 @@ data Instruction a where
 
   -- <http://llvm.org/docs/LangRef.html#getelementptr-instruction>
   --
-  GetElementPtr   :: ScalarType a
-                  -> Operand (Ptr a)
-                  -> [Operand i]
-                  -> Instruction (Ptr a)
+  GetElementPtr   :: GetElementPtr Operand (Ptr a) (Ptr b)
+                  -> Instruction (Ptr b)
 
   -- <http://llvm.org/docs/LangRef.html#i-fence>
   --
@@ -408,7 +407,8 @@ instance Downcast (Instruction a) LP.Instr where
     Store Volatile _ _    -> error "TODO volatile stores"
     Load t NonVolatile p  -> LP.Load (downcast t) (downcast p) atomicity alignment
     Load _ Volatile _     -> error "TODO volatile loads"
-    GetElementPtr t n i   -> LP.GEP inbounds (downcast t) (downcast n) (downcast i)
+    GetElementPtr (GEP t n i1 path) ->
+      LP.GEP inbounds (downcast t) (downcast n) (downcast i1 : downcast path)
     Fence a               -> LP.Fence (downcast (fst a)) (downcast (snd a))
     -- TODO: this is now a STRONG cmpxchg. Is that what was intended? I think llvm-hs defaulted to Weak, but the LLVM source is very obtuse about this.
     CmpXchg _ v p x y a m -> LP.CmpXchg False (downcast v) (downcast p) (downcast x) (downcast y) (downcast (fst a)) (downcast (snd a)) (downcast m)
@@ -591,7 +591,10 @@ instance TypeOf Instruction where
     ExtractValue t _ _    -> scalar t
     Load t _ _            -> scalar t
     Store{}               -> VoidType
-    GetElementPtr _ x _   -> typeOf x
+    GetElementPtr (GEP _ p _ path) ->
+      case typeOf p of
+        PrimType (PtrPrimType _ addr) -> PrimType (PtrPrimType (gepIndexOutType path) addr)
+        _ -> error "Pointer type is not a pointer type"
     Fence{}               -> VoidType
     CmpXchg t _ _ _ _ _ _ -> PrimType . StructPrimType False $ ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t))) `pair` primType
     AtomicRMW _ _ _ _ x _ -> typeOf x

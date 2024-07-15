@@ -24,6 +24,7 @@ import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
+import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.Global
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
@@ -73,7 +74,7 @@ derefGlobalString slen sname =
   -- to index the outer pointer (with a 0) and index the array (at index
   -- 0) to address the first i8 in the string; GEP then returns a pointer
   -- to this i8.
-  ConstantGetElementPtr
+  ConstantGetElementPtr $ GEP
     (PrimType (ArrayPrimType slen scalarType))
     (GlobalReference (PrimType (PtrPrimType (ArrayPrimType slen scalarType) defaultAddrSpace)) sname)
     (ScalarConstant scalarType 0 :: Constant Int32)
