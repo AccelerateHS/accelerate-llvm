@@ -45,3 +45,9 @@ gepIndexOutType :: GEPIndex op a b -> PrimType b
 gepIndexOutType (GEPEmpty t) = t
 gepIndexOutType (GEPPtr _ l) = gepIndexOutType l
 gepIndexOutType (GEPArray _ l) = gepIndexOutType l
+
+instance TypeOf op => TypeOf (GetElementPtr op ptra) where
+  typeOf (GEP _ p _ path) =
+    case typeOf p of
+      PrimType (PtrPrimType _ addr) -> PrimType (PtrPrimType (gepIndexOutType path) addr)
+      _ -> error "Pointer type is not a pointer type"

@@ -134,7 +134,4 @@ instance TypeOf Constant where
   typeOf (UndefConstant t)             = t
   typeOf (NullPtrConstant t)           = t
   typeOf (GlobalReference t _)         = t
-  typeOf (ConstantGetElementPtr (GEP _ p _ path)) =
-    case typeOf p of
-      PrimType (PtrPrimType _ addr) -> PrimType (PtrPrimType (gepIndexOutType path) addr)
-      _ -> error "Pointer type is not a pointer type"
+  typeOf (ConstantGetElementPtr gep)   = typeOf gep

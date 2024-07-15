@@ -591,10 +591,7 @@ instance TypeOf Instruction where
     ExtractValue t _ _    -> scalar t
     Load t _ _            -> scalar t
     Store{}               -> VoidType
-    GetElementPtr (GEP _ p _ path) ->
-      case typeOf p of
-        PrimType (PtrPrimType _ addr) -> PrimType (PtrPrimType (gepIndexOutType path) addr)
-        _ -> error "Pointer type is not a pointer type"
+    GetElementPtr gep     -> typeOf gep
     Fence{}               -> VoidType
     CmpXchg t _ _ _ _ _ _ -> PrimType . StructPrimType False $ ScalarPrimType (SingleScalarType (NumSingleType (IntegralNumType t))) `pair` primType
     AtomicRMW _ _ _ _ x _ -> typeOf x
