@@ -134,8 +134,10 @@ compile pacc aenv = do
 
         let clangFlags inputType outputFlags output =
               ["-O3", "-march=native", "-c", "-o", output, "-x", inputType, "-"
-              -- clang overrides our (not very complete) target triple. Yes,
-              -- please do, and don't warn about it!
+              -- clang knows better what the target triple should be than us,
+              -- so let it override the triple, and don't warn about it
+              -- TODO: change llvm-pretty so that it doesn't require us to give
+              -- it a target triple
               ,"-Wno-override-module"]
               ++ outputFlags
 

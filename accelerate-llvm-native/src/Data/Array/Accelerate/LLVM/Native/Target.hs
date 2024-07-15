@@ -59,7 +59,7 @@ instance Target Native where
 nativeTargetTriple :: ShortByteString
 nativeTargetTriple = unsafePerformIO $
   -- A target triple suitable for loading code into the current process
-  SBS8.pack . trim <$> readProcess "llvm-config" ["--host-target"] ""
+  SBS8.pack . trim <$> readProcess "clang" ["-print-target-triple"] ""
   where
     trim = reverse . dropWhile (== '\n') . reverse
 
