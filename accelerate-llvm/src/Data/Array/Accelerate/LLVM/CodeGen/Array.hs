@@ -135,17 +135,20 @@ getElementPtr
     -> CodeGen arch (Operand (Ptr e))
 getElementPtr _ t@(SingleScalarType{})   _ arr ix = instr' $ GetElementPtr t arr [ix]
 getElementPtr a t@(VectorScalarType v) i arr ix
-  | VectorType n _ <- v
-  , IntegralDict   <- integralDict i
+  | VectorType n eltty <- v
+  , IntegralDict       <- integralDict i
   = if popCount n == 1
        then instr' $ GetElementPtr t arr [ix]
        else do
           -- Note the initial zero into to the GEP instruction. It is not
           -- really recommended to use GEP to index into vector elements, but
-          -- is not forcefully disallowed (at this time)
-          ix'  <- instr' $ Mul (IntegralNumType i) ix (integral i (fromIntegral n))
-          p'   <- instr' $ GetElementPtr t arr [integral i 0, ix']
-          p    <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (VectorScalarType v)) a) p'
+          -- is not forcefully disallowed (at this time).
+          -- Cast the <n x t>* to a t*, do a scaled GEP, and cast the resulting
+          -- t* back to an <n x t>*.
+          ix'    <- instr' $ Mul (IntegralNumType i) ix (integral i (fromIntegral n))
+          pPlain <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (SingleScalarType eltty)) a) arr
+          p'     <- instr' $ GetElementPtr (SingleScalarType eltty) pPlain [ix']
+          p      <- instr' $ PtrCast (PtrPrimType (ScalarPrimType (VectorScalarType v)) a) p'
           return p
 
 
