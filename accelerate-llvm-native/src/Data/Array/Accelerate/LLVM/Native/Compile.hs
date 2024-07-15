@@ -112,7 +112,7 @@ compile pacc aenv = do
         Debug.traceM Debug.dump_cc ("cc: found cached object " % shown) uid
 
       else do
-        print ast
+        -- print ast
 
         -- Detect LLVM version
         let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
@@ -124,7 +124,7 @@ compile pacc aenv = do
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast))
-        putStrLn unoptimisedText
+        -- putStrLn unoptimisedText
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
