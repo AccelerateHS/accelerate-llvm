@@ -116,7 +116,6 @@ Library
 
     Control.Concurrent.Extra
     Language.Haskell.TH.Extra
-    LLVM.AST.ToLLVMPretty
 
     Paths_accelerate_llvm_native
 

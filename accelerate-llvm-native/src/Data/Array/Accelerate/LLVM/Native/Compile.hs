@@ -35,7 +35,6 @@ import Data.Array.Accelerate.LLVM.Native.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
-import LLVM.AST.ToLLVMPretty
 
 import qualified Text.LLVM                                          as P
 import qualified Text.LLVM.PP                                       as P
@@ -45,6 +44,8 @@ import Control.Applicative
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
+import Data.List.NonEmpty                                           ( NonEmpty )
+import qualified Data.List.NonEmpty                                 as NE
 import Data.Foldable                                                ( toList )
 import Data.Maybe
 import Formatting
@@ -183,6 +184,14 @@ compile pacc aenv = do
 
   return $! ObjectR uid nms o_file so_file
 
+
+llvmverFromTuple :: NonEmpty Int -> Maybe P.LLVMVer
+llvmverFromTuple (3 NE.:| 5 : _) = Just P.llvmV3_5
+llvmverFromTuple (3 NE.:| 6 : _) = Just P.llvmV3_6
+llvmverFromTuple (3 NE.:| 7 : _) = Just P.llvmV3_7
+llvmverFromTuple (3 NE.:| 8 : _) = Just P.llvmV3_8
+llvmverFromTuple (n NE.:| _) | n >= 4, n <= P.llvmVlatest = Just n
+llvmverFromTuple _ = Nothing
 
 -- Respect the common @LD@ and @CC@ environment variables, falling back to
 -- search the path for @cc@ if neither of those exist.
