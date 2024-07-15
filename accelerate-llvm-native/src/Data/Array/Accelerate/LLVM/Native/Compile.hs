@@ -204,7 +204,12 @@ llvmverFromTuple (3 NE.:| 5 : _) = Just P.llvmV3_5
 llvmverFromTuple (3 NE.:| 6 : _) = Just P.llvmV3_6
 llvmverFromTuple (3 NE.:| 7 : _) = Just P.llvmV3_7
 llvmverFromTuple (3 NE.:| 8 : _) = Just P.llvmV3_8
-llvmverFromTuple (n NE.:| _) | n >= 4, n <= P.llvmVlatest = Just n
+llvmverFromTuple (n NE.:| _)
+  | n >= 4
+  -- Don't compare against the "latest" here, because in practice, LLVM textual
+  -- IR is fairly forward-compatible.
+  -- , n <= P.llvmVlatest
+  = Just n
 llvmverFromTuple _ = Nothing
 
 -- Respect the common @LD@ and @CC@ environment variables, falling back to
