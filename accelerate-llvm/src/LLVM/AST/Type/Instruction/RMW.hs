@@ -65,7 +65,7 @@ instance Downcast (FloatingType a, RMWOperation) LLVM.AtomicRWOp where
   downcast (_, rmw) =
     case rmw of
       Exchange        -> LLVM.AtomicXchg
-      Add             -> error "TODO atomicfadd" -- LLVM.AtomicFAdd
-      Sub             -> error "TODO atomicfsub" -- LLVM.AtomicFSub
+      Add             -> LLVM.AtomicFAdd
+      Sub             -> LLVM.AtomicFSub
       _               -> internalError "unsupported operand type to RMWOperation"
 
