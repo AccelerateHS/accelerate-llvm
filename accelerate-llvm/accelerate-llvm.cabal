@@ -110,7 +110,6 @@ Library
     LLVM.AST.Type.AddrSpace
     LLVM.AST.Type.Constant
     LLVM.AST.Type.Downcast
-    -- LLVM.AST.Type.Flags
     LLVM.AST.Type.Function
     LLVM.AST.Type.GetElementPtr
     LLVM.AST.Type.Global
