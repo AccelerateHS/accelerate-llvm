@@ -19,6 +19,8 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Cache (
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target
 
+import Data.Foldable                                                ( toList )
+import Data.List                                                    ( intercalate )
 import Data.Version
 import System.FilePath
 import qualified Data.ByteString.Char8                              as B8
@@ -30,7 +32,7 @@ import Paths_accelerate_llvm_native
 instance Persistent Native where
   targetCacheTemplate =
     return $ "accelerate-llvm-native-" ++ showVersion version
-         </> "llvm-hs-" ++ VERSION_llvm_hs_pure
+         </> "llvm-" ++ intercalate "." (map show (toList hostLLVMVersion))
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
          </> "meep"

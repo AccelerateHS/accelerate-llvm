@@ -191,6 +191,7 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
                   addr <- instr' $ GetElementPtr $ GEP1 (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) (op integralType j)
                   --
                   case s of
+-- TODO: remove this version check on llvm_hs_pure
 #if MIN_VERSION_llvm_hs_pure(10,0,0)
                     NumSingleType t             -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
 #else

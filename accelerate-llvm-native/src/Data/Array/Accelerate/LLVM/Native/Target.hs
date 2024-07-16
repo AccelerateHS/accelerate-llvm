@@ -28,15 +28,14 @@ import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler          ( Workers )
 import Data.Array.Accelerate.LLVM.Target                            ( Target(..) )
 
 -- standard library
-import Data.Bifunctor                                               ( first )
 import Data.ByteString                                              ( ByteString )
 import qualified Data.ByteString.Char8                              as BS8
 import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as SBS8
-import Data.Char                                                    ( isSpace )
-import Data.List                                                    ( findIndex )
+import Data.List                                                    ( tails )
 import Data.List.NonEmpty                                           ( NonEmpty )
 import qualified Data.List.NonEmpty                                 as NE
+import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import System.IO.Unsafe
 import System.Process
 
@@ -55,13 +54,11 @@ instance Target Native where
 
 -- | String that describes the native target
 --
-{-# NOINLINE nativeTargetTriple #-}
 nativeTargetTriple :: ShortByteString
-nativeTargetTriple = unsafePerformIO $
-  -- A target triple suitable for loading code into the current process
-  SBS8.pack . trim <$> readProcess "clang" ["-print-target-triple"] ""
-  where
-    trim = reverse . dropWhile (== '\n') . reverse
+nativeTargetTriple =
+  SBS8.pack $
+    fromMaybe (error "Could not extract clang version from `clang -###` output")
+              (getLinePrefixedBy "Target: " clangMachineVersionOutput)
 
 -- | A description of the various data layout properties that may be used during
 -- optimisation.
@@ -74,41 +71,22 @@ nativeTargetTriple = unsafePerformIO $
 
 -- | String that describes the host CPU
 --
--- TODO: this function needs to be generalised a LOT
--- TODO: Ivo says: perhaps we can simply hash the model numbers that the
--- `cpuinfo` instruction returns? No need to do a complicated lookup if we're
--- going to hash the result anyway.
 nativeCPUName :: ByteString
-nativeCPUName = BS8.pack $
-  case parseCPUInfo procCPUInfoContents of
-    [] -> "generic"
-    (core : _) -> case (lookup "vendor_id" core, lookup "cpu family" core, lookup "model" core) of
-      (Just "GenuineIntel", Just "6", Just "165") -> "skylake"  -- Tom's home machine
-      (Just "AuthenticAMD", Just "23", Just "8") -> "znver1"  -- jizo
-      tup -> error $ "Woefully inadequate /proc/cpuinfo parser! " ++ show tup ++ "  -- " ++ show core
-             -- go here: https://llvm.org/doxygen/Host_8cpp_source.html
-             -- and find the CPU string corresponding to the 'cpu family' and 'model'
-             -- values in your /proc/cpuinfo. (Don't forget to search for both hex
-             -- and decimal.) You can cross-check against wikichip, e.g.
-             -- https://en.wikichip.org/wiki/amd/cpuid#Family_23_.2817h.29
+nativeCPUName =
+  case catMaybes (map tryFromLine (lines clangMachineVersionOutput)) of
+    cpu : _ -> BS8.pack cpu
+    _ -> error "Could not extract target CPU from `clang -###` output"
   where
-  {-# NOINLINE procCPUInfoContents #-}
-  procCPUInfoContents :: String
-  procCPUInfoContents = unsafePerformIO $ readFile "/proc/cpuinfo"
-
-  parseCPUInfo :: String -> [[(String, String)]]
-  parseCPUInfo = filter (not . null) . uncurry (:) . go . lines
-    where
-      go [] = ([], [])
-      go ("" : lns) = let (core1, cores) = go lns in ([], core1 : cores)
-      go (line : lns) =
-        case findIndex (== ':') line of
-          Nothing -> first ((line, "") :) (go lns)
-          Just i -> case splitAt i line of
-                      (lhs, ':' : rhs) -> first ((dropWhileEnd isSpace lhs, dropWhile isSpace rhs) :) (go lns)
-                      _ -> error "No ':' in line that has ':'?"
-
-      dropWhileEnd p = reverse . dropWhile p . reverse
+  tryFromLine :: String -> Maybe String
+  tryFromLine line =
+    case map snd
+         . filter ((== "\"-target-cpu\" ") . fst)
+         . map (splitAt 14)
+         $ tails line of
+      ('"' : rest) : _
+        | (cpu, '"' : _) <- break (== '"') rest
+        -> Just cpu
+      _ -> Nothing
 
 
 -- | Bracket the creation and destruction of a target machine for the native
@@ -135,15 +113,40 @@ nativeCPUName = BS8.pack $
 
 -- | Returns list of version components: '12.3' becomes [12, 3].
 hostLLVMVersion :: NonEmpty Int
-hostLLVMVersion = fmap read (splitOn '.' versionString)
+hostLLVMVersion =
+  fmap read . splitOn '.' $
+    fromMaybe (error "Could not extract clang version from `clang -###` output")
+              (getLinePrefixedBy "clang version " clangMachineVersionOutput)
   where
-  {-# NOINLINE versionString #-}
-  versionString :: String
-  versionString = unsafePerformIO $ readProcess "clang" ["-dumpversion"] ""
-
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
   splitOn _ [] = [] NE.:| []
   splitOn sep (c:cs)
     | c == sep = [] NE.<| splitOn sep cs
     | otherwise = let hd NE.:| tl = splitOn sep cs
                   in (c : hd) NE.:| tl
+
+-- | This is a string that contains some debug metadata from clang (clang
+-- version, target triple, etc.) as well as the inferred command-line
+-- invocation for a simple operation (preprocessor mode). This list of
+-- arguments happens to include the CPU name.
+--
+-- Yes, this does include the requisite information in the requisite format for
+-- clang versions (tested) 7, 8, 9, 11, 12, 15, 18 and 19. Probably more.
+{-# NOINLINE clangMachineVersionOutput #-}
+clangMachineVersionOutput :: String
+clangMachineVersionOutput =
+  unsafePerformIO $ do
+    (_ec, _out, err) <- readProcessWithExitCode "clang" ["-E", "-", "-march=native", "-###"] ""
+    return err
+
+-- | Returns trimmed right-hand side
+getLinePrefixedBy :: String -> String -> Maybe String
+getLinePrefixedBy prefix str =
+  case map snd
+       . filter ((== prefix) . fst)
+       . map (splitAt (length prefix))
+       $ lines str of
+    rhs : _ -> Just (trim rhs)
+    _ -> Nothing
+  where
+    trim = reverse . dropWhile (== '\n') . reverse
