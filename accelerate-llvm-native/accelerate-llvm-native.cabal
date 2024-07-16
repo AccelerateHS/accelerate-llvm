@@ -95,7 +95,6 @@ Library
 
     Data.Array.Accelerate.LLVM.Native.Compile
     Data.Array.Accelerate.LLVM.Native.Compile.Cache
-    Data.Array.Accelerate.LLVM.Native.Compile.Optimise
 
     Data.Array.Accelerate.LLVM.Native.Link
     Data.Array.Accelerate.LLVM.Native.Link.Cache
