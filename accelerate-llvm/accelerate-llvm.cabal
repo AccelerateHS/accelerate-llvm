@@ -129,8 +129,6 @@ Library
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
 
-    -- LLVM.AST.Orphans
-
   other-modules:
     Language.Haskell.TH.Extra
 

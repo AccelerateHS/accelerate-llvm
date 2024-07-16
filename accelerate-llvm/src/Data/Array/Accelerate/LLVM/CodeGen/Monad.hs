@@ -53,7 +53,6 @@ import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
 import qualified Data.Array.Accelerate.Debug.Internal               as Debug
 
--- import LLVM.AST.Orphans                                             ()
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Instruction
