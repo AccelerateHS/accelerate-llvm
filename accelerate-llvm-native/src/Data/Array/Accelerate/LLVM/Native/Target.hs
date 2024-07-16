@@ -15,13 +15,6 @@ module Data.Array.Accelerate.LLVM.Native.Target (
 
 ) where
 
--- llvm-hs
--- import LLVM.Target                                                  hiding ( Target )
--- import LLVM.AST.DataLayout                                          ( DataLayout )
--- import qualified LLVM.Relocation                                    as RelocationModel
--- import qualified LLVM.CodeModel                                     as CodeModel
--- import qualified LLVM.CodeGenOpt                                    as CodeOptimisation
-
 -- accelerate
 import Data.Array.Accelerate.LLVM.Native.Link.Cache                 ( LinkCache )
 import Data.Array.Accelerate.LLVM.Native.Execute.Scheduler          ( Workers )
@@ -60,15 +53,6 @@ nativeTargetTriple =
     fromMaybe (error "Could not extract clang version from `clang -###` output")
               (getLinePrefixedBy "Target: " clangMachineVersionOutput)
 
--- | A description of the various data layout properties that may be used during
--- optimisation.
---
--- {-# NOINLINE nativeDataLayout #-}
--- nativeDataLayout :: DataLayout
--- nativeDataLayout
---   = unsafePerformIO
---   $ withNativeTargetMachine getTargetMachineDataLayout
-
 -- | String that describes the host CPU
 --
 nativeCPUName :: ByteString
@@ -88,28 +72,6 @@ nativeCPUName =
         -> Just cpu
       _ -> Nothing
 
-
--- | Bracket the creation and destruction of a target machine for the native
--- backend running on this host.
---
--- withNativeTargetMachine
---     :: (TargetMachine -> IO a)
---     -> IO a
--- withNativeTargetMachine k = do
---   initializeNativeTarget
---   nativeCPUFeatures <- getHostCPUFeatures
---   (nativeTarget, _) <- lookupTarget Nothing nativeTargetTriple
---   withTargetOptions $ \targetOptions ->
---     withTargetMachine
---         nativeTarget
---         nativeTargetTriple
---         nativeCPUName
---         nativeCPUFeatures
---         targetOptions
---         RelocationModel.PIC
---         CodeModel.Default
---         CodeOptimisation.Default
---         k
 
 -- | Returns list of version components: '12.3' becomes [12, 3].
 hostLLVMVersion :: NonEmpty Int
