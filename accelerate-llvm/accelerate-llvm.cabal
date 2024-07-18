@@ -107,7 +107,6 @@ Library
     Data.Array.Accelerate.LLVM.Target
 
     -- LLVM code generation
-    LLVM.AST.Type.AddrSpace
     LLVM.AST.Type.Constant
     LLVM.AST.Type.Downcast
     LLVM.AST.Type.Function

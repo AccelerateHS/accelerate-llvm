@@ -24,7 +24,6 @@ import Control.Applicative
 import Prelude                                                      hiding ( read )
 import Data.Bits
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Volatile

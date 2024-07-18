@@ -21,18 +21,19 @@ module LLVM.AST.Type.Representation (
   module Data.Array.Accelerate.Type,
   Ptr,
   AddrSpace(..),
+  defaultAddrSpace,
 
 ) where
 
 import Data.Array.Accelerate.Type
 import Data.Array.Accelerate.Representation.Type
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 
 -- import qualified LLVM.AST.Type                                      as LLVM
 import qualified Text.LLVM                                          as LLVM
+import Text.LLVM                                                    ( AddrSpace(..), defaultAddrSpace )
 
 import Data.List
 import Data.Text.Lazy.Builder
@@ -363,7 +364,7 @@ instance Downcast (PrimType a) LLVM.Type where
   downcast BoolPrimType         = LLVM.PrimType (LLVM.Integer 1)
   downcast (NamedPrimType lab)  = LLVM.Alias (labelToPrettyI lab)
   downcast (ScalarPrimType t)   = downcast t
-  downcast (PtrPrimType t _)    = LLVM.PtrTo (downcast t)
+  downcast (PtrPrimType t a)    = LLVM.PtrTo (downcast t) a
   downcast (ArrayPrimType n t)  = LLVM.Array n (downcast t)
   downcast (StructPrimType p t) = (if p then LLVM.PackedStruct else LLVM.Struct) (go t)
     where

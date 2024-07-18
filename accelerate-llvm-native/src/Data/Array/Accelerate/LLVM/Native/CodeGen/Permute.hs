@@ -39,7 +39,6 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.Instruction
 import LLVM.AST.Type.Instruction.Atomic

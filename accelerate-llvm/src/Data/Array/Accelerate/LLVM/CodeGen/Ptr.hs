@@ -14,7 +14,6 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Ptr
   where
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand

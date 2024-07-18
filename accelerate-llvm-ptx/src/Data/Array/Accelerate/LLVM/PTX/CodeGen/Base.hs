@@ -73,7 +73,6 @@ import qualified Data.Array.Accelerate.LLVM.CodeGen.Constant        as A
 import Foreign.CUDA.Analysis                                        ( Compute(..), computeCapability )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function

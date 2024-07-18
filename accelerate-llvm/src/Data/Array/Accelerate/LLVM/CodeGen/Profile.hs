@@ -20,7 +20,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Profile (
 
 ) where
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
@@ -90,7 +89,7 @@ derefGlobalString slen sname =
 --
 source_location_data :: String -> String -> String -> Int -> Word32 -> CodeGen arch (Name a)
 source_location_data nm fun src line colour = do
-  let i8ptr_t = LP.PtrTo (LP.PrimType (LP.Integer 8))
+  let i8ptr_t = LP.PtrTo (LP.PrimType (LP.Integer 8)) defaultAddrSpace
       i32_t = LP.PrimType (LP.Integer 32)
   _       <- typedef "___tracy_source_location_data" $ LP.Struct [ i8ptr_t, i8ptr_t, i8ptr_t, i32_t, i32_t ]
   (s, sl) <- global_string src

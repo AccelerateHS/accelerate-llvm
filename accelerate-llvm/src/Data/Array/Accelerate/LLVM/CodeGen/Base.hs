@@ -34,7 +34,6 @@ module Data.Array.Accelerate.LLVM.CodeGen.Base (
 
 ) where
 
-import LLVM.AST.Type.AddrSpace
 import LLVM.AST.Type.Constant
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
