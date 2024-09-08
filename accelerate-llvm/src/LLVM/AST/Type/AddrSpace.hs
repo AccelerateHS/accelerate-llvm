@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable    #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : LLVM.AST.Type.AddrSpace
@@ -18,8 +19,15 @@ module LLVM.AST.Type.AddrSpace (
 
 ) where
 
-import LLVM.AST.AddrSpace
+import Data.Data
+import Data.Word (Word32)
 
+
+-- | <http://llvm.org/docs/LangRef.html#pointer-type>
+--
+-- Copied from llvm-hs-pure.
+data AddrSpace = AddrSpace Word32
+  deriving (Eq, Ord, Read, Show, Typeable, Data)
 
 -- | The default address space is number zero. The semantics of non-zero address
 -- spaces are target dependent.

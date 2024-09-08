@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
@@ -191,18 +190,7 @@ mkPermuteP_rmw uid aenv repr shr rmw update project marr =
                   addr <- instr' $ GetElementPtr $ GEP1 (SingleScalarType s) (asPtr defaultAddrSpace (op s adata)) (op integralType j)
                   --
                   case s of
--- TODO: remove this version check on llvm_hs_pure
-#if MIN_VERSION_llvm_hs_pure(10,0,0)
                     NumSingleType t             -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
-#else
-                    NumSingleType t
-                      | IntegralNumType{} <- t  -> void . instr' $ AtomicRMW t NonVolatile rmw addr (op t r) (CrossThread, AcquireRelease)
-                      | RMW.Add <- rmw          -> atomicCAS_rmw s (A.add t r) addr
-                      | RMW.Sub <- rmw          -> atomicCAS_rmw s (A.sub t r) addr
-                    _ | RMW.Min <- rmw          -> atomicCAS_cmp s A.lt addr (op s r)
-                      | RMW.Max <- rmw          -> atomicCAS_cmp s A.gt addr (op s r)
-                    _                           -> internalError "unexpected transition"
-#endif
           --
           _ -> internalError "unexpected transition"
 

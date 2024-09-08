@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable    #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -15,18 +16,28 @@
 module LLVM.AST.Type.InlineAssembly (
 
   module LLVM.AST.Type.InlineAssembly,
-  LLVM.Dialect(..),
+  Dialect(..),
 
 ) where
 
-import LLVM.AST.Type.Downcast
+-- import LLVM.AST.Type.Downcast
 
-import qualified LLVM.AST.Type                                      as LLVM
-import qualified LLVM.AST.InlineAssembly                            as LLVM
+-- import qualified LLVM.AST.Type                                      as LLVM
+-- import qualified LLVM.AST.InlineAssembly                            as LLVM
 
 import Data.ByteString
 import Data.ByteString.Short
+import Data.Data
 
+
+-- | the dialect of assembly used in an inline assembly string
+-- <http://en.wikipedia.org/wiki/X86_assembly_language#Syntax>
+--
+-- Copied from llvm-hs-pure.
+data Dialect
+  = ATTDialect
+  | IntelDialect
+  deriving (Eq, Read, Show, Typeable, Data)
 
 -- | The 'call' instruction might be a label or inline assembly
 --
@@ -35,10 +46,10 @@ data InlineAssembly where
                  -> ShortByteString       -- constraints
                  -> Bool                  -- has side effects?
                  -> Bool                  -- align stack?
-                 -> LLVM.Dialect
+                 -> Dialect
                  -> InlineAssembly
 
-instance Downcast (LLVM.Type, InlineAssembly) LLVM.InlineAssembly where
-  downcast (t, InlineAssembly asm cst s a d) =
-    LLVM.InlineAssembly t asm cst s a d
+-- instance Downcast (LLVM.Type, InlineAssembly) LLVM.InlineAssembly where
+--   downcast (t, InlineAssembly asm cst s a d) =
+--     LLVM.InlineAssembly t asm cst s a d
 
