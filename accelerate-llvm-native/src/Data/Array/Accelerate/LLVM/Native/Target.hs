@@ -81,7 +81,11 @@ hostLLVMVersion =
     let firstLine = takeWhile (/= '\n') $
                       dropWhile isSpace clangMachineVersionOutput
     in case catMaybes (map (`startsWith` "clang version") (tails firstLine)) of
-         rest : _ -> dropWhile isSpace rest
+         rest : _ ->
+           -- "Ubuntu clang version 14.0.0-1ubuntu1.1" <- we care about the "14.0.0" part only
+           takeWhile (\c -> not (isSpace c) && c /= '-')
+           $ dropWhile isSpace
+           $ rest
          [] -> error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">"
   where
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
