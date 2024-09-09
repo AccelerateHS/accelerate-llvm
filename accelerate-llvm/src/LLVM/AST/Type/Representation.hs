@@ -361,7 +361,7 @@ instance Downcast (Type a) LLVM.Type where
 
 instance Downcast (PrimType a) LLVM.Type where
   downcast BoolPrimType         = LLVM.PrimType (LLVM.Integer 1)
-  downcast (NamedPrimType t)    = error "TODO" -- LLVM.NamedTypeReference (downcast t)
+  downcast (NamedPrimType lab)  = LLVM.Alias (labelToPrettyI lab)
   downcast (ScalarPrimType t)   = downcast t
   downcast (PtrPrimType t _)    = LLVM.PtrTo (downcast t)
   downcast (ArrayPrimType n t)  = LLVM.Array n (downcast t)
