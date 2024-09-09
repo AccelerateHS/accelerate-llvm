@@ -31,8 +31,11 @@ import Paths_accelerate_llvm_native
 
 instance Persistent Native where
   targetCacheTemplate =
+    -- The "llvmpr" is for "llvm-pretty". This is to ensure we still have a
+    -- sensible cache path to switch to should we ever move away from
+    -- llvm-pretty again.
     return $ "accelerate-llvm-native-" ++ showVersion version
-         </> "llvm-" ++ intercalate "." (map show (toList hostLLVMVersion))
+         </> "llvmpr-" ++ intercalate "." (map show (toList hostLLVMVersion))
          </> S8.unpack nativeTargetTriple
          </> B8.unpack nativeCPUName
          </> "meep"

@@ -114,7 +114,7 @@ compile pacc aenv = do
         -- print ast
 
         -- Detect LLVM version
-        -- TODO: should incorporate host LLVM version in the shared object hash so that we don't mix objects compiled with different LLVM versions
+        -- Note: this LLVM version is incorporated in the cache path, so we're safe detecting it at runtime.
         let prettyHostLLVMVersion = intercalate "." (Prelude.map show (toList hostLLVMVersion))
         llvmver <- case llvmverFromTuple hostLLVMVersion of
                      Just llvmver -> return llvmver
