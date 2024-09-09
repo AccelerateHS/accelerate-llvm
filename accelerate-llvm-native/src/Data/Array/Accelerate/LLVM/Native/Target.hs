@@ -25,6 +25,7 @@ import Data.ByteString                                              ( ByteString
 import qualified Data.ByteString.Char8                              as BS8
 import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as SBS8
+import Data.Char                                                    ( isSpace )
 import Data.List                                                    ( tails )
 import Data.List.NonEmpty                                           ( NonEmpty )
 import qualified Data.List.NonEmpty                                 as NE
@@ -50,7 +51,7 @@ instance Target Native where
 nativeTargetTriple :: ShortByteString
 nativeTargetTriple =
   SBS8.pack $
-    fromMaybe (error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">")
+    fromMaybe (error $ "Could not extract native target triple from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">")
               (getLinePrefixedBy "Target: " clangMachineVersionOutput)
 
 -- | String that describes the host CPU
@@ -77,8 +78,11 @@ nativeCPUName =
 hostLLVMVersion :: NonEmpty Int
 hostLLVMVersion =
   fmap read . splitOn '.' $
-    fromMaybe (error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">")
-              (getLinePrefixedBy "clang version " clangMachineVersionOutput)
+    let firstLine = takeWhile (/= '\n') $
+                      dropWhile isSpace clangMachineVersionOutput
+    in case catMaybes (map (`startsWith` "clang version") (tails firstLine)) of
+         rest : _ -> dropWhile isSpace rest
+         [] -> error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">"
   where
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
   splitOn _ [] = [] NE.:| []
@@ -86,6 +90,11 @@ hostLLVMVersion =
     | c == sep = [] NE.<| splitOn sep cs
     | otherwise = let hd NE.:| tl = splitOn sep cs
                   in (c : hd) NE.:| tl
+
+  startsWith :: Eq a => [a] -> [a] -> Maybe [a]
+  long `startsWith` short =
+    let (pre, post) = splitAt (length short) long
+    in if pre == short then Just post else Nothing
 
 -- | This is a string that contains some debug metadata from clang (clang
 -- version, target triple, etc.) as well as the inferred command-line
