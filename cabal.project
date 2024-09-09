@@ -9,13 +9,3 @@ source-repository-package
     tag:      fbee01da36aba525d8c60922d1e83500556d7650
     -- Required for Cabal < 3.8
     -- post-checkout-command: bash -c "! git submodule update --init --recursive"
-
-source-repository-package
-    type:     git
-    location: https://github.com/llvm-hs/llvm-hs.git
-    tag:      5bca2c1a2a3aa98ecfb19181e7a5ebbf3e212b76
-    -- tag:      423220bffac4990d019fc088c46c5f25310d5a33 -- llvm-12
-    subdir:
-        -- llvm-hs
-        llvm-hs-pure
-
