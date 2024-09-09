@@ -13,8 +13,15 @@ import LLVM.AST.Type.Representation
 -- 'LLVM.AST.Type.Constant.Constant'). The @ptra@ and @ptrb@ type indices are
 -- the input and output /pointer/ type.
 --
--- The type of indices is unconstrained; this is less flexible than reality,
--- but reality is too cumbersome to encode.
+-- The type of indices is unconstrained, which is more flexible than reality,
+-- and the kind of operands must be uniform, which is /less/ flexible than
+-- reality. Reality is quite cumbersome:
+-- * When indexing into a structure (currently unsupported by this data type),
+--   the index type must be @i32@ and its value must be constant.
+-- * When indexing into an array, the index type may be any /integral/ type,
+--   signed or unsigned, which are then treated as signed integers.
+--
+-- <https://llvm.org/docs/LangRef.html#getelementptr-instruction>
 data GetElementPtr op ptra ptrb where
   GEP :: Type a
       -> op (Ptr a)

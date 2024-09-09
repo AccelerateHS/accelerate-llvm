@@ -2,6 +2,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
@@ -23,6 +24,8 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Downcast
 
 import qualified Text.LLVM                                          as LLVM
+
+import Data.Bifunctor                                               ( bimap )
 
 
 -- | <http://llvm.org/docs/LangRef.html#terminators>
@@ -71,5 +74,11 @@ instance Downcast (Terminator a) LLVM.Instr where
     RetVal x      -> LLVM.Ret (downcast x)
     Br l          -> LLVM.Jump (LLVM.Named (labelToPrettyI l))
     CondBr p t f  -> LLVM.Br (downcast p) (LLVM.Named (labelToPrettyI t)) (LLVM.Named (labelToPrettyI f))
-    Switch p d a  -> error "TODO"  -- LLVM.Switch (downcast p) (downcast d) (downcast a) []
-
+    Switch p d a  -> LLVM.Switch (downcast p)
+                                 (labelToPrettyBL d)
+                                 (map (bimap fromConstant labelToPrettyBL) a)
+      where
+        fromConstant :: Constant a -> Integer
+        fromConstant cnst = case downcast @_ @(LLVM.Typed LLVM.Value) cnst of
+          LLVM.Typed _ (LLVM.ValInteger n) -> n
+          _ -> error "TODO: llvm-pretty supports only integral cases for Switch"

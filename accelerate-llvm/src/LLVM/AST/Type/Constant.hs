@@ -84,11 +84,11 @@ instance Downcast (Constant a) (LLVM.Typed LLVM.Value) where
       single (NumSingleType s) = num s
 
       vector :: VectorType s -> s -> LLVM.Typed LLVM.Value
-      vector (VectorType _ s) (Vec ba#)
-        = error "TODO"
-        -- = LLVM.Vector
-        -- $ map (single s)
-        -- $ singlePrim s `withDict` foldrByteArray (:) [] (ByteArray ba#)
+      vector (VectorType n s) (Vec ba#)
+        = LLVM.Typed (LLVM.Vector (fromIntegral n) (downcast s))
+        $ LLVM.ValVector (downcast s)
+        $ map (LLVM.typedValue . single s)
+        $ singlePrim s `withDict` foldrByteArray (:) [] (ByteArray ba#)
 
       num :: NumType s -> s -> LLVM.Typed LLVM.Value
       num (IntegralNumType s) v
@@ -99,7 +99,9 @@ instance Downcast (Constant a) (LLVM.Typed LLVM.Value) where
         = case s of
             TypeFloat                        -> LLVM.Typed (LLVM.PrimType (LLVM.FloatType LLVM.Float)) (LLVM.ValFloat v)
             TypeDouble                       -> LLVM.Typed (LLVM.PrimType (LLVM.FloatType LLVM.Double)) (LLVM.ValDouble v)
-            TypeHalf | Half (CUShort u) <- v -> error "TODO"  -- LLVM.Half u
+            TypeHalf | Half (CUShort _u) <- v ->
+              -- LLVM.Typed (LLVM.PrimType (LLVM.FloatType LLVM.Half)) (_ _u)
+              error "TODO: Half floats unsupported by llvm-pretty"
 
       singlePrim :: SingleType s -> Dict (Prim s)
       singlePrim (NumSingleType s) = numPrim s
