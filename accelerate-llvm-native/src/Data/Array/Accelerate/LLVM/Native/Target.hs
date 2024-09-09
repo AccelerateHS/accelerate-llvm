@@ -42,7 +42,7 @@ data Native = Native
 
 instance Target Native where
   targetTriple     = Just nativeTargetTriple
-  targetDataLayout = Nothing  -- TODO: does this work?
+  targetDataLayout = Nothing  -- LLVM will fill it in just fine for CPU targets
 
 
 -- | String that describes the native target

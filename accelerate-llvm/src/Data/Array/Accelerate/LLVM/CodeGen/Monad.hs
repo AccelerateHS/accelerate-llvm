@@ -144,7 +144,7 @@ evalCodeGen ll = do
     Module { moduleMetadata = md
            , unModule       = LP.Module
                             { LP.modSourceName = Nothing
-                            , LP.modDataLayout = []  -- TODO: targetDataLayout @arch
+                            , LP.modDataLayout = []  -- TODO: targetDataLayout @arch; this will be important for PTX
                             , LP.modTriple     =
                                 case targetTriple @arch of
                                   Just s -> LP.parseTriple (SBS8.unpack s)
