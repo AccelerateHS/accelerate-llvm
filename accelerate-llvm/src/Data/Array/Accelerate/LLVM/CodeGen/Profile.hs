@@ -44,9 +44,7 @@ import Data.Char
 
 
 call' :: GlobalFunction args t -> CodeGen arch (Operands t)
--- TODO: support function call attributes
--- call' f = call f [NoUnwind, NoDuplicate]
-call' f = call f []
+call' f = call f [NoUnwind, NoDuplicate]
 
 global_string :: String -> CodeGen arch (Name (Ptr (LLArray Word8)), Word64)
 global_string str = do
