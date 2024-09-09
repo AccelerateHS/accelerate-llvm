@@ -50,7 +50,7 @@ instance Target Native where
 nativeTargetTriple :: ShortByteString
 nativeTargetTriple =
   SBS8.pack $
-    fromMaybe (error "Could not extract clang version from `clang -###` output")
+    fromMaybe (error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">")
               (getLinePrefixedBy "Target: " clangMachineVersionOutput)
 
 -- | String that describes the host CPU
@@ -59,7 +59,7 @@ nativeCPUName :: ByteString
 nativeCPUName =
   case catMaybes (map tryFromLine (lines clangMachineVersionOutput)) of
     cpu : _ -> BS8.pack cpu
-    _ -> error "Could not extract target CPU from `clang -###` output"
+    _ -> error $ "Could not extract target CPU from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">"
   where
   tryFromLine :: String -> Maybe String
   tryFromLine line =
@@ -77,7 +77,7 @@ nativeCPUName =
 hostLLVMVersion :: NonEmpty Int
 hostLLVMVersion =
   fmap read . splitOn '.' $
-    fromMaybe (error "Could not extract clang version from `clang -###` output")
+    fromMaybe (error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">")
               (getLinePrefixedBy "clang version " clangMachineVersionOutput)
   where
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
