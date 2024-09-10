@@ -23,6 +23,9 @@ extra-deps:
     - llvm-hs
     - llvm-hs-pure
 
+- github: tomsmeding/llvm-pretty
+  commit: 3d0a8742a33c82daf1103728d6eed90e76c490eb
+
 # Override default flag values for local packages and extra-deps
 # flags: {}
 
