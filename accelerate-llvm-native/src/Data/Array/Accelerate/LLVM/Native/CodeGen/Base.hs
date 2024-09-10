@@ -83,7 +83,7 @@ makeKernel name@(Label sbs) param kernel = do
   return  $ Kernel
     { kernelMetadata = KM_Native ()
     , unKernel       = LP.Define
-        { LP.defLinkage = Nothing
+        { LP.defLinkage = Just LP.DLLExport  -- ensure the symbols are visible on Windows
         , LP.defVisibility = Nothing
         , LP.defRetType = LP.PrimType LP.Void
         , LP.defName = labelToPrettyS name

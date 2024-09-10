@@ -142,6 +142,12 @@ compile pacc aenv = do
               ,"-Wno-override-module"]
               ++ outputFlags
 
+#if defined(mingw32_HOST_OS)
+        let linkOutputFlags = []
+#else
+        let linkOutputFlags = ["-fPIC"]
+#endif
+
         -- Minimise the number of clang invocations (to 1) in the common case
         -- of no verbose debug flags. If we need to print some intermediate
         -- stages, run all stages separately for simplicity, and print only the
@@ -154,10 +160,10 @@ compile pacc aenv = do
             Debug.traceM Debug.dump_cc ("Optimised LLVM IR:\n" % string) optText
             asmText <- readProcess "clang" (clangFlags "ir" ["-S"] "-") optText
             Debug.traceM Debug.dump_asm ("Optimised assembly:\n" % string) asmText
-            _ <- readProcess "clang" (clangFlags "assembler" ["-fPIC"] staticObjFile) asmText
+            _ <- readProcess "clang" (clangFlags "assembler" linkOutputFlags staticObjFile) asmText
             return ()
           else do
-            _ <- readProcess "clang" (clangFlags "ir" ["-fPIC"] staticObjFile) unoptimisedText
+            _ <- readProcess "clang" (clangFlags "ir" linkOutputFlags staticObjFile) unoptimisedText
             return ()
 
         Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
@@ -218,12 +224,19 @@ llvmverFromTuple _ = Nothing
 -- Respect the common @LD@ and @CC@ environment variables, falling back to
 -- search the path for @cc@ if neither of those exist.
 --
--- XXX: Using @cc@ as the default here instead of @ld@ because on macOS
--- this will do the right thing, whereas 'ld --shared' will not.
+-- XXX: On Unixy systems, we use @cc@ as the default instead of @ld@ because
+-- on macOS this will do the right thing, whereas 'ld --shared' will not.
+-- On Windows, we just use clang as the driver to "do the right thing".
 --
 ld :: FilePath
-ld = unsafePerformIO
-   $ fromMaybe "cc" <$> liftA2 (<|>) (lookupEnv "LD") (lookupEnv "CC")
+ld = unsafePerformIO $ do
+#if defined(mingw32_HOST_OS)
+  let defProgram = "clang"
+#else
+  let defProgram = "cc"
+#endif
+  mfromEnv <- liftA2 (<|>) (lookupEnv "LD") (lookupEnv "CC")
+  return (fromMaybe defProgram mfromEnv)
 
 -- The file extension for static libraries
 --

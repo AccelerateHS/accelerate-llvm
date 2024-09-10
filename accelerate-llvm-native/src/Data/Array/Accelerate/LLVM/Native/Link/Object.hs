@@ -20,7 +20,6 @@ import Data.ByteString.Short.Char8                                  ( ShortByteS
 import Data.Array.Accelerate.Lifetime
 
 #if defined(mingw32_HOST_OS)
-import System.Win32.DLL
 import System.Win32.Types
 #else
 import System.Posix.DynamicLinker
