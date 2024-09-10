@@ -252,7 +252,7 @@ jobs:
           # echo "LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/usr/local/cuda-11.8/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
           # echo "/usr/local/cuda-11.8/bin" >> $GITHUB_PATH
           ## Replacement part for the new llvm-pretty backend:
-          sudo apt-get update && sudo apt -get -y install clang
+          sudo apt-get update && sudo apt-get -y install clang
           ## End of replacement part
 
       # TODO: LLVM and Cuda are commented out here to make CI work on this
