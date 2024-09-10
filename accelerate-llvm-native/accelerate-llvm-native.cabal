@@ -114,7 +114,6 @@ Library
     Data.Array.Accelerate.LLVM.Native.Plugin.BuildInfo
 
     Control.Concurrent.Extra
-    Language.Haskell.TH.Extra
 
     Paths_accelerate_llvm_native
 

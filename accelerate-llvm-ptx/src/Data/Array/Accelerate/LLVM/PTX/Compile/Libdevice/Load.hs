@@ -35,7 +35,7 @@ import System.IO.Unsafe
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as S8
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 
 
 -- NVVM Reflect

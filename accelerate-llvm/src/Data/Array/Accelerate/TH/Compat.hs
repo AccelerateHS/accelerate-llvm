@@ -4,7 +4,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell     #-}
 -- |
--- Module      : Language.Haskell.TH.Extra
+-- Module      : Data.Array.Accelerate.TH.Compat
 -- Copyright   : [2019..2021] The Accelerate Team
 -- License     : BSD3
 --
@@ -13,11 +13,11 @@
 -- Portability : non-portable (GHC extensions)
 --
 
-module Language.Haskell.TH.Extra (
+module Data.Array.Accelerate.TH.Compat (
 
   module Language.Haskell.TH,
 #if! MIN_VERSION_template_haskell(2,17,0)
-  module Language.Haskell.TH.Extra,
+  module Data.Array.Accelerate.TH.Compat,
 #endif
 
 ) where

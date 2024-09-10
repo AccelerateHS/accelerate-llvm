@@ -126,12 +126,11 @@ Library
     LLVM.AST.Type.Terminator
 
     -- Extras
+    Data.Array.Accelerate.TH.Compat
     Data.ByteString.Short.Char8
     Data.ByteString.Short.Extra
 
   other-modules:
-    Language.Haskell.TH.Extra
-
     Paths_accelerate_llvm
 
   build-depends:

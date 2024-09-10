@@ -44,10 +44,10 @@ import Data.Array.Accelerate.LLVM.Link
 
 import Data.ByteString.Short                                        ( ShortByteString )
 import GHC.Ptr                                                      ( Ptr(..) )
-import Language.Haskell.TH.Extra                                    ( CodeQ )
+import Data.Array.Accelerate.TH.Compat                              ( CodeQ )
 import System.IO.Unsafe
 import qualified Data.ByteString.Short.Internal                     as BS
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 
 #if MIN_VERSION_containers(0,5,9)
 import qualified Data.IntMap.Internal                               as IM

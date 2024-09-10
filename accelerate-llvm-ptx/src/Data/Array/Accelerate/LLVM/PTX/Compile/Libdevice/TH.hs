@@ -46,14 +46,14 @@ import Data.FileEmbed
 import Data.List
 import Data.Maybe
 import Formatting
-import Language.Haskell.TH.Extra                                    ( CodeQ )
+import Data.Array.Accelerate.TH.Compat                              ( CodeQ )
 import System.Directory
 import System.FilePath
 import Text.Printf
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.ByteString.Short.Extra                        as BS
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 
 
 -- This is a hacky module that can be linked against in order to provide the

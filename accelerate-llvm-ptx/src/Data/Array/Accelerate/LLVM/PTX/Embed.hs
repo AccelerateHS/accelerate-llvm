@@ -34,11 +34,11 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 
 import Foreign.Ptr
 import GHC.Ptr                                                      ( Ptr(..) )
-import Language.Haskell.TH.Extra                                    ( CodeQ )
+import Data.Array.Accelerate.TH.Compat                              ( CodeQ )
 import System.IO.Unsafe
 import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Unsafe                             as B
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 
 
 instance Embed PTX where

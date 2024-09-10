@@ -39,11 +39,11 @@ import Control.Concurrent.Unique
 import Control.Monad
 import Data.Hashable
 import Foreign.Ptr
-import Language.Haskell.TH.Extra                                    ( Q, CodeQ )
+import Data.Array.Accelerate.TH.Compat                              ( Q, CodeQ )
 import Numeric
 import System.FilePath                                              ( (<.>) )
 import System.IO.Unsafe
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
 import Data.Maybe

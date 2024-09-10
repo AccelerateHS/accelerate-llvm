@@ -82,7 +82,7 @@ import Data.Array.Accelerate.LLVM.Native.Debug                      as Debug
 
 import Control.Monad.Trans
 import System.IO.Unsafe
-import qualified Language.Haskell.TH.Extra                          as TH
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 import qualified Language.Haskell.TH.Syntax                         as TH
 
 import GHC.Stack

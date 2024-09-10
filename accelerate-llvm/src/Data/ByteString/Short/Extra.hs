@@ -27,8 +27,8 @@ import Data.ByteString.Short
 import qualified Data.ByteString.Short                              as BS
 import qualified Data.ByteString.Short.Internal                     as BI
 
-import Language.Haskell.TH.Extra                                    ( CodeQ )
-import qualified Language.Haskell.TH.Extra                          as TH
+import Data.Array.Accelerate.TH.Compat                              ( CodeQ )
+import qualified Data.Array.Accelerate.TH.Compat                    as TH
 
 import System.IO.Unsafe
 import Prelude                                                      hiding ( take, takeWhile )
