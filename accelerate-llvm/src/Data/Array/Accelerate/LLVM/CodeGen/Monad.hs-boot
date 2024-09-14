@@ -11,9 +11,12 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Monad ( CodeGen )
   where
 
+import Control.Monad.Reader
 import Control.Monad.State
 import Data.Array.Accelerate.LLVM.State
 
 data CodeGenState
-newtype CodeGen target a = CodeGen { runCodeGen :: StateT CodeGenState (LLVM target) a }
+data CodeGenContext
+newtype CodeGen target a = CodeGen
+  { runCodeGen :: ReaderT CodeGenContext (StateT CodeGenState (LLVM target)) a }
 

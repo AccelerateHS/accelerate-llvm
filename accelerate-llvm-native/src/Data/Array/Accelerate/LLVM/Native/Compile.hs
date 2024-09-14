@@ -26,6 +26,7 @@ import Data.Array.Accelerate.Trafo.Delayed
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple )
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
@@ -43,8 +44,6 @@ import Control.Applicative
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
-import Data.List.NonEmpty                                           ( NonEmpty )
-import qualified Data.List.NonEmpty                                 as NE
 import Data.Foldable                                                ( toList )
 import Data.Maybe
 import Formatting
@@ -202,19 +201,6 @@ compile pacc aenv = do
 
   return $! ObjectR uid nms o_file so_file
 
-
-llvmverFromTuple :: NonEmpty Int -> Maybe P.LLVMVer
-llvmverFromTuple (3 NE.:| 5 : _) = Just P.llvmV3_5
-llvmverFromTuple (3 NE.:| 6 : _) = Just P.llvmV3_6
-llvmverFromTuple (3 NE.:| 7 : _) = Just P.llvmV3_7
-llvmverFromTuple (3 NE.:| 8 : _) = Just P.llvmV3_8
-llvmverFromTuple (n NE.:| _)
-  | n >= 4
-  -- Don't compare against the "latest" here, because in practice, LLVM textual
-  -- IR is fairly forward-compatible.
-  -- , n <= P.llvmVlatest
-  = Just n
-llvmverFromTuple _ = Nothing
 
 -- Respect the common @LD@ and @CC@ environment variables, falling back to
 -- search the path for @cc@ if neither of those exist.

@@ -22,6 +22,9 @@ module Data.Array.Accelerate.LLVM.CodeGen.Monad (
   evalCodeGen,
   liftCodeGen,
 
+  -- codegen context
+  getLLVMversion,
+
   -- declarations
   fresh, freshLocalName, freshGlobalName,
   declareGlobalVar,
@@ -62,10 +65,12 @@ import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
 import qualified Text.LLVM                                          as LP
+import qualified Text.LLVM.PP                                       as LP
 import qualified Text.LLVM.Triple.Parse                             as LP
 
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Reader                                         ( ReaderT, MonadReader, runReaderT, ask, asks )
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as SBS8
@@ -108,11 +113,21 @@ data Block = Block
   , terminator          :: LP.Stmt               -- block terminator
   }
 
-newtype CodeGen target a = CodeGen { runCodeGen :: StateT CodeGenState (LLVM target) a }
-  deriving (Functor, Applicative, Monad, MonadState CodeGenState)
+-- | Code generation context: read-only additional context of the compilation.
+--
+-- This contains the LLVM version.
+data CodeGenContext = CodeGenContext
+  { codegenLLVMversion :: LP.LLVMVer }
+
+newtype CodeGen target a = CodeGen
+  { runCodeGen :: ReaderT CodeGenContext (StateT CodeGenState (LLVM target)) a }
+  deriving (Functor, Applicative, Monad, MonadReader CodeGenContext, MonadState CodeGenState)
 
 liftCodeGen :: LLVM arch a -> CodeGen arch a
-liftCodeGen = CodeGen . lift
+liftCodeGen = CodeGen . lift . lift
+
+getLLVMversion :: CodeGen arch LP.LLVMVer
+getLLVMversion = asks codegenLLVMversion
 
 
 {-# INLINEABLE evalCodeGen #-}
@@ -121,7 +136,10 @@ evalCodeGen
     => CodeGen arch (IROpenAcc arch aenv a)
     -> LLVM    arch (Module    arch aenv a)
 evalCodeGen ll = do
-  (IROpenAcc ks, st)   <- runStateT (runCodeGen ll)
+  llvmver <- ask
+  let context = CodeGenContext
+        { codegenLLVMversion = llvmver }
+  (IROpenAcc ks, st)   <- runStateT (runReaderT (runCodeGen ll) context)
                         $ CodeGenState
                             { blockChain        = initBlockChain
                             , globalvarTable    = HashMap.empty

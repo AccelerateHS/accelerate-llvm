@@ -105,6 +105,7 @@ Library
     Data.Array.Accelerate.LLVM.Link.Cache
     Data.Array.Accelerate.LLVM.State
     Data.Array.Accelerate.LLVM.Target
+    Data.Array.Accelerate.LLVM.Target.ClangInfo
 
     -- LLVM code generation
     LLVM.AST.Type.Constant
@@ -151,6 +152,7 @@ Library
         , llvm-pretty                   >= 0.12
         , mtl                           >= 2.0
         , primitive                     >= 0.6.4
+        , process
         , template-haskell
         , text                          >= 1.2
         , unordered-containers          >= 0.2

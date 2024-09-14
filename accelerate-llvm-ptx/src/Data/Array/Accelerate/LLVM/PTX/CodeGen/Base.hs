@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -78,6 +79,8 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.InlineAssembly
 import LLVM.AST.Type.Instruction
+import LLVM.AST.Type.Instruction.Atomic
+import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
 import LLVM.AST.Type.Instruction.Volatile
 import LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Name
@@ -99,17 +102,11 @@ import Data.Proxy
 import Data.String
 import Foreign.Storable
 import Formatting                                                   hiding ( bytes, int )
+import Text.Printf
 import Prelude                                                      as P
 
 import GHC.TypeLits
 
-#if MIN_VERSION_llvm_hs(10,0,0)
-import qualified LLVM.AST.Type.Instruction.RMW                      as RMW
-import LLVM.AST.Type.Instruction.Atomic
-#elif !MIN_VERSION_llvm_hs(9,0,0)
-import Data.String
-import Text.Printf
-#endif
 
 
 -- Thread identifiers
@@ -255,15 +252,12 @@ __syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 --
 __syncwarp_mask :: HasCallStack => Operands Word32 -> CodeGen PTX ()
 __syncwarp_mask mask = do
+  llvmver <- getLLVMversion
   dev <- liftCodeGen $ gets ptxDeviceProperties
-  if computeCapability dev < Compute 7 0
-    then return ()
-    else
-#if !MIN_VERSION_llvm_hs(6,0,0)
-         internalError "LLVM-6.0 or above is required for Volta devices and later"
-#else
-         void $ call (Lam primType (op primType mask) (Body VoidType (Just Tail) "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
-#endif
+  case (computeCapability dev >= Compute 7 0, llvmver >= 6) of
+    (True, True) -> void $ call (Lam primType (op primType mask) (Body VoidType (Just Tail) "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
+    (True, False) -> internalError "LLVM-6.0 or above is required for Volta devices and later"
+    (False, _) -> return ()
 
 
 -- | Ensure that all writes to shared and global memory before the call to
@@ -304,40 +298,36 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 -- <https://github.com/AccelerateHS/accelerate/issues/363>
 --
 atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
-atomicAdd_f t addr val =
-#if MIN_VERSION_llvm_hs(10,0,0)
-  void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.Add addr val (CrossThread, AcquireRelease)
-#else
-  let
-      _width :: Int
-      _width =
-        case t of
-          TypeHalf    -> 16
-          TypeFloat   -> 32
-          TypeDouble  -> 64
-
-      (t_addr, t_val, _addrspace) =
+atomicAdd_f t addr val = do
+  let (t_addr, t_val, _addrspace) =
         case typeOf addr of
           PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
             -> (ta, tv, as)
           _ -> internalError "unexpected operand type"
 
       t_ret = PrimType (ScalarPrimType t_val)
-#if MIN_VERSION_llvm_hs(9,0,0) || !MIN_VERSION_llvm_hs(6,0,0)
-      asm   =
-        case t of
-          -- assuming .address_size 64
-          TypeHalf   -> InlineAssembly "atom.add.noftz.f16  $0, [$1], $2;" "=c,l,c" True False ATTDialect
-          TypeFloat  -> InlineAssembly "atom.global.add.f32 $0, [$1], $2;" "=f,l,f" True False ATTDialect
-          TypeDouble -> InlineAssembly "atom.global.add.f64 $0, [$1], $2;" "=d,l,d" True False ATTDialect
-  in
-  void $ instr (Call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) (Left asm)))) [Right NoUnwind])
-#else
-      fun   = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" _width (_addrspace :: Word32) _width
-  in
-  void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
-#endif
-#endif
+
+  llvmver <- getLLVMversion
+  if | llvmver >= 10 ->
+         void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.Add addr val (CrossThread, AcquireRelease)
+
+     | 6 <= llvmver, llvmver < 9 ->
+         let _width :: Int
+             _width =
+               case t of
+                 TypeHalf    -> 16
+                 TypeFloat   -> 32
+                 TypeDouble  -> 64
+             fun = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" _width (_addrspace :: Word32) _width
+         in void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
+
+     | otherwise ->
+         let asm = case t of
+               -- assuming .address_size 64
+               TypeHalf   -> InlineAssembly "atom.add.noftz.f16  $0, [$1], $2;" "=c,l,c" True False ATTDialect
+               TypeFloat  -> InlineAssembly "atom.global.add.f32 $0, [$1], $2;" "=f,l,f" True False ATTDialect
+               TypeDouble -> InlineAssembly "atom.global.add.f64 $0, [$1], $2;" "=d,l,d" True False ATTDialect
+         in void $ instr (Call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) (Left asm)))) [Right NoUnwind])
 
 
 -- Warp shuffle functions
@@ -648,11 +638,10 @@ staticSharedMem tp n = do
       -- Return a pointer to the first element of the __shared__ memory array.
       -- We do this rather than just returning the global reference directly due
       -- to how __shared__ memory needs to be indexed with the GEP instruction.
-#if MIN_VERSION_llvm_hs(15,0,0)
-      p <- instr' $ GetElementPtr t sm [A.num numType 0 :: Operand Int32]
-#else
-      p <- instr' $ GetElementPtr t sm [A.num numType 0, A.num numType 0 :: Operand Int32]
-#endif
+      llvmver <- getLLVMversion
+      p <- if llvmver >= 15
+             then instr' $ GetElementPtr t sm [A.num numType 0 :: Operand Int32]
+             else instr' $ GetElementPtr t sm [A.num numType 0, A.num numType 0 :: Operand Int32]
       q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
 
       return $ ir t (unPtr q)
@@ -676,7 +665,7 @@ initialiseDynamicSharedMemory = do
   return $ ConstantOperand $ GlobalReference (PrimType (PtrPrimType (ArrayPrimType 0 scalarType) sharedMemAddrSpace)) "__shared__"
 
 
--- Declared a new dynamically allocated array in the __shared__ memory space
+-- Declare a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
 --
 dynamicSharedMem
@@ -684,7 +673,7 @@ dynamicSharedMem
        TypeR e
     -> IntegralType int
     -> Operands int                                 -- number of array elements
-    -> Operands int                                 -- #bytes of shared memory the have already been allocated
+    -> Operands int                                 -- #bytes of shared memory that have already been allocated
     -> CodeGen PTX (IRArray (Vector e))
 dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
   | IntegralDict <- integralDict int = do
@@ -699,11 +688,9 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
-#if MIN_VERSION_llvm_hs(15,0,0)
-          p <- instr' $ GetElementPtr scalarType smem [i]
-#else
-          p <- instr' $ GetElementPtr scalarType smem [A.num numTp 0, i] -- TLM: note initial zero index!!
-#endif
+          p <- if llvmver >= 15
+                 then instr' $ GetElementPtr scalarType smem [i]
+                 else instr' $ GetElementPtr scalarType smem [A.num numTp 0, i] -- TLM: note initial zero index!!
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
           a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
           b <- instr' $ Add numTp i a
@@ -784,11 +771,7 @@ makeKernel config name@(Label l) param kernel = do
   code <- createBlocks
   addMetadata "nvvm.annotations"
     [ Just . MetadataConstantOperand
-      $ LLVM.GlobalReference
-#if !MIN_VERSION_llvm_hs(15,0,0)
-          (LLVM.PointerType (LLVM.FunctionType LLVM.VoidType [ t | LLVM.Parameter t _ _ <- param ] False) (AddrSpace 0))
-#endif
-          (LLVM.Name l)
+      $ LLVM.GlobalReference (LLVM.Name l)
     , Just . MetadataStringOperand   $ "kernel"
     , Just . MetadataConstantOperand $ LLVM.Int 32 1
     ]

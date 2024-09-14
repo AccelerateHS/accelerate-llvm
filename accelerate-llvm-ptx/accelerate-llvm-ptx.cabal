@@ -141,10 +141,12 @@ Library
         , filepath                      >= 1.0
         , formatting                    >= 7.0
         , hashable                      >= 1.2
-        , llvm-hs                       >= 4.1 && < 16
         , llvm-hs-pure                  >= 4.1 && < 16
+        , llvm-pretty                   >= 0.12
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.9
+          -- only used to render llvm-pretty output
+        , pretty
         , prettyprinter                 >= 1.7
         , primitive                     >= 0.7
         , process                       >= 1.4.3

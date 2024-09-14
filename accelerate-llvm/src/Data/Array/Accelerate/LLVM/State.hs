@@ -14,8 +14,15 @@
 module Data.Array.Accelerate.LLVM.State
   where
 
--- library
+-- accelerate
+import Data.Array.Accelerate.LLVM.Target.ClangInfo
+
+-- llvm-pretty
+import qualified Text.LLVM.PP                           as LP
+
+-- standard library
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
+import Control.Monad.Reader                             ( ReaderT, MonadReader, runReaderT )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
 import Prelude
@@ -28,8 +35,8 @@ import Prelude
 -- for the LLVM execution context as well as the per-execution target specific
 -- state 'target'.
 --
-newtype LLVM target a = LLVM { runLLVM :: StateT target IO a }
-  deriving (Functor, Applicative, Monad, MonadIO, MonadState target, MonadThrow, MonadCatch, MonadMask)
+newtype LLVM target a = LLVM { runLLVM :: ReaderT LP.LLVMVer (StateT target IO) a }
+  deriving (Functor, Applicative, Monad, MonadIO, MonadReader LP.LLVMVer, MonadState target, MonadThrow, MonadCatch, MonadMask)
 
 -- | Extract the execution state: 'gets llvmTarget'
 --
@@ -40,7 +47,9 @@ llvmTarget = id
 --
 evalLLVM :: t -> LLVM t a -> IO a
 evalLLVM target acc =
-  evalStateT (runLLVM acc) target
+  case llvmverFromTuple hostLLVMVersion of
+    Just version -> evalStateT (runReaderT (runLLVM acc) version) target
+    Nothing -> fail "accelerate-llvm: Could not determine LLVM version from Clang output"
 
 
 -- -- | Make sure the GC knows that we want to keep this thing alive forever.

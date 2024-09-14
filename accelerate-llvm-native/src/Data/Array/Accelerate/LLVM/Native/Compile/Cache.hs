@@ -18,6 +18,7 @@ module Data.Array.Accelerate.LLVM.Native.Compile.Cache (
 
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.Native.Target
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion )
 
 import Data.Foldable                                                ( toList )
 import Data.List                                                    ( intercalate )
