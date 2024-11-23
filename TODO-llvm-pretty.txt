@@ -1,0 +1,22 @@
+These are the things that are either needed by the Native backend, or are
+needed by the PTX backend and already discovered by just porting the
+LLVM.AST.Type hierarchy, and are not supported by llvm-pretty.
+
+- Parameter attributes: NoAlias, NoCapture.
+  -> We should benchmark before/after here to see if they are required.
+
+- Function call attributes: NoUnwind, NoDuplicate.
+  -> The original llvm-hs code put these attributes both on the function
+     _declaration_ and on the _call_ to that function. llvm-pretty doesn't
+     support function call attributes at all, but the LLVM documentation isn't
+     clear on whether putting an attribute on a call is necessary if it's
+     already there on the declaration.
+
+- Volatile stores and loads: only used in PTX backend
+
+- Inline assembly: only used in PTX backend
+
+- Half floats: could be use on CPU, but only really useful on GPU
+
+- Function attributes: Convergent, InaccessibleMemOnly. Only used in PTX
+  backend
