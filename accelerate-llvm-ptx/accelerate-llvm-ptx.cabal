@@ -141,7 +141,6 @@ Library
         , filepath                      >= 1.0
         , formatting                    >= 7.0
         , hashable                      >= 1.2
-        , llvm-hs-pure                  >= 4.1 && < 16
         , llvm-pretty                   >= 0.12
         , mtl                           >= 2.2.1
         , nvvm                          >= 0.9

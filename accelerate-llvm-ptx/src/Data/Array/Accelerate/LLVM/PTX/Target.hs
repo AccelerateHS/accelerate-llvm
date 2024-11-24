@@ -21,8 +21,8 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 ) where
 
 -- llvm-hs
-import LLVM.AST.AddrSpace
-import LLVM.AST.DataLayout
+-- import LLVM.AST.AddrSpace
+-- import LLVM.AST.DataLayout
 -- import LLVM.Target                                                  hiding ( Target )
 -- import qualified LLVM.Target                                        as LLVM
 -- import qualified LLVM.Relocation                                    as R
@@ -75,11 +75,7 @@ data PTX = PTX {
 
 instance Target PTX where
   targetTriple     = Just ptxTargetTriple
-#if ACCELERATE_USE_NVVM
   targetDataLayout = Nothing              -- see note: [NVVM and target data layout]
-#else
-  targetDataLayout = Just ptxDataLayout
-#endif
 
 
 -- | Extract the properties of the device the current PTX execution state is
@@ -106,23 +102,23 @@ ptxDeviceName = castPtr . byteArrayContents . deviceName . ptxContext
 -- Thus, only the size of the pointer layout changes depending on the host
 -- architecture.
 --
-ptxDataLayout :: DataLayout
-ptxDataLayout = DataLayout
-  { endianness          = LittleEndian
-  , mangling            = Nothing
-  , aggregateLayout     = AlignmentInfo 0 64
-  , stackAlignment      = Nothing
-  , pointerLayouts      = Map.fromList
-      [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize wordSize)) ]
-  , typeLayouts         = Map.fromList $
-      [ ((IntegerAlign, 1), AlignmentInfo 8 8) ] ++
-      [ ((IntegerAlign, i), AlignmentInfo i i) | i <- [8,16,32,64]] ++
-      [ ((VectorAlign,  v), AlignmentInfo v v) | v <- [16,32,64,128]] ++
-      [ ((FloatAlign,   f), AlignmentInfo f f) | f <- [32,64] ]
-  , nativeSizes         = Just $ Set.fromList [ 16,32,64 ]
-  }
-  where
-    wordSize = bitSize (undefined :: Int)
+-- ptxDataLayout :: DataLayout
+-- ptxDataLayout = DataLayout
+--   { endianness          = LittleEndian
+--   , mangling            = Nothing
+--   , aggregateLayout     = AlignmentInfo 0 64
+--   , stackAlignment      = Nothing
+--   , pointerLayouts      = Map.fromList
+--       [ (AddrSpace 0, (wordSize, AlignmentInfo wordSize wordSize)) ]
+--   , typeLayouts         = Map.fromList $
+--       [ ((IntegerAlign, 1), AlignmentInfo 8 8) ] ++
+--       [ ((IntegerAlign, i), AlignmentInfo i i) | i <- [8,16,32,64]] ++
+--       [ ((VectorAlign,  v), AlignmentInfo v v) | v <- [16,32,64,128]] ++
+--       [ ((FloatAlign,   f), AlignmentInfo f f) | f <- [32,64] ]
+--   , nativeSizes         = Just $ Set.fromList [ 16,32,64 ]
+--   }
+--   where
+--     wordSize = bitSize (undefined :: Int)
 
 
 -- | String that describes the target host.

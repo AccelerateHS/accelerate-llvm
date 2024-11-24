@@ -15,13 +15,12 @@
 
 module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load (
 
-  nvvmReflect, libdevice,
+  -- nvvmReflect, libdevice,
+  libdevice_bc,
 
 ) where
 
-import LLVM.Context
-import LLVM.Module                                                  as LLVM
-import LLVM.AST                                                     as AST ( Module(..) )
+import qualified Text.LLVM                                          as LP
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
@@ -41,14 +40,14 @@ import qualified Data.Array.Accelerate.TH.Compat                    as TH
 -- NVVM Reflect
 -- ------------
 
-class NVVMReflect a where
-  nvvmReflect :: a
+-- class NVVMReflect a where
+--   nvvmReflect :: a
 
-instance NVVMReflect AST.Module where
-  nvvmReflect = nvvmReflectModule
+-- instance NVVMReflect LP.Module where
+--   nvvmReflect = nvvmReflectModule
 
-instance NVVMReflect (ShortByteString, ByteString) where
-  nvvmReflect = $$( nvvmReflectBitcode nvvmReflectModule )
+-- instance NVVMReflect (ShortByteString, ByteString) where
+--   nvvmReflect = $$( nvvmReflectBitcode nvvmReflectModule )
 
 
 -- libdevice
@@ -59,8 +58,8 @@ instance NVVMReflect (ShortByteString, ByteString) where
 --
 --   https://github.com/llvm/llvm-project/blob/master/lib/Target/NVPTX/NVPTX.td
 --
-class Libdevice a where
-  libdevice :: Compute -> a
+-- class Libdevice a where
+--   libdevice :: Compute -> a
 
 -- Load the libdevice bitcode files as an LLVM AST module. The top-level
 -- unsafePerformIO ensures that the data is only read from disk once per
@@ -70,26 +69,26 @@ class Libdevice a where
 -- depending on the target compute architecture.
 --
 TH.runQ $
-  let
-     libdeviceModule :: TH.ExpQ
-     libdeviceModule = [| \(name, bc) ->
-       unsafePerformIO $
-         withContext $ \ctx ->
-           withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
-      |]
+  -- let
+  --    libdeviceModule :: TH.ExpQ
+  --    libdeviceModule = [| \(name, bc) ->
+  --      unsafePerformIO $
+  --        withContext $ \ctx ->
+  --          withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
+  --     |]
 
-  in
+  -- in
   if CUDA.libraryVersion < 9000
      then
-       [d| {-# NOINLINE libdevice_20_mdl #-}
-           {-# NOINLINE libdevice_30_mdl #-}
-           {-# NOINLINE libdevice_35_mdl #-}
-           {-# NOINLINE libdevice_50_mdl #-}
-           libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: AST.Module
-           libdevice_20_mdl = $libdeviceModule libdevice_20_bc
-           libdevice_30_mdl = $libdeviceModule libdevice_30_bc
-           libdevice_35_mdl = $libdeviceModule libdevice_35_bc
-           libdevice_50_mdl = $libdeviceModule libdevice_50_bc
+       [d| -- {-# NOINLINE libdevice_20_mdl #-}
+           -- {-# NOINLINE libdevice_30_mdl #-}
+           -- {-# NOINLINE libdevice_35_mdl #-}
+           -- {-# NOINLINE libdevice_50_mdl #-}
+           -- libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: LP.Module
+           -- libdevice_20_mdl = $libdeviceModule libdevice_20_bc
+           -- libdevice_30_mdl = $libdeviceModule libdevice_30_bc
+           -- libdevice_35_mdl = $libdeviceModule libdevice_35_bc
+           -- libdevice_50_mdl = $libdeviceModule libdevice_50_bc
 
            libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
            libdevice_20_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 2 0) )
@@ -97,31 +96,31 @@ TH.runQ $
            libdevice_35_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 3 5) )
            libdevice_50_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 5 0) )
 
-           instance Libdevice AST.Module where
-             libdevice compute =
-               case compute of
-                 Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
-                 Compute 3 x
-                   | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
-                   | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-                 Compute 5 _   -> libdevice_50_mdl   -- 5.x
-                 _             -> internalError
-                                $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
-                                          , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
-                                          ]
+           libdevice_bc :: Compute -> (ShortByteString,ByteString)
+           libdevice_bc compute =
+             case compute of
+               Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
+               Compute 3 x
+                 | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
+                 | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
+               Compute 5 _   -> libdevice_50_mdl   -- 5.x
+               _             -> internalError
+                              $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
+                                        , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
+                                        ]
        |]
      else
-       [d| {-# NOINLINE libdevice_mdl #-}
-           libdevice_mdl :: AST.Module
-           libdevice_mdl = $libdeviceModule libdevice_bc
+       [d| -- {-# NOINLINE libdevice_mdl #-}
+           -- libdevice_mdl :: LP.Module
+           -- libdevice_mdl = $libdeviceModule libdevice_bc
 
-           libdevice_bc :: (ShortByteString,ByteString)
-           libdevice_bc = $( TH.unTypeCode $ libdeviceBitcode undefined )
+           libdevice_bc :: Compute -> (ShortByteString,ByteString)
+           libdevice_bc _ = $( TH.unTypeCode $ libdeviceBitcode undefined )
 
-           instance Libdevice AST.Module where
-             libdevice _ = libdevice_mdl
+           -- instance Libdevice LP.Module where
+           --   libdevice _ = libdevice_mdl
 
-           instance Libdevice (ShortByteString,ByteString) where
-             libdevice _ = libdevice_bc
+           -- instance Libdevice (ShortByteString,ByteString) where
+           --   libdevice _ = libdevice_bc
        |]
 

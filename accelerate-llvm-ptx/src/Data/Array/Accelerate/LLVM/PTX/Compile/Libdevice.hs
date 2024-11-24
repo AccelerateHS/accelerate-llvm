@@ -19,12 +19,12 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice (
 
 ) where
 
-import LLVM.Context
-import qualified LLVM.Module                                        as LLVM
+-- import LLVM.Context
+-- import qualified LLVM.Module                                        as LLVM
 
-import LLVM.AST                                                     as AST
-import LLVM.AST.Global                                              as G
-import LLVM.AST.Linkage
+-- import LLVM.AST                                                     as AST
+-- import LLVM.AST.Global                                              as G
+-- import LLVM.AST.Linkage
 
 import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
