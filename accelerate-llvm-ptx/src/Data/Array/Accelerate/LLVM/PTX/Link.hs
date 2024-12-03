@@ -42,6 +42,7 @@ import Data.ByteString.Short.Char8                                  ( ShortByteS
 import Formatting
 import Foreign.Ptr
 import Data.Array.Accelerate.TH.Compat
+import qualified Data.ByteString                                    as B
 import qualified Data.ByteString.Unsafe                             as B
 import Prelude                                                      as P hiding ( lookup )
 
@@ -55,11 +56,12 @@ instance Link PTX where
 -- | Load the generated object code into the current CUDA context.
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
-link (ObjectR uid cfg obj) = do
+link (ObjectR uid cfg objFname) = do
   target <- gets llvmTarget
   cache  <- gets ptxKernelTable
   funs   <- liftIO $ dlsym uid cache $ do
     -- Load the SASS object code into the current CUDA context
+    obj <- B.readFile objFname
     jit <- B.unsafeUseAsCString obj $ \p -> CUDA.loadDataFromPtrEx (castPtr p) []
     let mdl = CUDA.jitModule jit
 

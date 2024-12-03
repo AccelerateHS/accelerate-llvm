@@ -76,7 +76,7 @@ withLibdeviceNVPTX dev ctx ast next =
     True        -> LLVM.withModuleFromAST ctx ast next
     False       ->
       LLVM.withModuleFromAST ctx ast                          $ \mdl  ->
-      LLVM.withModuleFromAST ctx nvvmReflect                  $ \refl ->
+      LLVM.withModuleFromAST ctx nvvmReflectModule            $ \refl ->
       LLVM.withModuleFromAST ctx (internalise externs libdev) $ \libd -> do
         LLVM.linkModules mdl refl
         LLVM.linkModules mdl libd
@@ -116,7 +116,7 @@ withLibdeviceNVVM dev ctx ast next =
   where
     externs             = analyse ast
     withlib             = not (Set.null externs)
-    lib | withlib       = [ nvvmReflect, libdevice arch ]
+    lib | withlib       = [ nvvmReflectBitcode, libdevice_bc arch ]
         | otherwise     = []
 
     arch        = computeCapability dev

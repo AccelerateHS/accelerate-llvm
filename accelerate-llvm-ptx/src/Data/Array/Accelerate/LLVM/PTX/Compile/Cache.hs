@@ -18,8 +18,11 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Cache (
 
 import Data.Array.Accelerate.LLVM.Compile.Cache
 import Data.Array.Accelerate.LLVM.PTX.Target
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion )
 
 import Control.Monad.State
+import Data.Foldable                                                ( toList )
+import Data.List                                                    ( intercalate )
 import Data.Version
 import Foreign.CUDA.Analysis
 import System.FilePath
@@ -33,7 +36,7 @@ instance Persistent PTX where
   targetCacheTemplate = do
     Compute m n <- gets (computeCapability . ptxDeviceProperties)
     return $ "accelerate-llvm-ptx-" ++ showVersion version
-         </> "llvm-hs-" ++ VERSION_llvm_hs
+         </> "llvmpr-" ++ intercalate "." (map show (toList hostLLVMVersion))
          </> S8.unpack ptxTargetTriple
          </> printf "sm%d%d" m n
          </> "morp.sass"

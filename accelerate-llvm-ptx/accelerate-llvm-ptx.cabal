@@ -112,9 +112,9 @@ Library
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Cache
-    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
-    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
-    Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
+    -- Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+    -- Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
+    -- Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 
     Data.Array.Accelerate.LLVM.PTX.Link
     Data.Array.Accelerate.LLVM.PTX.Link.Cache

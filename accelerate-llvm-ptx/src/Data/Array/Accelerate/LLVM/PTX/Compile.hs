@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP               #-}
+#define MIN_VERSION_llvm_hs(a,b,c) 1
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
@@ -31,11 +32,12 @@ import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..)
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.State
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple )
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
 import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
-import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+-- import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
 import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
@@ -44,19 +46,23 @@ import Foreign.CUDA.Path
 import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.NVVM                                       as NVVM
 
-import qualified LLVM.AST                                           as AST
-import qualified LLVM.AST.Name                                      as LLVM
-import qualified LLVM.Context                                       as LLVM
-import qualified LLVM.Module                                        as LLVM
-import qualified LLVM.Target                                        as LLVM
-import qualified LLVM.Internal.Module                               as LLVM.Internal
-import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
-import qualified LLVM.Analysis                                      as LLVM
-#if MIN_VERSION_llvm_hs(15,0,0)
-import qualified LLVM.Passes                                        as LLVM
-#else
-import qualified LLVM.PassManager                                   as LLVM
-#endif
+-- import qualified LLVM.AST                                           as AST
+-- import qualified LLVM.AST.Name                                      as LLVM
+-- import qualified LLVM.Context                                       as LLVM
+-- import qualified LLVM.Module                                        as LLVM
+-- import qualified LLVM.Target                                        as LLVM
+-- import qualified LLVM.Internal.Module                               as LLVM.Internal
+-- import qualified LLVM.Internal.FFI.LLVMCTypes                       as LLVM.Internal.FFI
+-- import qualified LLVM.Analysis                                      as LLVM
+-- #if MIN_VERSION_llvm_hs(15,0,0)
+-- import qualified LLVM.Passes                                        as LLVM
+-- #else
+-- import qualified LLVM.PassManager                                   as LLVM
+-- #endif
+
+import qualified Text.LLVM                                          as LP
+import qualified Text.LLVM.PP                                       as LP
+import qualified Text.PrettyPrint                                   as LP ( render )
 
 import Control.DeepSeq
 import Control.Exception
@@ -64,6 +70,8 @@ import Control.Monad
 import Control.Monad.State
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
+import Data.List                                                    ( intercalate )
+import Data.Foldable                                                ( toList )
 import Data.Maybe
 import Data.Text.Encoding
 import Data.Word
@@ -80,15 +88,19 @@ import System.Process
 import System.Process.Extra
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
+import qualified Data.ByteString.Char8                              as BS8
 import qualified Data.ByteString.Internal                           as B
+import qualified Data.ByteString.Short.Char8                        as SBS8
 import qualified Data.HashMap.Strict                                as HashMap
+import qualified Data.Map.Strict                                    as Map
 import Prelude                                                      as P
 
 
 instance Compile PTX where
   data ObjectR PTX = ObjectR { objId     :: {-# UNPACK #-} !UID
-                             , ptxConfig :: ![(ShortByteString, LaunchConfig)]
-                             , objData   :: {- LAZY -} ByteString
+                             , -- | Config for each exported kernel (symbol)
+                               ptxConfig :: ![(ShortByteString, LaunchConfig)]
+                             , objPath   :: {- LAZY -} FilePath
                              }
   compileForTarget = compile
 
@@ -103,10 +115,12 @@ compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
-  dev               <- gets ptxDeviceProperties
-  (uid, cacheFile)  <- cacheOfPreOpenAcc pacc
-  Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
-  let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- HashMap.toList md ]
+  dev                  <- gets ptxDeviceProperties
+  let CUDA.Compute m n = CUDA.computeCapability dev
+  let arch             = printf "sm_%d%d" m n
+  (uid, cacheFile)     <- cacheOfPreOpenAcc pacc
+  Module ast md        <- llvmOfPreOpenAcc uid pacc aenv
+  let config           = [ (SBS8.pack f, x) | (LP.Symbol f, KM_PTX x) <- Map.toList md ]
 
   -- Lower the generated LLVM into a CUBIN object code.
   --
@@ -120,17 +134,43 @@ compile pacc aenv = do
     if exists && not recomp
       then do
         Debug.traceM Debug.dump_cc ("cc: found cached object code " % shown) uid
-        B.readFile cacheFile
 
-      else
-        LLVM.withContext $ \ctx -> do
-          ptx   <- compilePTX dev ctx ast
-          cubin <- compileCUBIN dev cacheFile ptx
-          return cubin
+      else do
+        -- Detect LLVM version
+        -- Note: this LLVM version is incorporated in the cache path, so we're safe detecting it at runtime.
+        let prettyHostLLVMVersion = intercalate "." (P.map show (toList hostLLVMVersion))
+        llvmver <- case llvmverFromTuple hostLLVMVersion of
+                     Just llvmver -> return llvmver
+                     Nothing -> internalError ("accelerate-llvm-ptx: Unsupported LLVM version: " % string)
+                                              prettyHostLLVMVersion
+        Debug.traceM Debug.dump_cc ("Using LLVM version " % shown) prettyHostLLVMVersion
+
+        -- Convert module to llvm-pretty format so that we can print it
+        let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))
+        -- putStrLn unoptimisedText
+        Debug.when Debug.verbose $ do
+          Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
+
+        -- '--cuda-gpu-arch=sm_XX' ?
+        _ <- readProcess "llc" ["-O3", "-mcpu=" ++ arch
+                               ,"-o", cacheFile ++ ".ptx"
+                               ,"-"]
+                         unoptimisedText
+
+        ptxData <- B.readFile (cacheFile ++ ".ptx")
+        compileCUBIN arch cacheFile ptxData
+
+        -- LLVM.withContext $ \ctx -> do
+        --   ptx   <- compilePTX dev ctx ast
+        --   cubin <- compileCUBIN arch cacheFile ptx
+        --   return cubin
+
+    return cacheFile
 
   return $! ObjectR uid config cubin
 
 
+{-
 -- | Compile the LLVM module to PTX assembly. This is done either by the
 -- closed-source libNVVM library, or via the standard NVPTX backend (which is
 -- the default).
@@ -144,21 +184,19 @@ compilePTX dev ctx ast = do
 #endif
   Debug.when Debug.dump_asm $ Debug.traceM Debug.verbose stext (decodeUtf8 ptx)
   return ptx
-
+-}
 
 -- | Compile the given PTX assembly to a CUBIN file (SASS object code). The
 -- compiled code will be stored at the given FilePath.
 --
-compileCUBIN :: HasCallStack => CUDA.DeviceProperties -> FilePath -> ByteString -> IO ByteString
-compileCUBIN dev sass ptx = do
+compileCUBIN :: HasCallStack => String -> FilePath -> ByteString -> IO ()
+compileCUBIN arch sass ptx = do
   _verbose  <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.verbose else return False
   _debug    <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug   else return False
   --
   let verboseFlag       = if _verbose then [ "-v" ]              else []
       debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
-      arch              = printf "-arch=sm_%d%d" m n
-      CUDA.Compute m n  = CUDA.computeCapability dev
-      flags             = "-" : "-o" : sass : arch : verboseFlag ++ debugFlag
+      flags             = "-" : "-o" : sass : ("-arch=" ++ arch) : verboseFlag ++ debugFlag
       --
       cp = (proc (cudaBinPath </> "ptxas") flags)
             { std_in  = CreatePipe
@@ -194,10 +232,8 @@ compileCUBIN dev sass ptx = do
       unless (null info) $
         Debug.traceM Debug.dump_cc ("ptx: compiled entry function(s)\n" % reindented 2 string) info
 
-  -- Read back the results
-  B.readFile sass
 
-
+{-
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
@@ -294,4 +330,4 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
           0                    -> return bs
           _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
           _                    -> return (B.snoc bs 0)
-
+-}

@@ -41,7 +41,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
 
-import qualified LLVM.AST.Global                                    as LLVM
+import qualified Text.LLVM.AST                                      as LP
 
 import Control.Monad
 
@@ -116,7 +116,7 @@ mkInside
     -> ArrayR (Array sh e)
     -> sh
     -> IRFun1  PTX aenv (sh -> e)
-    -> [LLVM.Parameter]
+    -> [LP.Typed LP.Ident]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
 mkInside uid aenv repr@(ArrayR shr _) halo apply paramIn =
   let
@@ -149,7 +149,7 @@ mkBorder
     -> Gamma aenv
     -> ArrayR (Array sh e)
     -> IRFun1  PTX aenv (sh -> e)
-    -> [LLVM.Parameter]
+    -> [LP.Typed LP.Ident]
     -> CodeGen PTX      (IROpenAcc PTX aenv (Array sh e))
 mkBorder uid aenv repr@(ArrayR shr _) apply paramIn =
   let
