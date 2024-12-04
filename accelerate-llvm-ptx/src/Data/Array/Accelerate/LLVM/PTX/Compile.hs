@@ -30,21 +30,21 @@ import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
-import Data.Array.Accelerate.LLVM.Extra
+-- import Data.Array.Accelerate.LLVM.Extra
 import Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple )
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
 import Data.Array.Accelerate.LLVM.PTX.Compile.Cache
--- import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
+import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
 import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
 import Foreign.CUDA.Path
 import qualified Foreign.CUDA.Analysis                              as CUDA
-import qualified Foreign.NVVM                                       as NVVM
+-- import qualified Foreign.NVVM                                       as NVVM
 
 -- import qualified LLVM.AST                                           as AST
 -- import qualified LLVM.AST.Name                                      as LLVM
@@ -73,11 +73,11 @@ import Data.ByteString.Short                                        ( ShortByteS
 import Data.List                                                    ( intercalate )
 import Data.Foldable                                                ( toList )
 import Data.Maybe
-import Data.Text.Encoding
-import Data.Word
-import Foreign.ForeignPtr
-import Foreign.Ptr
-import Foreign.Storable
+-- import Data.Text.Encoding
+-- import Data.Word
+-- import Foreign.ForeignPtr
+-- import Foreign.Ptr
+-- import Foreign.Storable
 import Formatting
 import System.Directory
 import System.Exit
@@ -88,10 +88,10 @@ import System.Process
 import System.Process.Extra
 import Text.Printf                                                  ( printf )
 import qualified Data.ByteString                                    as B
-import qualified Data.ByteString.Char8                              as BS8
-import qualified Data.ByteString.Internal                           as B
+-- import qualified Data.ByteString.Char8                              as BS8
+-- import qualified Data.ByteString.Internal                           as B
 import qualified Data.ByteString.Short.Char8                        as SBS8
-import qualified Data.HashMap.Strict                                as HashMap
+-- import qualified Data.HashMap.Strict                                as HashMap
 import qualified Data.Map.Strict                                    as Map
 import Prelude                                                      as P
 
@@ -122,6 +122,8 @@ compile pacc aenv = do
   Module ast md        <- llvmOfPreOpenAcc uid pacc aenv
   let config           = [ (SBS8.pack f, x) | (LP.Symbol f, KM_PTX x) <- Map.toList md ]
 
+  libdevice_bc <- liftIO libdeviceBitcodePath
+
   -- Lower the generated LLVM into a CUBIN object code.
   --
   -- The 'objData' field is lazily evaluated since the object code might have
@@ -151,25 +153,15 @@ compile pacc aenv = do
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
-        -- TODO: On `-p '/TupRsingle Double.DIM0.abs/'`:
-        -- - With clang, we get `CUDA Exception: function named symbol not found: map_e160b51ee8c7fea0bf1e83074f3c486e49fa1e3b70f4645a4d42e33c8205fd8d`
-        -- - With llc, we get `ptxas fatal   : Unresolved extern function '__nv_fabs'`
-        if True
-          then do
-            _ <- readProcess "clang" ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
-                                   ,"-o", cacheFile
-                                   ,"-Wno-override-module"
-                                   ,"-c" ,"-x", "ir", "-"]
-                             unoptimisedText
-            return ()
-          else do
-            _ <- readProcess "llc" ["-O3", "-mcpu=" ++ arch
-                                   ,"-o", cacheFile ++ ".ptx"
-                                   ,"-"]
-                             unoptimisedText
-
-            ptxData <- B.readFile (cacheFile ++ ".ptx")
-            compileCUBIN arch cacheFile ptxData
+        _ <- readProcess "clang" ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
+                                 ,"-o", cacheFile
+                                 ,"-Wno-override-module"
+                                 ,"-x", "ir", "-"
+                                 -- See Note [Internalizing Libdevice]
+                                 -- TODO: only link in libdevice if we're actually using __nv_ functions!
+                                 ,"-Xclang", "-mlink-builtin-bitcode", "-Xclang", libdevice_bc]
+                         unoptimisedText
+        Debug.traceM Debug.dump_cc ("Written PTX to: " % string) cacheFile
 
     return cacheFile
 
@@ -190,7 +182,6 @@ compilePTX dev ctx ast = do
 #endif
   Debug.when Debug.dump_asm $ Debug.traceM Debug.verbose stext (decodeUtf8 ptx)
   return ptx
--}
 
 -- | Compile the given PTX assembly to a CUBIN file (SASS object code). The
 -- compiled code will be stored at the given FilePath.
@@ -199,7 +190,7 @@ compileCUBIN :: HasCallStack => String -> FilePath -> ByteString -> IO ()
 compileCUBIN arch sass ptx = do
   _verbose  <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.verbose else return False
   _debug    <- if Debug.debuggingIsEnabled then Debug.getFlag Debug.debug   else return False
-  --
+
   let verboseFlag       = if _verbose then [ "-v" ]              else []
       debugFlag         = if _debug   then [ "-g", "-lineinfo" ] else []
       flags             = "-" : "-o" : sass : ("-arch=" ++ arch) : verboseFlag ++ debugFlag
@@ -239,7 +230,6 @@ compileCUBIN arch sass ptx = do
         Debug.traceM Debug.dump_cc ("ptx: compiled entry function(s)\n" % reindented 2 string) info
 
 
-{-
 -- Compile and optimise the module to PTX using the (closed source) NVVM
 -- library. This _may_ produce faster object code than the LLVM NVPTX compiler.
 --
@@ -336,4 +326,61 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
           0                    -> return bs
           _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
           _                    -> return (B.snoc bs 0)
+-}
+
+
+{- Note [Internalizing Libdevice]
+
+"Libdevice" refers to $CUDAPATH/nvvm/libdevice/libdevice.XX.bc, an LLVM bitcode
+file that (reportedly) contains definitions of various math functions for use
+in NVIDIA PTX. Most interesting primitive arithmetic operations on
+floating-point numbers get compiled to calls to functions from libdevice, so it
+is essential that we link it into any kernel that we create (or at least, any
+kernel that references functions from libdevice).
+
+However, libdevice is quite large; it is 473 KB of LLVM bitcode for cuda 12.6
+on my machine, and clang takes >1 second to compile it on my (5 GHz Intel)
+machine. Indeed, the LLVM NVPTX usage guide [1] recommends _internalizing_ the
+symbols from libdevice after linking it with the kernel module; more precisely,
+it recommends to first link the kernel module with libdevice, and subsequently
+internalize all functions that we don't explicitly want exported (the public
+kernel functions).
+
+Clang doesn't have a command-line option to internalize symbols. Indeed, it
+would be somewhat ambiguous when in the compilation process to do said
+internalization. The LLVM command-line tool that _can_ do internalization is
+`llvm-link`, the tool for linking LLVM modules together (and doing little
+else). So translating the recommended [1] strategy to command-line tools
+(because linking with LLVM through bindings is a version nightmare -- been
+there, done that, not again), we get the following sensible procedure:
+
+$ llvm-link --internalize kernel.ll libdevice.bc -o kernel-linked.bc
+$ clang --target=... kernel-linked.bc -o kernel.sass
+
+However, llvm-link is not clang, and we'd very much like to depend _only_ on
+clang, not on the full LLVM suite of tools. Especially not for this vexingly
+small bit of functionality! But clang is huge, and surely it can do
+internalization somehow?
+
+It turns out it can, but they did their absolute best to hide it. (All
+references in this paragraph are to LLVM HEAD on 2024-12-04: 7954a0514ba7de.)
+The workhorse function, called from `llvm-link`, is internalizeModule(). This
+function is also called from clang in BackendConsumer::LinkInModules() in
+clang/lib/CodeGen/CodeGenAction.cpp, but only if .Internalize is set on the
+CodeGenAction::LinkModule in question. In CompilerInvocation::ParseCodeGenArgs
+(clang/lib/Frontend/CompilerInvocation.cpp), we see that _some_ field called
+"Internalize" is set on _something_ (not a LinkModule, but whatever?) if the
+OPT_mlink_builtin_bitcode flag is set. Of course, no documentation anywhere
+explains what this option does; the only mention I could find anywhere is here
+[2], as well as some mailing list posts / issue tracker comments mentioning it.
+How do we use the option? Well, it's not a clang option, it's actually a (I
+think!) cc1 option, so you have to do:
+
+$ clang -Xclang -mlink-builtin-bitcode -Xclang libdevice.bc
+
+This makes clang internalize everything in that module that is not globally
+exported (I think), which is what we want.
+
+[1]: https://releases.llvm.org/19.1.0/docs/NVPTXUsage.html#linking-with-libdevice
+[2]: https://clang.llvm.org/docs/OffloadingDesign.html#offload-device-compilation
 -}

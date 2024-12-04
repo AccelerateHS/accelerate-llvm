@@ -65,6 +65,8 @@ import qualified Data.HashSet                                       as Set
 --
 --   6. Run the standard optimisation pipeline
 --
+-- Source: https://releases.llvm.org/19.1.0/docs/NVPTXUsage.html#linking-with-libdevice
+--
 withLibdeviceNVPTX
     :: DeviceProperties
     -> Context

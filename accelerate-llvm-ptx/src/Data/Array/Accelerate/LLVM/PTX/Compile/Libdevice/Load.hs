@@ -1,8 +1,10 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE CPP               #-}
+-- {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE TupleSections     #-}
+-- {-# LANGUAGE RecordWildCards   #-}
+-- {-# LANGUAGE TemplateHaskell   #-}
+-- {-# LANGUAGE TupleSections     #-}
+
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
 -- Copyright   : [2014..2020] The Accelerate Team
@@ -16,25 +18,35 @@
 module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load (
 
   -- nvvmReflect, libdevice,
-  libdevice_bc,
+  libdeviceBitcodePath,
 
 ) where
 
 import qualified Text.LLVM                                          as LP
 
 import Data.Array.Accelerate.Error
-import Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( ) -- GHC#1012
 import Data.Array.Accelerate.LLVM.PTX.Execute.Stream                ( ) -- GHC#1012
 
 import Foreign.CUDA.Analysis
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import System.IO.Unsafe
+#if MIN_VERSION_nvvm(0,10,0)
+import Foreign.NVVM.Path
+#else
+import Foreign.CUDA.Path
+#endif
+
+import Data.List                                                    ( isPrefixOf, sortBy )
 import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short.Char8                                  ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as S8
 import qualified Data.Array.Accelerate.TH.Compat                    as TH
+import Formatting
+import System.Directory
+import System.FilePath
+import System.IO.Unsafe
+import Text.Printf
 
 
 -- NVVM Reflect
@@ -57,70 +69,29 @@ import qualified Data.Array.Accelerate.TH.Compat                    as TH
 -- listed here:
 --
 --   https://github.com/llvm/llvm-project/blob/master/lib/Target/NVPTX/NVPTX.td
---
--- class Libdevice a where
---   libdevice :: Compute -> a
 
--- Load the libdevice bitcode files as an LLVM AST module. The top-level
--- unsafePerformIO ensures that the data is only read from disk once per
--- program execution.
---
--- As of CUDA-9.0, libdevice is no longer split into multiple files
--- depending on the target compute architecture.
---
-TH.runQ $
-  -- let
-  --    libdeviceModule :: TH.ExpQ
-  --    libdeviceModule = [| \(name, bc) ->
-  --      unsafePerformIO $
-  --        withContext $ \ctx ->
-  --          withModuleFromBitcode ctx (S8.unpack name, bc) moduleAST
-  --     |]
+-- | Find the libdevice bitcode file for the given compute architecture. The name
+-- of the bitcode file follows the format @libdevice.XX.bc@, where XX
+-- represents a version(?). We search the libdevice path for all files of the
+-- appropriate compute capability and load the "most recent" (by sort order).
+libdeviceBitcodePath :: HasCallStack => IO FilePath
+libdeviceBitcodePath
+  | CUDA.libraryVersion < 9000 =
+      -- There is some support code for cuda < 9 in an earlier version of these
+      -- files; in particular, look at commit
+      --   2b5d69448557e89002c0179ea1aaf59bb757a6e3 (2023-08-22)
+      -- for original llvm-hs code.
+      internalError "Cuda < 9 is unsupported."
+  | otherwise = do
+#if MIN_VERSION_nvvm(0,10,0)
+      let nvvm    = nvvmDeviceLibraryPath
+#else
+      let nvvm    = cudaInstallPath </> "nvvm" </> "libdevice"
+#endif
 
-  -- in
-  if CUDA.libraryVersion < 9000
-     then
-       [d| -- {-# NOINLINE libdevice_20_mdl #-}
-           -- {-# NOINLINE libdevice_30_mdl #-}
-           -- {-# NOINLINE libdevice_35_mdl #-}
-           -- {-# NOINLINE libdevice_50_mdl #-}
-           -- libdevice_20_mdl, libdevice_30_mdl, libdevice_35_mdl, libdevice_50_mdl :: LP.Module
-           -- libdevice_20_mdl = $libdeviceModule libdevice_20_bc
-           -- libdevice_30_mdl = $libdeviceModule libdevice_30_bc
-           -- libdevice_35_mdl = $libdeviceModule libdevice_35_bc
-           -- libdevice_50_mdl = $libdeviceModule libdevice_50_bc
+      files <- getDirectoryContents nvvm
 
-           libdevice_20_bc, libdevice_30_bc, libdevice_35_bc, libdevice_50_bc :: (ShortByteString,ByteString)
-           libdevice_20_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 2 0) )
-           libdevice_30_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 3 0) )
-           libdevice_35_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 3 5) )
-           libdevice_50_bc = $( TH.unTypeCode $ libdeviceBitcode (Compute 5 0) )
-
-           libdevice_bc :: Compute -> (ShortByteString,ByteString)
-           libdevice_bc compute =
-             case compute of
-               Compute 2 _   -> libdevice_20_mdl   -- 2.0, 2.1
-               Compute 3 x
-                 | x < 5     -> libdevice_30_mdl   -- 3.0, 3.2
-                 | otherwise -> libdevice_35_mdl   -- 3.5, 3.7
-               Compute 5 _   -> libdevice_50_mdl   -- 5.x
-               _             -> internalError
-                              $ unlines [ "This device (compute capability " ++ show compute ++ ") is not supported by this version of the CUDA toolkit (" ++ show CUDA.libraryVersion ++ ")"
-                                        , "Please upgrade to the latest version of the CUDA toolkit and reinstall the 'cuda' package."
-                                        ]
-       |]
-     else
-       [d| -- {-# NOINLINE libdevice_mdl #-}
-           -- libdevice_mdl :: LP.Module
-           -- libdevice_mdl = $libdeviceModule libdevice_bc
-
-           libdevice_bc :: Compute -> (ShortByteString,ByteString)
-           libdevice_bc _ = $( TH.unTypeCode $ libdeviceBitcode undefined )
-
-           -- instance Libdevice LP.Module where
-           --   libdevice _ = libdevice_mdl
-
-           -- instance Libdevice (ShortByteString,ByteString) where
-           --   libdevice _ = libdevice_bc
-       |]
-
+      let matches f = "libdevice" `isPrefixOf` f && takeExtension f == ".bc"
+      return $ case sortBy (flip compare) (filter matches files) of
+                 name : _ -> nvvm </> name
+                 [] -> internalError "not found: libdevice.XX.bc"
