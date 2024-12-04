@@ -151,19 +151,25 @@ compile pacc aenv = do
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
-        -- '--cuda-gpu-arch=sm_XX' ?
-        _ <- readProcess "llc" ["-O3", "-mcpu=" ++ arch
-                               ,"-o", cacheFile ++ ".ptx"
-                               ,"-"]
-                         unoptimisedText
+        -- TODO: On `-p '/TupRsingle Double.DIM0.abs/'`:
+        -- - With clang, we get `CUDA Exception: function named symbol not found: map_e160b51ee8c7fea0bf1e83074f3c486e49fa1e3b70f4645a4d42e33c8205fd8d`
+        -- - With llc, we get `ptxas fatal   : Unresolved extern function '__nv_fabs'`
+        if True
+          then do
+            _ <- readProcess "clang" ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
+                                   ,"-o", cacheFile
+                                   ,"-Wno-override-module"
+                                   ,"-c" ,"-x", "ir", "-"]
+                             unoptimisedText
+            return ()
+          else do
+            _ <- readProcess "llc" ["-O3", "-mcpu=" ++ arch
+                                   ,"-o", cacheFile ++ ".ptx"
+                                   ,"-"]
+                             unoptimisedText
 
-        ptxData <- B.readFile (cacheFile ++ ".ptx")
-        compileCUBIN arch cacheFile ptxData
-
-        -- LLVM.withContext $ \ctx -> do
-        --   ptx   <- compilePTX dev ctx ast
-        --   cubin <- compileCUBIN arch cacheFile ptx
-        --   return cubin
+            ptxData <- B.readFile (cacheFile ++ ".ptx")
+            compileCUBIN arch cacheFile ptxData
 
     return cacheFile
 
