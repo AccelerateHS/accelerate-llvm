@@ -35,7 +35,6 @@ import Data.Maybe                                                   ( fromMaybe,
 import Data.Ord                                                     ( Down(..), comparing )
 import System.Directory
 import qualified System.Info                                        as Info
-import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
 
