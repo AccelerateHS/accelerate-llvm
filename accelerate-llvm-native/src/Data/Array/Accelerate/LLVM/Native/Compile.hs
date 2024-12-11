@@ -120,7 +120,7 @@ compile pacc aenv = do
                      Just llvmver -> return llvmver
                      Nothing -> internalError ("accelerate-llvm-native: Unsupported LLVM version: " % string)
                                               prettyHostLLVMVersion
-        Debug.traceM Debug.dump_cc ("Using LLVM version " % shown) prettyHostLLVMVersion
+        Debug.traceM Debug.dump_cc ("Using Clang at " % string % " version " % shown) clangExePath prettyHostLLVMVersion
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast))
@@ -153,14 +153,14 @@ compile pacc aenv = do
         --   https://github.com/llvm/llvm-project/blob/da286c8bf69684d1612d1fc440bd9c6f1a4326df/clang/include/clang/Driver/Types.def
         if dVerbose && (dDumpCC || dDumpAsm)
           then do
-            optText <- readProcess "clang" (clangFlags "ir" ["-S", "-emit-llvm"] "-") unoptimisedText
+            optText <- readProcess clangExePath (clangFlags "ir" ["-S", "-emit-llvm"] "-") unoptimisedText
             Debug.traceM Debug.dump_cc ("Optimised LLVM IR:\n" % string) optText
-            asmText <- readProcess "clang" (clangFlags "ir" ["-S"] "-") optText
+            asmText <- readProcess clangExePath (clangFlags "ir" ["-S"] "-") optText
             Debug.traceM Debug.dump_asm ("Optimised assembly:\n" % string) asmText
-            _ <- readProcess "clang" (clangFlags "assembler" linkOutputFlags staticObjFile) asmText
+            _ <- readProcess clangExePath (clangFlags "assembler" linkOutputFlags staticObjFile) asmText
             return ()
           else do
-            _ <- readProcess "clang" (clangFlags "ir" linkOutputFlags staticObjFile) unoptimisedText
+            _ <- readProcess clangExePath (clangFlags "ir" linkOutputFlags staticObjFile) unoptimisedText
             return ()
 
         Debug.traceM Debug.dump_cc ("cc: new object code " % shown) uid
@@ -225,7 +225,7 @@ llvmverFromTuple _ = Nothing
 --
 ld :: FilePath
 ld = unsafePerformIO $ do
-  let defProgram | Info.os == "mingw32" = "clang"
+  let defProgram | Info.os == "mingw32" = clangExePath
                  | otherwise = "cc"
   mfromEnv <- liftA2 (<|>) (lookupEnv "LD") (lookupEnv "CC")
   return (fromMaybe defProgram mfromEnv)
