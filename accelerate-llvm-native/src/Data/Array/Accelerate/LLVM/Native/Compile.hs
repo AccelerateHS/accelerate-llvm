@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP               #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -52,6 +51,7 @@ import Formatting
 import System.Directory
 import System.Environment
 import System.FilePath                                              ( (<.>) )
+import qualified System.Info                                        as Info
 import System.IO.Unsafe
 import System.Process
 import qualified Data.ByteString.Short.Char8                        as SBS8
@@ -142,11 +142,8 @@ compile pacc aenv = do
               ,"-Wno-override-module"]
               ++ outputFlags
 
-#if defined(mingw32_HOST_OS)
-        let linkOutputFlags = []
-#else
-        let linkOutputFlags = ["-fPIC"]
-#endif
+        let linkOutputFlags | Info.os == "mingw32" = []
+                            | otherwise = ["-fPIC"]
 
         -- Minimise the number of clang invocations (to 1) in the common case
         -- of no verbose debug flags. If we need to print some intermediate
@@ -196,11 +193,9 @@ compile pacc aenv = do
         -- LLVM doesn't seem to provide a way to build a shared object file
         -- directly, so shell out to the system linker to do this.
         --
-#if defined(darwin_HOST_OS)
-        callProcess ld ["--shared", "-o", sharedObjFile, objFile, "-undefined", "dynamic_lookup"]
-#else
-        callProcess ld ["--shared", "-o", sharedObjFile, objFile]
-#endif
+        if Info.os == "darwin"
+          then callProcess ld ["--shared", "-o", sharedObjFile, objFile, "-undefined", "dynamic_lookup"]
+          else callProcess ld ["--shared", "-o", sharedObjFile, objFile]
         Debug.traceM Debug.dump_cc ("cc: new shared object " % shown) uid
 
     return sharedObjFile
@@ -230,33 +225,21 @@ llvmverFromTuple _ = Nothing
 --
 ld :: FilePath
 ld = unsafePerformIO $ do
-#if defined(mingw32_HOST_OS)
-  let defProgram = "clang"
-#else
-  let defProgram = "cc"
-#endif
+  let defProgram | Info.os == "mingw32" = "clang"
+                 | otherwise = "cc"
   mfromEnv <- liftA2 (<|>) (lookupEnv "LD") (lookupEnv "CC")
   return (fromMaybe defProgram mfromEnv)
 
 -- The file extension for static libraries
 --
 staticObjExt :: String
-#if   defined(mingw32_HOST_OS)
-staticObjExt = "obj"
-#else
-staticObjExt = "o"
-#endif
+staticObjExt | Info.os == "mingw32" = "obj"
+             | otherwise = "o"
 
 -- The file extension used for shared libraries
 --
 sharedObjExt :: String
-#if   defined(darwin_HOST_OS)
-sharedObjExt = "dylib"
-#elif defined(linux_HOST_OS)
-sharedObjExt = "so"
-#elif defined(mingw32_HOST_OS)
-sharedObjExt = "dll"
-#else
-#error "I don't know what platform I am"
-#endif
-
+sharedObjExt = case Info.os of
+  "darwin" -> "dylib"
+  "mingw32" -> "dll"
+  _ -> "so"  -- let's just default to the unixy ".so"
