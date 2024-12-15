@@ -39,7 +39,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
   -- Warp shuffle instructions
   __shfl_up, __shfl_down, __shfl_idx, __broadcast,
-  canShfl,
 
   -- Shared memory
   staticSharedMem,
@@ -381,11 +380,6 @@ __shfl_idx = shfl Idx
 --
 __broadcast :: TypeR a -> Operands a -> CodeGen PTX (Operands a)
 __broadcast aR a = __shfl_idx aR a (liftWord32 0)
-
--- Warp shuffle instructions are available for compute capability >= 3.0
---
-canShfl :: DeviceProperties -> Bool
-canShfl dev = CUDA.computeCapability dev >= Compute 3 0
 
 
 shfl :: ShuffleOp

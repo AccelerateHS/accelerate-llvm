@@ -26,7 +26,6 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Scan (
 
 import Data.Array.Accelerate.AST                                    ( Direction(..) )
 import Data.Array.Accelerate.Representation.Array
-import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Type
 
@@ -1134,18 +1133,21 @@ mkScan'Fill uid aenv repr seed =
   Safe.coerce <$> mkGenerate uid aenv (reduceRank repr) (IRFun1 (const seed))
 
 scanSMemSize :: DeviceProperties -> TypeR e -> Int -> Int
-scanSMemSize dev tp n
-  | canShfl dev = sharedMemorySizeAdd tp warps 0
-  | otherwise   = warps * (1 + per_warp) * bytes -- This does not take alignment into account
+scanSMemSize dev tp n = sharedMemorySizeAdd tp warps 0
   where
     ws        = CUDA.warpSize dev
     warps     = n `P.quot` ws
-    per_warp  = ws + ws `P.quot` 2
-    bytes     = bytesElt tp
 
 -- Block wide scan
 -- ---------------
 
+-- Efficient block-wide (inclusive) scan using the specified operator.
+--
+-- Each block requires (#warps * (1 + 1.5*warp size)) elements of dynamically
+-- allocated shared memory.
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/block/specializations/block_scan_warp_scans.cuh
+--
 scanBlock
     :: forall aenv e.
        Direction
@@ -1155,171 +1157,7 @@ scanBlock
     -> Maybe (Operands Int32)                       -- ^ number of valid elements (may be less than block size)
     -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
-scanBlock dir dev
-  | canShfl dev = scanBlockShfl dir dev -- shfl instruction available in compute >= 3.0
-  | otherwise   = scanBlockSMem dir dev -- equivalent, slightly slower version
-
-
--- Efficient block-wide (inclusive) scan using the specified operator.
---
--- Each block requires (#warps * (1 + 1.5*warp size)) elements of dynamically
--- allocated shared memory.
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/block/specializations/block_scan_warp_scans.cuh
---
--- NOTE: [Synchronisation problems with SM_70 and greater]
---
--- This operation uses thread synchronisation. When calling this operation, it
--- is important that all active (that is, non-exited) threads of the thread
--- block participate. It seems that sm_70+ (devices with independent thread
--- scheduling) are stricter about the requirement that all non-existed threads
--- participate in every barrier.
---
--- See: https://github.com/AccelerateHS/accelerate/issues/436
---
-scanBlockSMem
-    :: forall aenv e.
-       Direction
-    -> DeviceProperties                             -- ^ properties of the target device
-    -> TypeR e
-    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe (Operands Int32)                       -- ^ number of valid elements (may be less than block size)
-    -> Operands e                                   -- ^ calling thread's input element
-    -> CodeGen PTX (Operands e)
-scanBlockSMem dir dev tp combine nelem = warpScan >=> warpPrefix
-  where
-    int32 :: Integral a => a -> Operands Int32
-    int32 = liftInt32 . P.fromIntegral
-
-    -- Temporary storage required for each warp
-    warp_smem_elems = CUDA.warpSize dev + (CUDA.warpSize dev `P.quot` 2)
-    warp_smem_bytes = warp_smem_elems  * bytesElt tp
-
-    -- Step 1: Scan in every warp
-    warpScan :: Operands e -> CodeGen PTX (Operands e)
-    warpScan input = do
-      -- Allocate (1.5 * warpSize) elements of shared memory for each warp
-      -- (individually addressable by each warp)
-      wid   <- warpId
-      skip  <- A.mul numType wid (int32 warp_smem_bytes) -- This does not take alignment into account
-      smem  <- dynamicSharedMem tp TypeInt32 (int32 warp_smem_elems) skip
-      scanWarpSMem dir dev tp combine smem input
-
-    -- Step 2: Collect the aggregate results of each warp to compute the prefix
-    -- values for each warp and combine with the partial result to compute each
-    -- thread's final value.
-    warpPrefix :: Operands e -> CodeGen PTX (Operands e)
-    warpPrefix input = do
-      -- Allocate #warps elements of shared memory
-      bd    <- blockDim
-      warps <- A.quot integralType bd (int32 (CUDA.warpSize dev))
-      skip  <- A.mul numType warps (int32 warp_smem_bytes) -- This does not take alignment into account
-      smem  <- dynamicSharedMem tp TypeInt32 warps skip
-
-      -- Share warp aggregates
-      wid   <- warpId
-      lane  <- laneId
-      when (A.eq singleType lane (int32 (CUDA.warpSize dev - 1))) $ do
-        writeArray TypeInt32 smem wid input
-
-      -- Wait for each warp to finish its local scan and share the aggregate
-      __syncthreads
-
-      -- Compute the prefix value for this warp and add to the partial result.
-      -- This step is not required for the first warp, which has no carry-in.
-      if (tp, A.eq singleType wid (liftInt32 0))
-        then return input
-        else do
-          -- Every thread sequentially scans the warp aggregates to compute
-          -- their prefix value. We do this sequentially, but could also have
-          -- warp 0 do it cooperatively if we limit thread block sizes to
-          -- (warp size ^ 2).
-          steps  <- case nelem of
-                      Nothing -> return wid
-                      Just n  -> A.min singleType wid =<< A.quot integralType n (int32 (CUDA.warpSize dev))
-
-          p0     <- readArray TypeInt32 smem (liftInt32 0)
-          prefix <- iterFromStepTo tp (liftInt32 1) (liftInt32 1) steps p0 $ \step x -> do
-                      y <- readArray TypeInt32 smem step
-                      case dir of
-                        LeftToRight -> app2 combine x y
-                        RightToLeft -> app2 combine y x
-
-          case dir of
-            LeftToRight -> app2 combine prefix input
-            RightToLeft -> app2 combine input prefix
-
-
--- Warp-wide scan
--- --------------
-
--- Efficient warp-wide (inclusive) scan using the specified operator.
---
--- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
--- routine assumes that it is allocated individually per-warp (i.e. can be
--- indexed in the range [0, warp size)).
---
--- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/warp/specializations/warp_scan_smem.cuh
---
-scanWarpSMem
-    :: forall aenv e.
-       Direction
-    -> DeviceProperties                             -- ^ properties of the target device
-    -> TypeR e
-    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> IRArray (Vector e)                           -- ^ temporary storage array in shared memory (1.5 x warp size elements)
-    -> Operands e                                   -- ^ calling thread's input element
-    -> CodeGen PTX (Operands e)
-scanWarpSMem dir dev tp combine smem = scan 0
-  where
-    log2 :: Double -> Double
-    log2 = P.logBase 2
-
-    -- Number of steps required to scan warp
-    steps     = P.floor (log2 (P.fromIntegral (CUDA.warpSize dev)))
-    halfWarp  = P.fromIntegral (CUDA.warpSize dev `P.quot` 2)
-
-    -- Unfold the scan as a recursive code generation function
-    scan :: Int -> Operands e -> CodeGen PTX (Operands e)
-    scan step x
-      | step >= steps = return x
-      | otherwise     = do
-          let offset = liftInt32 (1 `P.shiftL` step)
-
-          -- share partial result through shared memory buffer
-          lane <- laneId
-          i    <- A.add numType lane (liftInt32 halfWarp)
-          writeArray TypeInt32 smem i x
-
-          __syncwarp
-
-          -- update partial result if in range
-          x'   <- if (tp, A.gte singleType lane offset)
-                    then do
-                      i' <- A.sub numType i offset    -- lane + HALF_WARP - offset
-                      x' <- readArray TypeInt32 smem i'
-                      case dir of
-                        LeftToRight -> app2 combine x' x
-                        RightToLeft -> app2 combine x x'
-
-                    else
-                      return x
-
-          __syncwarp
-
-          scan (step+1) x'
-
-
-scanBlockShfl
-    :: forall aenv e.
-       Direction
-    -> DeviceProperties                             -- ^ properties of the target device
-    -> TypeR e
-    -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
-    -> Maybe (Operands Int32)                       -- ^ number of valid elements (may be less than block size)
-    -> Operands e                                   -- ^ calling thread's input element
-    -> CodeGen PTX (Operands e)
-scanBlockShfl dir dev tp combine nelem = warpScan >=> warpPrefix
+scanBlock dir dev tp combine nelem = warpScan >=> warpPrefix
   where
     int32 :: Integral a => a -> Operands Int32
     int32 = liftInt32 . P.fromIntegral
@@ -1330,7 +1168,7 @@ scanBlockShfl dir dev tp combine nelem = warpScan >=> warpPrefix
 
     -- Step 1: Scan in every warp
     warpScan :: Operands e -> CodeGen PTX (Operands e)
-    warpScan = scanWarpShfl dir dev tp combine
+    warpScan = scanWarp dir dev tp combine
 
     -- Step 2: Collect the aggregate results of each warp to compute the prefix
     -- values for each warp and combine with the partial result to compute each
@@ -1375,7 +1213,19 @@ scanBlockShfl dir dev tp combine nelem = warpScan >=> warpPrefix
             LeftToRight -> app2 combine prefix input
             RightToLeft -> app2 combine input prefix
 
-scanWarpShfl
+
+-- Warp-wide scan
+-- --------------
+
+-- Efficient warp-wide (inclusive) scan using the specified operator.
+--
+-- Each warp requires 48 (1.5 x warp size) elements of shared memory. The
+-- routine assumes that it is allocated individually per-warp (i.e. can be
+-- indexed in the range [0, warp size)).
+--
+-- Example: https://github.com/NVlabs/cub/blob/1.5.4/cub/warp/specializations/warp_scan_smem.cuh
+--
+scanWarp
     :: forall aenv e.
        Direction
     -> DeviceProperties                             -- ^ properties of the target device
@@ -1383,7 +1233,7 @@ scanWarpShfl
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> Operands e                                   -- ^ calling thread's input element
     -> CodeGen PTX (Operands e)
-scanWarpShfl dir dev tp combine = scan 0
+scanWarp dir dev tp combine = scan 0
   where
     log2 :: Double -> Double
     log2 = P.logBase 2
