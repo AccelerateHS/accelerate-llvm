@@ -604,6 +604,28 @@ sharedMemVolatility = Volatile
 -- Declare a new statically allocated array in the __shared__ memory address
 -- space, with enough storage to contain the given number of elements.
 --
+-- Previously, like initialiseDynamicSharedMemory, this function declared an
+-- external global, e.g. for 1 i64:
+--   @sdata = external addrspace(3) global [1 x i64], align 8
+-- This would correspond to the following CUDA source:
+--   extern __shared__ int64_t sdata[1];
+--
+-- But this CUDA C++ is rejected by Clang. When LLVM is fed LLVM IR, however,
+-- things are more subtle; in the old llvm-hs backend where we linked against
+-- LLVM, with LLVM 15, the above IR (defining @0) was accepted. However,
+-- passing this same IR to Clang 18 with the llvm-pretty backend (yes I'm aware
+-- the clang version is also changing here), clang first calls ptxas and then
+-- nvlink; nvlink complains:
+--   Undefined reference to 'sdata' in '/tmp/test-409abe.cubin'
+-- When linking against LLVM 15, nvlink is never invoked, but instead ptxas is
+-- _not_ given the -c flag and it immediately produces a SASS file.
+--
+-- Because Clang doesn't even accept the corresponding C++ code, but does
+-- accept this:
+--   __shared__ int64_t sdata[1];
+-- the global created in this function was changed to be of internal linkage
+-- instead. The assigned value is 'undef', just like what Clang generates for
+-- the internal sdata C++ declaration.
 staticSharedMem
     :: TypeR e
     -> Word64
@@ -630,12 +652,12 @@ staticSharedMem tp n = do
       declareGlobalVar $ LP.Global
         { LP.globalSym = nameToPrettyS nm
         , LP.globalAttrs = LP.GlobalAttrs
-            { LP.gaLinkage = Just LP.External
+            { LP.gaLinkage = Just LP.Internal
             , LP.gaVisibility = Nothing
             , LP.gaAddrSpace = sharedMemAddrSpace
             , LP.gaConstant = False }
         , LP.globalType = LP.Array n (downcast t)
-        , LP.globalValue = Nothing
+        , LP.globalValue = Just LP.ValUndef
         , LP.globalAlign = Just (4 `P.max` P.fromIntegral (bytesElt tt))
         , LP.globalMetadata = mempty
         }
