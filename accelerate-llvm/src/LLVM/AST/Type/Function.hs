@@ -75,8 +75,8 @@ instance Downcast FunctionAttribute LLVM.FunAttr where
   downcast ReadNone            = LLVM.Readnone
   downcast AlwaysInline        = LLVM.Alwaysinline
   downcast NoDuplicate         = LLVM.Noduplicate
-  downcast Convergent          = error "TODO FunctionAttribute Convergent" -- LLVM.Convergent
-  downcast InaccessibleMemOnly = error "TODO FunctionAttribute InaccessibleMemOnly" -- LLVM.InaccessibleMemOnly
+  downcast Convergent          = LLVM.Convergent
+  downcast InaccessibleMemOnly = LLVM.InaccessibleMemOnly
 
 instance Downcast (Parameter a) (LLVM.Typed LLVM.Ident) where
   -- TODO attributes! llvm-pretty doesn't seem to support them, but we put

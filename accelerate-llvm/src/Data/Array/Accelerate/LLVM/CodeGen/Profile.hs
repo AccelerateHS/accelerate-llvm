@@ -56,9 +56,9 @@ global_string str = do
     , LP.globalAttrs = LP.GlobalAttrs
         { LP.gaLinkage = Just LP.Private
         , LP.gaVisibility = Nothing
+        , LP.gaAddrSpace = LP.defaultAddrSpace
         , LP.gaConstant = True }
     , LP.globalType = LP.Array l (LP.PrimType (LP.Integer 8))
-    , LP.globalAddrSpace = LP.defaultAddrSpace
     , LP.globalValue = Just $ LP.ValArray (LP.PrimType (LP.Integer 8)) [ LP.ValInteger (toInteger (ord c)) | c <- str0 ]
     , LP.globalAlign = Nothing
     , LP.globalMetadata = mempty
@@ -107,9 +107,9 @@ source_location_data nm fun src line colour = do
     , LP.globalAttrs = LP.GlobalAttrs
         { LP.gaLinkage = Just LP.Internal
         , LP.gaVisibility = Nothing
+        , LP.gaAddrSpace = LP.defaultAddrSpace
         , LP.gaConstant = True }
     , LP.globalType = LP.Alias (LP.Ident "___tracy_source_location_data")
-    , LP.globalAddrSpace = LP.defaultAddrSpace
     , LP.globalValue = Just $
         LP.ValStruct
           [ downcast name

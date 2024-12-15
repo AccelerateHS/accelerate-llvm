@@ -13,7 +13,7 @@ source-repository-package
 source-repository-package
     type:     git
     location: https://github.com/tomsmeding/llvm-pretty.git
-    tag:      d2491c4462de099ff472dbab57fbef13110e4ca1
+    tag:      16fb617f282bde97a090b8b08cbd2dcf5e259ad3
 
 source-repository-package
     type:     git

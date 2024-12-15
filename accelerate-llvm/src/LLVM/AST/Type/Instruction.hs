@@ -403,10 +403,8 @@ instance Downcast (Instruction a) LP.Instr where
     InsertElement i v x   -> LP.InsertElt (downcast v) (downcast x) (constant i)
     ExtractElement i v    -> LP.ExtractElt (downcast v) (constant i)
     ExtractValue _ i s    -> extractStruct i (downcast s)
-    Store NonVolatile p x -> LP.Store (downcast x) (downcast p) atomicity alignment
-    Store Volatile _ _    -> error "TODO volatile stores"
-    Load t NonVolatile p  -> LP.Load (downcast t) (downcast p) atomicity alignment
-    Load _ Volatile _     -> error "TODO volatile loads"
+    Store vol p x         -> LP.Store (downcast vol) (downcast x) (downcast p) atomicity alignment
+    Load t vol p          -> LP.Load (downcast vol) (downcast t) (downcast p) atomicity alignment
     GetElementPtr (GEP t n i1 path) ->
       LP.GEP inbounds (downcast t) (downcast n) (downcast i1 : downcast path)
     Fence a               -> LP.Fence (downcast (fst a)) (downcast (snd a))
