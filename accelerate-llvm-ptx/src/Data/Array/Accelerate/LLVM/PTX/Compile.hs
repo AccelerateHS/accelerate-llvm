@@ -108,6 +108,10 @@ compile pacc aenv = do
   Module ast md     <- llvmOfPreOpenAcc uid pacc aenv
   let config        = [ (f,x) | (LLVM.Name f, KM_PTX x) <- HashMap.toList md ]
 
+  case isDeviceSupported (CUDA.computeCapability dev) of
+    Nothing -> return ()  -- all fine
+    Just err -> internalError string err
+
   -- Lower the generated LLVM into a CUBIN object code.
   --
   -- The 'objData' field is lazily evaluated since the object code might have
@@ -295,3 +299,11 @@ moduleTargetAssembly tm m = unsafe0 =<< LLVM.Internal.emitToByteString LLVM.Inte
           _ | B.isSpaceWord8 x -> poke p' 0 >> return bs
           _                    -> return (B.snoc bs 0)
 
+-- | Returns a human-readable error message in case the device is unsupported,
+-- and Nothing if everything is alright.
+isDeviceSupported :: CUDA.Compute -> Maybe String
+isDeviceSupported cc@(CUDA.Compute m _)
+  -- We require shfl instructions which are available only from CC 3.0.
+  | m >= 3 = Nothing
+  | otherwise = Just $
+      "Your GPU has compute capability " ++ show cc ++ ", but only >= 3.0 is supported."
