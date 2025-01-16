@@ -149,18 +149,22 @@ compile pacc aenv = do
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))
-        -- putStrLn unoptimisedText
+
+        isVerboseFlagSet <- Debug.getFlag Debug.verbose
+        let clangArgs = ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
+                        ,"-o", cacheFile
+                        ,"-Wno-override-module"
+                        ,"-x", "ir", "-"
+                        -- See Note [Internalizing Libdevice]
+                        -- TODO: only link in libdevice if we're actually using __nv_ functions!
+                        ,"-Xclang", "-mlink-builtin-bitcode", "-Xclang", libdevice_bc]
+                        ++ ["-v" | isVerboseFlagSet]
+
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
-        _ <- readProcess "clang" ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
-                                 ,"-o", cacheFile
-                                 ,"-Wno-override-module"
-                                 ,"-x", "ir", "-"
-                                 -- See Note [Internalizing Libdevice]
-                                 -- TODO: only link in libdevice if we're actually using __nv_ functions!
-                                 ,"-Xclang", "-mlink-builtin-bitcode", "-Xclang", libdevice_bc]
-                         unoptimisedText
+        Debug.traceM Debug.dump_cc ("Arguments to clang: " % shown) clangArgs
+        _ <- readProcess "clang" clangArgs unoptimisedText
         Debug.traceM Debug.dump_cc ("Written PTX to: " % string) cacheFile
 
     return cacheFile
