@@ -1,17 +1,22 @@
+{-# LANGUAGE TypeApplications #-}
 module Data.Array.Accelerate.LLVM.Target.ClangInfo where
 
 import qualified Text.LLVM.PP                                       as LP
 
 -- standard library
+import qualified Control.Exception                                  as E
 import Data.ByteString                                              ( ByteString )
 import qualified Data.ByteString.Char8                              as BS8
 import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as SBS8
-import Data.Char                                                    ( isSpace )
-import Data.List                                                    ( tails )
+import Data.Char                                                    ( isDigit, isSpace )
+import Data.List                                                    ( tails, sortBy )
 import Data.List.NonEmpty                                           ( NonEmpty )
 import qualified Data.List.NonEmpty                                 as NE
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
+import Data.Ord                                                     ( comparing, Down(..) )
+import System.Directory                                             ( executable, getPermissions, listDirectory )
+import qualified System.Info                                        as Info
 import System.IO.Unsafe
 import System.Process
 
