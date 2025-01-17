@@ -40,6 +40,7 @@ import Data.Array.Accelerate.LLVM.PTX.Foreign                       ( )
 import Data.Array.Accelerate.LLVM.PTX.Target
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 
+import Foreign.CUDA.Path                                            ( cudaInstallPath )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import qualified Text.LLVM                                          as LP
@@ -52,7 +53,6 @@ import Data.List                                                    ( intercalat
 import Data.Foldable                                                ( toList )
 import Formatting
 import System.Directory
-import System.Environment                                           ( lookupEnv )
 import System.IO.Unsafe
 import System.Process
 import Text.Printf                                                  ( printf )
@@ -115,16 +115,15 @@ compile pacc aenv = do
         let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))
 
         isVerboseFlagSet <- Debug.getFlag Debug.verbose
-        menvCudaPath <- lookupEnv "ACCELERATE_LLVM_CUDA_PATH"
         let clangArgs = ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
                         ,"-o", cacheFile
                         ,"-Wno-override-module"
+                        ,"--cuda-path=" ++ cudaInstallPath
                         ,"-x", "ir", "-"
                         -- See Note [Internalizing Libdevice]
                         -- TODO: only link in libdevice if we're actually using __nv_ functions!
                         ,"-Xclang", "-mlink-builtin-bitcode", "-Xclang", libdevice_bc]
                         ++ (if isVerboseFlagSet then ["-v"] else [])
-                        ++ maybe [] (\p -> ["--cuda-path=" ++ p]) menvCudaPath
 
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
