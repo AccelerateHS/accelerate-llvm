@@ -96,8 +96,6 @@ import Data.Bits
 import Data.Proxy
 import Data.String
 import Foreign.Storable
-import Formatting                                                   hiding ( bytes, int )
-import Text.Printf
 import Prelude                                                      as P
 
 import GHC.TypeLits
