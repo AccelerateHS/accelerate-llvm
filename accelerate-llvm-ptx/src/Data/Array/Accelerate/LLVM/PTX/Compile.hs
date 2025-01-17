@@ -30,7 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple, clangExePath )
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple, clangExePath, clangExePathEnvironment )
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
@@ -50,9 +50,11 @@ import qualified Text.PrettyPrint                                   as LP ( rend
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
+import qualified Data.List.NonEmpty                                 as NE
 import Data.Foldable                                                ( toList )
 import Formatting
 import System.Directory
+import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
 import Text.Printf                                                  ( printf )
@@ -110,6 +112,21 @@ compile pacc aenv = do
                      Nothing -> internalError ("accelerate-llvm-ptx: Unsupported LLVM version: " % string)
                                               prettyHostLLVMVersion
         Debug.traceM Debug.dump_cc ("Using Clang at " % string % " version " % shown) clangExePath prettyHostLLVMVersion
+
+        when (NE.head hostLLVMVersion < 16) $
+          case clangExePathEnvironment of
+            Nothing -> do
+              hPutStrLn stderr $
+                "[accelerate-llvm-ptx] Clang version 16 or newer is required for the Nvidia PTX " ++
+                "backend, but version " ++ prettyHostLLVMVersion ++ " was found at '" ++
+                clangExePath ++ "'. To override this choice, set the ACCELERATE_LLVM_CLANG_PATH " ++
+                "environment variable to point to the desired clang executable."
+              -- not an IOError because we're in unsafePerformIO, somewhere up the call chain
+              errorWithoutStackTrace $
+                "accelerate-llvm-ptx: Clang version " ++ prettyHostLLVMVersion ++
+                " found but >=16 required (set ACCELERATE_LLVM_CLANG_PATH to override)"
+            Just{} ->  -- If an explicit path was given, let's just continue and see what happens.
+              return ()
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))

@@ -13,11 +13,12 @@ import Data.Char                                                    ( isDigit, i
 import Data.List                                                    ( tails, sortBy )
 import Data.List.NonEmpty                                           ( NonEmpty )
 import qualified Data.List.NonEmpty                                 as NE
-import Data.Maybe                                                   ( fromMaybe, catMaybes )
+import Data.Maybe                                                   ( fromMaybe, catMaybes, isJust )
 import Data.Ord                                                     ( comparing, Down(..) )
 import System.Directory                                             ( executable, getPermissions, listDirectory )
 import System.Environment                                           ( lookupEnv )
 import qualified System.Info                                        as Info
+import System.IO                                                    ( hPutStrLn, stderr )
 import System.IO.Unsafe
 import System.Process
 
@@ -100,8 +101,28 @@ llvmverFromTuple _ = Nothing
 clangMachineVersionOutput :: String
 clangMachineVersionOutput =
   unsafePerformIO $ do
-    (_ec, _out, err) <- readProcessWithExitCode clangExePath ["-E", "-", "-march=native", "-###"] ""
-    return err
+    mstderrOutput <- E.try @IOError $ do
+      (_ec, _out, err) <- readProcessWithExitCode clangExePath ["-E", "-", "-march=native", "-###"] ""
+      return err
+    case mstderrOutput of
+      Left _ -> do
+        let overridden = isJust clangExePathEnvironment
+        let msg1 =
+              "[accelerate-llvm] The Accelerate LLVM backend requires Clang to be installed. " ++
+              "Furthermore, accelerate-llvm-ptx, if you use it, requires clang version >= 16. " ++
+              "(Tried to run: '" ++ clangExePath ++ "'."
+            msg2 | overridden = ""
+                 | otherwise =
+                     " To override this choice, set the " ++
+                     "ACCELERATE_LLVM_CLANG_PATH environment variable to point to the desired " ++
+                     "clang executable."
+            msg3 = ")"
+        hPutStrLn stderr $ msg1 ++ msg2 ++ msg3
+        -- not an IOError because we're in unsafePerformIO
+        errorWithoutStackTrace $
+          "accelerate-llvm: Clang not found: " ++ clangExePath ++
+           (if overridden then "" else " (set ACCELERATE_LLVM_CLANG_PATH to override)")
+      Right out -> return out
 
 clangExePath :: FilePath
 clangExePath
