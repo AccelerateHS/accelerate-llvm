@@ -30,7 +30,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple )
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple, clangExePath )
 
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Launch
 import Data.Array.Accelerate.LLVM.PTX.CodeGen
@@ -130,7 +130,7 @@ compile pacc aenv = do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
         Debug.traceM Debug.dump_cc ("Arguments to clang: " % shown) clangArgs
-        _ <- readProcess "clang" clangArgs unoptimisedText
+        _ <- readProcess clangExePath clangArgs unoptimisedText
         Debug.traceM Debug.dump_cc ("Written PTX to: " % string) cacheFile
 
     return cacheFile
