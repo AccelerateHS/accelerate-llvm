@@ -109,7 +109,7 @@ compile pacc aenv = do
                      Just llvmver -> return llvmver
                      Nothing -> internalError ("accelerate-llvm-ptx: Unsupported LLVM version: " % string)
                                               prettyHostLLVMVersion
-        Debug.traceM Debug.dump_cc ("Using LLVM version " % shown) prettyHostLLVMVersion
+        Debug.traceM Debug.dump_cc ("Using Clang at " % string % " version " % shown) clangExePath prettyHostLLVMVersion
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))

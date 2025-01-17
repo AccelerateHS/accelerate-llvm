@@ -26,7 +26,7 @@ import Data.Array.Accelerate.Trafo.Delayed
 import Data.Array.Accelerate.LLVM.CodeGen
 import Data.Array.Accelerate.LLVM.Compile
 import Data.Array.Accelerate.LLVM.State
-import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple )
+import Data.Array.Accelerate.LLVM.Target.ClangInfo                  ( hostLLVMVersion, llvmverFromTuple, clangExePath )
 import Data.Array.Accelerate.LLVM.CodeGen.Environment               ( Gamma )
 import Data.Array.Accelerate.LLVM.CodeGen.Module                    ( Module(..) )
 
@@ -123,7 +123,6 @@ compile pacc aenv = do
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = P.render (P.ppLLVM llvmver (P.ppModule ast))
-        -- putStrLn unoptimisedText
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
