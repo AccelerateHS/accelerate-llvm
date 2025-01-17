@@ -113,6 +113,8 @@ compile pacc aenv = do
 
         -- Convert module to llvm-pretty format so that we can print it
         let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))
+        Debug.when Debug.verbose $ do
+          Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
         isVerboseFlagSet <- Debug.getFlag Debug.verbose
         let clangArgs = ["-O3", "--target=nvptx64-nvidia-cuda", "-march=" ++ arch
