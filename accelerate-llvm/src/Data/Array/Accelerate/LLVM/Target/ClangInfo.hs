@@ -16,6 +16,7 @@ import qualified Data.List.NonEmpty                                 as NE
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import Data.Ord                                                     ( comparing, Down(..) )
 import System.Directory                                             ( executable, getPermissions, listDirectory )
+import System.Environment                                           ( lookupEnv )
 import qualified System.Info                                        as Info
 import System.IO.Unsafe
 import System.Process
@@ -104,9 +105,10 @@ clangMachineVersionOutput =
 
 clangExePath :: FilePath
 clangExePath
+  | Just path <- clangExePathEnvironment = path
   -- For some reason, Windows is always "mingw32", even if it's actually 64-bit, or whatever.
   | Info.os == "mingw32" = clangExePathWindows
-  | otherwise            = "clang"  -- let the user decide, they typically know better
+  | otherwise            = "clang"  -- on unix, don't try fancy logic
 
 {-# NOINLINE clangExePathWindows #-}
 clangExePathWindows :: FilePath
@@ -144,6 +146,10 @@ clangExePathWindows = unsafePerformIO $ do
   case mpath of
     Just path -> return path
     Nothing -> return "clang"  -- fall back to the system path
+
+{-# NOINLINE clangExePathEnvironment #-}
+clangExePathEnvironment :: Maybe FilePath
+clangExePathEnvironment = unsafePerformIO $ lookupEnv "ACCELERATE_LLVM_CLANG_PATH"
 
 -- | Returns trimmed right-hand side
 getLinePrefixedBy :: String -> String -> Maybe String
