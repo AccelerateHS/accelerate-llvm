@@ -39,18 +39,15 @@ pattern GEP1 ty ptr ix <- GEP (PrimType (ScalarPrimType ty)) ptr ix (GEPEmpty (S
 -- types themselves.
 data GEPIndex op a b where
   GEPEmpty :: PrimType b -> GEPIndex op b b
-  GEPPtr   :: op i       -> GEPIndex op a b -> GEPIndex op (Ptr a) b
   GEPArray :: op i       -> GEPIndex op a b -> GEPIndex op (LLArray a) b
   -- TODO: structure indexing
 
 instance (forall i. Downcast (op i) v) => Downcast (GEPIndex op a b) [v] where
   downcast (GEPEmpty _) = []
-  downcast (GEPPtr i l) = downcast i : downcast l
   downcast (GEPArray i l) = downcast i : downcast l
 
 gepIndexOutType :: GEPIndex op a b -> PrimType b
 gepIndexOutType (GEPEmpty t) = t
-gepIndexOutType (GEPPtr _ l) = gepIndexOutType l
 gepIndexOutType (GEPArray _ l) = gepIndexOutType l
 
 instance TypeOf op => TypeOf (GetElementPtr op ptra) where
