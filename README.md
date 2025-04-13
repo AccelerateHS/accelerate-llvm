@@ -101,9 +101,10 @@ If your OS does not have an appropriate LLVM distribution available, you can als
 
   3. Execute the following to configure the build. Here `INSTALL_PREFIX` is
      where LLVM is to be installed, for example `/usr/local` or
-     `$HOME/opt/llvm`:
+     `$HOME/opt/llvm`: (you can skip the `;NVPTX` if you're not interested in
+     using `accelerate-llvm-ptx`)
      ```sh
-     $ cmake $LLVM_SRC -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON
+     $ cmake $LLVM_SRC -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON -DLLVM_TARGETS_TO_BUILD='X86;NVPTX' -DLLVM_ENABLE_PROJECTS='clang;libcxx;libcxxabi'
      ```
      See [options and variables](http://llvm.org/docs/CMake.html#options-and-variables)
      for a list of additional build parameters you can specify.
