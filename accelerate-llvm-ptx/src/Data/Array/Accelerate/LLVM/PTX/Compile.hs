@@ -45,7 +45,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import qualified Text.LLVM                                          as LP
 import qualified Text.LLVM.PP                                       as LP
-import qualified Text.PrettyPrint                                   as LP ( render )
+import qualified Text.PrettyPrint                                   as Pretty
 
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
@@ -129,7 +129,9 @@ compile pacc aenv = do
               return ()
 
         -- Convert module to llvm-pretty format so that we can print it
-        let unoptimisedText = LP.render (LP.ppLLVM llvmver (LP.ppModule ast))
+        let unoptimisedText = Pretty.renderStyle
+                                Pretty.style { Pretty.lineLength = maxBound `div` 2 }
+                                (LP.ppLLVM llvmver (LP.ppModule ast))
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
@@ -143,9 +145,6 @@ compile pacc aenv = do
                         -- TODO: only link in libdevice if we're actually using __nv_ functions!
                         ,"-Xclang", "-mlink-builtin-bitcode", "-Xclang", libdevice_bc]
                         ++ (if isVerboseFlagSet then ["-v"] else [])
-
-        Debug.when Debug.verbose $ do
-          Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
         Debug.traceM Debug.dump_cc ("Arguments to clang: " % shown) clangArgs
         _ <- readProcess clangExePath clangArgs unoptimisedText
