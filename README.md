@@ -104,7 +104,7 @@ If your OS does not have an appropriate LLVM distribution available, you can als
      `$HOME/opt/llvm`: (you can skip the `;NVPTX` if you're not interested in
      using `accelerate-llvm-ptx`)
      ```sh
-     $ cmake $LLVM_SRC -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON -DLLVM_TARGETS_TO_BUILD='X86;NVPTX' -DLLVM_ENABLE_PROJECTS='clang;libcxx;libcxxabi'
+     $ cmake $LLVM_SRC -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX -DCMAKE_BUILD_TYPE=Release -DLLVM_BUILD_LLVM_DYLIB=ON -DLLVM_LINK_LLVM_DYLIB=ON -DLLVM_TARGETS_TO_BUILD='X86;NVPTX' -DLLVM_ENABLE_PROJECTS=''
      ```
      See [options and variables](http://llvm.org/docs/CMake.html#options-and-variables)
      for a list of additional build parameters you can specify.
