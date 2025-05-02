@@ -70,6 +70,11 @@ data PreOpenAccCommand acc arch aenv a where
               -> acc                   arch aenv arrs2
               -> PreOpenAccCommand acc arch aenv arrs2
 
+  Aerror      :: ArraysR arrs2
+              -> Message                         arrs1
+              -> acc                   arch aenv arrs1
+              -> PreOpenAccCommand acc arch aenv arrs2
+
   Apply       :: ArraysR bs
               -> PreOpenAfun      (acc arch) aenv (as -> bs)
               -> acc                   arch  aenv as
@@ -200,6 +205,7 @@ instance HasArraysR (acc arch) => HasArraysR (PreOpenAccCommand acc arch) where
   arraysR (Apair a1 a2)                         = arraysR a1 `TupRpair` arraysR a2
   arraysR Anil                                  = TupRunit
   arraysR (Atrace _ _ a2)                       = arraysR a2
+  arraysR (Aerror repr _ _)                     = repr
   arraysR (Apply repr _ _)                      = repr
   arraysR (Aforeign repr _ _ _)                 = repr
   arraysR (Acond _ a1 _)                        = arraysR a1
