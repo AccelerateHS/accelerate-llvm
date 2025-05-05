@@ -159,7 +159,7 @@ compile pacc aenv = do
 #if defined(darwin_HOST_OS)
         callProcess ld ["--shared", "-o", sharedObjFile, objFile, "-undefined", "dynamic_lookup"]
 #else
-        callProcess ld ["--shared", "-o", sharedObjFile, objFile]
+        callProcess ld ["--shared", "-o", sharedObjFile, objFile, "-lm"]
 #endif
         Debug.traceM Debug.dump_cc ("cc: new shared object " % shown) uid
 
