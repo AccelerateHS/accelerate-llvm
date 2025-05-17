@@ -47,6 +47,7 @@ import qualified Text.LLVM                                          as LP
 import qualified Text.LLVM.PP                                       as LP
 import qualified Text.PrettyPrint                                   as Pretty
 
+import Control.Monad                                                ( when )
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
