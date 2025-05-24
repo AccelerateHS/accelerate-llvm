@@ -131,14 +131,16 @@ compile pacc aenv = do
         dDumpAsm <- Debug.getFlag Debug.dump_asm
 
         let clangFlags inputType outputFlags output =
-              ["-O3", "-march=native", "-c", "-o", output, "-x", inputType, "-"
+              -- '-O3' is ignored when only assembling; let's avoid clang warning about that
+              (if inputType == "assembler" then [] else ["-O3"]) ++
+              ["-march=native", "-c", "-o", output, "-x", inputType, "-"
               -- clang knows better what the target triple (and the data
               -- layout) should be than us, so let it override the triple, and
               -- don't warn about it
               -- TODO: change llvm-pretty so that it doesn't require us to give
               -- it a target triple
-              ,"-Wno-override-module"]
-              ++ outputFlags
+              ,"-Wno-override-module"] ++
+              outputFlags
 
         let linkOutputFlags | Info.os == "mingw32" = []
                             | otherwise = ["-fPIC"]
