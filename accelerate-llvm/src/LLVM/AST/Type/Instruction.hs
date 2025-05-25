@@ -656,7 +656,10 @@ fmfEnabled = unsafePerformIO $ Debug.getFlag Debug.fast_math
 
 fastmathFlags :: [LP.FMF]
 fastmathFlags
-  | fmfEnabled = [LP.Ffast]
+  -- We explicitly exclude 'nnan' and 'ninf' from this list, because apparently
+  -- we care about NaN and Inf values:
+  --   <https://github.com/AccelerateHS/accelerate/issues/407>
+  | fmfEnabled = [LP.Fnsz, LP.Farcp, LP.Fcontract, LP.Fafn, LP.Freassoc]
   | otherwise  = []
 
 -- | Some LLVM instructions allow fast math flags only if their return type is
