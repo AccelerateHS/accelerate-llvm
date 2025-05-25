@@ -659,6 +659,9 @@ fastmathFlags
   | fmfEnabled = [LP.Ffast]
   | otherwise  = []
 
+-- | Some LLVM instructions allow fast math flags only if their return type is
+-- a "compatible floating-point type". This class returns fast-math flags given
+-- such a return type.
 class FmfFor s where
   fmfFor :: s a -> [LP.FMF]
 
