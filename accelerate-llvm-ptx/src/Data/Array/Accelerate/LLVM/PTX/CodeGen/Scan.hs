@@ -187,6 +187,9 @@ mkScanAllP1 dir uid aenv tp combine mseed marr = do
     s0  <- int bid
 
     -- iterating over thread-block-wide segments
+    -- Note that 'end' is a multiple of the gd', and the control flow is thus uniform in the loop.
+    -- This is set in scanAllOp in Data.Array.Accelerate.LLVM.PTX.Execute.
+    -- Hence we can run __syncthreads safely.
     imapFromStepTo s0 gd' end $ \chunk -> do
 
       -- Make sure all threads have finished previous iterations,
@@ -324,11 +327,10 @@ mkScanAllP2 dir uid aenv tp combine = do
                       LeftToRight -> A.lt  singleType i end
                       RightToLeft -> A.gte singleType i start
 
+      -- wait for the carry-in value to be updated
+      __syncthreads
+
       when (valid i0) $ do
-
-        -- wait for the carry-in value to be updated
-        __syncthreads
-
         x0 <- readArray TypeInt arrTmp i0
         x1 <- if (tp, A.gt singleType offset (liftInt 0) `land'` A.eq singleType tid (liftInt32 0))
                 then do
@@ -501,6 +503,9 @@ mkScan'AllP1 dir uid aenv tp combine seed marr = do
     gd  <- int =<< gridDim
 
     -- iterate over thread-block wide segments
+    -- Note that 'end' is a multiple of the gd', and the control flow is thus uniform in the loop.
+    -- This is set in scan'AllOp in Data.Array.Accelerate.LLVM.PTX.Execute.
+    -- Hence we can run __syncthreads safely.
     imapFromStepTo bid gd end $ \seg -> do
 
       -- Make sure all threads have finished previous iterations,
@@ -641,12 +646,7 @@ mkScan'AllP2 dir uid aenv tp combine = do
       x0 <- if (tp, valid i0)
               then readArray TypeInt arrTmp i0
               else
-                let go :: TypeR a -> Operands a
-                    go TupRunit       = OP_Unit
-                    go (TupRpair a b) = OP_Pair (go a) (go b)
-                    go (TupRsingle t) = ir t (undef t)
-                in
-                return $ go tp
+                return $ tupUndef tp
 
       x1 <- if (tp, A.gt singleType offset (liftInt 0) `A.land'` A.eq singleType tid (liftInt32 0))
               then do
@@ -825,6 +825,12 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
     gd  <- int =<< gridDim
     end <- shapeSize shr (indexTail (irArrayShape arrOut))
 
+    -- Iterate over the outer dimensions (all but the innermost dimension).
+    -- Within this loop we perform a scan over a row (innermost dimension) of
+    -- the input.
+    --
+    -- Since 'bid', 'gd' and 'end' are uniform, the control flow within this
+    -- loop is also uniform. We can thus perform __syncthreads in the loop.
     imapFromStepTo bid gd end $ \seg -> do
 
       -- Make sure all threads have finished previous iterations,
@@ -889,12 +895,19 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
             return $ A.trip sz i0 j1
 
           Nothing -> do
+            -- We cannot call scanBlock under non-uniform control flow.
+            -- Instead, we conditionally read the input, and then
+            -- unconditionally call scanBlock.
+            x0 <- if (tp, A.lt singleType tid' sz)
+                   then app1 (delayedLinearIndex arrIn) i0
+                   else return $ tupUndef tp
+            n' <- i32 sz
+
+            r0 <- if (tp, A.gte singleType sz bd')
+                    then scanBlock dir dev tp combine Nothing   x0
+                    else scanBlock dir dev tp combine (Just n') x0
+
             when (A.lt singleType tid' sz) $ do
-              n' <- i32 sz
-              x0 <- app1 (delayedLinearIndex arrIn) i0
-              r0 <- if (tp, A.gte singleType sz bd')
-                      then scanBlock dir dev tp combine Nothing   x0
-                      else scanBlock dir dev tp combine (Just n') x0
               writeArray TypeInt arrOut j0 r0
 
               ll <- A.sub numType bd (liftInt32 1)
@@ -907,6 +920,11 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
             return $ A.trip n1 i1 j1
 
       -- Iterate over the remaining elements in this segment
+      -- The loop condition uses the first triple of the state, 'n'.
+      -- This variable is uniform (the same for all threads in the thread
+      -- block), since it is initialized as 'sz' or 'sz - bd', and lowered by
+      -- 'bd' each iteration. Hence the control flow in this loop is uniform,
+      -- and we can thus call __syncthreads within the loop.
       void $ while
         (TupRunit `TupRpair` TupRsingle scalarTypeInt `TupRpair` TupRsingle scalarTypeInt `TupRpair` TupRsingle scalarTypeInt)
         (\(A.fst3   -> n)       -> A.gt singleType n (liftInt 0))
@@ -924,13 +942,7 @@ mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
           --
           x <- if (tp, A.lt singleType tid' n)
                  then app1 (delayedLinearIndex arrIn) i
-                 else let
-                          go :: TypeR a -> Operands a
-                          go TupRunit       = OP_Unit
-                          go (TupRpair a b) = OP_Pair (go a) (go b)
-                          go (TupRsingle t) = ir t (undef t)
-                      in
-                      return $ go tp
+                 else return $ tupUndef tp
 
           -- Thread zero incorporates the carry-in element
           y <- if (tp, A.eq singleType tid (liftInt32 0))
@@ -1139,13 +1151,7 @@ mkScan'Dim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
                                           return x
                                 return y
                               else
-                                let
-                                    go :: TypeR a -> Operands a
-                                    go TupRunit       = OP_Unit
-                                    go (TupRpair a b) = OP_Pair (go a) (go b)
-                                    go (TupRsingle t) = ir t (undef t)
-                                in
-                                return $ go tp
+                                return $ tupUndef tp
 
                       l <- i32 n
                       y <- scanBlock dir dev tp combine (Just l) x
@@ -1197,6 +1203,8 @@ mkScan'Fill uid aenv repr seed =
 -- Block wide scan
 -- ---------------
 
+-- Must be called under uniform control flow within a thread block
+-- (as this function may use __syncthreads)
 scanBlock
     :: forall aenv e.
        Direction
@@ -1464,6 +1472,11 @@ scanWarpShfl dir dev tp combine = scan 0
                       return x
 
           scan (step+1) x'
+
+tupUndef :: TypeR a -> Operands a
+tupUndef TupRunit       = OP_Unit
+tupUndef (TupRpair a b) = OP_Pair (tupUndef a) (tupUndef b)
+tupUndef (TupRsingle t) = ir t (undef t)
 
 -- Utilities
 -- ---------
