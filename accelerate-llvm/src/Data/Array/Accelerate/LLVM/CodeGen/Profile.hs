@@ -36,7 +36,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
 
 import Data.Array.Accelerate.Sugar.Elt
-import Data.Array.Accelerate.Debug.Internal                         ( debuggingIsEnabled, SrcLoc, Zone )
+import Data.Array.Accelerate.Debug.Internal                         ( tracyIsEnabled, SrcLoc, Zone )
 
 import Control.Monad
 import Data.Char
@@ -131,7 +131,7 @@ alloc_srcloc_name
     -> String   -- name
     -> CodeGen arch (Operands SrcLoc)
 alloc_srcloc_name l src fun nm
-  | not debuggingIsEnabled = return (constant (eltR @SrcLoc) 0)
+  | not tracyIsEnabled = return (constant (eltR @SrcLoc) 0)
   | otherwise              = do
       (s, sl) <- global_string src
       (f, fl) <- global_string fun
@@ -162,7 +162,7 @@ zone_begin
     -> Word32   -- colour
     -> CodeGen arch (Operands Zone)
 zone_begin line src fun name colour
-  | not debuggingIsEnabled = return (constant (eltR @SrcLoc) 0)
+  | not tracyIsEnabled = return (constant (eltR @SrcLoc) 0)
   | otherwise              = do
       srcloc <- source_location_data name fun src line colour
       let srcloc_ty = PtrPrimType (NamedPrimType "___tracy_source_location_data") defaultAddrSpace
@@ -179,7 +179,7 @@ zone_begin_alloc
     -> Word32   -- colour
     -> CodeGen arch (Operands Zone)
 zone_begin_alloc line src fun name colour
-  | not debuggingIsEnabled = return (constant (eltR @Zone) 0)
+  | not tracyIsEnabled = return (constant (eltR @Zone) 0)
   | otherwise              = do
       srcloc <- alloc_srcloc_name line src fun name
       zone   <- call' $ Lam primType (op primType srcloc)
@@ -195,7 +195,7 @@ zone_end
     :: Operands Zone
     -> CodeGen arch ()
 zone_end zone
-  | not debuggingIsEnabled = return ()
+  | not tracyIsEnabled = return ()
   | otherwise              =
       void . call' $ Lam primType (op primType zone)
                    $ Body VoidType (Just Tail) "___tracy_emit_zone_end"

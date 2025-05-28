@@ -16,7 +16,7 @@ module Data.Array.Accelerate.LLVM.Native.Link.Cache (
 
 ) where
 
-import Data.Array.Accelerate.Debug.Internal                         ( debuggingIsEnabled )
+import Data.Array.Accelerate.Debug.Internal                         ( tracyIsEnabled )
 
 import Data.Array.Accelerate.LLVM.Native.Link.Object
 import qualified Data.Array.Accelerate.LLVM.Link.Cache              as LC
@@ -35,7 +35,7 @@ new :: IO LinkCache
 new = do
   -- For whatever reason ghci isn't adding library dependencies to the
   -- dynamic link state, which means that dynamic linking will fail in
-  -- debugging mode because we depend on tracy symbols exported by the
+  -- tracy mode because we depend on tracy symbols exported by the
   -- accelerate library. This brings those symbols into scope so that they
   -- can be found by later calls to dlsym().
   --
@@ -47,7 +47,11 @@ new = do
   -- Accelerate library) causes segfaults; possibly because the RTS was
   -- otherwise linked statically into the executable.
   --
-  when debuggingIsEnabled $ void $
+  -- Because the accelerate library lives somewhere in ~/.cabal/..., this
+  -- hack prevents executables from running on any other machine than the
+  -- one they were built on. Fortunately, this happens only in tracy mode.
+  --
+  when tracyIsEnabled $ void $
 #if defined(mingw32_HOST_OS)
     loadLibrary ACCELERATE_DYLD_LIBRARY_PATH
 #else

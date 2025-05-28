@@ -691,7 +691,7 @@ loadSymbol Peek{..} strtab = do
 resolveSymbol :: ByteString -> Get (FunPtr ())
 resolveSymbol name
   -- static addresses of profiling hooks
-  | Debug.debuggingIsEnabled
+  | Debug.tracyIsEnabled
   , "___tracy" `B8.isPrefixOf` name
   = case HashMap.lookup name Tracy.symtab of
       Nothing   -> fail $ printf "failed to resolve symbol %s" (B8.unpack name)
