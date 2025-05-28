@@ -167,12 +167,16 @@ compileOpenAcc = traverseAcc
         Map _ f a
           | Just (t,x) <- unzip f a -> plain $ pure (AST.Unzip t x)
 
-        -- Skeleton operations resulting in compiled code
+        -- Skeleton operations resulting in compiled code.
+        -- Important: AST fragments that accelerate:DAA.Analysis.Hash ignores,
+        -- must also be ignored here! Otherwise kernels with different aenvs
+        -- get the same hash. These fragments are ignored using ignoreE.
+
         -- Producers
         Map tp f a                  -> build =<< liftA2 (map tp)      <$> travF f  <*> travA a
-        Generate r sh f             -> build =<< liftA2 (generate r)  <$> travE sh <*> travF f
-        Transform r sh p f a        -> build =<< liftA4 (transform r) <$> travE sh <*> travF p <*> travF f <*> travA a
-        Backpermute shr sh f a      -> build =<< liftA3 (backpermute shr) <$> travE sh <*> travF f <*> travA a
+        Generate r sh f             -> build =<< liftA2 (generate r)  <$> ignoreE sh <*> travF f
+        Transform r sh p f a        -> build =<< liftA4 (transform r) <$> ignoreE sh <*> travF p <*> travF f <*> travA a
+        Backpermute shr sh f a      -> build =<< liftA3 (backpermute shr) <$> ignoreE sh <*> travF f <*> travA a
 
         -- Consumers
         Fold f z a                  -> build =<< liftA3 fold          <$> travF f <*> travME z <*> travD a
@@ -267,6 +271,11 @@ compileOpenAcc = traverseAcc
         travB Wrap         = return $ pure Wrap
         travB (Constant c) = return $ pure (Constant c)
         travB (Function f) = liftA Function <$> travF f
+
+        ignoreE :: HasCallStack
+                => OpenExp env aenv e
+                -> LLVM arch (IntMap (Idx' aenv), OpenExp env aenv e)
+        ignoreE exp = return $ pure exp
 
         build :: (IntMap (Idx' aenv), AST.PreOpenAccSkeleton CompiledOpenAcc arch aenv arrs)
               -> LLVM arch (CompiledOpenAcc arch aenv arrs)
