@@ -5,8 +5,8 @@ packages:
 
 source-repository-package
     type:     git
-    location: https://github.com/tmcdonell/accelerate.git
-    tag:      f9eb010ed267357ae0e23d7ddf98186ef2ff5034
+    location: https://github.com/AccelerateHS/accelerate.git
+    tag:      40a7e2ac8823304e9a3317a31ef39c91e05821a5
     -- Required for Cabal < 3.8
     -- post-checkout-command: bash -c "! git submodule update --init --recursive"
 

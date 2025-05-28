@@ -15,7 +15,6 @@ module Data.Array.Accelerate.LLVM.State
   where
 
 -- library
-import Control.Concurrent                               ( forkIO, threadDelay )
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )
 import Control.Monad.State                              ( StateT, MonadState, evalStateT )
 import Control.Monad.Trans                              ( MonadIO )
@@ -44,16 +43,16 @@ evalLLVM target acc =
   evalStateT (runLLVM acc) target
 
 
--- | Make sure the GC knows that we want to keep this thing alive forever.
---
--- We may want to introduce some way to actually shut this down if, for example,
--- the object has not been accessed in a while (whatever that means).
---
--- Broken in ghci-7.6.1 Mac OS X due to bug #7299.
---
-keepAlive :: a -> IO a
-keepAlive x = forkIO (caffeine x) >> return x
-  where
-    caffeine hit = do threadDelay (5 * 1000 * 1000) -- microseconds = 5 seconds
-                      caffeine hit
+-- -- | Make sure the GC knows that we want to keep this thing alive forever.
+-- --
+-- -- We may want to introduce some way to actually shut this down if, for example,
+-- -- the object has not been accessed in a while (whatever that means).
+-- --
+-- -- Broken in ghci-7.6.1 Mac OS X due to bug #7299.
+-- --
+-- keepAlive :: a -> IO a
+-- keepAlive x = forkIO (caffeine x) >> return x
+--   where
+--     caffeine hit = do threadDelay (5 * 1000 * 1000) -- microseconds = 5 seconds
+--                       caffeine hit
 
