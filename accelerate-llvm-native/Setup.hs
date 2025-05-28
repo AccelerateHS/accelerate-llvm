@@ -27,6 +27,7 @@ main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
   { postConf    = postConfHook
   , preBuild    = readHook buildVerbosity
+  , preRepl     = readHook replVerbosity
   , preCopy     = readHook copyVerbosity
   , preInst     = readHook installVerbosity
   , preHscolour = readHook hscolourVerbosity
