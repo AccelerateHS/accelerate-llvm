@@ -43,6 +43,8 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import Foreign.CUDA.Path                                            ( cudaInstallPath )
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
+import qualified LLVM.AST.Type.Name                                 as LLVM
+
 import qualified Text.LLVM                                          as LP
 import qualified Text.LLVM.PP                                       as LP
 import qualified Text.PrettyPrint                                   as Pretty
@@ -136,6 +138,7 @@ compile pacc aenv = do
         let unoptimisedText = Pretty.renderStyle
                                 Pretty.style { Pretty.lineLength = maxBound `div` 2 }
                                 (LP.ppLLVM llvmver (LP.ppModule ast))
+                              ++ "\n\n" ++ accPreludePTX
         Debug.when Debug.verbose $ do
           Debug.traceM Debug.dump_cc ("Unoptimised LLVM IR:\n" % string) unoptimisedText
 
@@ -256,3 +259,13 @@ filterClangStderr = unlines . filter (not . isShflSyncWarn) . lines
       in takeWhile (/= ' ') presemi == "ptxas" &&
            postsemi == "; warning : Instruction 'shfl' without '.sync' is deprecated since " ++
                        "PTX ISA version 6.0 and will be discontinued in a future PTX ISA version"
+
+accPreludePTX :: String
+accPreludePTX = unlines
+  -- see Data.Array.Accelerate.LLVM.PTX.CodeGen.Base.nanosleep for why this is a hand-written function
+  ["define private void @" ++ name_nanosleep ++ "(i32 noundef %0) alwaysinline convergent nounwind {"
+  ,"  tail call void asm sideeffect \"nanosleep.u32 $0;\", \"r\"(i32 %0)"
+  ,"  ret void"
+  ,"}"]
+  where
+    name_nanosleep = let LLVM.Label name = LLVM.makeAccPreludeLabel "nanosleep" in SBS8.unpack name

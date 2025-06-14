@@ -18,6 +18,7 @@ module LLVM.AST.Type.Name
   where
 
 import Data.ByteString.Short                                        ( ShortByteString )
+import qualified Data.ByteString.Short                              as SBS
 import qualified Data.ByteString.Short.Char8                        as SBS8
 import Data.Data
 import Data.Semigroup
@@ -87,6 +88,20 @@ instance Monoid Label where
 
 instance Hashable Label where
   hashWithSalt salt (Label sbs) = hashWithSalt salt sbs
+
+-- | Some names are not external function references but instead references to
+-- definitions that we provide inline in the module to be compiled by LLVM. See
+-- 'Data.Array.Accelerate.LLVM.CodeGen.Base.call' for more details. This
+-- function checks whether the given label is one of those inline-provided
+-- functions.
+labelIsAccPrelude :: Label -> Bool
+labelIsAccPrelude (Label x) = SBS.take (SBS.length prefix) x == prefix
+  where Label prefix = makeAccPreludeLabel SBS.empty
+
+-- | Create a reference to an inline-provided function. See
+-- 'labelIsAccPrelude'.
+makeAccPreludeLabel :: ShortByteString -> Label
+makeAccPreludeLabel s = Label (SBS8.pack "accprelude_" <> s)
 
 
 -- | Convert to llvm-pretty

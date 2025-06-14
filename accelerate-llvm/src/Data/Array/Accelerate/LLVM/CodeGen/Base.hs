@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -45,6 +46,7 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.CodeGen.Environment
 import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Monad
@@ -196,24 +198,41 @@ travTypeToOperands tp f = snd $ go tp 0
 -- Function parameters
 -- -------------------
 
--- | Call a global function. The function declaration is inserted into the
--- symbol table.
+-- | Call a global function.
+--
+-- If the function being called has a special prefix (see 'labelIsAccPrelude'),
+-- the call instruction is generated as-is; otherwise (the common case), a
+-- function declaration is also inserted into the symbol table, resulting in a
+-- 'declare' statement in the LLVM module. A special prelude function is
+-- currently not allowed to have any function attributes.
+--
+-- TODO: The original llvm-hs code put function attributes both on the external
+-- function declaration and on the call instruction; this code puts them only
+-- on the declaration. We should compare LLVM IR / benchmark to see if this is
+-- an issue (@llvm-pretty@ does not yet support function attributes on call
+-- instructions).
 --
 call :: GlobalFunction args t -> [FunctionAttribute] -> CodeGen arch (Operands t)
 call f attrs = do
   let decl      = (downcast f) { LP.decAttrs = downcast attrs }
       --
-      go :: GlobalFunction args t -> Function (Either InlineAssembly Label) args t
-      go (Body t k l) = Body t k (Right l)
-      go (Lam t x l)  = Lam t x (go l)
+      go :: GlobalFunction args t -> (Label, Function (Either InlineAssembly Label) args t)
+      go (Body t k l) = (l, Body t k (Right l))
+      go (Lam t x l)  = Lam t x <$> go l
   --
-  declareExternFunc decl
+  let (lab, f') = go f
+  if labelIsAccPrelude lab
+    then case attrs of
+           [] -> return ()
+           _ -> internalError "Function attributes passed to a call to an acc prelude LLVM function"
+    else declareExternFunc decl
+
   -- TODO: this only puts the attributes on the external function declaration,
   -- not on the call instruction. The original llvm-hs code also put them on
   -- the call instruction. Should compare LLVM IR / benchmark to see if this is
   -- an issue (llvm-pretty does not yet support function attributes on call
   -- instructions).
-  instr (Call (go f))
+  instr (Call f')
 
 
 parameter :: TypeR t -> Name t -> [LP.Typed LP.Ident]
