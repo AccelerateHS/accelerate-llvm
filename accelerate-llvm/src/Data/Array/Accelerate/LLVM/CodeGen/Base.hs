@@ -227,11 +227,6 @@ call f attrs = do
            _ -> internalError "Function attributes passed to a call to an acc prelude LLVM function"
     else declareExternFunc decl
 
-  -- TODO: this only puts the attributes on the external function declaration,
-  -- not on the call instruction. The original llvm-hs code also put them on
-  -- the call instruction. Should compare LLVM IR / benchmark to see if this is
-  -- an issue (llvm-pretty does not yet support function attributes on call
-  -- instructions).
   instr (Call f')
 
 
