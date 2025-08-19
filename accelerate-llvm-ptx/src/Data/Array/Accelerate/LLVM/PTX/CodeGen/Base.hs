@@ -681,8 +681,8 @@ initialiseDynamicSharedMemory = do
 -- with enough space to contain the given number of elements.
 --
 dynamicSharedMem
-    :: forall e int.
-       TypeR e
+    :: forall e int. (Bits int, Integral int)
+    => TypeR e
     -> IntegralType int
     -> Operands int                                 -- number of array elements
     -> Operands int                                 -- #bytes of shared memory the have already been allocated
@@ -699,7 +699,12 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i1, p1) <- go t1 i0
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
-        go (TupRsingle t)   i  = do
+        go (TupRsingle t)   i''  = do
+          let shft = P.ceiling (P.logBase 2 $ P.fromIntegral (bytesElt (TupRsingle t)) :: Float)
+              addend = Data.Bits.shiftL (1 :: int) shft - 1
+              mask = Data.Bits.complement addend
+          i' <- instr' $ Add numTp i'' $ A.integral int addend
+          i <- instr' $ BAnd int i' $ A.integral int mask
 #if MIN_VERSION_llvm_hs(15,0,0)
           p <- instr' $ GetElementPtr scalarType smem [i]
 #else
