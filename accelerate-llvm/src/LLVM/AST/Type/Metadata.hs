@@ -18,7 +18,7 @@ module LLVM.AST.Type.Metadata
 
 import LLVM.AST.Type.Downcast
 
-import qualified Text.LLVM                                as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty as LLVM
 
 import Data.ByteString.Short                              ( ShortByteString )
 import qualified Data.ByteString.Short.Char8              as SBS8

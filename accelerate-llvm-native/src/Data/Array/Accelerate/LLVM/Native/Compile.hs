@@ -36,8 +36,8 @@ import Data.Array.Accelerate.LLVM.Native.Foreign                    ( )
 import Data.Array.Accelerate.LLVM.Native.Target
 import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
-import qualified Text.LLVM                                          as P
-import qualified Text.LLVM.PP                                       as P
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as P
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as P
 import qualified Text.PrettyPrint                                   as P ( render )
 
 import Control.Applicative

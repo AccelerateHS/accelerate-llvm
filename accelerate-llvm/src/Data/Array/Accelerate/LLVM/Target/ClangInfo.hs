@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeApplications #-}
 module Data.Array.Accelerate.LLVM.Target.ClangInfo where
 
-import qualified Text.LLVM.PP                                       as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as LP
 
 -- standard library
 import qualified Control.Exception                                  as E

@@ -32,8 +32,8 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 
 -- import qualified LLVM.AST.Type                                      as LLVM
-import qualified Text.LLVM                                          as LLVM
-import Text.LLVM                                                    ( AddrSpace(..), defaultAddrSpace )
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
+import Data.Array.Accelerate.LLVM.Internal.LLVMPretty               ( AddrSpace(..), defaultAddrSpace )
 
 import Data.List
 import Data.Text.Lazy.Builder

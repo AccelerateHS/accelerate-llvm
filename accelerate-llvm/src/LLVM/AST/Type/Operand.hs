@@ -23,7 +23,7 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
 
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 
 -- | An 'Operand' is roughly anything that is an argument to an 'Instruction'

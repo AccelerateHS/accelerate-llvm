@@ -27,7 +27,7 @@ import Data.String
 import Data.Word
 import Prelude
 
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 
 -- | Objects of various sorts in LLVM IR are identified by address in the LLVM

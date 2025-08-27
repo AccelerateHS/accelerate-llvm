@@ -56,7 +56,7 @@ import Data.Array.Accelerate.Representation.Shape
 import Data.Array.Accelerate.Representation.Type
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.CodeGen.Exp
 
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Data.Monoid
 import Data.String

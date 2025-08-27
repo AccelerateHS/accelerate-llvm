@@ -86,7 +86,7 @@ import LLVM.AST.Type.Metadata
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Control.Applicative
 import Control.Monad                                                ( void )

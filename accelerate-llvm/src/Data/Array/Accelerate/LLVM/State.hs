@@ -18,7 +18,7 @@ module Data.Array.Accelerate.LLVM.State
 import Data.Array.Accelerate.LLVM.Target.ClangInfo
 
 -- llvm-pretty
-import qualified Text.LLVM.PP                           as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP as LP
 
 -- standard library
 import Control.Monad.Catch                              ( MonadCatch, MonadThrow, MonadMask )

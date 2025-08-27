@@ -26,7 +26,7 @@ import LLVM.AST.Type.Representation
 -- import qualified LLVM.AST.Attribute                                 as LLVM
 -- import qualified LLVM.AST.Global                                    as LLVM
 -- import qualified LLVM.AST.Instruction                               as LLVM
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 
 -- | Attributes for the function call instruction

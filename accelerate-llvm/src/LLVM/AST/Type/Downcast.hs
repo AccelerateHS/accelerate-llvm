@@ -22,7 +22,7 @@ module LLVM.AST.Type.Downcast (
 
 import Data.Array.Accelerate.Type
 -- import qualified LLVM.AST.Type                                      as LLVM
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 import Data.Bits
 

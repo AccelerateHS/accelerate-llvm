@@ -42,7 +42,7 @@ import Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 import Data.Array.Accelerate.LLVM.Native.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Control.Monad
 

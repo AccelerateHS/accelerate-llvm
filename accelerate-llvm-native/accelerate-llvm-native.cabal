@@ -134,7 +134,7 @@ Library
         , libffi                        >= 0.1
         -- , llvm-hs                       >= 4.1 && < 16
         -- , llvm-hs-pure                  >= 4.1 && < 16
-        , llvm-pretty                   >= 0.12
+        -- , llvm-pretty                   >= 0.12
         , lockfree-queue                >= 0.2
         , mtl                           >= 2.2.1
           -- only used to render llvm-pretty output

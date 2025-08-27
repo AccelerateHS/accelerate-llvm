@@ -149,7 +149,7 @@ Library
         , hashable                      >= 1.1
         -- , llvm-hs                       >= 4.1 && < 16
         -- , llvm-hs-pure                  >= 4.1 && < 16
-        , llvm-pretty                   >= 0.12
+        -- , llvm-pretty                   >= 0.12
         , mtl                           >= 2.0
         , primitive                     >= 0.6.4
         , process
@@ -157,6 +157,38 @@ Library
         , text                          >= 1.2
         , unordered-containers          >= 0.2
         , vector                        >= 0.10
+
+  -- Expose the modules from the (forked and edited) llvm-pretty here under a
+  -- namespace prefix. We need these modules in accelerate-llvm-native and
+  -- accelerate-llvm-ptx, so we must expose them publically, unfortunately.
+  build-depends: llvm-pretty-accfork
+  reexported-modules:
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.AST,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Labels,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Labels.TH,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Lens,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Parser,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.DebugUtils,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.AST,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Parse,
+    Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Print
+  mixins:
+    llvm-pretty-accfork
+      (Text.LLVM              as Data.Array.Accelerate.LLVM.Internal.LLVMPretty,
+       Text.LLVM.AST          as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.AST,
+       Text.LLVM.Labels       as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Labels,
+       Text.LLVM.Labels.TH    as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Labels.TH,
+       Text.LLVM.Lens         as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Lens,
+       Text.LLVM.Parser       as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Parser,
+       Text.LLVM.PP           as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP,
+       Text.LLVM.DebugUtils   as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.DebugUtils,
+       Text.LLVM.Triple       as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple,
+       Text.LLVM.Triple.AST   as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.AST,
+       Text.LLVM.Triple.Parse as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Parse,
+       Text.LLVM.Triple.Print as Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Print)
 
   hs-source-dirs:
         src
@@ -176,6 +208,39 @@ Library
   if impl(ghc >= 8.0)
     ghc-options:
         -Wmissed-specialisations
+
+-- Abridged from llvm-pretty.cabal
+library llvm-pretty-accfork
+  default-language: Haskell2010
+  ghc-options: -Wall
+
+  hs-source-dirs:      llvm-pretty/src
+  exposed-modules:     Text.LLVM
+                       Text.LLVM.AST
+                       Text.LLVM.Labels
+                       Text.LLVM.Labels.TH
+                       Text.LLVM.Lens
+                       Text.LLVM.Parser
+                       Text.LLVM.PP
+                       Text.LLVM.DebugUtils
+                       Text.LLVM.Triple
+                       Text.LLVM.Triple.AST
+                       Text.LLVM.Triple.Parse
+                       Text.LLVM.Triple.Print
+  other-modules:       Text.LLVM.Triple.Parse.ARM
+                       Text.LLVM.Triple.Parse.LookupTable
+                       Text.LLVM.Util
+
+  build-depends:       base             >= 4.11 && < 5,
+                       containers       >= 0.4,
+                       parsec           >= 3,
+                       pretty           >= 1.0.1,
+                       monadLib         >= 3.6.1,
+                       microlens        >= 0.4,
+                       microlens-th     >= 0.4,
+                       syb              >= 0.7,
+                       template-haskell >= 2.7,
+                       th-abstraction   >= 0.3.1 && <0.8
 
 source-repository head
   type:                 git

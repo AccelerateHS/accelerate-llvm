@@ -45,8 +45,8 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import qualified LLVM.AST.Type.Name                                 as LLVM
 
-import qualified Text.LLVM                                          as LP
-import qualified Text.LLVM.PP                                       as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as LP
 import qualified Text.PrettyPrint                                   as Pretty
 
 import Control.Monad                                                ( when )

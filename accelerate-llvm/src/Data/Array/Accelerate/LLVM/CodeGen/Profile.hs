@@ -28,7 +28,7 @@ import LLVM.AST.Type.Global
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Data.Array.Accelerate.LLVM.CodeGen.Base
 import Data.Array.Accelerate.LLVM.CodeGen.Constant

@@ -27,7 +27,7 @@ import Data.Array.Accelerate.LLVM.Native.Target                     ( Native )
 import Data.Array.Accelerate.Representation.Shape
 
 import LLVM.AST.Type.Name
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Data.String
 import qualified Data.ByteString.Short.Char8                        as S8

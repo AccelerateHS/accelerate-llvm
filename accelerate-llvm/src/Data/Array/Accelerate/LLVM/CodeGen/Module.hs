@@ -13,7 +13,7 @@
 module Data.Array.Accelerate.LLVM.CodeGen.Module
   where
 
-import qualified Text.LLVM                                as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty as LLVM
 
 import Data.Map.Strict                                    ( Map )
 

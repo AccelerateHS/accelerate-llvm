@@ -24,7 +24,7 @@ import LLVM.AST.Type.GetElementPtr
 import LLVM.AST.Type.Name
 import LLVM.AST.Type.Representation
 
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 import Data.Constraint
 import Data.Primitive.ByteArray

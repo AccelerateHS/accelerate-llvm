@@ -41,7 +41,7 @@ import Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 import Data.Array.Accelerate.LLVM.PTX.CodeGen.Loop
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX )
 
-import qualified Text.LLVM.AST                                      as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.AST as LP
 
 import Control.Monad
 

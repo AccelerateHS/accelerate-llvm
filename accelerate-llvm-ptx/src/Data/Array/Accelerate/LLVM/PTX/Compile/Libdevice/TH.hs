@@ -19,8 +19,8 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH (
 
 ) where
 
-import qualified Text.LLVM.AST                                      as LP
-import qualified Text.LLVM.Triple.Parse                             as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.AST as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Parse as LP
 
 import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Representation

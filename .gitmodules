@@ -1,0 +1,3 @@
+[submodule "accelerate-llvm/llvm-pretty"]
+	path = accelerate-llvm/llvm-pretty
+	url = https://github.com/tomsmeding/llvm-pretty

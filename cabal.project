@@ -12,10 +12,5 @@ source-repository-package
 
 source-repository-package
     type:     git
-    location: https://github.com/tomsmeding/llvm-pretty.git
-    tag:      a253a7fc1c62f4825ffce6b2507eebc5dadff32c
-
-source-repository-package
-    type:     git
     location: https://github.com/noahmartinwilliams/cuda.git
     tag:      9036603012818805984e01b774dd0f5758f65bf0

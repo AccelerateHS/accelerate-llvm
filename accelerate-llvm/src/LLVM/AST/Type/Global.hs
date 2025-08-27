@@ -21,7 +21,7 @@ import LLVM.AST.Type.Downcast
 import LLVM.AST.Type.Function
 import LLVM.AST.Type.Name
 
-import qualified Text.LLVM                                          as LLVM
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LLVM
 
 
 -- | An external global function definition.

@@ -22,7 +22,7 @@ module Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load (
 
 ) where
 
-import qualified Text.LLVM                                          as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.LLVM.PTX.Execute.Event                 ( ) -- GHC#1012

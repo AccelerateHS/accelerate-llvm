@@ -64,9 +64,9 @@ import LLVM.AST.Type.Name
 import LLVM.AST.Type.Operand
 import LLVM.AST.Type.Representation
 import LLVM.AST.Type.Terminator
-import qualified Text.LLVM                                          as LP
-import qualified Text.LLVM.PP                                       as LP
-import qualified Text.LLVM.Triple.Parse                             as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Parse as LP
 
 import Control.Applicative
 import Control.Monad

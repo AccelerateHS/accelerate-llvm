@@ -40,7 +40,7 @@ import LLVM.AST.Type.Instruction.Compare                  ( Ordering(..) )
 import LLVM.AST.Type.Instruction.RMW                      ( RMWOperation )
 import LLVM.AST.Type.Instruction.Volatile                 ( Volatility(..) )
 
-import qualified Text.LLVM                                as LP
+import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty as LP
 
 import Data.Array.Accelerate.AST                          ( PrimBool )
 import Data.Array.Accelerate.AST.Idx
