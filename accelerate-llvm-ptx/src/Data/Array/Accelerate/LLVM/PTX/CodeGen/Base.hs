@@ -40,10 +40,10 @@ module Data.Array.Accelerate.LLVM.PTX.CodeGen.Base (
 
   -- Warp shuffle instructions
   __shfl_up, __shfl_down, __shfl_idx, __broadcast,
-  canShfl,
 
   -- Shared memory
   staticSharedMem,
+  sharedMemorySizeAdd,
   dynamicSharedMem,
   sharedMemAddrSpace, sharedMemVolatility,
 
@@ -363,11 +363,6 @@ __shfl_idx = shfl Idx
 --
 __broadcast :: TypeR a -> Operands a -> CodeGen PTX (Operands a)
 __broadcast aR a = __shfl_idx aR a (liftWord32 0)
-
--- Warp shuffle instructions are available for compute capability >= 3.0
---
-canShfl :: DeviceProperties -> Bool
-canShfl dev = CUDA.computeCapability dev >= Compute 3 0
 
 
 shfl :: ShuffleOp
@@ -695,6 +690,24 @@ initialiseDynamicSharedMemory = do
                                  (ScalarConstant (scalarType @Int32) 0)
                                  (GEPArray (ScalarConstant (scalarType @Int32) 0) (GEPEmpty primType)))
 
+sharedMemorySizeAdd
+  :: TypeR e
+  -> Int -- number of array elements
+  -> Int -- #bytes of shared memory the have already been allocated
+  -> Int
+sharedMemorySizeAdd tp n i = case tp of
+  TupRunit -> i
+  TupRpair t2 t1 ->
+    -- First handle the second element of the tuple, then the first,
+    -- to match the behaviour of dynamicSharedMem
+    sharedMemorySizeAdd t2 n $ sharedMemorySizeAdd t1 n i
+  TupRsingle t ->
+    let
+      bytes = bytesElt tp
+      -- Align 'i' to the alignment of t
+      aligned = alignTo (scalarAlignment t) i
+    in
+      aligned + bytes * n
 
 -- Declare a new dynamically allocated array in the __shared__ memory space
 -- with enough space to contain the given number of elements.
@@ -719,10 +732,14 @@ dynamicSharedMem tp int n@(op int -> m) (op int -> offset)
           (i2, p2) <- go t2 i1
           return $ (i2, OP_Pair p2 p1)
         go (TupRsingle t)   i  = do
-          p <- instr' $ GetElementPtr (GEP1 scalarType smem i)
+          let bytes = bytesElt (TupRsingle t)
+          let align = scalarAlignment t
+          i' <- instr' $ Add numTp i (A.integral int $ P.fromIntegral $ align - 1)
+          aligned <- instr' $ BAnd int i' (A.integral int $ P.fromIntegral $ Data.Bits.complement $ align - 1)
+          p <- instr' $ GetElementPtr (GEP1 scalarType smem aligned)
           q <- instr' $ PtrCast (PtrPrimType (ScalarPrimType t) sharedMemAddrSpace) p
-          a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral (bytesElt (TupRsingle t))))
-          b <- instr' $ Add numTp i a
+          a <- instr' $ Mul numTp m (A.integral int (P.fromIntegral bytes))
+          b <- instr' $ Add numTp aligned a
           return (b, ir t (unPtr q))
     --
     (_, ad) <- go tp offset
@@ -822,3 +839,12 @@ makeKernel config name param kernel = do
     { kernelMetadata = KM_PTX config
     , unKernel       = define
     }
+
+scalarAlignment :: ScalarType t -> Int
+scalarAlignment t@(SingleScalarType _) = bytesElt (TupRsingle t)
+scalarAlignment (VectorScalarType (VectorType _ t)) = bytesElt (TupRsingle $ SingleScalarType t)
+
+-- Align 'ptr' to the given alignment.
+-- Assumes 'align' is a power of 2.
+alignTo :: Int -> Int -> Int
+alignTo align ptr = (ptr + align - 1) .&. Data.Bits.complement (align - 1)
