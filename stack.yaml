@@ -10,21 +10,10 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- cuda-0.11.0.1
-- nvvm-0.10.0.1
+- cuda-0.12.8.0
 
-- github: tmcdonell/accelerate
-  commit: f9eb010ed267357ae0e23d7ddf98186ef2ff5034
-
-- github: llvm-hs/llvm-hs
-  commit: e4b3cfa47e72f094ab109884f18acfc666b0fb7d  # llvm-15
-  # commit: 423220bffac4990d019fc088c46c5f25310d5a33  # llvm-12
-  subdirs:
-    - llvm-hs
-    - llvm-hs-pure
-
-- github: tomsmeding/llvm-pretty
-  commit: 3d0a8742a33c82daf1103728d6eed90e76c490eb
+- github: AccelerateHS/accelerate
+  commit: a35d10c869f8b2e4c6cdd8c20bfd5548e891d16e
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

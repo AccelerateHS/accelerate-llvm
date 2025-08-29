@@ -6,11 +6,6 @@ packages:
 source-repository-package
     type:     git
     location: https://github.com/AccelerateHS/accelerate.git
-    tag:      1e17796f4de7af4c7a96ec2ac73cc522f28930e0
+    tag:      a35d10c869f8b2e4c6cdd8c20bfd5548e891d16e
     -- Required for Cabal < 3.8
     -- post-checkout-command: bash -c "! git submodule update --init --recursive"
-
-source-repository-package
-    type:     git
-    location: https://github.com/noahmartinwilliams/cuda.git
-    tag:      9036603012818805984e01b774dd0f5758f65bf0
