@@ -28,8 +28,6 @@ features as well as report (or fix!) bugs on the [issue tracker][Issues].
    * [Homebrew](#homebrew)
    * [Debian/Ubuntu](#debianubuntu)
    * [Building from source](#building-from-source)
- * [Installing Accelerate-LLVM](#installing-accelerate-llvm)
-   * [libNVVM](#libNVVM)
 
 
 Dependencies
@@ -123,78 +121,3 @@ If your OS does not have an appropriate LLVM distribution available, you can als
      install_name_tool -id $PWD/libLLVM.dylib libLLVM.dylib
      install_name_tool -change '@rpath/libLLVM.dylib' $PWD/libLLVM.dylib libLTO.dylib
      ```
-
-
-Installing Accelerate-LLVM
---------------------------
-
-Once the dependencies are installed, we are ready to install `accelerate-llvm`.
-
-For example, installation using [`stack`](http://docs.haskellstack.org/en/stable/README.html)
-just requires you to point it to the appropriate configuration file:
-```sh
-$ stack setup
-$ stack install
-```
-
-Note that the version of [`llvm-hs`](https://hackage.haskell.org/package/llvm-hs)
-used must match the installed version of LLVM, which is currently 15.
-
-
-## libNVVM
-
-The `accelerate-llvm-ptx` backend can optionally be compiled to generate GPU
-code using the `libNVVM` library, rather than LLVM's inbuilt NVPTX code
-generator. `libNVVM` is a closed-source library distributed as part of the
-NVIDIA CUDA toolkit, and is what the `nvcc` compiler itself uses internally when
-compiling CUDA C code.
-
-Using `libNVVM` _may_ improve GPU performance compared to the code generator
-built in to LLVM. One difficulty with using it however is that since `libNVVM`
-is also based on LLVM, and typically lags LLVM by several releases, you must
-install `accelerate-llvm` with a "compatible" version of LLVM, which will depend
-on the version of the CUDA toolkit you have installed. The following table shows
-combinations which have been tested:
-
-|               | LLVM-3.3 | LLVM-3.4 | LLVM-3.5 | LLVM-3.8 | LLVM-3.9 | LLVM-4.0 | LLVM-5.0 | LLVM-6.0 | LLVM-7 | LLVM-8 | LLVM-9 |
-| ------------- | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :------: | :----: | :----: | :----: |
-| **CUDA-7.0**  | ⭕       | ❌       |          |          |          |          |          |          |        |        |        |
-| **CUDA-7.5**  |          | ⭕       | ⭕       | ❌       |          |          |          |          |        |        |        |
-| **CUDA-8.0**  |          |          | ⭕       | ⭕       | ❌       | ❌       |          |          |        |        |        |
-| **CUDA-9.0**  |          |          |          |          |          | ❌       | ❌       |          |        |        |        |
-| **CUDA-9.1**  |          |          |          |          |          |          |          |          |        |        |        |
-| **CUDA-9.2**  |          |          |          |          |          |          |          |          |        |        |        |
-| **CUDA-10.0** |          |          |          |          |          |          |          |          |        |        |        |
-| **CUDA-10.1** |          |          |          |          |          |          |          |          |        |        |        |
-
-Where ⭕ = Works, and ❌ = Does not work.
-
-The above table is incomplete! If you try a particular combination and find that
-it does or does not work, please let us know!
-
-Note that the above restrictions on CUDA and LLVM version exist _only_ if you
-want to use the NVVM component. Otherwise, you should be free to use any
-combination of CUDA and LLVM.
-
-Also note that `accelerate-llvm-ptx` itself currently requires at least LLVM-4.0.
-
-Using `stack`, either edit the `stack.yaml` and add the following section:
-
-```yaml
-flags:
-  accelerate-llvm-ptx:
-    nvvm: true
-```
-
-Or install using the following option on the command line:
-
-```sh
-$ stack install accelerate-llvm-ptx --flag accelerate-llvm-ptx:nvvm
-```
-
-If installing via `cabal`:
-
-```sh
-$ cabal install accelerate-llvm-ptx -fnvvm
-```
-

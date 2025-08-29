@@ -61,13 +61,6 @@ extra-source-files:
     README.md
 
 
--- Configuration flags
--- -------------------
-
-Flag nvvm
-  Default:              False
-  Description:          Use the NVVM library to generate optimised PTX
-
 -- Build configuration
 -- -------------------
 
@@ -112,9 +105,7 @@ Library
 
     Data.Array.Accelerate.LLVM.PTX.Compile
     Data.Array.Accelerate.LLVM.PTX.Compile.Cache
-    -- Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice
     Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load
-    -- Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.TH
 
     Data.Array.Accelerate.LLVM.PTX.Link
     Data.Array.Accelerate.LLVM.PTX.Link.Cache
@@ -143,7 +134,6 @@ Library
         , hashable                      >= 1.2
         -- , llvm-pretty                   >= 0.12
         , mtl                           >= 2.2.1
-        , nvvm                          >= 0.9
           -- only used to render llvm-pretty output
         , pretty
         , prettyprinter                 >= 1.7
@@ -179,10 +169,6 @@ Library
   if impl(ghc >= 8.0)
     ghc-options:
         -Wmissed-specialisations
-
-  if flag(nvvm)
-    cpp-options:
-        -DACCELERATE_USE_NVVM
 
 
 test-suite nofib-llvm-ptx
