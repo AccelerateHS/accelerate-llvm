@@ -23,6 +23,13 @@ description:
     * <https://developer.nvidia.com/cuda-downloads CUDA> (if using <https://hackage.haskell.org/package/accelerate-llvm-ptx accelerate-llvm-ptx>)
     .
     For installation instructions, see the <https://github.com/AccelerateHS/accelerate-llvm#readme README>.
+    .
+    This package includes (and exposes) a forked copy of
+    <https://hackage.haskell.org/package/llvm-pretty llvm-pretty> due to some
+    breaking changes needed to make accelerate-llvm work. Upstreaming these
+    changes is planned. This code (under
+    @Data.Array.Accelerate.LLVM.Internal.LLVMPretty@) is __not__ public API and
+    may disappear or change at any time.
 
 license:                BSD-3-Clause
 license-file:           LICENSE
