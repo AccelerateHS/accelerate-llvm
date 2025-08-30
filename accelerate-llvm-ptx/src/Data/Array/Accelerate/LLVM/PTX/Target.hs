@@ -20,15 +20,6 @@ module Data.Array.Accelerate.LLVM.PTX.Target (
 
 ) where
 
--- llvm-hs
--- import LLVM.AST.AddrSpace
--- import LLVM.AST.DataLayout
--- import LLVM.Target                                                  hiding ( Target )
--- import qualified LLVM.Target                                        as LLVM
--- import qualified LLVM.Relocation                                    as R
--- import qualified LLVM.CodeModel                                     as CM
--- import qualified LLVM.CodeGenOpt                                    as CGO
-
 -- accelerate
 import Data.Array.Accelerate.Error
 
@@ -41,20 +32,13 @@ import Data.Array.Accelerate.LLVM.PTX.Execute.Stream.Reservoir      ( Reservoir 
 import Data.Array.Accelerate.LLVM.PTX.Link.Cache                    ( KernelTable )
 
 -- CUDA
-import Foreign.CUDA.Analysis.Device                                 ( DeviceProperties, Compute(..), computeCapability )
+import Foreign.CUDA.Analysis.Device                                 ( DeviceProperties )
 
 -- standard library
-import Data.ByteString                                              ( ByteString )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.Primitive.ByteArray
-import Data.String
-import Debug.Trace
 import Foreign.C.String
 import Foreign.Ptr
-import System.IO.Unsafe
-import Text.Printf
-import qualified Data.Map                                           as Map
-import qualified Data.Set                                           as Set
 
 
 -- | The PTX execution target for NVIDIA GPUs.

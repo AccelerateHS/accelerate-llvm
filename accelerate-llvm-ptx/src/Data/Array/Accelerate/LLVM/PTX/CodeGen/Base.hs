@@ -291,37 +291,12 @@ __threadfence_grid = barrier "llvm.nvvm.membar.gl"
 --
 atomicAdd_f :: HasCallStack => FloatingType a -> Operand (Ptr a) -> Operand a -> CodeGen PTX ()
 atomicAdd_f t addr val = do
-  let (t_addr, t_val, _addrspace) =
-        case typeOf addr of
-          PrimType ta@(PtrPrimType (ScalarPrimType tv) (AddrSpace as))
-            -> (ta, tv, as)
-          _ -> internalError "unexpected operand type"
-
-      t_ret = PrimType (ScalarPrimType t_val)
-
   llvmver <- getLLVMversion
   if | llvmver >= 10 ->
          void . instr' $ AtomicRMW (FloatingNumType t) NonVolatile RMW.Add addr val (CrossThread, AcquireRelease)
 
      | otherwise ->
-         error "TODO: atomic fadd on llvm <10"
-     -- | 6 <= llvmver, llvmver < 9 ->
-     --     let _width :: Int
-     --         _width =
-     --           case t of
-     --             TypeHalf    -> 16
-     --             TypeFloat   -> 32
-     --             TypeDouble  -> 64
-     --         fun = fromString $ printf "llvm.nvvm.atomic.load.add.f%d.p%df%d" _width (_addrspace :: Word32) _width
-     --     in void $ call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) fun))) [NoUnwind]
-
-     -- | otherwise ->
-     --     let asm = case t of
-     --           -- assuming .address_size 64
-     --           TypeHalf   -> InlineAssembly "atom.add.noftz.f16  $0, [$1], $2;" "=c,l,c" True False ATTDialect
-     --           TypeFloat  -> InlineAssembly "atom.global.add.f32 $0, [$1], $2;" "=f,l,f" True False ATTDialect
-     --           TypeDouble -> InlineAssembly "atom.global.add.f64 $0, [$1], $2;" "=d,l,d" True False ATTDialect
-     --     in void $ instr (Call (Lam t_addr addr (Lam (ScalarPrimType t_val) val (Body t_ret (Just Tail) (Left asm)))) [Right NoUnwind])
+         internalError "LLVM < 10 not supported"
 
 
 -- Warp shuffle functions
