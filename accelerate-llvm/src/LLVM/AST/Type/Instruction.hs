@@ -557,7 +557,11 @@ instance Downcast (Instruction a) LP.Instr where
                   )
           trav (Body u k o) =
             case o of
-              Left asm -> error "TODO inline assembly"
+              Left _asm ->
+                internalError
+                  "Inline assembly should not be used as llvm-pretty does not \
+                  \support it. For a workaround, see the solution for nanosleep \
+                  \in Data.Array.Accelerate.LLVM.PTX.Compile."
               -- Left asm -> ([], [], downcast k, downcast u, Left  (downcast (LLVM.FunctionType ret argt False, asm)))
               Right n  -> ([], [], fromMaybe False (downcast k), downcast u, fmfFor u, LP.ValSymbol (labelToPrettyS n))
           trav (Lam t x l)  =
