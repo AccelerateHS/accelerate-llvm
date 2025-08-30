@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP                 #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE MultiWayIf          #-}
@@ -8,6 +7,7 @@
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE ViewPatterns        #-}
+{-# OPTIONS_GHC -Wno-orphans     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.CodeGen.Base
 -- Copyright   : [2014..2020] The Accelerate Team

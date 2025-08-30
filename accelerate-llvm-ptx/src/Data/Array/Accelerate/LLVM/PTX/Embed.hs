@@ -1,7 +1,6 @@
-{-# LANGUAGE CPP             #-}
 {-# LANGUAGE QuasiQuotes     #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Embed
 -- Copyright   : [2017..2020] The Accelerate Team

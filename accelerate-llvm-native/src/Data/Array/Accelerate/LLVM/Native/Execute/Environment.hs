@@ -1,4 +1,3 @@
-{-# LANGUAGE CPP   #-}
 {-# LANGUAGE GADTs #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.Execute.Environment

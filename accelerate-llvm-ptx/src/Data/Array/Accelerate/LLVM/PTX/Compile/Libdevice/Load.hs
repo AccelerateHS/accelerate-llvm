@@ -1,9 +1,4 @@
-{-# LANGUAGE CPP               #-}
--- {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
--- {-# LANGUAGE RecordWildCards   #-}
--- {-# LANGUAGE TemplateHaskell   #-}
--- {-# LANGUAGE TupleSections     #-}
 
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.PTX.Compile.Libdevice.Load

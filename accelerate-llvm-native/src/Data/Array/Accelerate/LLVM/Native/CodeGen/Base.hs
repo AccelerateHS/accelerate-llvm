@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# OPTIONS_GHC -Wno-orphans     #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.Native.CodeGen.Base
 -- Copyright   : [2015..2020] The Accelerate Team
