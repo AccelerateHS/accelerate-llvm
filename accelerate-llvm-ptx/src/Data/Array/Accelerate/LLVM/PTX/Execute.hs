@@ -709,6 +709,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
     future  <- new
     result  <- allocateRemote repr shOut
     parent  <- asks ptxStream
+    parentStartPoint <- liftPar (Event.waypoint parent)
 
     -- interior (no bounds checking)
     let paramsRinside = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRarray repr) `TupRpair` paramsR
@@ -719,6 +720,11 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
     -- and each other, as individually they will not saturate the device
     forM_ (stencilBorders (arrayRshape repr) shOut halo) $ \(u, v) ->
       fork $ do
+        -- synchronise with start of stencil computation, so that the arguments
+        -- are available
+        child <- asks ptxStream
+        liftIO (Event.after parentStartPoint child)
+
         -- launch in a separate stream
         let sh = trav (-) v u
         let paramsRborder = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRshape shr)
@@ -726,8 +732,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
                               `TupRpair` paramsR
         executeOp border gamma aenv shr sh paramsRborder (((u, sh), result), params)
 
-        -- synchronisation with main stream
-        child <- asks ptxStream
+        -- make remainder of the parent stream depend on the border results
         event <- liftPar (Event.waypoint child)
         ready <- liftIO  (Event.query event)
         if ready then return ()
