@@ -101,6 +101,7 @@ Library
         , deepseq                       >= 1.3
         , directory                     >= 1.0
         , dlist                         >= 0.6
+        , exceptions                    >= 0.10
         , file-embed                    >= 0.0.8
         , filepath                      >= 1.0
         , formatting                    >= 7.0

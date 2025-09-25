@@ -53,6 +53,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import qualified Foreign.CUDA.Driver                                as CUDA
 import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 
+import Control.Concurrent.MVar
 import Control.Monad
 import Control.Monad.Reader
 import Data.IORef
@@ -346,11 +347,11 @@ nonblocking !stream !action = do
   ready  <- liftIO (query event)
   if ready
     then do
-      future <- Future <$> liftIO (newIORef (Full result))
+      future <- Future <$> liftIO (newMVar (Full result))
       return (Nothing, future)
 
     else do
-      future <- Future <$> liftIO (newIORef (Pending event Nothing result))
+      future <- Future <$> liftIO (newMVar (Pending event Nothing [] result))
       return (Just event, future)
 
 {-# INLINE withLifetime #-}

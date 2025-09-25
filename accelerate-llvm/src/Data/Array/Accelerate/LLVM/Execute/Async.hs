@@ -62,6 +62,17 @@ class (Monad (Par arch), MonadIO (Par arch)) => Async arch where
   --
   liftPar :: HasCallStack => LLVM arch a -> Par arch a
 
+  -- | Produce a future which is linked to another future where the completion
+  -- status of this original future is reflected in the completion status of
+  -- this status-only future.
+  --
+  statusHandle :: HasCallStack => FutureR arch a -> Par arch (FutureR arch ())
+
+  -- | Check the completion of a Future without blocking and if it is Full
+  -- yield its contents, else return Nothing.
+  --
+  poll :: HasCallStack => FutureR arch a -> Par arch (Maybe a)
+
   -- | Read a value stored in a future, once it is available. This is blocking
   -- with respect to both the host and remote device.
   --
