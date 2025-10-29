@@ -51,7 +51,9 @@ import SysTools
 --
 -- This plugin is automatically installed when using runQ. In older versions of
 -- GHC, it was necessary to manually add the plugin using:
+--
 -- > ghc-options: -fplugin=Data.Array.Accelerate.LLVM.Native.Plugin
+--
 -- That is no longer needed.
 
 --
