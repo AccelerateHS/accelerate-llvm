@@ -82,7 +82,7 @@ jobs:
         if: matrix.sys.os == 'ubuntu-latest'
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get -y install clang cuda-12-9
           echo "LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64:/usr/local/cuda-12.9/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
@@ -229,7 +229,7 @@ jobs:
         if: matrix.sys.os == 'ubuntu-latest'
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get -y install clang cuda-12-9
           echo "LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64:/usr/local/cuda-12.9/nvvm/lib64:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
