@@ -50,7 +50,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.IR
 import Data.Array.Accelerate.LLVM.CodeGen.Intrinsic
 import Data.Array.Accelerate.LLVM.CodeGen.Module
 import Data.Array.Accelerate.LLVM.CodeGen.Sugar                     ( IROpenAcc(..) )
-import Data.Array.Accelerate.LLVM.State                             ( LLVM )
+import Data.Array.Accelerate.LLVM.State                             ( LLVM, getLLVMVer )
 import Data.Array.Accelerate.LLVM.Target
 import Data.Array.Accelerate.Representation.Tag
 import Data.Array.Accelerate.Representation.Type
@@ -70,7 +70,7 @@ import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.Triple.Parse as 
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Reader                                         ( ReaderT, MonadReader, runReaderT, ask, asks )
+import Control.Monad.Reader                                         ( ReaderT, MonadReader, runReaderT, asks )
 import Control.Monad.State
 import Data.ByteString.Short                                        ( ShortByteString )
 import qualified Data.ByteString.Short.Char8                        as SBS8
@@ -136,7 +136,7 @@ evalCodeGen
     => CodeGen arch (IROpenAcc arch aenv a)
     -> LLVM    arch (Module    arch aenv a)
 evalCodeGen ll = do
-  llvmver <- ask
+  llvmver <- getLLVMVer
   let context = CodeGenContext
         { codegenLLVMversion = llvmver }
   (IROpenAcc ks, st)   <- runStateT (runReaderT (runCodeGen ll) context)

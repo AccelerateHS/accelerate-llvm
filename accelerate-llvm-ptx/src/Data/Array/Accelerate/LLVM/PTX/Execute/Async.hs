@@ -37,7 +37,6 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Stream      as Stream
 
 import Control.Monad.Reader
-import Control.Monad.State
 import Data.IORef
 
 
@@ -71,11 +70,24 @@ data IVar a
     | Empty
 
 
+askParState :: Par PTX ParState
+askParState = Par ask
+
+asksParState :: (ParState -> a) -> Par PTX a
+asksParState f = Par (asks f)
+
+localParState :: (ParState -> ParState) -> Par PTX a -> Par PTX a
+localParState f (Par m) = Par (local f m)
+
+instance MonadReader PTX (Par PTX) where
+  ask = Par (lift ask)
+  local f (Par (ReaderT g)) = Par (ReaderT (\parstate -> local f (g parstate)))
+
 instance Async PTX where
   type FutureR PTX = Future
 
   newtype Par PTX a = Par { runPar :: ReaderT ParState (LLVM PTX) a }
-    deriving ( Functor, Applicative, Monad, MonadIO, MonadReader ParState, MonadState PTX )
+    deriving ( Functor, Applicative, Monad, MonadIO )
 
   {-# INLINEABLE new     #-}
   {-# INLINEABLE newFull #-}
@@ -85,14 +97,14 @@ instance Async PTX where
   {-# INLINEABLE spawn #-}
   spawn m = do
     s' <- liftPar Stream.create
-    r  <- local (const (s', Nothing)) m
+    r  <- localParState (const (s', Nothing)) m
     liftIO (Stream.destroy s')
     return r
 
   {-# INLINEABLE fork #-}
   fork m = do
     s' <- liftPar (Stream.create)
-    () <- local (const (s', Nothing)) m
+    () <- localParState (const (s', Nothing)) m
     liftIO (Stream.destroy s')
 
   -- When we call 'put' the actual work may not have been evaluated yet; get
@@ -101,8 +113,8 @@ instance Async PTX where
   --
   {-# INLINEABLE put #-}
   put (Future ref) v = do
-    stream <- asks ptxStream
-    kernel <- asks ptxKernel
+    stream <- asksParState ptxStream
+    kernel <- asksParState ptxKernel
     event  <- liftPar (Event.waypoint stream)
     ready  <- liftIO  (Event.query event)
     liftIO . modifyIORef' ref $ \case
@@ -117,7 +129,7 @@ instance Async PTX where
   --
   {-# INLINEABLE get #-}
   get (Future ref) = do
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     liftIO  $ do
       ivar <- readIORef ref
       case ivar of
