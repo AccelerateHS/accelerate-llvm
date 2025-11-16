@@ -45,7 +45,7 @@ import LLVM.AST.Type.Representation
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Monad                                                ( void )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Data.String                                                  ( fromString )
 import Prelude                                                      as P
 
@@ -88,7 +88,7 @@ mkFoldSegP_block
     -> MIRDelayed PTX aenv (Segments i)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
 mkFoldSegP_block uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray repr "out"
@@ -283,7 +283,7 @@ mkFoldSegP_warp
     -> MIRDelayed PTX aenv (Segments i)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e))
 mkFoldSegP_warp uid aenv repr@(ArrayR shr tp) intTp combine mseed marr mseg = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray repr "out"

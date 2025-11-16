@@ -49,8 +49,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Control.Monad                                                ( when, forM_ )
-import Control.Monad.Reader                                         ( asks, local )
+import Control.Monad                                                ( forM_ )
 import Control.Monad.State                                          ( liftIO )
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List                                                    ( find )
@@ -708,7 +707,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
     --
     future  <- new
     result  <- allocateRemote repr shOut
-    parent  <- asks ptxStream
+    parent  <- asksParState ptxStream
     parentStartPoint <- liftPar (Event.waypoint parent)
 
     -- interior (no bounds checking)
@@ -722,7 +721,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
       fork $ do
         -- synchronise with start of stencil computation, so that the arguments
         -- are available
-        child <- asks ptxStream
+        child <- asksParState ptxStream
         liftIO (Event.after parentStartPoint child)
 
         -- launch in a separate stream
@@ -782,7 +781,7 @@ aforeignOp
     -> as
     -> Par PTX (Future bs)
 aforeignOp name _ _ asm arr = do
-  stream <- asks ptxStream
+  stream <- asksParState ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
     msg   = Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsed) name
@@ -818,7 +817,7 @@ manifest Delayed{}    = Nothing
 --
 withExecutable :: HasCallStack => ExecutableR PTX -> (FunctionTable -> Par PTX b) -> Par PTX b
 withExecutable PTXR{..} f =
-  local (\(s,_) -> (s,Just ptxExecutable)) $ do
+  localParState (\(s,_) -> (s,Just ptxExecutable)) $ do
     r <- f (unsafeGetValue ptxExecutable)
     liftIO $ touchLifetime ptxExecutable
     return r
@@ -839,7 +838,7 @@ executeOp
 executeOp kernel gamma aenv shr sh paramsR params =
   let n = size shr sh
   in  when (n > 0) $ do
-        stream <- asks ptxStream
+        stream <- asksParState ptxStream
         argv   <- marshalParams' @PTX (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
         liftIO  $ launch kernel stream n $ DL.toList argv
 

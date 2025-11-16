@@ -36,7 +36,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import qualified Foreign.CUDA.Analysis                              as CUDA
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Formatting
 import Foreign.Ptr
@@ -56,8 +56,8 @@ instance Link PTX where
 --
 link :: ObjectR PTX -> LLVM PTX (ExecutableR PTX)
 link (ObjectR uid cfg objFname) = do
-  target <- gets llvmTarget
-  cache  <- gets ptxKernelTable
+  target <- asks llvmTarget
+  cache  <- asks ptxKernelTable
   funs   <- liftIO $ dlsym uid cache $ do
     -- Load the SASS object code into the current CUDA context
     obj <- B.readFile objFname

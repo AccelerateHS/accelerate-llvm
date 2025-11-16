@@ -55,7 +55,7 @@ import LLVM.AST.Type.Representation
 import Foreign.CUDA.Analysis
 
 import Control.Monad                                                ( void )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Prelude
 
 
@@ -126,7 +126,7 @@ mkPermute_rmw
     -> MIRDelayed PTX aenv (Array sh e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh' e))
 mkPermute_rmw uid aenv (ArrayR shr tp) shr' rmw update project marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       outR                = ArrayR shr' tp
@@ -267,7 +267,7 @@ atomically
     -> CodeGen PTX a
     -> CodeGen PTX a
 atomically barriers i action = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   if computeCapability dev >= Compute 7 0
      then atomically_thread barriers i action
      else atomically_warp   barriers i action

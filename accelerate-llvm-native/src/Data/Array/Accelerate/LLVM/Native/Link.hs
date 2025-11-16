@@ -33,7 +33,7 @@ import Data.Array.Accelerate.LLVM.Native.Link.Cache
 import Data.Array.Accelerate.LLVM.Native.Link.Object
 import Data.Array.Accelerate.LLVM.Native.Link.Runtime
 
-import Control.Monad.State
+import Control.Monad.Reader
 import Prelude                                                      hiding ( lookup )
 
 
@@ -48,7 +48,7 @@ instance Link Native where
 --
 link :: ObjectR Native -> LLVM Native (ExecutableR Native)
 link (ObjectR uid nms _ so) = do
-  cache <- gets linkCache
+  cache <- asks linkCache
   funs  <- liftIO $ dlsym uid cache (loadSharedObject nms so)
   return $! NativeR funs
 

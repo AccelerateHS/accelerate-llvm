@@ -90,7 +90,7 @@ import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty     as LP
 
 import Control.Applicative
 import Control.Monad                                                ( void )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Data.Bits
 import Data.Proxy
 import Data.String
@@ -139,7 +139,7 @@ laneMask_ge = specialPTXReg "llvm.nvvm.read.ptx.sreg.lanemask.ge"
 --
 warpId :: CodeGen PTX (Operands Int32)
 warpId = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   tid <- threadIdx
   A.quot integralType tid (A.liftInt32 (P.fromIntegral (CUDA.warpSize dev)))
 
@@ -245,7 +245,7 @@ __syncwarp = __syncwarp_mask (liftWord32 0xffffffff)
 __syncwarp_mask :: HasCallStack => Operands Word32 -> CodeGen PTX ()
 __syncwarp_mask mask = do
   llvmver <- getLLVMversion
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   case (computeCapability dev >= Compute 7 0, llvmver >= 6) of
     (True, True) -> void $ call (Lam primType (op primType mask) (Body VoidType (Just Tail) "llvm.nvvm.bar.warp.sync")) [NoUnwind, NoDuplicate, Convergent]
     (True, False) -> internalError "LLVM-6.0 or above is required for Volta devices and later"
@@ -506,7 +506,7 @@ shfl_op
     -> Operands a                   -- value to give
     -> CodeGen PTX (Operands a)     -- value received
 shfl_op sop t delta val = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
 
   let
       -- The CUDA __shfl* instruction take an optional final parameter
@@ -762,7 +762,7 @@ makeOpenAcc
     -> CodeGen PTX ()
     -> CodeGen PTX (IROpenAcc PTX aenv a)
 makeOpenAcc uid name param kernel = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   makeOpenAccWith (simpleLaunchConfig dev) uid name param kernel
 
 -- | Create a single kernel program with the given launch analysis information.
