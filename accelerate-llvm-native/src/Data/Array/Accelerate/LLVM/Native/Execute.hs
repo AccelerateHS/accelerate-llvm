@@ -919,7 +919,7 @@ mkTasksUsing
       -> params
       -> Par Native (Seq Action)
 mkTasksUsing ranges (name, f) gamma aenv shr paramsR params = do
-  arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+  (arg, ()) <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(_,u,v) -> do
     sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u
@@ -937,7 +937,7 @@ mkTasksUsingIndex
       -> params
       -> Par Native (Seq Action)
 mkTasksUsingIndex ranges (name, f) gamma aenv shr paramsR params = do
-  arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+  (arg, ()) <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(i,u,v) -> do
     sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u
