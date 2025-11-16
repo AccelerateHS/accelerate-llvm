@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
 {-# OPTIONS_HADDOCK hide #-}
 -- |
 -- Module      : Data.Array.Accelerate.LLVM.State
@@ -58,6 +59,15 @@ evalLLVM target acc =
 
 getLLVMVer :: LLVM target LP.LLVMVer
 getLLVMVer = LLVM ask
+
+-- | This is a valid implementation of @withRunInIO@ in
+-- unliftio-core:Control.Monad.IO.Unlift(MonadUnliftIO); it's not an instance
+-- to avoid a dependency.
+unliftIOLLVM :: ((forall a. LLVM target a -> IO a) -> IO b) -> LLVM target b
+unliftIOLLVM f = LLVM (ReaderT (\llvmver -> ReaderT (\target -> f (run llvmver target))))
+  where
+    run :: LP.LLVMVer -> target -> LLVM target a -> IO a
+    run llvmver target (LLVM m) = runReaderT (runReaderT m llvmver) target
 
 
 -- -- | Make sure the GC knows that we want to keep this thing alive forever.

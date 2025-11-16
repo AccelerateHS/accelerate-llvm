@@ -35,6 +35,7 @@ import Data.Array.Accelerate.LLVM.CodeGen.Environment           ( Gamma, Idx'(..
 import Data.Array.Accelerate.LLVM.Execute.Environment
 import Data.Array.Accelerate.LLVM.Execute.Async
 
+import Data.Bifunctor                                           ( first )
 import Data.DList                                               ( DList )
 import qualified Data.DList                                     as DL
 import qualified Data.IntMap                                    as IM
@@ -42,49 +43,53 @@ import qualified Data.IntMap                                    as IM
 
 -- Marshalling arguments
 -- ---------------------
-class Async arch => Marshal arch where
+class (Async arch, Monoid (MarshalCleanup arch)) => Marshal arch where
   -- | A type family that is used to specify a concrete kernel argument and
   -- stream/context type for a given backend target.
   --
   type ArgR arch
 
+  -- | A cleanup action for a marshalled argument. On PTX this is an IO action;
+  -- on Native, no cleanup is necessary.
+  type MarshalCleanup arch
+
   -- | Used to pass shapes as arguments to kernels.
   marshalInt :: Int -> ArgR arch
 
   -- | Pass arrays to kernels
-  marshalScalarData' :: SingleType e -> ScalarArrayData e -> Par arch (DList (ArgR arch))
+  marshalScalarData' :: SingleType e -> ScalarArrayData e -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 
 -- | Convert function arguments into stream a form suitable for function calls
 -- The functions ending in a prime return a DList, other functions return lists.
 --
-marshalArrays :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch [ArgR arch]
-marshalArrays repr arrs = DL.toList <$> marshalArrays' @arch repr arrs
+marshalArrays :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch ([ArgR arch], MarshalCleanup arch)
+marshalArrays repr arrs = first DL.toList <$> marshalArrays' @arch repr arrs
 
-marshalArrays' :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch (DList (ArgR arch))
+marshalArrays' :: forall arch arrs. Marshal arch => ArraysR arrs -> arrs -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 marshalArrays' = marshalTupR' @arch (marshalArray' @arch)
 
-marshalArray' :: forall arch a. Marshal arch => ArrayR a -> a -> Par arch (DList (ArgR arch))
+marshalArray' :: forall arch a. Marshal arch => ArrayR a -> a -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 marshalArray' (ArrayR shr tp) (Array sh a) = do
-  arg1 <- marshalArrayData' @arch tp a
+  (arg1, c1) <- marshalArrayData' @arch tp a
   let arg2 = marshalShape' @arch shr sh
-  return $ arg1 `DL.append` arg2
+  return (arg1 `DL.append` arg2, c1)
 
-marshalArrayData' :: forall arch t. Marshal arch => TypeR t -> ArrayData t -> Par arch (DList (ArgR arch))
-marshalArrayData' TupRunit ()               = return DL.empty
+marshalArrayData' :: forall arch t. Marshal arch => TypeR t -> ArrayData t -> Par arch (DList (ArgR arch), MarshalCleanup arch)
+marshalArrayData' TupRunit ()               = return (DL.empty, mempty)
 marshalArrayData' (TupRpair t1 t2) (a1, a2) = do
-  l1 <- marshalArrayData' t1 a1
-  l2 <- marshalArrayData' t2 a2
-  return $ l1 `DL.append` l2
+  (l1, c1) <- marshalArrayData' t1 a1
+  (l2, c2) <- marshalArrayData' t2 a2
+  return (l1 `DL.append` l2, c1 <> c2)
 marshalArrayData' (TupRsingle t) ad
   | ScalarArrayDict _ s <- scalarArrayDict t
   = marshalScalarData' @arch s ad
 
-marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch [ArgR arch]
-marshalEnv g a = DL.toList <$> marshalEnv' g a
+marshalEnv :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch ([ArgR arch], MarshalCleanup arch)
+marshalEnv g a = first DL.toList <$> marshalEnv' g a
 
-marshalEnv' :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch (DList (ArgR arch))
+marshalEnv' :: forall arch aenv. Marshal arch => Gamma aenv -> ValR arch aenv -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 marshalEnv' gamma aenv
-    = fmap DL.concat
+    = fmap mconcat
     $ mapM (\(_, Idx' repr idx) -> marshalArray' @arch repr =<< get (prj idx aenv)) (IM.elems gamma)
 
 marshalShape :: forall arch sh. Marshal arch => ShapeR sh -> sh -> [ArgR arch]
@@ -105,22 +110,22 @@ data ParamR arch a where
   ParamRshape  :: ShapeR sh           -> ParamR arch sh
   ParamRargs   ::                        ParamR arch (DList (ArgR arch))
 
-marshalParam' :: forall arch a. Marshal arch => ParamR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParam' :: forall arch a. Marshal arch => ParamR arch a -> a -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 marshalParam' (ParamRarray repr)  a        = marshalArray' repr a
-marshalParam' (ParamRmaybe _   )  Nothing  = return $ DL.empty
+marshalParam' (ParamRmaybe _   )  Nothing  = return (DL.empty, mempty)
 marshalParam' (ParamRmaybe repr)  (Just a) = marshalParam' repr a
 marshalParam' (ParamRfuture repr) future   = marshalParam' repr =<< get future
 marshalParam' (ParamRenv gamma)   aenv     = marshalEnv'   gamma aenv
-marshalParam'  ParamRint          x        = return $ DL.singleton $ marshalInt @arch x
-marshalParam' (ParamRshape shr)   sh       = return $ marshalShape' @arch shr sh
-marshalParam'  ParamRargs         args     = return args
+marshalParam'  ParamRint          x        = return (DL.singleton (marshalInt @arch x), mempty)
+marshalParam' (ParamRshape shr)   sh       = return (marshalShape' @arch shr sh, mempty)
+marshalParam'  ParamRargs         args     = return (args, mempty)
 
-marshalParams' :: forall arch a. Marshal arch => ParamsR arch a -> a -> Par arch (DList (ArgR arch))
+marshalParams' :: forall arch a. Marshal arch => ParamsR arch a -> a -> Par arch (DList (ArgR arch), MarshalCleanup arch)
 marshalParams' = marshalTupR' @arch (marshalParam' @arch)
 
 {-# INLINE marshalTupR' #-}
-marshalTupR' :: forall arch s a. Marshal arch => (forall b. s b -> b -> Par arch (DList (ArgR arch))) -> TupR s a -> a -> Par arch (DList (ArgR arch))
-marshalTupR' _ TupRunit         ()       = return $ DL.empty
+marshalTupR' :: forall arch s a. Marshal arch => (forall b. s b -> b -> Par arch (DList (ArgR arch), MarshalCleanup arch)) -> TupR s a -> a -> Par arch (DList (ArgR arch), MarshalCleanup arch)
+marshalTupR' _ TupRunit         ()       = return (DL.empty, mempty)
 marshalTupR' f (TupRsingle t)   x        = f t x
-marshalTupR' f (TupRpair t1 t2) (x1, x2) = DL.append <$> marshalTupR' @arch f t1 x1 <*> marshalTupR' @arch f t2 x2
+marshalTupR' f (TupRpair t1 t2) (x1, x2) = (<>) <$> marshalTupR' @arch f t1 x1 <*> marshalTupR' @arch f t2 x2
 

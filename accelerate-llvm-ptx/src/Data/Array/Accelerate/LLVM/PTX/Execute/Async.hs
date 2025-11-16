@@ -66,8 +66,8 @@ data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
 
 data IVar a
     = Full !a
-    | Pending {-# UNPACK #-} !Event !(Maybe (Lifetime FunctionTable)) !a
-    | Empty
+    | Pending {-# UNPACK #-} !Event !(Maybe (Lifetime FunctionTable)) !(IO ()) !a
+    | Empty !(IO ())
 
 
 askParState :: Par PTX ParState
@@ -91,7 +91,7 @@ instance Async PTX where
 
   {-# INLINEABLE new     #-}
   {-# INLINEABLE newFull #-}
-  new       = Future <$> liftIO (newIORef Empty)
+  new       = Future <$> liftIO (newIORef (Empty (return ())))
   newFull v = Future <$> liftIO (newIORef (Full v))
 
   {-# INLINEABLE spawn #-}
@@ -117,9 +117,9 @@ instance Async PTX where
     kernel <- asksParState ptxKernel
     event  <- liftPar (Event.waypoint stream)
     ready  <- liftIO  (Event.query event)
-    liftIO . modifyIORef' ref $ \case
-      Empty -> if ready then Full v
-                        else Pending event kernel v
+    liftIO . atomicModifyIORef' ref $ \case
+      Empty cleanup -> if ready then (Full v, ())
+                                else (Pending event kernel cleanup v, ())
       _     -> internalError "multiple put"
 
   -- Get the value of Future. Since the actual cross-stream synchronisation
@@ -134,7 +134,7 @@ instance Async PTX where
       ivar <- readIORef ref
       case ivar of
         Full v            -> return v
-        Pending event k v -> do
+        Pending event k cleanup v -> do
           ready <- Event.query event
           if ready
             then do
@@ -142,10 +142,11 @@ instance Async PTX where
               case k of
                 Just f  -> touchLifetime f
                 Nothing -> return ()
+              cleanup
             else
               Event.after event stream
           return v
-        Empty           -> internalError "blocked on an IVar"
+        Empty _         -> internalError "blocked on an IVar"
 
   {-# INLINEABLE block #-}
   block = liftIO . wait
@@ -163,12 +164,34 @@ wait (Future ref) = do
   ivar <- readIORef ref
   case ivar of
     Full v            -> return v
-    Pending event k v -> do
+    Pending event k cleanup v -> do
       Event.block event
       writeIORef ref (Full v)
       case k of
         Just f  -> touchLifetime f
         Nothing -> return ()
+      cleanup
       return v
-    Empty           -> internalError "blocked on an IVar"
+    Empty _         -> internalError "blocked on an IVar"
+
+{-# INLINEABLE putCleanup #-}
+putCleanup :: HasCallStack => FutureR PTX a -> IO () -> a -> Par PTX ()
+putCleanup (Future ref) cleanup v = do
+  stream <- asksParState ptxStream
+  kernel <- asksParState ptxKernel
+  event  <- liftPar (Event.waypoint stream)
+  ready  <- liftIO  (Event.query event)
+  liftIO . atomicModifyIORef' ref $ \case
+    Empty cleanup2 -> if ready then (Full v, ())
+                               else (Pending event kernel (cleanup2 >> cleanup) v, ())
+    _     -> internalError "multiple put"
+
+{-# INLINEABLE addCleanup #-}
+addCleanup :: HasCallStack => FutureR PTX a -> IO () -> Par PTX ()
+addCleanup (Future ref) cleanup = liftIO $ do
+  toRunNow <- atomicModifyIORef' ref $ \case
+    Full v -> (Full v, cleanup)
+    Pending event k cleanup2 v -> (Pending event k (cleanup2 >> cleanup) v, return ())
+    Empty cleanup2 -> (Empty (cleanup2 >> cleanup), return ())
+  toRunNow
 

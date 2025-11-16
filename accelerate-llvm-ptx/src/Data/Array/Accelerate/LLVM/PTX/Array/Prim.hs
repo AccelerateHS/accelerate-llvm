@@ -350,7 +350,7 @@ nonblocking !stream !action = do
       return (Nothing, future)
 
     else do
-      future <- Future <$> liftIO (newIORef (Pending event Nothing result))
+      future <- Future <$> liftIO (newIORef (Pending event Nothing (return ()) result))
       return (Just event, future)
 
 {-# INLINE withLifetime #-}
