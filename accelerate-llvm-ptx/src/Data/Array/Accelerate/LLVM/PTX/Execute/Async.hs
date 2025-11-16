@@ -66,7 +66,7 @@ data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
 
 data IVar a
     = Full !a
-    | Pending {-# UNPACK #-} !Event !(Maybe (Lifetime FunctionTable)) !(IO ()) !a
+    | Pending {-# UNPACK #-} !Event !(IO ()) !a
     | Empty !(IO ())
 
 
@@ -117,9 +117,12 @@ instance Async PTX where
     kernel <- asksParState ptxKernel
     event  <- liftPar (Event.waypoint stream)
     ready  <- liftIO  (Event.query event)
+    let cleanupK = case kernel of
+                     Just k -> touchLifetime k
+                     Nothing -> return ()
     liftIO . atomicModifyIORef' ref $ \case
       Empty cleanup -> if ready then (Full v, ())
-                                else (Pending event kernel cleanup v, ())
+                                else (Pending event (cleanup >> cleanupK) v, ())
       _     -> internalError "multiple put"
 
   -- Get the value of Future. Since the actual cross-stream synchronisation
@@ -134,14 +137,11 @@ instance Async PTX where
       ivar <- readIORef ref
       case ivar of
         Full v            -> return v
-        Pending event k cleanup v -> do
+        Pending event cleanup v -> do
           ready <- Event.query event
           if ready
             then do
               writeIORef ref (Full v)
-              case k of
-                Just f  -> touchLifetime f
-                Nothing -> return ()
               cleanup
             else
               Event.after event stream
@@ -164,12 +164,9 @@ wait (Future ref) = do
   ivar <- readIORef ref
   case ivar of
     Full v            -> return v
-    Pending event k cleanup v -> do
+    Pending event cleanup v -> do
       Event.block event
       writeIORef ref (Full v)
-      case k of
-        Just f  -> touchLifetime f
-        Nothing -> return ()
       cleanup
       return v
     Empty _         -> internalError "blocked on an IVar"
@@ -181,9 +178,12 @@ putCleanup (Future ref) cleanup v = do
   kernel <- asksParState ptxKernel
   event  <- liftPar (Event.waypoint stream)
   ready  <- liftIO  (Event.query event)
+  let cleanupK = case kernel of
+                   Just k -> touchLifetime k
+                   Nothing -> return ()
   liftIO . atomicModifyIORef' ref $ \case
     Empty cleanup2 -> if ready then (Full v, ())
-                               else (Pending event kernel (cleanup2 >> cleanup) v, ())
+                               else (Pending event (cleanup2 >> cleanup >> cleanupK) v, ())
     _     -> internalError "multiple put"
 
 {-# INLINEABLE addCleanup #-}
@@ -191,7 +191,7 @@ addCleanup :: HasCallStack => FutureR PTX a -> IO () -> Par PTX ()
 addCleanup (Future ref) cleanup = liftIO $ do
   toRunNow <- atomicModifyIORef' ref $ \case
     Full v -> (Full v, cleanup)
-    Pending event k cleanup2 v -> (Pending event k (cleanup2 >> cleanup) v, return ())
+    Pending event cleanup2 v -> (Pending event (cleanup2 >> cleanup) v, return ())
     Empty cleanup2 -> (Empty (cleanup2 >> cleanup), return ())
   toRunNow
 
