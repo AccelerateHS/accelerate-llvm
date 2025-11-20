@@ -104,7 +104,11 @@ embedOpenAcc arch = liftA
         BuildAcc repr aenv obj pacc -> [|| ExecAcc $$(liftArraysR repr) $$(liftGamma aenv) $$(embedForTarget arch obj) $$(liftPreOpenAccSkeleton arch pacc) ||]
 
     liftGamma :: Gamma aenv' -> CodeQ (Gamma aenv')
-#if MIN_VERSION_containers(0,5,8)
+#if MIN_VERSION_containers(0,8,0)
+    liftGamma IM.Nil           = [|| IM.Nil ||]
+    liftGamma (IM.Bin p l r)   = [|| IM.Bin p $$(liftGamma l) $$(liftGamma r) ||]
+    liftGamma (IM.Tip k v)     = [|| IM.Tip k $$(liftV v) ||]
+#elif MIN_VERSION_containers(0,5,8)
     liftGamma IM.Nil           = [|| IM.Nil ||]
     liftGamma (IM.Bin p m l r) = [|| IM.Bin p m $$(liftGamma l) $$(liftGamma r) ||]
     liftGamma (IM.Tip k v)     = [|| IM.Tip k $$(liftV v) ||]
