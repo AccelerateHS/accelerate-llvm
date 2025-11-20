@@ -12,7 +12,8 @@ module Main where
 
 import Data.Array.Accelerate.Test.NoFib
 import Data.Array.Accelerate.LLVM.PTX
+import Data.Array.Accelerate.LLVM.PTX.NoFib.RunQ
 
 main :: IO ()
-main = nofib runN
+main = nofib runN test_runq
 

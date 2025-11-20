@@ -148,11 +148,15 @@ test-suite nofib-llvm-ptx
   type:                 exitcode-stdio-1.0
   hs-source-dirs:       test/nofib
   main-is:              Main.hs
+  other-modules:
+    Data.Array.Accelerate.LLVM.PTX.NoFib.RunQ
 
   build-depends:
           base                          >= 4.10
         , accelerate
         , accelerate-llvm-ptx
+        , tasty
+        , tasty-hunit
 
   default-language:
         Haskell2010
