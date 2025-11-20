@@ -53,7 +53,7 @@ import qualified Data.Array.Accelerate.LLVM.Native.Debug            as Debug
 
 import Control.Concurrent                                           ( myThreadId )
 import Control.Concurrent.Extra                                     ( getThreadId )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Control.Monad.Trans                                          ( liftIO )
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.IORef                                                   ( newIORef, readIORef, writeIORef )
@@ -139,7 +139,7 @@ simpleOp
 simpleOp name repr NativeR{..} gamma aenv sh = do
   let fun   = nativeExecutable !# name
       param = TupRsingle $ ParamRarray repr
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   future     <- new
   result     <- allocateRemote repr sh
   scheduleOp fun gamma aenv (arrayRshape repr) sh param result
@@ -167,7 +167,7 @@ mapOp inplace repr tp NativeR{..} gamma aenv input = do
       shr   = arrayRshape repr
       repr' = ArrayR shr tp
       param = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray repr)
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   future     <- new
   result     <- case inplace of
                   Just Refl -> return input
@@ -201,7 +201,7 @@ transformOp
     -> Par Native (Future (Array sh' b))
 transformOp repr repr' NativeR{..} gamma aenv sh' input = do
   let fun = nativeExecutable !# "transform"
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   future     <- new
   result     <- allocateRemote repr' sh'
   let param = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray repr)
@@ -300,7 +300,7 @@ foldAllOp
     -> Delayed (Vector e)
     -> Par Native (Future (Scalar e))
 foldAllOp tp NativeR{..} gamma aenv arr = do
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   result      <- allocateRemote (ArrayR dim0 tp) ()
   let
@@ -343,7 +343,7 @@ foldDimOp
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array sh e))
 foldDimOp repr NativeR{..} gamma aenv arr@(delayedShape -> (sh, _)) = do
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   result      <- allocateRemote repr sh
   let
@@ -371,7 +371,7 @@ foldSegOp
     -> Delayed (Segments i)
     -> Par Native (Future (Array (sh, Int) e))
 foldSegOp iR repr NativeR{..} gamma aenv input@(delayedShape -> (sh, _)) segments@(delayedShape -> ((), ss)) = do
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   let
       n       = ss-1
@@ -428,7 +428,7 @@ scanCore
     -> Delayed (Array (sh, Int) e)
     -> Par Native (Future (Array (sh, Int) e))
 scanCore repr NativeR{..} gamma aenv m input@(delayedShape -> (sz, n)) = do
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   result      <- allocateRemote repr (sz, m)
   --
@@ -527,7 +527,7 @@ scan'Core repr NativeR{..} gamma aenv input@(delayedShape -> sh@(sz, n)) = do
       paramA          = TupRsingle $ ParamRarray repr
       paramA'         = TupRsingle $ ParamRarray repr'
   --
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   result      <- allocateRemote repr  sh
   sums        <- allocateRemote repr' sz
@@ -608,7 +608,7 @@ permuteOp inplace repr shr' NativeR{..} gamma aenv defaults@(shape -> shOut) inp
   let
       ArrayR shr tp = repr
       repr' = ArrayR shr' tp
-  Native{..}  <- gets llvmTarget
+  Native{..}  <- asks llvmTarget
   future      <- new
   result      <- if inplace
                    then Debug.trace Debug.dump_exec  "exec: permute/inplace"                  $ return defaults
@@ -701,7 +701,7 @@ stencilCore
     -> params
     -> Par Native (Future (Array sh e))
 stencilCore repr NativeR{..} gamma aenv halo sh paramsR params = do
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   future     <- new
   result     <- allocateRemote repr sh
   let
@@ -815,7 +815,7 @@ scheduleOp
     -> Maybe Action
     -> Par Native ()
 scheduleOp fun gamma aenv shr sz paramsR params done = do
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   let
       splits  = numWorkers workers - 1
       minsize = case shr of
@@ -842,7 +842,7 @@ scheduleOpWith
     -> Maybe Action   -- run after the last piece completes
     -> Par Native ()
 scheduleOpWith splits minsize fun gamma aenv shr sz paramsR params done = do
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   job        <- mkJob splits minsize fun gamma aenv shr (empty shr) sz paramsR params done
   liftIO $ schedule workers job
 
@@ -858,7 +858,7 @@ scheduleOpUsing
     -> Maybe Action
     -> Par Native ()
 scheduleOpUsing ranges fun gamma aenv shr paramsR params jobDone = do
-  Native{..} <- gets llvmTarget
+  Native{..} <- asks llvmTarget
   job        <- mkJobUsing ranges fun gamma aenv shr paramsR params jobDone
   liftIO $ schedule workers job
 
@@ -919,7 +919,7 @@ mkTasksUsing
       -> params
       -> Par Native (Seq Action)
 mkTasksUsing ranges (name, f) gamma aenv shr paramsR params = do
-  arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+  (arg, ()) <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(_,u,v) -> do
     sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u
@@ -937,7 +937,7 @@ mkTasksUsingIndex
       -> params
       -> Par Native (Seq Action)
 mkTasksUsingIndex ranges (name, f) gamma aenv shr paramsR params = do
-  arg <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+  (arg, ()) <- marshalParams' @Native (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
   return $ flip fmap ranges $ \(i,u,v) -> do
     sched (string % " " % parenthesised string % " -> " % parenthesised string) (S8.unpack name) (showShape shr u) (showShape shr v)
     let argU = marshalShape' @Native shr u

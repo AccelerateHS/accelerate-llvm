@@ -32,7 +32,7 @@ import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
 import Control.Exception
 import Control.Monad
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.Text.Lazy.Builder
 import Formatting
 
@@ -57,7 +57,7 @@ create = do
 
 create' :: LLVM PTX Event.Event
 create' = do
-  PTX{ptxMemoryTable} <- gets llvmTarget
+  PTX{ptxMemoryTable} <- asks llvmTarget
   me      <- attempt "create/new" (liftIO . catchOOM $ Event.create [Event.DisableTiming])
              `orElse` do
                Remote.reclaim ptxMemoryTable

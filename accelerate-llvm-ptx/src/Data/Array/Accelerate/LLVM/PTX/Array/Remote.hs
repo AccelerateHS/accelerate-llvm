@@ -43,7 +43,7 @@ import qualified Foreign.CUDA.Driver                                as CUDA
 import qualified Foreign.CUDA.Driver.Stream                         as CUDA
 
 import Control.Exception
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.Text.Lazy.Builder
 import Formatting                                                   hiding ( bytes )
 import qualified Formatting                                         as F
@@ -63,7 +63,7 @@ instance Remote.RemoteMemory (LLVM PTX) where
   mallocRemote n
     | n <= 0    = return (Just CUDA.nullDevPtr)
     | otherwise = do
-        name <- gets ptxDeviceName
+        name <- asks ptxDeviceName
         liftIO $ do
           ep <- try (CUDA.mallocArray n)
           case ep of
@@ -114,7 +114,7 @@ malloc
     -> Bool
     -> LLVM PTX Bool
 malloc !tp !ad !n !frozen = do
-  PTX{..} <- gets llvmTarget
+  PTX{..} <- asks llvmTarget
   Remote.malloc ptxMemoryTable tp ad frozen n
 
 
@@ -127,7 +127,7 @@ withRemote
     -> (CUDA.DevicePtr (ScalarArrayDataR e) -> LLVM PTX (Maybe Event, r))
     -> LLVM PTX (Maybe r)
 withRemote !tp !ad !f = do
-  PTX{..} <- gets llvmTarget
+  PTX{..} <- asks llvmTarget
   Remote.withRemote ptxMemoryTable tp ad f
 
 

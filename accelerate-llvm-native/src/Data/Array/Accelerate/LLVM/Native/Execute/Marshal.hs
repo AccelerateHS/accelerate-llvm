@@ -5,6 +5,7 @@
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -34,9 +35,10 @@ import qualified Foreign.LibFFI                                 as FFI
 
 instance Marshal Native where
   type ArgR Native = FFI.Arg
+  type MarshalCleanup Native = ()
   marshalInt = $( case finiteBitSize (undefined::Int) of
                     32 -> [| FFI.argInt32 . fromIntegral |]
                     64 -> [| FFI.argInt64 . fromIntegral |]
                     _  -> error "I don't know what architecture I am" )
-  marshalScalarData' _ = return . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr
+  marshalScalarData' _ = return . (,()) . DL.singleton . FFI.argPtr . unsafeUniqueArrayPtr
 

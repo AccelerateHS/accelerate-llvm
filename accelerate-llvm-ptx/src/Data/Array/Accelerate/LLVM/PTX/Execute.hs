@@ -49,8 +49,7 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Execute.Event       as Event
 
 import qualified Foreign.CUDA.Driver                                as CUDA
 
-import Control.Monad                                                ( when, forM_ )
-import Control.Monad.Reader                                         ( asks, local )
+import Control.Monad                                                ( forM_ )
 import Control.Monad.State                                          ( liftIO )
 import Data.ByteString.Short.Char8                                  ( ShortByteString, unpack )
 import Data.List                                                    ( find )
@@ -131,8 +130,8 @@ simpleOp name repr exe gamma aenv sh =
     result <- allocateRemote repr sh
     --
     let paramR = TupRsingle $ ParamRarray repr
-    executeOp (ptxExecutable !# name) gamma aenv (arrayRshape repr) sh paramR result
-    put future result
+    cleanup <- executeOp (ptxExecutable !# name) gamma aenv (arrayRshape repr) sh paramR result
+    putCleanup future cleanup result
     return future
 
 -- Mapping over an array can ignore the dimensionality of the array and
@@ -158,8 +157,8 @@ mapOp inplace repr tp exe gamma aenv input@(shape -> sh) =
                 Nothing   -> allocateRemote reprOut sh
     --
     let paramsR = TupRsingle (ParamRarray reprOut) `TupRpair` TupRsingle (ParamRarray repr)
-    executeOp (ptxExecutable !# "map") gamma aenv (arrayRshape repr) sh paramsR (result, input)
-    put future result
+    cleanup <- executeOp (ptxExecutable !# "map") gamma aenv (arrayRshape repr) sh paramsR (result, input)
+    putCleanup future cleanup result
     return future
 
 {-# INLINE generateOp #-}
@@ -189,8 +188,8 @@ transformOp repr repr' exe gamma aenv sh' input =
     future <- new
     result <- allocateRemote repr' sh'
     let paramsR = TupRsingle (ParamRarray repr') `TupRpair` TupRsingle (ParamRarray repr)
-    executeOp (ptxExecutable !# "transform") gamma aenv (arrayRshape repr') sh' paramsR (result, input)
-    put future result
+    cleanup <- executeOp (ptxExecutable !# "transform") gamma aenv (arrayRshape repr') sh' paramsR (result, input)
+    putCleanup future cleanup result
     return future
 
 {-# INLINE backpermuteOp #-}
@@ -291,29 +290,30 @@ foldAllOp tp exe gamma aenv input =
         -- The array is small enough that we can compute it in a single step
         result <- allocateRemote (ArrayR dim0 tp) ()
         let paramsR = paramsRdim0 `TupRpair` paramsRinput
-        executeOp ks gamma aenv dim1 sh paramsR (result, manifest input)
-        put future result
+        cleanup <- executeOp ks gamma aenv dim1 sh paramsR (result, manifest input)
+        putCleanup future cleanup result
 
       else do
         -- Multi-kernel reduction to a single element. The first kernel integrates
         -- any delayed elements, and the second is called recursively until
         -- reaching a single element.
+        -- The cleanup function is accumulated.
         let
-            rec :: Vector e -> Par PTX ()
-            rec tmp@(Array ((),m) adata)
-              | m <= 1    = put future (Array () adata)
+            rec :: Vector e -> IO () -> Par PTX ()
+            rec tmp@(Array ((),m) adata) cleanup
+              | m <= 1    = putCleanup future cleanup (Array () adata)
               | otherwise = do
                   let sh' = ((), m `multipleOf` kernelThreadBlockSize km2)
                   out <- allocateRemote (ArrayR dim1 tp) sh'
                   let paramsR2 = paramsRdim1 `TupRpair` paramsRdim1
-                  executeOp km2 gamma aenv dim1 sh' paramsR2 (tmp, out)
-                  rec out
+                  cleanup2 <- executeOp km2 gamma aenv dim1 sh' paramsR2 (tmp, out)
+                  rec out (cleanup >> cleanup2)
         --
         let sh' = ((), n `multipleOf` kernelThreadBlockSize km1)
         tmp <- allocateRemote (ArrayR dim1 tp) sh'
         let paramsR1 = paramsRdim1 `TupRpair` paramsRinput
-        executeOp km1 gamma aenv dim1 sh' paramsR1 (tmp, manifest input)
-        rec tmp
+        cleanup <- executeOp km1 gamma aenv dim1 sh' paramsR1 (tmp, manifest input)
+        rec tmp cleanup
     --
     return future
 
@@ -335,8 +335,8 @@ foldDimOp repr@(ArrayR shr tp) exe gamma aenv input@(delayedShape -> (sh, sz))
       result <- allocateRemote repr sh
       --
       let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray $ ArrayR (ShapeRsnoc shr) tp)
-      executeOp (ptxExecutable !# "fold") gamma aenv shr sh paramsR (result, manifest input)
-      put future result
+      cleanup <- executeOp (ptxExecutable !# "fold") gamma aenv shr sh paramsR (result, manifest input)
+      putCleanup future cleanup result
       return future
 
 
@@ -369,8 +369,8 @@ foldSegOp intTp repr exe gamma aenv input@(delayedShape -> (sh, sz)) segments@(d
     future  <- new
     result  <- allocateRemote repr (sh, n)
     let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray reprSeg)
-    executeOp foldseg gamma aenv dim1 ((), m) paramsR ((result, manifest input), manifest segments)
-    put future result
+    cleanup <- executeOp foldseg gamma aenv dim1 ((), m) paramsR ((result, manifest input), manifest segments)
+    putCleanup future cleanup result
     return future
 
 
@@ -451,15 +451,20 @@ scanAllOp tp exe gamma aenv m input@(delayedShape -> ((), n)) =
     -- which can be computed by a single thread block will require no
     -- additional work.
     tmp     <- allocateRemote repr ((), s)
-    executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
+    cleanup1 <- executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
 
     -- Step 2: Multi-block reductions need to compute the per-block prefix,
     -- then apply those values to the partial results.
-    when (s > 1) $ do
-      executeOp k2 gamma aenv dim1 ((), s)   paramR tmp
-      executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
+    cleanup2 <-
+      if s > 1
+        then do
+          cleanup2a <- executeOp k2 gamma aenv dim1 ((), s)   paramR tmp
+          cleanup2b <- executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
+          return (cleanup2a >> cleanup2b)
+        else
+          return (return ())
 
-    put future result
+    putCleanup future (cleanup1 >> cleanup2) result
     return future
 
 {-# INLINE scanDimOp #-}
@@ -478,8 +483,8 @@ scanDimOp repr exe gamma aenv m input@(delayedShape -> (sz, _)) =
     future  <- new
     result  <- allocateRemote repr (sz, m)
     let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
-    executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR (result, manifest input)
-    put future result
+    cleanup <- executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR (result, manifest input)
+    putCleanup future cleanup result
     return future
 
 
@@ -549,7 +554,7 @@ scan'AllOp tp exe gamma aenv input@(delayedShape -> ((), n)) =
     -- Step 1: independent thread-block-wide scans. Each block stores its partial
     -- sum to a temporary array.
     let paramsR1 = paramRdim1 `TupRpair` paramRdim1 `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
-    executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
+    cleanup1 <- executeOp k1 gamma aenv dim1 ((), s) paramsR1 ((tmp, result), manifest input)
 
     -- If this was a small array that was processed by a single thread block then
     -- we are done, otherwise compute the per-block prefix and apply those values
@@ -557,15 +562,15 @@ scan'AllOp tp exe gamma aenv input@(delayedShape -> ((), n)) =
     if s == 1
       then
         case tmp of
-          Array _ ad -> put future (result, Array () ad)
+          Array _ ad -> putCleanup future cleanup1 (result, Array () ad)
 
       else do
         sums <- allocateRemote (ArrayR dim0 tp) ()
         let paramsR2 = paramRdim1 `TupRpair` paramRdim0
         let paramsR3 = paramRdim1 `TupRpair` paramRdim1 `TupRpair` TupRsingle ParamRint
-        executeOp k2 gamma aenv dim1 ((), s)   paramsR2 (tmp, sums)
-        executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
-        put future (result, sums)
+        cleanup2 <- executeOp k2 gamma aenv dim1 ((), s)   paramsR2 (tmp, sums)
+        cleanup3 <- executeOp k3 gamma aenv dim1 ((), s-1) paramsR3 ((tmp, result), c)
+        putCleanup future (cleanup1 >> cleanup2 >> cleanup3) (result, sums)
     --
     return future
 
@@ -584,8 +589,8 @@ scan'DimOp repr@(ArrayR (ShapeRsnoc shr') _) exe gamma aenv input@(delayedShape 
     result  <- allocateRemote repr sh
     sums    <- allocateRemote (reduceRank repr) sz
     let paramsR = TupRsingle (ParamRarray repr) `TupRpair` TupRsingle (ParamRarray $ reduceRank repr) `TupRpair` TupRsingle (ParamRmaybe $ ParamRarray repr)
-    executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR ((result, sums), manifest input)
-    put future (result, sums)
+    cleanup <- executeOp (ptxExecutable !# "scan") gamma aenv dim1 ((), size shr' sz) paramsR ((result, sums), manifest input)
+    putCleanup future cleanup (result, sums)
     return future
 
 
@@ -622,7 +627,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
     let kernelName' =
           let kn = kernelName kernel
           in SE.take (S.length kn - 65) kn
-    case kernelName' of
+    cleanup <- case kernelName' of
       -- execute directly using atomic operations
       "permute_rmw"   ->
         let paramsR = paramR' `TupRpair` paramR
@@ -640,7 +645,7 @@ permuteOp inplace repr@(ArrayR shr tp) shr' exe gamma aenv defaults@(shape -> sh
 
       _               -> internalError "unexpected kernel image"
     --
-    put future result
+    putCleanup future cleanup result
     return future
 
 
@@ -708,12 +713,12 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
     --
     future  <- new
     result  <- allocateRemote repr shOut
-    parent  <- asks ptxStream
+    parent  <- asksParState ptxStream
     parentStartPoint <- liftPar (Event.waypoint parent)
 
     -- interior (no bounds checking)
     let paramsRinside = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRarray repr) `TupRpair` paramsR
-    executeOp inside gamma aenv shr shIn paramsRinside ((shIn, result), params)
+    cleanup1 <- executeOp inside gamma aenv shr shIn paramsRinside ((shIn, result), params)
 
     -- halo regions (bounds checking)
     -- executed in separate streams so that they might overlap the main stencil
@@ -722,7 +727,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
       fork $ do
         -- synchronise with start of stencil computation, so that the arguments
         -- are available
-        child <- asks ptxStream
+        child <- asksParState ptxStream
         liftIO (Event.after parentStartPoint child)
 
         -- launch in a separate stream
@@ -730,7 +735,8 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
         let paramsRborder = TupRsingle (ParamRshape shr) `TupRpair` TupRsingle (ParamRshape shr)
                               `TupRpair` TupRsingle (ParamRarray repr)
                               `TupRpair` paramsR
-        executeOp border gamma aenv shr sh paramsRborder (((u, sh), result), params)
+        cleanup2 <- executeOp border gamma aenv shr sh paramsRborder (((u, sh), result), params)
+        addCleanup future cleanup2
 
         -- make remainder of the parent stream depend on the border results
         event <- liftPar (Event.waypoint child)
@@ -738,7 +744,7 @@ stencilCore repr@(ArrayR shr _) exe gamma aenv halo shOut paramsR params =
         if ready then return ()
                  else liftIO (Event.after event parent)
 
-    put future result
+    putCleanup future cleanup1 result
     return future
 
 -- Compute the stencil border regions, where we may need to evaluate the
@@ -782,7 +788,7 @@ aforeignOp
     -> as
     -> Par PTX (Future bs)
 aforeignOp name _ _ asm arr = do
-  stream <- asks ptxStream
+  stream <- asksParState ptxStream
   Debug.monitorProcTime query msg (Just (unsafeGetValue stream)) (asm arr)
   where
     msg   = Debug.traceM Debug.dump_exec ("exec: " % string % " " % Debug.elapsed) name
@@ -818,7 +824,7 @@ manifest Delayed{}    = Nothing
 --
 withExecutable :: HasCallStack => ExecutableR PTX -> (FunctionTable -> Par PTX b) -> Par PTX b
 withExecutable PTXR{..} f =
-  local (\(s,_) -> (s,Just ptxExecutable)) $ do
+  localParState (\(s,_) -> (s,Just ptxExecutable)) $ do
     r <- f (unsafeGetValue ptxExecutable)
     liftIO $ touchLifetime ptxExecutable
     return r
@@ -835,13 +841,17 @@ executeOp
     -> sh
     -> ParamsR PTX params
     -> params
-    -> Par PTX ()
+    -> Par PTX (IO ())
 executeOp kernel gamma aenv shr sh paramsR params =
   let n = size shr sh
-  in  when (n > 0) $ do
-        stream <- asks ptxStream
-        argv   <- marshalParams' @PTX (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
-        liftIO  $ launch kernel stream n $ DL.toList argv
+  in  if n > 0
+        then do
+          stream <- asksParState ptxStream
+          (argv, cleanup) <- marshalParams' @PTX (paramsR `TupRpair` TupRsingle (ParamRenv gamma)) (params, aenv)
+          liftIO $ launch kernel stream n $ DL.toList argv
+          return cleanup
+        else
+          return (return ())
 
 
 -- Execute a device function with the given thread configuration and function

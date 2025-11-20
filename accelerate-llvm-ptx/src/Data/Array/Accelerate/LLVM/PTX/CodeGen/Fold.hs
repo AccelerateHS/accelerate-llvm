@@ -46,7 +46,7 @@ import LLVM.AST.Type.Representation
 import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Monad                                                ( (>=>) )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Data.String                                                  ( fromString )
 import Data.Bits                                                    as P
 import Prelude                                                      as P
@@ -105,7 +105,7 @@ mkFoldAll
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Scalar e))
 mkFoldAll uid aenv tp combine mseed macc = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   foldr1 (+++) <$> sequence [ mkFoldAllS  uid dev aenv tp combine mseed macc
                             , mkFoldAllM1 uid dev aenv tp combine       macc
                             , mkFoldAllM2 uid dev aenv tp combine mseed
@@ -303,7 +303,7 @@ mkFoldDim
     -> MIRDelayed PTX aenv (Array (sh, Int) e)        -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array sh e))
 mkFoldDim uid aenv repr@(ArrayR shr tp) combine mseed marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray repr "out"

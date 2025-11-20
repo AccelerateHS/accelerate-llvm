@@ -44,8 +44,8 @@ import qualified Data.Array.Accelerate.LLVM.PTX.Array.Prim          as Prim
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.Reader
-import Control.Monad.State                                          ( gets )
+import Control.Monad.IO.Class                                       ( liftIO )
+import Control.Monad.Reader                                         ( asks )
 import System.IO.Unsafe
 import Prelude
 
@@ -99,7 +99,7 @@ copyToHostLazy (TupRpair r1 r2) (f1, f2) = do
   a2 <- copyToHostLazy r2 f2
   return (a1, a2)
 copyToHostLazy (TupRsingle (ArrayR shr tp)) future = do
-  ptx <- gets llvmTarget
+  ptx <- asks llvmTarget
   liftIO $ do
     Array sh adata <- wait future
 

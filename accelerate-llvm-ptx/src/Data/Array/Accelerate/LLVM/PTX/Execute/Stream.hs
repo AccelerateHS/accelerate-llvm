@@ -35,7 +35,7 @@ import qualified Foreign.CUDA.Driver.Stream                         as Stream
 
 import Control.Exception
 import Control.Monad
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.Text.Lazy.Builder
 import Formatting
 
@@ -111,7 +111,7 @@ flush !Context{..} !ref = do
 {-# INLINEABLE create #-}
 create :: LLVM PTX Stream
 create = do
-  PTX{..} <- gets llvmTarget
+  PTX{..} <- asks llvmTarget
   s       <- create'
   stream  <- liftIO $ newLifetime s
   liftIO $ addFinalizer stream (RSV.insert ptxStreamReservoir s)
@@ -119,7 +119,7 @@ create = do
 
 create' :: LLVM PTX Stream.Stream
 create' = do
-  PTX{..} <- gets llvmTarget
+  PTX{..} <- asks llvmTarget
   ms      <- attempt "create/reservoir" (liftIO $ RSV.malloc ptxStreamReservoir)
              `orElse`
              attempt "create/new"       (liftIO . catchOOM $ Stream.create [])
