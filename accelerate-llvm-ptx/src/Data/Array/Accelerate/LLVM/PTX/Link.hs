@@ -71,7 +71,8 @@ link (ObjectR uid cfg objFname) = do
     -- Finalise the module by unloading it from the CUDA context
     addFinalizer oc $ do
       Debug.traceM Debug.dump_ld ("ld: unload module: " % formatFunctionTable) nm
-      withContext (ptxContext target) (CUDA.unload mdl)
+      contextFinalizeResource (ptxContext target) $
+        withContext (ptxContext target) (CUDA.unload mdl)
 
     return (nm, oc)
   --
