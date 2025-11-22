@@ -17,9 +17,11 @@ module Data.Array.Accelerate.LLVM.PTX.Context (
 
   Context(..),
   new, raw, withContext,
+  contextFinalizeResource,
 
 ) where
 
+import Data.Array.Accelerate.Error
 import Data.Array.Accelerate.Lifetime
 import Data.Array.Accelerate.LLVM.PTX.Analysis.Device
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
@@ -28,6 +30,7 @@ import qualified Foreign.CUDA.Driver.Device                         as CUDA
 import qualified Foreign.CUDA.Driver.Context                        as CUDA
 
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Exception
 import Control.Monad
 import Data.Char
@@ -55,6 +58,14 @@ data Context = Context {
     deviceProperties    :: {-# UNPACK #-} !CUDA.DeviceProperties        -- information on hardware resources
   , deviceName          :: {-# UNPACK #-} !ByteArray                    -- device name, used for profiling
   , deviceContext       :: {-# UNPACK #-} !(Lifetime CUDA.Context)      -- device execution context
+
+  -- | The number of finalizers currently using the context to free resources.
+  -- While this number is > 0, the CUDA.Context must not be destroyed. The
+  -- finalizer for the CUDA.Context sets this counter to Nothing to indicate
+  -- that the context will be destroyed anyhow, and resources in this context
+  -- need not be explicitly finalized any more.
+  -- See Note: [Finalizing a CUDA Context].
+  , deviceFinalizerRefcount :: {-# UNPACK #-} !(TVar (Maybe Int))
   }
 
 instance Eq Context where
@@ -86,11 +97,25 @@ raw :: CUDA.Device
     -> CUDA.DeviceProperties
     -> CUDA.Context
     -> IO Context
-raw dev prp ctx = do
+raw dev prp ctx@(CUDA.Context ptr) = do
+  refcountVar <- newTVarIO (Just 0)  -- number of finalizers currently using this context to free resources; see 'Context'
+
   lft <- newLifetime ctx
   addFinalizer lft $ do
     message ("finalise context " % formatContext) ctx
-    CUDA.destroy ctx
+    _ <- forkIO $ do
+      -- wait until the reference count reaches zero; see Note: [Finalizing a CUDA Context]
+      atomically $ do
+        count <- readTVar refcountVar
+        case count of
+          Just n | n > 0 -> retry  -- wait until context is unused by finalizers
+                 | n == 0 -> return ()
+                 | otherwise -> internalError ("CUDA context refcount < 0 (ptr=" % shown % ", c=" % shown % ")") ptr n
+          Nothing -> internalError ("CUDA context finalized twice? (ptr=" % shown % ")") ptr
+        -- mark the context as dead; no more finalizers need run as resources will be freed now anyway
+        writeTVar refcountVar Nothing
+      CUDA.destroy ctx
+    return ()
 
   -- The kernels don't use much shared memory, so for devices that support it
   -- prefer using those memory banks as an L1 cache.
@@ -117,7 +142,7 @@ raw dev prp ctx = do
   -- Display information about the selected device
   Debug.traceM Debug.dump_phases builder (deviceInfo dev prp)
 
-  return $! Context prp nm lft
+  return $! Context prp nm lft refcountVar
 
 
 -- | Push the context onto the CPUs thread stack of current contexts and execute
@@ -141,6 +166,41 @@ pop :: IO ()
 pop = do
   ctx <- CUDA.pop
   message ("pop context: " % formatContext) ctx
+
+-- | If the underlying CUDA context is already slated for destruction entirely
+-- (or has already been destroyed) by its finalizer, this function does
+-- nothing. If the CUDA context will live on (for now), the passed @IO@ action
+-- is invoked with a lock held so that the CUDA context will not be destroyed
+-- while your action runs. Use this in finalizers of CUDA resources such as
+-- arrays and linked modules.
+--
+-- The context is not automatically pushed in the action; if you need to
+-- 'withContext', do it yourself.
+contextFinalizeResource :: Context -> IO () -> IO ()
+contextFinalizeResource Context{deviceFinalizerRefcount = var} action =
+  -- See Note: [Finalizing a CUDA Context]
+  bracket
+    (atomically $ do
+      count <- readTVar var
+      case count of
+        Just n -> do
+          writeTVar var (Just $! n + 1)
+          return True
+        Nothing ->
+          -- context slated for deletion, no need to free resources in it any more
+          return False)
+    (\shouldFree ->
+      when shouldFree $ do
+        ok <- atomically $ do
+          count <- readTVar var
+          case count of
+            Just n -> do
+              writeTVar var (Just $! n - 1)
+              return True
+            Nothing -> return False
+        when (not ok) $
+          internalError "CUDA Context refcount became Nothing while incremented!")
+    (\shouldFree -> when shouldFree action)
 
 
 -- Debugging
@@ -184,4 +244,45 @@ message fmt = Debug.traceM Debug.dump_gc ("gc: " % fmt)
 {-# INLINE formatContext #-}
 formatContext :: Format r (CUDA.Context -> r)
 formatContext = later $ \(CUDA.Context c) -> bformat shown c
+
+
+-- Note: [Finalizing a CUDA Context]
+--
+-- Both a CUDA context and the resources we allocate within such a context
+-- (currently, arrays and executable modules) are freed with finalizers; these
+-- are invoked by the GC when it detects (after a GC pass) that the Haskell
+-- heap objects are no longer reachable.
+--
+-- Finalizers are attached to ForeignPtrs. The problem is that even if a
+-- finalizer for ForeignPtr 1 refers to ForeignPtr 2, the GC does not guarantee
+-- that the finalizer for FP 1 runs to completion before the finalizer of FP 2
+-- starts. (See the documentation for 'touchForeignPtr' in base.) This is a
+-- problem for us because we are in this situation: to free a resource within a
+-- CUDA context, we need a reference to that context, and the context needs to
+-- be alive. Thus finalizers for e.g. arrays reference the FP for the CUDA
+-- context.
+--
+-- If we just leave GHC to do finalization as it wishes, this means that a CUDA
+-- context may well be destroyed before the resourcees in it are finalized,
+-- leading to use-after-free errors and segfaults. We have a choice here:
+-- 1. either we let the finalizer for a Context wait until the other finalizers
+--    have run, or
+-- 2. we let the resource finalizers check if the Context has already been
+--    destroyed, and if so, do nothing.
+-- We choose option 2 because destroying a CUDA context already frees the
+-- resources in it, so there is no need to do meticulous manual cleanup here.
+--
+-- To accomplish this, a 'Context' contains a reference count (in a TVar) that
+-- indicates how many resource finalizers are currently using the context to do
+-- their freeing work. The Context finalizer blocks (in a forkIO thread,
+-- because finalizers can be run sequentially and we must avoid deadlock -- not
+-- sure if this is necessary but let's be safe) until this reference count is 0
+-- before destroying the CUDA context. When zero is reached, it communicates
+-- that no more resource freeing is necessary from this point by setting the
+-- reference count to Nothing.
+--
+-- A resource finalizer then uses 'contextFinalizeResource', which does the
+-- incrementing and decrementing and avoids doing anything if the reference
+-- count is Nothing already. After the reference count has become Nothing, it
+-- will never become Just again.
 

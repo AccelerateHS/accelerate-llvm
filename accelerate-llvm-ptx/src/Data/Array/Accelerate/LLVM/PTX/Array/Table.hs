@@ -18,6 +18,7 @@ module Data.Array.Accelerate.LLVM.PTX.Array.Table (
 ) where
 
 import Data.Array.Accelerate.LLVM.PTX.Context                       ( Context, withContext )
+import qualified Data.Array.Accelerate.LLVM.PTX.Context             as Context
 import qualified Data.Array.Accelerate.Array.Remote                 as Remote
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
 import {-# SOURCE #-} Data.Array.Accelerate.LLVM.PTX.Execute.Event
@@ -44,7 +45,8 @@ new !ctx = Remote.new freeRemote
     freeRemote :: CUDA.DevicePtr a -> IO ()
     freeRemote !ptr = do
       message ("freeRemote " % shown) ptr
-      withContext ctx (CUDA.free ptr)
+      Context.contextFinalizeResource ctx $
+        withContext ctx (CUDA.free ptr)
 
 
 -- Debugging
