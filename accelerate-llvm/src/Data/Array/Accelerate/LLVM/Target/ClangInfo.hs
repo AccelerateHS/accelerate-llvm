@@ -102,7 +102,8 @@ clangMachineVersionOutput :: String
 clangMachineVersionOutput =
   unsafePerformIO $ do
     mstderrOutput <- E.try @IOError $ do
-      (_ec, _out, err) <- readProcessWithExitCode clangExePath ["-E", "-", "-march=native", "-###"] ""
+      -- pass -w to suppress warnings
+      (_ec, _out, err) <- readProcessWithExitCode clangExePath ["-E", "-", "-march=native", "-w", "-###"] ""
       return err
     case mstderrOutput of
       Left _ -> do
