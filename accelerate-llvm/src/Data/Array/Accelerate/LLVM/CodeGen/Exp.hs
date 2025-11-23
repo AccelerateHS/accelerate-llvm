@@ -105,7 +105,7 @@ llvmOfOpenExp top env aenv = cvtE top
                                           llvmOfOpenExp body (env `pushE` (lhs, x)) aenv
         Evar (Var _ ix)             -> return $ prj ix env
         Const tp c                  -> return $ ir tp $ scalar tp c
-        PrimConst c                 -> let tp = (SingleScalarType $ primConstType c)
+        PrimConst c                 -> let tp = SingleScalarType (primConstType c)
                                        in  return $ ir tp $ scalar tp $ primConst c
         PrimApp f x                 -> primFun f x
         Undef tp                    -> return $ ir tp $ undef tp
@@ -114,7 +114,8 @@ llvmOfOpenExp top env aenv = cvtE top
         VecPack   vecr e            -> vecPack   vecr =<< cvtE e
         VecUnpack vecr e            -> vecUnpack vecr =<< cvtE e
         Foreign tp asm f x          -> foreignE tp asm f =<< cvtE x
-        Case tag xs mx              -> A.caseof (expType (snd (head xs))) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
+        Case _   [] _               -> internalError "Empty Case"
+        Case tag xs@((_, e1):_) mx  -> A.caseof (expType e1) (cvtE tag) [(t,cvtE e) | (t,e) <- xs] (fmap cvtE mx)
         Cond c t e                  -> cond (expType t) (cvtE c) (cvtE t) (cvtE e)
         IndexSlice slice slix sh    -> indexSlice slice <$> cvtE slix <*> cvtE sh
         IndexFull slice slix sh     -> indexFull slice  <$> cvtE slix <*> cvtE sh

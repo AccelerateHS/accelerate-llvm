@@ -126,7 +126,9 @@ unsafeWithPool p = Pool.unsafeWith (managed p)
 --
 {-# NOINLINE defaultTarget #-}
 defaultTarget :: PTX
-defaultTarget = head (unmanaged defaultTargetPool)
+defaultTarget = case unmanaged defaultTargetPool of
+                  ptx : _ -> ptx
+                  _ -> error "impossible"  -- ensured by defaultTargetPool
 
 -- | Create a shared resource pool of the available CUDA devices.
 --

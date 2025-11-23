@@ -183,10 +183,6 @@ Library
         -caf-all
         -auto-all
 
-  if impl(ghc >= 8.0)
-    ghc-options:
-        -Wmissed-specialisations
-
 -- Abridged from llvm-pretty.cabal
 library llvm-pretty-accfork
   default-language: Haskell2010
