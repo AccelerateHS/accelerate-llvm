@@ -21,6 +21,7 @@ import Data.Array.Accelerate.Lifetime
 import qualified Data.Array.Accelerate.Array.Remote.LRU             as Remote
 
 import Data.Array.Accelerate.LLVM.PTX.Array.Remote                  ( )
+import qualified Data.Array.Accelerate.LLVM.PTX.Context             as Context
 import Data.Array.Accelerate.LLVM.PTX.Target                        ( PTX(..) )
 import Data.Array.Accelerate.LLVM.State
 import qualified Data.Array.Accelerate.LLVM.PTX.Debug               as Debug
@@ -49,10 +50,13 @@ type Event = Lifetime Event.Event
 {-# INLINEABLE create #-}
 create :: LLVM PTX Event
 create = do
+  ctx   <- gets ptxContext
   e     <- create'
   event <- liftIO $ newLifetime e
-  liftIO $ addFinalizer event $ do message ("destroy " % formatEvent) e
-                                   Event.destroy e
+  liftIO $ addFinalizer event $ do
+             message ("destroy " % formatEvent) e
+             Context.contextFinalizeResource ctx $
+               Event.destroy e
   return event
 
 create' :: LLVM PTX Event.Event
