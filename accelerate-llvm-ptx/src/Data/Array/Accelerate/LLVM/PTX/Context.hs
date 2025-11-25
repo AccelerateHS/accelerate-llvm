@@ -229,14 +229,14 @@ formatContext = later $ \(CUDA.Context c) -> bformat shown c
 -- finalizers; these are invoked by the GC when it detects (after a GC pass)
 -- that the Haskell heap objects are no longer reachable.
 --
--- Finalizers are attached to ForeignPtrs. The problem is that even if a
--- finalizer for ForeignPtr 1 refers to ForeignPtr 2, the GC does not guarantee
--- that the finalizer for FP 1 runs to completion before the finalizer of FP 2
--- starts. (See the documentation for 'touchForeignPtr' in base.) This is a
--- problem for us because we are in this situation: to free a resource within a
--- CUDA context, we need a reference to that context and the context needs to
--- be alive. Thus finalizers for e.g. arrays reference the ForeignPtr for the
--- CUDA context.
+-- In our case, finalizers are attached to 'Lifetime' objects. The problem is
+-- that even if a finalizer for Lifetime 1 refers to Lifetime 2, the GC does
+-- not guarantee that the finalizer for Lifetime 1 runs to completion before the
+-- finalizer of Lifetime 2 starts. (See the documentation for 'touchForeignPtr'
+-- in base.) This is a problem for us because we are in this situation: to free
+-- a resource within a CUDA context, we need a reference to that context and
+-- the context needs to be alive. Thus finalizers for e.g. arrays reference the
+-- Lifetime for the CUDA context.
 --
 -- If we just leave GHC to do finalization as it wishes, this means that a CUDA
 -- context may well be destroyed before the resourcees in it are finalized,
