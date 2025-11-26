@@ -302,13 +302,13 @@ instr' ins =
     --
     ty -> do
       name <- freshLocalName
-      instr_ $ LP.Result (nameToPrettyI name) (downcast ins) []
+      instr_ $ LP.Result (nameToPrettyI name) (downcast ins) [] []
       return $ LocalReference ty name
 
 -- | Execute an unnamed instruction
 --
 do_ :: HasCallStack => Instruction () -> CodeGen arch ()
-do_ ins = instr_ $ LP.Effect (downcast ins) []
+do_ ins = instr_ $ LP.Effect (downcast ins) [] []
 
 -- | Add raw assembly instructions to the execution stream
 --
@@ -374,7 +374,7 @@ phi' tp target = go tp
 phi1 :: HasCallStack => Block -> Name a -> [(Operand a, Block)] -> CodeGen arch (Operand a)
 phi1 target crit incoming =
   let cmp       = (==) `on` blockLabel
-      update b  = b { instructions = LP.Result (nameToPrettyI crit) (downcast $ Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) [] Seq.<| instructions b }
+      update b  = b { instructions = LP.Result (nameToPrettyI crit) (downcast $ Phi t [ (p,blockLabel) | (p,Block{..}) <- incoming ]) [] [] Seq.<| instructions b }
       t         = case incoming of
                     []        -> internalError "no incoming values specified"
                     (o,_):_   -> case typeOf o of
@@ -396,7 +396,7 @@ terminate term =
   state $ \s ->
     case Seq.viewr (blockChain s) of
       Seq.EmptyR  -> internalError "empty block chain"
-      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = LP.Effect (downcast term) [] } } )
+      bs Seq.:> b -> ( b, s { blockChain = bs Seq.|> b { terminator = LP.Effect (downcast term) [] [] } } )
 
 
 -- | Add a global variable declaration to the module
