@@ -126,8 +126,8 @@ instance Downcast (Constant a) (LLVM.Typed LLVM.Value) where
       floatingPrim TypeFloat  = Dict
       floatingPrim TypeDouble = Dict
 
-      inbounds :: Bool
-      inbounds = True
+      inbounds :: [LLVM.GEPAttr]
+      inbounds = [LLVM.GEP_Inbounds]
 
 instance TypeOf Constant where
   typeOf (BooleanConstant _)           = type'

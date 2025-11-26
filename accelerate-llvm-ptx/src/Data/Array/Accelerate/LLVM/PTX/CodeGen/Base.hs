@@ -420,13 +420,13 @@ shfl sop tR val delta = go tR val
               let raw :: LP.Type -> LP.Instr -> CodeGen PTX (LP.Typed LP.Value)
                   raw ty ins = do
                     name <- freshLocalName
-                    instr_ (LP.Result (nameToPrettyI name) ins [])
+                    instr_ (LP.Result (nameToPrettyI name) ins [] [])
                     return (LP.Typed ty (LP.ValIdent (nameToPrettyI name)))
 
                   rawUp :: Type u -> LP.Instr -> CodeGen PTX (Operand u)
                   rawUp ty ins = do
                     name <- freshLocalName
-                    instr_ (LP.Result (nameToPrettyI name) ins [])
+                    instr_ (LP.Result (nameToPrettyI name) ins [] [])
                     return (LocalReference ty name)
 
 
@@ -446,11 +446,11 @@ shfl sop tR val delta = go tR val
                         t3 = downcast t3Up
 
                     b <- raw t1 (LP.Conv LP.BitCast (downcast (op v a)) t1)
-                    c <- raw t2 (LP.Conv LP.ZExt b t2)
+                    c <- raw t2 (LP.Conv (LP.ZExt False) b t2)
                     d <- rawUp t3Up (LP.Conv LP.BitCast c t3)
                     e <- vector v' (ir v' d)
                     f <- raw t2 (LP.Conv LP.BitCast (downcast (op v' e)) t2)
-                    g <- raw t1 (LP.Conv LP.Trunc f t1)
+                    g <- raw t1 (LP.Conv (LP.Trunc False False) f t1)
                     h <- rawUp t0Up (LP.Conv LP.BitCast g t0)
                     return (ir v h)
                in

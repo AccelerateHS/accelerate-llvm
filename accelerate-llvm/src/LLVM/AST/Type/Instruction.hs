@@ -408,12 +408,12 @@ instance Downcast (Instruction a) LP.Instr where
     -- TODO: this is now a STRONG cmpxchg. Is that what was intended? I think llvm-hs defaulted to strong, but the LLVM source is very obtuse about this.
     CmpXchg _ v p x y a m -> LP.CmpXchg False (downcast v) (downcast p) (downcast x) (downcast y) (downcast (fst a)) (downcast (snd a)) (downcast m)
     AtomicRMW t v f p x a -> LP.AtomicRW (downcast v) (downcast (t,f)) (downcast p) (downcast x) (downcast (fst a)) (downcast (snd a))
-    Trunc _ t x           -> LP.Conv LP.Trunc (downcast x) (downcast t)
-    IntToBool _ x         -> LP.Conv LP.Trunc (downcast x) (LP.PrimType (LP.Integer 1))
+    Trunc _ t x           -> LP.Conv (LP.Trunc False False) (downcast x) (downcast t)
+    IntToBool _ x         -> LP.Conv (LP.Trunc False False) (downcast x) (LP.PrimType (LP.Integer 1))
     FTrunc _ t x          -> LP.Conv LP.FpTrunc (downcast x) (downcast t)
     Ext a b x             -> ext a b (downcast x)
-    BoolToInt a x         -> LP.Conv LP.ZExt (downcast x) (downcast a)
-    BoolToFP x a          -> LP.Conv LP.UiToFp (downcast a) (downcast x)
+    BoolToInt a x         -> LP.Conv (LP.ZExt False) (downcast x) (downcast a)
+    BoolToFP x a          -> LP.Conv (LP.UiToFp False) (downcast a) (downcast x)
     FExt _ t x            -> LP.Conv LP.FpExt (downcast x) (downcast t)
     FPToInt _ b x         -> float2int b (downcast x)
     IntToFP a b x         -> int2float a b (downcast x)
@@ -438,8 +438,8 @@ instance Downcast (Instruction a) LP.Instr where
       fmf :: [LP.FMF]
       fmf = fastmathFlags
 
-      inbounds :: Bool
-      inbounds = True
+      inbounds :: [LP.GEPAttr]
+      inbounds = [LP.GEP_Inbounds]
 
       atomicity :: Maybe LP.AtomicOrdering
       atomicity = Nothing
@@ -493,7 +493,7 @@ instance Downcast (Instruction a) LP.Instr where
       ext :: BoundedType a -> BoundedType b -> LP.Typed LP.Value -> LP.Instr
       ext a (downcast -> b) x
         | signed a  = LP.Conv LP.SExt x b
-        | otherwise = LP.Conv LP.ZExt x b
+        | otherwise = LP.Conv (LP.ZExt False) x b
 
       float2int :: IntegralType b -> LP.Typed LP.Value -> LP.Instr
       float2int t@(downcast -> t') x
@@ -503,7 +503,7 @@ instance Downcast (Instruction a) LP.Instr where
       int2float :: IntegralType a -> FloatingType b -> LP.Typed LP.Value -> LP.Instr
       int2float a (downcast -> b) x
         | signed a  = LP.Conv LP.SiToFp x b
-        | otherwise = LP.Conv LP.UiToFp x b
+        | otherwise = LP.Conv (LP.UiToFp False) x b
 
       isNaN :: LP.Typed LP.Value -> LP.Instr
       isNaN x = LP.FCmp fmf LP.Funo x (LP.typedValue x)
@@ -512,8 +512,8 @@ instance Downcast (Instruction a) LP.Instr where
       cmp t p x (LP.Typed _ y) =
         case t of
           NumSingleType FloatingNumType{} -> LP.FCmp fastmathFlags (fp p) x y
-          _ | signed t                    -> LP.ICmp (si p) x y
-            | otherwise                   -> LP.ICmp (ui p) x y
+          _ | signed t                    -> LP.ICmp False (si p) x y
+            | otherwise                   -> LP.ICmp False (ui p) x y
         where
           fp :: Ordering -> LP.FCmpOp
           fp EQ = LP.Foeq
