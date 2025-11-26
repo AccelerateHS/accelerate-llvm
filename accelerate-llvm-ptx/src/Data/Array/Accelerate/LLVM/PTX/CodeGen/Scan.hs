@@ -51,7 +51,7 @@ import qualified Foreign.CUDA.Analysis                              as CUDA
 
 import Control.Applicative
 import Control.Monad                                                ( (>=>), void )
-import Control.Monad.State                                          ( gets )
+import Control.Monad.Reader                                         ( asks )
 import Data.String                                                  ( fromString )
 import Data.Coerce                                                  as Safe
 import Data.Bits                                                    as P
@@ -149,7 +149,7 @@ mkScanAllP1
     -> MIRDelayed PTX aenv (Vector e)           -- ^ input data
     -> CodeGen    PTX (IROpenAcc PTX aenv (Vector e))
 mkScanAllP1 dir uid aenv tp combine mseed marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
@@ -269,7 +269,7 @@ mkScanAllP2
     -> IRFun2  PTX aenv (e -> e -> e)           -- ^ combination function
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
 mkScanAllP2 dir uid aenv tp combine = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
@@ -357,7 +357,7 @@ mkScanAllP3
     -> MIRExp  PTX aenv e                       -- ^ seed element, if this is an exclusive scan
     -> CodeGen PTX      (IROpenAcc PTX aenv (Vector e))
 mkScanAllP3 dir uid aenv tp combine mseed = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
@@ -456,7 +456,7 @@ mkScan'AllP1
     -> MIRDelayed PTX aenv (Vector e)
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP1 dir uid aenv tp combine seed marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
@@ -569,7 +569,7 @@ mkScan'AllP2
     -> IRFun2 PTX aenv (e -> e -> e)
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP2 dir uid aenv tp combine = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrTmp, paramTmp)  = mutableArray (ArrayR dim1 tp) "tmp"
@@ -666,7 +666,7 @@ mkScan'AllP3
     -> IRFun2 PTX aenv (e -> e -> e)                -- ^ combination function
     -> CodeGen PTX (IROpenAcc PTX aenv (Vector e, Scalar e))
 mkScan'AllP3 dir uid aenv tp combine = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray (ArrayR dim1 tp) "out"
@@ -754,7 +754,7 @@ mkScanDim
     -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
     -> CodeGen    PTX (IROpenAcc PTX aenv (Array (sh, Int) e))
 mkScanDim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine mseed marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrOut, paramOut)  = mutableArray repr "out"
@@ -962,7 +962,7 @@ mkScan'Dim
     -> MIRDelayed PTX aenv (Array (sh, Int) e)      -- ^ input data
     -> CodeGen    PTX      (IROpenAcc PTX aenv (Array (sh, Int) e, Array sh e))
 mkScan'Dim dir uid aenv repr@(ArrayR (ShapeRsnoc shr) tp) combine seed marr = do
-  dev <- liftCodeGen $ gets ptxDeviceProperties
+  dev <- liftCodeGen $ asks ptxDeviceProperties
   --
   let
       (arrSum, paramSum)  = mutableArray (reduceRank repr) "sum"

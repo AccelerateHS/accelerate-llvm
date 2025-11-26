@@ -49,7 +49,7 @@ import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as LP
 import qualified Text.PrettyPrint                                   as Pretty
 
 import Control.Monad                                                ( when )
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.ByteString.Short                                        ( ShortByteString )
 import Data.List                                                    ( intercalate )
 import qualified Data.List.NonEmpty                                 as NE
@@ -86,7 +86,7 @@ compile pacc aenv = do
 
   -- Generate code for this Acc operation
   --
-  dev                  <- gets ptxDeviceProperties
+  dev                  <- asks ptxDeviceProperties
   let CUDA.Compute m n = CUDA.computeCapability dev
   let arch             = printf "sm_%d%d" m n
   (uid, cacheFile)     <- cacheOfPreOpenAcc pacc

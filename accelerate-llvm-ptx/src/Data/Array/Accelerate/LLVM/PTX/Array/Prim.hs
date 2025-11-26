@@ -116,7 +116,7 @@ pokeArrayAsync !t !n !ad
     let !src   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
         !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
     --
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     result <- liftPar $
       withLifetime stream $ \st  ->
         withDevicePtr t ad $ \dst ->
@@ -150,7 +150,7 @@ indexArrayAsync !n !t !ad_src !i
     let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
         !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad_dst)
     --
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     result <- liftPar $
       withLifetime stream  $ \st  ->
       withDevicePtr t ad_src $ \src ->
@@ -179,7 +179,7 @@ peekArrayAsync !t !n !ad
     let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
         !dst   = CUDA.HostPtr (unsafeUniqueArrayPtr ad)
     --
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     result <- liftPar $
       withLifetime stream $ \st  ->
         withDevicePtr t ad  $ \src ->
@@ -208,7 +208,7 @@ copyArrayAsync !t !n !ad_src !ad_dst
   = do
     let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
     --
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     result <- liftPar $
       withLifetime stream        $ \st ->
         withDevicePtr t ad_src   $ \src ->
@@ -287,7 +287,7 @@ memsetArrayAsync !t !n !v !ad
   = do
     let !bytes = n * bytesElt (TupRsingle (SingleScalarType t))
     --
-    stream <- asks ptxStream
+    stream <- asksParState ptxStream
     result <- liftPar $
       withLifetime stream $ \st  ->
         withDevicePtr t ad  $ \ptr ->
@@ -350,7 +350,7 @@ nonblocking !stream !action = do
       return (Nothing, future)
 
     else do
-      future <- Future <$> liftIO (newIORef (Pending event Nothing result))
+      future <- Future <$> liftIO (newIORef (Pending event (return ()) result))
       return (Just event, future)
 
 {-# INLINE withLifetime #-}

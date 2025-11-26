@@ -33,7 +33,7 @@ import Data.Array.Accelerate.LLVM.State
 -- standard library
 import Control.Concurrent
 import Control.Monad.Cont
-import Control.Monad.State
+import Control.Monad.Reader
 import Data.IORef
 import Data.Sequence                                                ( Seq )
 import qualified Data.Sequence                                      as Seq
@@ -78,7 +78,7 @@ data IVar a
 instance Async Native where
   type FutureR Native  = Future
   newtype Par Native a = Par { runPar :: ContT () (LLVM Native) a }
-    deriving ( Functor, Applicative, Monad, MonadIO, MonadCont, MonadState Native )
+    deriving ( Functor, Applicative, Monad, MonadIO, MonadCont, MonadReader Native )
 
   {-# INLINE new     #-}
   {-# INLINE newFull #-}
@@ -93,7 +93,7 @@ instance Async Native where
   {-# INLINE get #-}
   get (Future ref) =
     callCC $ \k -> do
-      native <- gets llvmTarget
+      native <- asks llvmTarget
       next   <- liftIO . atomicModifyIORef' ref $ \case
                   Empty      -> (Blocked (Seq.singleton (evalParIO native . k)), reschedule)
                   Blocked ks -> (Blocked (ks Seq.|>      evalParIO native . k),  reschedule)
@@ -102,7 +102,7 @@ instance Async Native where
 
   {-# INLINE put #-}
   put future ref = do
-    Native{..} <- gets llvmTarget
+    Native{..} <- asks llvmTarget
     liftIO (putIO workers future ref)
 
   {-# INLINE liftPar #-}
