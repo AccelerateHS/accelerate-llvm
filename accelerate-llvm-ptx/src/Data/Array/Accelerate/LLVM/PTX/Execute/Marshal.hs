@@ -92,17 +92,17 @@ getCudaDevicePtr
     -> ArrayData e
     -> LLVM PTX (CUDA.DevicePtr (ScalarArrayDataR e), IO ())
 getCudaDevicePtr !t !ad = do
-  ptrvar <- liftIO newEmptyMVar
-  donevar <- liftIO newEmptyMVar
-  releasedvar <- liftIO newEmptyMVar
+  ptrVar <- liftIO newEmptyMVar
+  doneVar <- liftIO newEmptyMVar
+  releasedVar <- liftIO newEmptyMVar
 
   _ <- unliftIOLLVM $ \inLLVM -> forkIO $ inLLVM $ do
     Prim.withDevicePtr t ad $ \p -> liftIO $ do
-      putMVar ptrvar p
-      takeMVar donevar
+      putMVar ptrVar p
+      takeMVar doneVar
       return (Nothing, ())
-    liftIO $ putMVar releasedvar ()
+    liftIO $ putMVar releasedVar ()
 
-  ptr <- liftIO $ readMVar ptrvar
-  return (ptr, putMVar donevar () >> readMVar releasedvar)
+  ptr <- liftIO $ readMVar ptrVar
+  return (ptr, putMVar doneVar () >> readMVar releasedVar)
 
