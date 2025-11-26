@@ -73,7 +73,6 @@ data Future a = Future {-# UNPACK #-} !(IORef (IVar a))
 data IVar a
     = Full    !a
     | Blocked !(Seq (a -> IO ()))
-    | Empty
 
 instance Async Native where
   type FutureR Native  = Future
@@ -82,7 +81,7 @@ instance Async Native where
 
   {-# INLINE new     #-}
   {-# INLINE newFull #-}
-  new       = Future <$> liftIO (newIORef Empty)
+  new       = Future <$> liftIO (newIORef (Blocked Seq.empty))
   newFull v = Future <$> liftIO (newIORef (Full v))
 
   {-# INLINE fork  #-}
@@ -95,7 +94,6 @@ instance Async Native where
     callCC $ \k -> do
       native <- gets llvmTarget
       next   <- liftIO . atomicModifyIORef' ref $ \case
-                  Empty      -> (Blocked (Seq.singleton (evalParIO native . k)), reschedule)
                   Blocked ks -> (Blocked (ks Seq.|>      evalParIO native . k),  reschedule)
                   Full a     -> (Full a,                                         return a)
       next
@@ -107,6 +105,21 @@ instance Async Native where
 
   {-# INLINE liftPar #-}
   liftPar = Par . lift
+
+  {-# INLINE statusHandle #-}
+  statusHandle (Future ref) = do
+    emptyFut@(Future emptyIVar) <- new
+    fullFut <- newFull ()
+    liftIO $ atomicModifyIORef' ref $ \case
+      Blocked ks -> (Blocked (ks Seq.|> const (writeIORef emptyIVar (Full ()))), emptyFut)
+      Full v     -> (Full v, fullFut)
+
+  {-# INLINE poll #-}
+  poll (Future ref) = do
+    ivar <- liftIO $ readIORef ref
+    case ivar of
+      Full v -> return (Just v)
+      _      -> return Nothing
 
 -- | Evaluate a continuation
 --
@@ -122,7 +135,6 @@ evalParIO native@Native{} work =
 putIO :: HasCallStack => Workers -> Future a -> a -> IO ()
 putIO workers (Future ref) v = do
   ks <- atomicModifyIORef' ref $ \case
-          Empty      -> (Full v, Seq.empty)
           Blocked ks -> (Full v, ks)
           _          -> internalError "multiple put"
   --
