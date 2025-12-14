@@ -84,7 +84,7 @@ cacheOfUID uid = do
       tag | tracyIsEnabled = "tracy"
           | debuggingIsEnabled = "dbg"
           | otherwise = "rel"
-      cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base </> tag
+      cachepath     = appdir </> "accelerate-llvm-b3cc25-" ++ showVersion version </> base </> tag
       cachefile     = cachepath </> printf "%s%s" name (show uid) <.> ext
   --
   liftIO $ createDirectoryIfMissing True cachepath
@@ -99,7 +99,7 @@ removeCacheDirectory = do
   template  <- targetCacheTemplate
   let
       (base, _)     = splitFileName template
-      cachepath     = appdir </> "accelerate-llvm-" ++ showVersion version </> base
+      cachepath     = appdir </> "accelerate-llvm-b3cc25-" ++ showVersion version </> base
   --
   liftIO $ removeDirectoryRecursive cachepath
 
