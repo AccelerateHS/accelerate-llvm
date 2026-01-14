@@ -104,7 +104,7 @@ Install `clang`; you have two options:
    `winget install LLVM.LLVM`
 2. By downloading the installer directly (WinGet just runs the same installer)
    from [here](https://github.com/llvm/llvm-project/releases) (choose
-   "LLVM-<version>-win64.exe" from the latest release; you may need to click
+   "LLVM-&lt;version>-win64.exe" from the latest release; you may need to click
    "Show all 57 assets").
 This will also give you `libFFI`.
 

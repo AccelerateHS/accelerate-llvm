@@ -1,7 +1,7 @@
 cabal-version:          2.2
 
 name:                   accelerate-llvm-ptx
-version:                1.3.0.0
+version:                1.4.0.0
 tested-with:            GHC >= 9.4
 build-type:             Simple
 
@@ -93,8 +93,8 @@ Library
 
   build-depends:
           base                          >= 4.10 && < 5
-        , accelerate                    == 1.3.*
-        , accelerate-llvm               == 1.3.*
+        , accelerate                    == 1.4.*
+        , accelerate-llvm               == 1.4.*
         , bytestring                    >= 0.10.4
         , containers                    >= 0.5 && < 0.9
         , cuda                          >= 0.10
@@ -173,7 +173,7 @@ source-repository head
 
 source-repository this
   type:                 git
-  tag:                  v1.3.0.0
+  tag:                  v1.4.0.0
   location:             https://github.com/AccelerateHS/accelerate-llvm.git
 
 -- vim: nospell
