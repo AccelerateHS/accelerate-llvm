@@ -13,7 +13,7 @@ extra-deps:
 - cuda-0.12.8.0
 
 - github: AccelerateHS/accelerate
-  commit: a35d10c869f8b2e4c6cdd8c20bfd5548e891d16e
+  commit: 5011280cccba5b0317651ebd09e54d8c9812881e
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
