@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP       #-}
+{-# LANGUAGE DataKinds #-}
 
 module Main where
 
@@ -19,6 +20,17 @@ import Distribution.PackageDescription.Parsec
 #else
 import Distribution.PackageDescription.Parse
 #endif
+#if MIN_VERSION_Cabal(3,14,0)
+-- Note [Cabal 3.14]
+--
+-- If you change any path stuff, either test that the package still works with
+-- Cabal 3.12 or stop declaring support for it in cuda.cabal. (If you do the
+-- latter, also remove all of the other conditionals in this file.)
+-- Note that supporting old versions of Cabal is useful for being able to run
+-- e.g. Accelerate on old GPU clusters, which is nice.
+import Distribution.Utils.Path (SymbolicPath, FileOrDir(File, Dir), Lib, Include, Pkg, CWD, makeSymbolicPath)
+import qualified Distribution.Types.LocalBuildConfig as LBC
+#endif
 
 import System.FilePath
 
@@ -26,18 +38,18 @@ import System.FilePath
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
   { postConf    = postConfHook
-  , preBuild    = readHook buildVerbosity
-  , preRepl     = readHook replVerbosity
-  , preCopy     = readHook copyVerbosity
-  , preInst     = readHook installVerbosity
-  , preHscolour = readHook hscolourVerbosity
-  , preHaddock  = readHook haddockVerbosity
-  , preReg      = readHook regVerbosity
-  , preUnreg    = readHook regVerbosity
+  , preBuild    = readHook buildVerbosity workingDirFlag
+  , preRepl     = readHook replVerbosity workingDirFlag
+  , preCopy     = readHook copyVerbosity workingDirFlag
+  , preInst     = readHook installVerbosity workingDirFlag
+  , preHscolour = readHook hscolourVerbosity workingDirFlag
+  , preHaddock  = readHook haddockVerbosity workingDirFlag
+  , preReg      = readHook regVerbosity workingDirFlag
+  , preUnreg    = readHook regVerbosity workingDirFlag
   }
   where
-    readHook :: (a -> Setup.Flag Verbosity) -> Args -> a -> IO HookedBuildInfo
-    readHook verbosity _ flags = readHookedBuildInfo (fromFlag (verbosity flags)) buildinfo_file
+    readHook :: (a -> Setup.Flag Verbosity) -> (a -> Setup.Flag CWDPath) -> Args -> a -> IO HookedBuildInfo
+    readHook verbosity cwd _ flags = readHookedBuildInfoWithCWD (fromFlag (verbosity flags)) (flagToMaybe (cwd flags)) (makeSymbolicPath buildinfo_file)
 
     postConfHook :: Args -> ConfigFlags -> PackageDescription -> LocalBuildInfo -> IO ()
     postConfHook args flags pkg_desc lbi = do
@@ -71,3 +83,45 @@ quote s = "\"" ++ (s >>= escape) ++ "\""
 quote = show
 #endif
 
+
+-- Compatibility across Cabal 3.14 symbolic paths.
+-- If we want to drop pre-Cabal-3.14 compatibility at some point, this should all be merged in above.
+
+#if MIN_VERSION_Cabal(3,14,0)
+type CWDPath = SymbolicPath CWD ('Dir Pkg)
+
+regVerbosity :: RegisterFlags -> Flag Verbosity
+regVerbosity = setupVerbosity . registerCommonFlags
+
+workingDirFlag :: HasCommonFlags flags => flags -> Flag CWDPath
+workingDirFlag = setupWorkingDir . getCommonFlags
+
+-- makeSymbolicPath is an actual useful function in Cabal 3.14
+
+class HasCommonFlags flags where getCommonFlags :: flags -> CommonSetupFlags
+instance HasCommonFlags BuildFlags where getCommonFlags = buildCommonFlags
+instance HasCommonFlags CleanFlags where getCommonFlags = cleanCommonFlags
+instance HasCommonFlags ConfigFlags where getCommonFlags = configCommonFlags
+instance HasCommonFlags CopyFlags where getCommonFlags = copyCommonFlags
+instance HasCommonFlags InstallFlags where getCommonFlags = installCommonFlags
+instance HasCommonFlags HscolourFlags where getCommonFlags = hscolourCommonFlags
+instance HasCommonFlags HaddockFlags where getCommonFlags = haddockCommonFlags
+instance HasCommonFlags RegisterFlags where getCommonFlags = registerCommonFlags
+instance HasCommonFlags ReplFlags where getCommonFlags = replCommonFlags
+
+readHookedBuildInfoWithCWD :: Verbosity -> Maybe CWDPath -> SymbolicPath Pkg 'File -> IO HookedBuildInfo
+readHookedBuildInfoWithCWD = readHookedBuildInfo
+#else
+type CWDPath = ()
+
+-- regVerbosity is still present as an actual field in Cabal 3.12
+
+workingDirFlag :: flags -> Flag CWDPath
+workingDirFlag _ = NoFlag
+
+makeSymbolicPath :: FilePath -> FilePath
+makeSymbolicPath = id
+
+readHookedBuildInfoWithCWD :: Verbosity -> Maybe CWDPath -> FilePath -> IO HookedBuildInfo
+readHookedBuildInfoWithCWD verb _ path = readHookedBuildInfo verb path
+#endif
