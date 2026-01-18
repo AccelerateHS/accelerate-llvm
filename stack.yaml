@@ -12,6 +12,9 @@ packages:
 extra-deps:
 - cuda-0.12.8.0
 
+# for llvm-pretty:
+- monadLib-3.10.3
+
 - github: AccelerateHS/accelerate
   commit: 5011280cccba5b0317651ebd09e54d8c9812881e
 
