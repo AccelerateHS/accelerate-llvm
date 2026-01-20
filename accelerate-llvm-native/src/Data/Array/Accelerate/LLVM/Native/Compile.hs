@@ -133,7 +133,11 @@ compile pacc aenv = do
         let clangFlags inputType outputFlags output =
               -- '-O3' is ignored when only assembling; let's avoid clang warning about that
               (if inputType == "assembler" then [] else ["-O3"]) ++
-              ["-march=native", "-c", "-o", output, "-x", inputType, "-"
+              (case takeWhile (/= '-') (SBS8.unpack nativeTargetTriple) of
+                 "aarch64" -> ["-mcpu=native"]  -- e.g. Ampere
+                 "arm64" -> ["-mcpu=native"]  -- e.g. Apple
+                 _ -> ["-march=native"]) ++  -- e.g. x86_64
+              ["-c", "-o", output, "-x", inputType, "-"
               -- clang knows better what the target triple (and the data
               -- layout) should be than us, so let it override the triple, and
               -- don't warn about it
