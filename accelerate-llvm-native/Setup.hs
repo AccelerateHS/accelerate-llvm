@@ -77,6 +77,7 @@ quote :: String -> String
 #ifdef mingw32_HOST_OS
 quote s = "\"" ++ (s >>= escape) ++ "\""
   where
+    escape '\\' = "\\\\"
     escape '"' = "\\\""
     escape c   = [c]
 #else
