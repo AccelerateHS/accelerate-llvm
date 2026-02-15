@@ -123,6 +123,7 @@ linkOpenAcc = travA
         Acond p t e             -> Acond p         <$> travA t  <*> travA e
         Apair a1 a2             -> Apair           <$> travA a1 <*> travA a2
         Atrace msg a1 a2        -> Atrace msg      <$> travA a1 <*> travA a2
+        Aerror repr msg a1      -> Aerror repr msg <$> travA a1
         Anil                    -> return Anil
         Reshape shr s ix        -> Reshape shr s   <$> pure ix
         Aforeign s r f a        -> Aforeign s r f  <$> travA a

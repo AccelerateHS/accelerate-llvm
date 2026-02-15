@@ -30,7 +30,7 @@ import Data.Array.Accelerate.AST.Idx
 import Data.Array.Accelerate.AST.Var
 import Data.Array.Accelerate.Analysis.Match
 import Data.Array.Accelerate.Array.Data
-import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalCoerceScalar, atraceOp )
+import Data.Array.Accelerate.Interpreter                        ( evalPrim, evalPrimConst, evalCoerceScalar, atraceOp, aerrorOp )
 import Data.Array.Accelerate.Representation.Array
 import Data.Array.Accelerate.Representation.Elt
 import Data.Array.Accelerate.Representation.Shape
@@ -284,6 +284,10 @@ executeOpenAcc !topAcc !aenv = travA topAcc
           a1' <- travA a1 >>= blockArrays repr >>= copyToHost repr
           liftIO $ atraceOp msg a1'
           travA a2
+        Aerror _ msg a1 -> do
+          let repr = arraysR a1
+          a1' <- travA a1 >>= blockArrays repr >>= copyToHost repr
+          aerrorOp msg a1'
 
         -- We need quite some type applications in the rules for acond and awhile, and cannot use do notation.
         -- For some unknown reason, GHC will "simplify" 'FutureArraysR arch a' to 'FutureR arch a', which is not sound.
