@@ -37,6 +37,7 @@ import Foreign.CUDA.Driver.Error
 import qualified Foreign.CUDA.Driver                                as CUDA
 import qualified Foreign.CUDA.Driver.Context                        as Context
 
+import Control.Concurrent
 import Control.Exception                                            ( try, catch )
 import Data.Maybe                                                   ( fromMaybe, catMaybes )
 import Formatting
@@ -153,7 +154,7 @@ defaultTargetPool = unsafePerformIO $! do
       -- Spin up the GPU at the given ordinal.
       --
       boot :: Int -> IO (Maybe PTX)
-      boot i = unsafeInterleaveIO $ do
+      boot i = unsafeInterleaveIO $ runInBoundThread $ do
         dev <- CUDA.device i
         prp <- CUDA.props dev
         r   <- try $ createTargetForDevice dev prp [CUDA.SchedAuto]
