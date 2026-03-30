@@ -29,14 +29,14 @@ maintainer:             Trevor L. McDonell <trevor.mcdonell@gmail.com>
 bug-reports:            https://github.com/AccelerateHS/accelerate/issues
 category:               Accelerate, Compilers/Interpreters, Concurrency, Data, Parallelism
 
-extra-source-files:
+extra-doc-files:
     CHANGELOG.md
     README.md
 
 custom-setup
   setup-depends:
-      base              >= 4.10
-    , Cabal
+      base              >= 4.10 && < 5
+    , Cabal             >= 2 && < 3.18
     , filepath
 
 
@@ -91,6 +91,9 @@ Library
 
     Paths_accelerate_llvm_native
 
+  autogen-modules:
+    Paths_accelerate_llvm_native
+
   build-depends:
           base                          >= 4.10 && < 5
         , accelerate                    == 1.4.*
@@ -133,10 +136,6 @@ Library
         -O2
         -Wall
         -fwarn-tabs
-
-  ghc-prof-options:
-        -caf-all
-        -auto-all
 
   if os(windows)
     build-depends:
