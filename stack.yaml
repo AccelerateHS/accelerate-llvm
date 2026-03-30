@@ -10,13 +10,13 @@ packages:
 - accelerate-llvm-ptx
 
 extra-deps:
-- cuda-0.12.8.0
+- cuda-0.13.0.0
 
 # for llvm-pretty:
 - monadLib-3.10.3
 
 - github: AccelerateHS/accelerate
-  commit: 5011280cccba5b0317651ebd09e54d8c9812881e
+  commit: 477b0b357533523cfb6ded6d523431dfa891b862
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

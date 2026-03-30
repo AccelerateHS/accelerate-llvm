@@ -31,7 +31,7 @@ features as well as report (or fix!) bugs on the [issue tracker][Issues].
 Dependencies
 ------------
 
-Haskell dependencies are available from Hackage, but there are several external
+Haskell dependencies are available from Hackage, but there are some external
 library dependencies that you will need to install as well:
 
 - if using `accelerate-llvm-native` for multicore CPU:
