@@ -99,7 +99,6 @@ Library
         , accelerate                    == 1.4.*
         , accelerate-llvm               == 1.4.*
         , bytestring                    >= 0.10.4
-        , cereal                        >= 0.4
         , containers                    >= 0.5 && < 0.9
         , deepseq                       >= 1.4
         , directory                     >= 1.0
@@ -114,7 +113,7 @@ Library
         , mtl                           >= 2.2.1
           -- only used to render llvm-pretty output
         , pretty
-        , process
+        , process                       >= 1.4.3
           -- TODO: These are only used for lifting ByteStrings. bytestring
           --       0.11.2.0 include its own, better lifting instances. Once
           --       that's stable, we can remove this dependency and bump
@@ -142,8 +141,7 @@ Library
           Win32
   else
     build-depends:
-          process                       >= 1.4.3
-        , unix                          >= 2.7
+          unix                          >= 2.7
 
 
 test-suite nofib-llvm-native
