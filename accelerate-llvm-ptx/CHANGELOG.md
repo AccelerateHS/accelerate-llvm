@@ -7,6 +7,32 @@ project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
 
+## [1.4.0.0] - ?
+### Changed
+  * Use shuffle instructions for faster warp-level folds and scans.
+  * Support new compute capabilities.
+
+### Fixed
+  * Device memory was deallocated too early or overwritten [accelerate-llvm#111]
+  * CUDA Context double free [accelerate-llvm#113]
+  * Execution of stencil boundaries were not properly synchronised
+  * Scans sometimes gave incorrect results
+  * Various other small correctness issues
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+  * Tom Smeding (@tomsmeding)
+  * David van Balen (@dpvanbalen)
+  * Ivo Gabe de Wolff (@ivogabe)
+  * Michael Swam (@michael-swan)
+  * Travis Whitaker (@TravisWhitaker)
+  * Noah Williams (@noahmartinwilliams)
+  * Robbert van der Helm (@robbert-vdh)
+  * Jann Müller (@j-mueller)
+
 ## [1.3.0.0] - 2018-08-27
 ### Changed
   * Code generation improvements for stencil operations
@@ -88,4 +114,5 @@ Special thanks to those who contributed patches as part of this release:
 [#436]:                 https://github.com/AccelerateHS/accelerate/issues/436
 [accelerate-llvm#17]:   https://github.com/AccelerateHS/accelerate-llvm/issues/17
 [accelerate#423]:       https://github.com/AccelerateHS/accelerate/issues/423
-
+[accelerate-llvm#111]:  https://github.com/AccelerateHS/accelerate-llvm/pull/111
+[accelerate-llvm#113]:  https://github.com/AccelerateHS/accelerate-llvm/pull/113

@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
+## [1.4.0.0] - ?
+### Changed
+  * Support for LLVM-15 to 22.
+  * Wider platform support (including support for Apple silicon and other ARM systems) by using the system linker.
+  * Support for the Tracy profiler, under the tracy and debug flag.
+
+### Fixed
+  * Undefined symbols for math functions ([accelerate-llvm#104])
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+  * Tom Smeding (@tomsmeding)
+  * David van Balen (@dpvanbalen)
+  * Ivo Gabe de Wolff (@ivogabe)
+  * Robbert van der Helm (@robbert-vdh)
+  * Mirek Kratochvil (@exaexa)
+  * Tao He (@sighingnow)
+  * Patsakula Nikita (@npatsakula)
+  * Noah Williams (@noahmartinwilliams)
+
 ## [1.3.0.0] - 2018-08-27
 ### Changed
   * Switch the thread scheduler to static, rather than dynamic, work stealing
@@ -80,4 +103,4 @@ Special thanks to those who contributed patches as part of this release:
 [#409]:                 https://github.com/AccelerateHS/accelerate/issues/409
 [accelerate-llvm#17]:   https://github.com/AccelerateHS/accelerate-llvm/issues/17
 [accelerate-llvm#49]:   https://github.com/AccelerateHS/accelerate-llvm/pull/49
-
+[accelerate-llvm#104]:  https://github.com/AccelerateHS/accelerate-llvm/pull/104

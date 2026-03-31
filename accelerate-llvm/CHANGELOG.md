@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
+## [1.4.0.0] - ?
+### Changed
+  * Support for LLVM-15 to 22 (15 only on native backend, 16 and newer are supported on native and PTX).
+  * Simplified installation by using clang via the command line instead of linking with LLVM. Clang should be on the PATH or (on Windows) installed in a standard location.
+  * Updates for various new Accelerate features, including debugging functionality similar to Debug.Trace
+  * Allow empty inputs in scanl1 and scanr1
+
+### Contributors
+
+Special thanks to those who contributed patches as part of this release:
+
+  * Trevor L. McDonell (@tmcdonell)
+  * Tom Smeding (@tomsmeding)
+  * David van Balen (@dpvanbalen)
+  * Ivo Gabe de Wolff (@ivogabe)
+  * Robbert van der Helm (@robbert-vdh)
+  * Noah Williams (@noahmartinwilliams)
+
 ## [1.3.0.0] - 2018-08-27
 ### Added
   * Support for LLVM-9
