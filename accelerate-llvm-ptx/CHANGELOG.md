@@ -9,6 +9,7 @@ Policy (PVP)](https://pvp.haskell.org)
 
 ## [1.4.0.0] - ?
 ### Changed
+  * Support for LLVM-16 to 22.
   * Use shuffle instructions for faster warp-level folds and scans.
   * Support new compute capabilities.
 

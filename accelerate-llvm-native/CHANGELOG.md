@@ -10,7 +10,7 @@ Policy (PVP)](https://pvp.haskell.org)
 ### Changed
   * Support for LLVM-15 to 22.
   * Wider platform support (including support for Apple silicon and other ARM systems) by using the system linker.
-  * Support for the Tracy profiler, under the tracy and debug flag.
+  * Support for the Tracy profiler, under the tracy and debug flags.
 
 ### Fixed
   * Undefined symbols for math functions ([accelerate-llvm#104])
