@@ -2,6 +2,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# OPTIONS_HADDOCK hide #-}
 module LLVM.AST.Type.GetElementPtr where
 
 import LLVM.AST.Type.Downcast

@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_HADDOCK hide #-}
 module Data.Array.Accelerate.LLVM.Target.ClangInfo where
 
 import qualified Data.Array.Accelerate.LLVM.Internal.LLVMPretty.PP  as LP
