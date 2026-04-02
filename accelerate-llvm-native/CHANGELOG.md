@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
-## [1.4.0.0] - ?
+## [1.4.0.0] - 2026-04-02
 ### Changed
   * Support for LLVM-15 to 22.
   * Wider platform support (including support for Apple silicon and other ARM systems) by using the system linker.

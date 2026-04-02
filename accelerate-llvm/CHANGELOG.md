@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and the
 project adheres to the [Haskell Package Versioning
 Policy (PVP)](https://pvp.haskell.org)
 
-## [1.4.0.0] - ?
+## [1.4.0.0] - 2026-04-02
 ### Changed
   * Support for LLVM-15 to 22 (15 only on native backend, 16 and newer are supported on native and PTX).
   * Simplified installation by using clang via the command line instead of linking with LLVM. Clang should be on the PATH or (on Windows) installed in a standard location.
