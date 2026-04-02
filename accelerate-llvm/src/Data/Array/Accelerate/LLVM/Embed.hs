@@ -169,6 +169,7 @@ liftPreOpenAccCommand arch pacc =
     Apair a1 a2       -> [|| Apair $$(liftA a1) $$(liftA a2) ||]
     Anil              -> [|| Anil ||]
     Atrace msg a1 a2  -> [|| Atrace $$(liftMessage (arraysR a1) msg) $$(liftA a1) $$(liftA a2) ||]
+    Aerror repr msg a -> [|| Aerror $$(liftArraysR repr) $$(liftMessage (arraysR a) msg) $$(liftA a) ||]
     Apply repr f a    -> [|| Apply $$(liftArraysR repr) $$(liftAF f) $$(liftA a) ||]
     Acond p t e       -> [|| Acond $$(liftE p) $$(liftA t) $$(liftA e) ||]
     Awhile p f a      -> [|| Awhile $$(liftAF p) $$(liftAF f) $$(liftA a) ||]
