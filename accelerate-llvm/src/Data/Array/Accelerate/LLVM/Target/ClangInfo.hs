@@ -55,17 +55,28 @@ nativeCPUName =
 -- | Returns list of version components: '12.3' becomes [12, 3].
 hostLLVMVersion :: NonEmpty Int
 hostLLVMVersion =
-  fmap read . splitOn '.' $
-    let firstLine = takeWhile (/= '\n') $
-                      dropWhile isSpace clangMachineVersionOutput
-    in case catMaybes (map (`startsWith` "clang version") (tails firstLine)) of
-         rest : _ ->
-           -- "Ubuntu clang version 14.0.0-1ubuntu1.1" <- we care about the "14.0.0" part only
-           takeWhile (\c -> not (isSpace c) && c /= '-')
-           $ dropWhile isSpace
-           $ rest
-         [] -> error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">"
+  -- On Nix when building a package, the first 2 lines of stderr output are
+  --   "warning: Skipping impure flag -march=native because NIX_ENFORCE_NO_NATIVE is set"
+  -- and the same for -mcpu. Skip those and potential other such warnings by trying the first 5.
+  -- (Having NIX_ENFORCE_NO_NATIVE set obviously cripples performance, but since compiling the
+  -- test suite entails kernel a compilation (for runQ testing) it's good if this just works.
+  -- At runtime the warning goes to stderr and will be shown to the user if relevant.)
+  case catMaybes (map tryFromLine (take 5 (lines clangMachineVersionOutput))) of
+    res : _ -> res
+    [] -> error $ "Could not extract clang version from `clang -###` output: <" ++ clangMachineVersionOutput ++ ">"
   where
+  tryFromLine :: String -> Maybe (NonEmpty Int)
+  tryFromLine line =
+    case catMaybes (map (`startsWith` "clang version") (tails line)) of
+      rest : _ ->
+        Just $
+          fmap read . splitOn '.'
+          -- "Ubuntu clang version 14.0.0-1ubuntu1.1" <- we care about the "14.0.0" part only
+          $ takeWhile (\c -> not (isSpace c) && c /= '-')
+          $ dropWhile isSpace
+          $ rest
+      [] -> Nothing
+
   splitOn :: Eq a => a -> [a] -> NonEmpty [a]
   splitOn _ [] = [] NE.:| []
   splitOn sep (c:cs)
